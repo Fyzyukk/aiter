@@ -25,6 +25,7 @@ void opus_gemm_a16w16_tune(aiter_tensor_t& XQ,
                            aiter_tensor_t& WQ,
                            aiter_tensor_t& Y,
                            std::optional<aiter_tensor_t> bias,
+                           std::optional<aiter_tensor_t> workspace,
                            int kernelId,
                            int splitK);
 
@@ -34,6 +35,3 @@ void opus_gemm_a8w8_blockscale_bpreshuffle_tune(aiter_tensor_t& XQ,
                                                 std::optional<aiter_tensor_t> w_scale,
                                                 aiter_tensor_t& Y,
                                                 int kernelId);
-
-// Per-stream splitk workspace init. See opus_gemm.cu for rationale.
-void opus_gemm_workspace_init();

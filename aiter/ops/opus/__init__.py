@@ -58,7 +58,12 @@ else:
     opus_gemm_a8w8_blockscale_bpreshuffle_tune = _make_unsupported_arch_stub(
         "opus_gemm_a8w8_blockscale_bpreshuffle_tune"
     )
-    opus_gemm_workspace_init = _make_unsupported_arch_stub("opus_gemm_workspace_init")
+
+    def opus_gemm_workspace_init() -> None:
+        """Deprecated no-op on every architecture."""
+        from .gemm_op_a16w16 import opus_gemm_workspace_init as _impl
+
+        return _impl()
 
 
 __all__ = [

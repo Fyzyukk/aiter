@@ -5,10 +5,11 @@
 The shape-driven entry resolves policy in Python, in the fixed order
 ``explicit -> tuned CSV -> per-arch heuristic -> framework fallback``.  Every
 OPUS result is represented by a resolved ``LaunchConfig`` and launched through
-``opus_gemm_a16w16_tune``; the generic C++ bf16 shape selector remains bound
-only as a Step-1 parity probe.
+the typed Torch-workspace path. The generic C++ bf16 entry remains bound for
+ABI compatibility but rejects launches that bypass the Python planner.
 """
 
+import warnings
 from collections.abc import Callable
 
 import torch
@@ -43,6 +44,7 @@ def _device_arch_and_cu(device: torch.device) -> tuple[str, int]:
             ) from exc
     return arch, int(props.multi_processor_count)
 
+
 # ---- Low-level pybind bindings --------------------------------------------
 
 
@@ -50,9 +52,10 @@ def _gen_opus_gemm_a16w16_tune_fake_tensors(
     XQ: torch.Tensor,
     WQ: torch.Tensor,
     Y: torch.Tensor,
-    bias: torch.Tensor | None = None,
-    kernelId: int = 0,
-    splitK: int = 0,
+    bias: torch.Tensor | None,
+    workspace: torch.Tensor | None,
+    kernelId: int,
+    splitK: int,
 ) -> torch.Tensor:
     return Y
 
@@ -73,9 +76,10 @@ def _opus_gemm_a16w16_tune_raw(
     XQ: torch.Tensor,
     WQ: torch.Tensor,
     Y: torch.Tensor,
-    bias: torch.Tensor | None = None,
-    kernelId: int = 0,
-    splitK: int = 0,
+    bias: torch.Tensor | None,
+    workspace: torch.Tensor | None,
+    kernelId: int,
+    splitK: int,
 ) -> torch.Tensor: ...
 
 
@@ -164,7 +168,7 @@ def _prepare_a16w16_workspace(
 ) -> tuple[WorkspacePlan | None, torch.Tensor | None]:
     """Plan and resolve the workspace for an already-selected launch.
 
-    This is the single allocation/validation point for the Step-5 raw ABI.
+    This is the single allocation/validation point for the raw ABI.
     Caller-provided tensors go through the same validator and are returned
     unchanged; only a missing required workspace calls ``torch.empty``.
     """
@@ -214,13 +218,8 @@ def _launch_a16w16_with_torch_workspace(
     *,
     workspace: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Prepared Step-5 ``plan -> torch.empty -> raw launch`` path.
-
-    The current C++ binding still has the legacy no-workspace ABI, so
-    production callers intentionally do not enter this helper in Step 2.
-    Step 5 will pass the updated raw binding as ``raw_launch`` and switch the
-    two public entry points to this centralized path.
-    """
+    """Run the centralized ``validate -> plan -> torch.empty -> raw`` path."""
+    _check_a16w16_tune_layout(XQ, WQ, Y)
     _, workspace = _prepare_a16w16_workspace(config, XQ, Y, workspace)
     raw_launch(
         XQ,
@@ -241,6 +240,8 @@ def opus_gemm_a16w16_tune(
     bias=None,
     kernelId: int = 0,
     splitK: int = 0,
+    *,
+    workspace: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Low-level id-based dispatcher (Python guard + C++ launch).
 
@@ -255,6 +256,10 @@ def opus_gemm_a16w16_tune(
            Only honored on bias-aware kid ranges (split-barrier kid 4..9
            and a16w16_flatmm_splitk kid 200..299); the C++ dispatcher
            rejects bias on other kids.
+    workspace : optional advanced override for a workspace kernel. When
+           omitted, a fresh correctly typed Torch tensor is allocated for
+           this call. A supplied tensor is validated and reused; non-workspace
+           kernels require ``None``.
 
     Backwards-compatibility note
     ----------------------------
@@ -280,7 +285,6 @@ def opus_gemm_a16w16_tune(
         kernelId = bias
         splitK = new_splitK
         bias = None
-    _check_a16w16_tune_layout(XQ, WQ, Y)
     batch, M, K = XQ.shape
     N = Y.shape[2]
     arch, cu_num = _device_arch_and_cu(XQ.device)
@@ -300,29 +304,27 @@ def opus_gemm_a16w16_tune(
     if config.actual_kid is None:
         raise RuntimeError("an explicit OPUS kid cannot resolve to framework fallback")
 
-    # C++ launcher is in-place on Y (returns void after PR #2932-style
-    # refactor to aiter_tensor_t). Keep the wrapper's `return Y`
-    # contract so callers that did `Y = opus_gemm_a16w16_tune(...)`
-    # still see the populated Y.
-    _opus_gemm_a16w16_tune_raw(
+    # C++ launchers are in-place on Y. Keep the wrapper's `return Y` contract
+    # while centralizing caller-owned workspace allocation and validation.
+    return _launch_a16w16_with_torch_workspace(
+        _opus_gemm_a16w16_tune_raw,
         XQ,
         WQ,
         Y,
         bias,
-        config.actual_kid,
-        config.launch_split_k,
+        config,
+        workspace=workspace,
     )
-    return Y
 
 
-# Private legacy bf16 no-scale binding retained only as a parity-golden probe
-# during Step 1. Production a16w16 calls do not use it: Python resolves the kid
-# first and enters the id-based tune wrapper above. It still wraps the generic
-# C++ ``opus_gemm`` symbol so parity tests can compare against the old policy.
+# Private legacy bf16 no-scale binding retained for ABI compatibility only.
+# Production a16w16 calls resolve the kid in Python and enter the raw tune
+# wrapper above; the generic C++ ``opus_gemm`` symbol now rejects bf16 calls so
+# it cannot select a workspace kernel without a caller-owned Tensor.
 #
 # Parameter annotations match the C++ signature exactly; torch_library's
-# infer_schema requires every parameter be typed even though we always
-# pass None for the last three.
+# infer_schema requires every parameter be typed even though compatibility
+# callers pass None for the optional generic-op arguments.
 def _gen_opus_gemm_bf16_dispatch_fake_tensors(
     XQ: torch.Tensor,
     WQ: torch.Tensor,
@@ -588,28 +590,28 @@ def gemm_a16w16_opus(
         _framework_a16w16(XQ, WQ, Y, bias)
         return _finalize_output(Y, reshape_out_to_2d)
 
-    # Explicit, tuned, and CSV-miss heuristic choices all converge here. The
-    # generic C++ shape selector is intentionally not part of production flow.
-    opus_gemm_a16w16_tune(
+    # Explicit, tuned, and CSV-miss heuristic choices all converge here. Use
+    # the already-resolved config so workspace planning sees the actual kid and
+    # allocation split-K without a second selector pass.
+    _launch_a16w16_with_torch_workspace(
+        _opus_gemm_a16w16_tune_raw,
         XQ,
         WQ,
         Y,
         bias,
-        config.actual_kid,
-        config.launch_split_k,
+        config,
     )
     return _finalize_output(Y, reshape_out_to_2d)
 
 
-# Per-stream splitk workspace init. Call once inside `with torch.cuda.stream(s):`
-# (eagerly, before HIP graph capture) to register a workspace handle for that
-# stream. Needed under vLLM/sglang-style TBO where two CPU threads drive two
-# streams concurrently -- each captured graph must bake in its own buffer
-# pointer; the prior thread_local cache would fail capture on the second
-# stream. After init, run the largest expected gemm eagerly on the same
-# stream to grow the buffer, then capture.
-@compile_ops("module_deepgemm_opus", fc_name="opus_gemm_workspace_init", develop=True)
-def opus_gemm_workspace_init() -> None: ...
+def opus_gemm_workspace_init() -> None:
+    """Deprecated no-op; workspaces are now ordinary per-call Torch tensors."""
+    warnings.warn(
+        "opus_gemm_workspace_init() is deprecated and no longer required; "
+        "OPUS split-K workspaces are allocated by the Python wrapper",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 
 __all__ = [
