@@ -9,6 +9,8 @@ OPUS result is represented by a resolved ``LaunchConfig`` and launched through
 only as a Step-1 parity probe.
 """
 
+from collections.abc import Callable
+
 import torch
 from torch import Tensor
 
@@ -18,7 +20,9 @@ from csrc.opus_gemm.opus_gemm_common import (
     kernel_needs_external_workspace,
 )
 
-from ._selector_a16w16 import select_launch_config
+from ._selector_a16w16 import LaunchConfig, select_launch_config
+from ._workspace import WorkspacePlan, allocate_workspace, validate_workspace
+from ._workspace_a16w16 import plan_a16w16_workspace
 
 _SUPPORTED_OPUS_ARCHES = ("gfx942", "gfx950", "gfx1250")
 
@@ -150,6 +154,84 @@ def _check_a16w16_tune_layout(XQ: torch.Tensor, WQ: torch.Tensor, Y: torch.Tenso
             f"The launcher hardcodes stride_c == N and stride_c_batch == M*N; "
             f"materialize with `Y = Y.contiguous()` before calling."
         )
+
+
+def _prepare_a16w16_workspace(
+    config: LaunchConfig,
+    XQ: torch.Tensor,
+    Y: torch.Tensor,
+    workspace: torch.Tensor | None = None,
+) -> tuple[WorkspacePlan | None, torch.Tensor | None]:
+    """Plan and resolve the workspace for an already-selected launch.
+
+    This is the single allocation/validation point for the Step-5 raw ABI.
+    Caller-provided tensors go through the same validator and are returned
+    unchanged; only a missing required workspace calls ``torch.empty``.
+    """
+    if config.is_framework_fallback or config.actual_kid is None:
+        raise ValueError("cannot prepare a workspace for framework fallback")
+    instance = get_kernel_instance(config.arch, config.family, config.actual_kid)
+    if instance is None:
+        raise RuntimeError(
+            "resolved OPUS launch has no canonical instance: "
+            f"({config.arch}, {config.family}, {config.actual_kid})"
+        )
+
+    batch, M, K = map(int, XQ.shape)
+    N = int(Y.shape[2])
+    plan = plan_a16w16_workspace(
+        instance,
+        arch=config.arch,
+        kid=config.actual_kid,
+        M=M,
+        N=N,
+        K=K,
+        batch=batch,
+        split_k=config.allocation_split_k,
+    )
+    if plan is None:
+        if workspace is not None:
+            raise ValueError(
+                f"OPUS a16w16 kid {config.actual_kid} does not use an "
+                "external workspace"
+            )
+        return None, None
+
+    if workspace is None:
+        workspace = allocate_workspace(plan, XQ.device)
+    else:
+        validate_workspace(workspace, plan, XQ.device)
+    return plan, workspace
+
+
+def _launch_a16w16_with_torch_workspace(
+    raw_launch: Callable[..., object],
+    XQ: torch.Tensor,
+    WQ: torch.Tensor,
+    Y: torch.Tensor,
+    bias: torch.Tensor | None,
+    config: LaunchConfig,
+    *,
+    workspace: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Prepared Step-5 ``plan -> torch.empty -> raw launch`` path.
+
+    The current C++ binding still has the legacy no-workspace ABI, so
+    production callers intentionally do not enter this helper in Step 2.
+    Step 5 will pass the updated raw binding as ``raw_launch`` and switch the
+    two public entry points to this centralized path.
+    """
+    _, workspace = _prepare_a16w16_workspace(config, XQ, Y, workspace)
+    raw_launch(
+        XQ,
+        WQ,
+        Y,
+        bias,
+        workspace,
+        config.actual_kid,
+        config.launch_split_k,
+    )
+    return Y
 
 
 def opus_gemm_a16w16_tune(
