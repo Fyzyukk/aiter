@@ -316,3 +316,10 @@ replace a batch-broadcast `B.expand(...)` view with `.contiguous()`.
 | `gemm_op_a8w8.py` | Separate gfx942 a8w8 tune API |
 | `moe_stage1_a8w4.py`, `moe_stage2_a8w4.py` | Separately built a8w4 MoE APIs |
 | `../../../csrc/opus_gemm/` | C++ entry, codegen, traits, pipelines, and reduce kernels |
+
+`_workspace.py` is intentionally family-neutral: it accepts a completed plan
+and never selects an architecture, kid, dtype policy, redirect, or launcher
+ABI.  `_workspace_a16w16.py` is the family adapter that owns those a16w16
+decisions.  A new adapter is warranted only after another family acquires an
+external two-stage workspace kernel; a8w8 and a8w4 MoE do not have one, and no
+a4w4 implementation exists in this tree.

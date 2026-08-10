@@ -22,6 +22,13 @@ actual kid in Python so a correctly typed Torch workspace can be supplied.
 The gfx942 a8w8 tune entry and the separately built a8w4 MoE modules are not
 part of the a16w16 workspace ABI.
 
+The shared workspace layer deliberately has no architecture branches, a16w16
+kid ranges, redirects, or launcher signatures.  Those decisions belong to the
+a16w16 selector, planner, generated launcher, and architecture dispatch
+adapter.  Add another family adapter only when that family gains an external
+two-stage workspace kernel.  The existing a8w8 and a8w4 MoE families need no
+such adapter, and there is no a4w4 family to modify.
+
 ## Source layout
 
 | Path | Role |
@@ -184,19 +191,8 @@ Runtime tests select only cases matching the installed GPU. On a single-arch
 host, skipped gfx942/gfx1250 cases are coverage definitions, not evidence of
 hardware validation.
 
-Before landing workspace changes, also verify that no legacy allocator symbols
-have returned:
-
-```bash
-rg -n 'SplitkWsRegistry|opus_splitk_ws_|ws_handle' \
-  csrc/opus_gemm aiter/ops/opus aiter/tuned_gemm.py
-
-rg -n 'hipMalloc|hipFree|hipHostMalloc' \
-  csrc/opus_gemm/opus_gemm.cu \
-  csrc/opus_gemm/codegen/gen_instances_gfx950.py \
-  csrc/opus_gemm/codegen/gen_instances_gfx942.py \
-  csrc/opus_gemm/codegen/gen_instances_gfx1250.py
-```
-
-README prose may mention removed names when describing migration history; code
-paths must not contain them.
+Before landing workspace changes, run the repository-level absence scans from
+the task completion checklist.  Every scan must produce empty output.  Keep the
+literal forbidden identifiers out of this README as well, otherwise a scan
+that intentionally includes the whole source directory would match its own
+documentation rather than a code-path regression.
