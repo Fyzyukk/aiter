@@ -517,6 +517,12 @@ a16w16_mono_tile_kernels_list_4g_safe = {
 # -- gfx942 kernel lists ------------------------------------------------ Kid offset: gfx942
 GFX942_KID_OFFSET = 10000
 
+# gfx942 bf16-workspace launchers can use the exact-N row-block reducer only
+# for these output widths.  Keep the *set* here beside the instance source so
+# runtime selection, tuning, and codegen can consume one value.  The detailed
+# (VEC, N_VEC, ROWS_PER_BLOCK) reduce configurations remain codegen-owned.
+GFX942_BF16WS_EXACT_N = frozenset({64, 128, 256, 384, 512, 1024, 2048})
+
 
 def _a16w16_gfx942(bs, bm, bn, bk, tn, wm, wn, wk):
     """Factory for gfx942 a16w16 kbuf1-large-tile kid instances (kid 10000,
@@ -1190,6 +1196,53 @@ def heuristic_kids_for_arch(arches):
     for arch in arches:
         out = out | HEURISTIC_DEFAULT_KIDS_BY_ARCH.get(arch, frozenset())
     return out
+
+
+def get_kernel_instance(
+    arch: str, family: str, kid: int
+) -> OpusGemmInstance | None:
+    """Return the existing instance for the logical ``(arch, family, kid)``.
+
+    This is intentionally a narrow view over ``kernels_list`` rather than a
+    projected runtime catalog: callers receive the canonical
+    :class:`OpusGemmInstance` object and read only the fields they need.
+    ``a16w16`` is the only family registered by task 1; in particular this
+    prevents the gfx942 a8w8 kid from being accepted merely because its integer
+    id exists in the cross-family registry.
+    """
+    arch = str(arch).lower()
+    family = str(family).lower()
+    if family != "a16w16":
+        return None
+
+    try:
+        kid = int(kid)
+    except (TypeError, ValueError):
+        return None
+
+    instance = kernels_list.get(kid)
+    if instance is None or not instance.kernel_tag.startswith("a16w16"):
+        return None
+    instance_arch = (instance.arch_prefix or "gfx950").lower()
+    if instance_arch != arch:
+        return None
+    return instance
+
+
+def kernel_needs_external_workspace(arch: str, family: str, kid: int) -> bool:
+    """Return whether a registered kernel writes a two-stage workspace.
+
+    Unknown logical keys are errors rather than ``False``: treating an unknown
+    kid as a non-workspace kernel would let a caller launch it without the
+    allocation required for memory safety.  Capability comes from the existing
+    ``SPLITK_KIDS`` registry, never from a numeric kid range or tag substring.
+    """
+    instance = get_kernel_instance(arch, family, kid)
+    if instance is None:
+        raise KeyError(
+            f"unknown OPUS kernel (arch={arch!r}, family={family!r}, kid={kid!r})"
+        )
+    return int(kid) in SPLITK_KIDS
 
 
 def _opus_sidecar_path():

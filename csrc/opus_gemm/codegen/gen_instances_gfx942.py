@@ -5,7 +5,7 @@
 import os
 from pathlib import Path
 
-from opus_gemm_common import OpusGemmInstance
+from opus_gemm_common import GFX942_BF16WS_EXACT_N, OpusGemmInstance
 
 from codegen.common import (
     _GFX942_A16W16_TAGS,
@@ -135,6 +135,10 @@ EXACT_N_ROWBLOCK_REDUCE_CONFIGS = (
     (8, 128, 1),  # N=1024, 1 row/wg
     (8, 256, 1),  # N=2048, 1 row/wg
 )
+
+assert frozenset(
+    vec * nvec for vec, nvec, _ in EXACT_N_ROWBLOCK_REDUCE_CONFIGS
+) == GFX942_BF16WS_EXACT_N
 
 
 def splitk_reduce_extra_forward_decls():
@@ -323,10 +327,7 @@ using {k.name}_Traits = {traits_name}<{k.BLOCK_SIZE},
     if bf16ws:
         fp32ws_name = k.name.replace("_bf16ws", "")
         exact_reduce_shape_conditions = " ||\n        ".join(
-            f"(N == {n_exact})"
-            for n_exact in sorted(
-                {vec * nvec for vec, nvec, _ in EXACT_N_ROWBLOCK_REDUCE_CONFIGS}
-            )
+            f"(N == {n_exact})" for n_exact in sorted(GFX942_BF16WS_EXACT_N)
         )
         if is_quad_mfma32_splitk:
             bf16ws_host_redirect = f"""

@@ -49,6 +49,7 @@ from opus_gemm_common import (
     BIAS_AWARE_KIDS,
     GFX1250_CLUSTERLAUNCH_KID_OF,
     GFX1250_PLAIN_KID_OF,
+    GFX942_BF16WS_EXACT_N,
     HEURISTIC_DEFAULT_KIDS,
     NON_SPLITK_KIDS,
     SPLITK_KIDS,
@@ -94,17 +95,6 @@ GFX1250_SPLITK_WINDOW_HI_MULT = 4
 # Occupancy threshold tile (used by candidate_kids_for_shape).
 OCCUPANCY_TILE_BM = 128
 OCCUPANCY_TILE_BN = 128
-
-BF16WS_EXACT_REDUCE_SHAPES = (
-    (64, 8),
-    (128, 4),
-    (256, 2),
-    (512, 1),
-    (1024, 4),
-    (1024, 2),
-    (1024, 1),
-    (2048, 1),
-)
 
 EVEN_LOOP_SPLITK_TAGS = frozenset(
     (
@@ -416,7 +406,7 @@ def kid_rejects_shape(k_inst, M, N, K):
         padded_N = _ceil_div(N, k_inst.B_N) * k_inst.B_N
         if loops < 2 or K % B_K != 0 or padded_N != N:
             return True
-        return not any(N == n_exact for n_exact, _ in BF16WS_EXACT_REDUCE_SHAPES)
+        return N not in GFX942_BF16WS_EXACT_N
 
     if k_inst.kernel_tag in (
         "a16w16",

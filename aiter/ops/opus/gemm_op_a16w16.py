@@ -1,53 +1,43 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
+"""OPUS a16w16 Python API and id-based launch wrapper.
+
+The shape-driven entry resolves policy in Python, in the fixed order
+``explicit -> tuned CSV -> per-arch heuristic -> framework fallback``.  Every
+OPUS result is represented by a resolved ``LaunchConfig`` and launched through
+``opus_gemm_a16w16_tune``; the generic C++ bf16 shape selector remains bound
+only as a Step-1 parity probe.
 """
-Opus a16w16 Python user-facing API.
-
-Public entry points:
-
-* `gemm_a16w16_opus(A, B, bias=None, dtype=bf16, *, kernelId=None, splitK=None, out=None)`
-  Shape-driven wrapper. The typical user writes `gemm_a16w16_opus(A, B)`
-  and never sees a kid number. Internal path:
-
-    1. Reshape A/B to 3D, allocate Y, validate (bias allowed across the
-       split-barrier / splitk kid families; bpreshuffle and non-bf16 A/B
-       unsupported).
-    2. If `kernelId` is given explicitly -> opus_gemm_a16w16_tune (bias
-       is forwarded; the C++ dispatcher rejects non-bias-aware kids).
-    3. Otherwise query the global aiter BF16 tuned CSVs via
-       aiter.ops.opus.common (filtered by `libtype == 'opus'`, key
-       includes bias=True/False); on hit -> opus_gemm_a16w16_tune
-       with the tuned (solidx, splitK).
-    4. On miss -> fall through to the private bf16 no-scale binding
-       `_opus_gemm_bf16_dispatch`, which forwards to the C++ entry
-       `opus_gemm` whose bf16 branch does its own lookup + heuristic
-       dispatch (see csrc/opus_gemm/opus_gemm.cu). bias is forwarded
-       through this path: the C++ entry skips its bias-agnostic lookup
-       map when bias is present and goes straight to the heuristic
-       dispatcher (which always returns a bias-aware kid).
-
-* `opus_gemm_a16w16_tune(XQ, WQ, Y, bias, kernelId, splitK)`
-  Low-level pybind binding to the id-based tune dispatcher. Exposes a
-  specific kernel instance by `kernelId` plus optional literal KBatch
-  via `splitK` and an optional bias tensor (D_OUT-typed, [N] or
-  [batch, N]; F.linear convention). Intended for the tuner, for debugging a specific kid,
-  and for aiter-global integrations (e.g. future tuned_gemm.solMap).
-
-All entry points share the JIT module `module_deepgemm_opus`, which
-still hosts bindings for other opus kernel families (a8w8 etc.). The
-Python surface is deliberately per-dtype: a16w16 here, a8w8 in its own
-module when that lands.
-"""
-
-import logging
 
 import torch
 from torch import Tensor
 
 from ...jit.core import compile_ops
-from . import common as _opus_common
+from csrc.opus_gemm.opus_gemm_common import (
+    get_kernel_instance,
+    kernel_needs_external_workspace,
+)
 
-logger = logging.getLogger("aiter")
+from ._selector_a16w16 import select_launch_config
+
+_SUPPORTED_OPUS_ARCHES = ("gfx942", "gfx950", "gfx1250")
+
+
+def _device_arch_and_cu(device: torch.device) -> tuple[str, int]:
+    """Return the live tensor device's gfx name and CU count without caching."""
+    props = torch.cuda.get_device_properties(device)
+    raw_arch = str(getattr(props, "gcnArchName", "")).strip()
+    arch = raw_arch.split(":", 1)[0].lower()
+    if not arch.startswith("gfx"):
+        try:
+            from ...jit.utils.chip_info import get_gfx_runtime
+
+            arch = get_gfx_runtime().lower()
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"cannot determine the AMD gfx architecture for device {device}"
+            ) from exc
+    return arch, int(props.multi_processor_count)
 
 # ---- Low-level pybind bindings --------------------------------------------
 
@@ -172,10 +162,9 @@ def opus_gemm_a16w16_tune(
 ) -> torch.Tensor:
     """Low-level id-based dispatcher (Python guard + C++ launch).
 
-    See module docstring. This Python wrapper checks XQ/WQ/Y layout up
-    front (rejecting broadcast / transpose / slice views that the C++
-    kernel would happily run with garbage data); on success it forwards
-    to the underlying pybind binding.
+    See module docstring. This Python wrapper checks XQ/WQ/Y layout, resolves
+    gfx942 requested/actual kid and split-K semantics, and then forwards the
+    concrete id to the underlying pybind binding.
 
     Parameters
     ----------
@@ -210,40 +199,44 @@ def opus_gemm_a16w16_tune(
         splitK = new_splitK
         bias = None
     _check_a16w16_tune_layout(XQ, WQ, Y)
-    # Mono-tile kid guard: the launcher requires N / K to be tile-aligned
-    # (the kernel has no N-tail mask and no K-tail mask; M-tail IS handled
-    # via the bounded gmem desc). A CSV winner picked through
-    # tuned_gemm.get_padded_m can surface a mono kid whose B_N / B_K does
-    # not divide the actual N / K -- the launcher would AITER_CHECK abort
-    # the process. Reroute to opus's own bf16 heuristic dispatch instead;
-    # it never returns a mono kid, so it always picks something that can
-    # run the shape.
-    _, _, N = Y.shape
-    _, _, K = XQ.shape
-    if not _opus_common.mono_kid_shape_ok(kernelId, N, K):
-        logger.warning(
-            "opus_gemm_a16w16_tune: mono-tile kid %d requires N/K aligned "
-            "to its tile; got N=%d K=%d -- rerouting to opus bf16 heuristic.",
-            kernelId,
-            N,
-            K,
-        )
-        _opus_gemm_bf16_dispatch(XQ, WQ, Y, None, None, None, bias)
-        return Y
+    batch, M, K = XQ.shape
+    N = Y.shape[2]
+    arch, cu_num = _device_arch_and_cu(XQ.device)
+    config = select_launch_config(
+        arch=arch,
+        M=M,
+        N=N,
+        K=K,
+        batch=batch,
+        cu_num=cu_num,
+        has_bias=bias is not None,
+        input_dtype=XQ.dtype,
+        output_dtype=Y.dtype,
+        explicit_kid=int(kernelId),
+        explicit_split_k=int(splitK),
+    )
+    if config.actual_kid is None:
+        raise RuntimeError("an explicit OPUS kid cannot resolve to framework fallback")
+
     # C++ launcher is in-place on Y (returns void after PR #2932-style
     # refactor to aiter_tensor_t). Keep the wrapper's `return Y`
     # contract so callers that did `Y = opus_gemm_a16w16_tune(...)`
     # still see the populated Y.
-    _opus_gemm_a16w16_tune_raw(XQ, WQ, Y, bias, kernelId, splitK)
+    _opus_gemm_a16w16_tune_raw(
+        XQ,
+        WQ,
+        Y,
+        bias,
+        config.actual_kid,
+        config.launch_split_k,
+    )
     return Y
 
 
-# Private bf16 no-scale dispatch binding, used only by gemm_a16w16_opus
-# as the CSV-miss fallback path. Wraps the same C++ function (opus_gemm)
-# that used to be exposed via the legacy aiter.ops.deepgemm.deepgemm_opus
-# entry, but deliberately hides its scale / group_layout arguments so
-# callers of the a16w16 module do not see FP8-grouped concepts. The C++
-# side's bf16 branch handles lookup + heuristic dispatch internally.
+# Private legacy bf16 no-scale binding retained only as a parity-golden probe
+# during Step 1. Production a16w16 calls do not use it: Python resolves the kid
+# first and enters the id-based tune wrapper above. It still wraps the generic
+# C++ ``opus_gemm`` symbol so parity tests can compare against the old policy.
 #
 # Parameter annotations match the C++ signature exactly; torch_library's
 # infer_schema requires every parameter be typed even though we always
@@ -279,32 +272,17 @@ def _opus_gemm_bf16_dispatch(
 
 # ---- High-level shape-driven API -----------------------------------------
 
-# splitk kids main kernel only has the <fp32_t> instantiation (traits
-# static_assert D_C==float, fp32 workspace). The reduce kernel
-# (splitk_reduce_kernel) is templated on D_OUT and dispatches to either
-# __bf16 or float at launch time based on Y.dtype(), so both bf16 and fp32
-# outputs are valid. The dispatch code below no longer needs to special-case
-# Y.dtype against splitk kids.
-#
-# splitk kid ranges, one half-open [lo, hi) interval per device family. Kept
-# in exact lockstep with the C++ authority `opus_kid_is_splitk` in
-# csrc/opus_gemm/opus_gemm.cu -- adding a new device's splitk band means
-# appending one row HERE and there. Consumed by is_splitk_kid() below, which
-# gates the split-K workspace prewarm in aiter/tuned_gemm.py (non-splitk kids
-# never touch the workspace, so warming it for them is pure waste).
-_SPLITK_KID_RANGES = (
-    (200, 300),  # gfx950 base
-    (1200, 1300),  # gfx950 non-OOB mirror (+1000)
-    (10200, 10300),  # gfx942 (+10000)
-    (20000, 21000),  # gfx1250 cluster/TDM split-K
-)
-
-
 def is_splitk_kid(kid: int) -> bool:
-    """True iff `kid` selects a split-K opus a16w16 kernel (fp32 workspace +
-    reduce). Mirrors C++ `opus_kid_is_splitk`; keep the two in sync."""
-    kid = int(kid)
-    return any(lo <= kid < hi for lo, hi in _SPLITK_KID_RANGES)
+    """Return whether ``kid`` is a registered a16w16 workspace kernel.
+
+    This compatibility helper has no arch argument, so it searches the three
+    disjoint a16w16 registries. Capability still comes from the canonical
+    instance registry rather than a copied integer band.
+    """
+    for arch in _SUPPORTED_OPUS_ARCHES:
+        if get_kernel_instance(arch, "a16w16", kid) is not None:
+            return kernel_needs_external_workspace(arch, "a16w16", kid)
+    return False
 
 
 # Back-compat: the old gfx950-only single-band constants some callers imported.
@@ -445,6 +423,25 @@ def _finalize_output(Y: Tensor, reshape_out_to_2d: bool) -> Tensor:
     return Y.squeeze(0) if reshape_out_to_2d else Y
 
 
+def _framework_a16w16(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    bias: Tensor | None,
+) -> None:
+    """Execute the selector's terminal framework fallback into ``Y``."""
+    if Y.dtype == torch.float32:
+        result = torch.bmm(XQ.float(), WQ.float().transpose(1, 2))
+    else:
+        result = torch.bmm(XQ, WQ.transpose(1, 2))
+    if bias is not None:
+        if bias.dim() == 1:
+            result = result + bias.view(1, 1, -1)
+        else:
+            result = result + bias.unsqueeze(1)
+    Y.copy_(result.to(Y.dtype))
+
+
 def gemm_a16w16_opus(
     A: Tensor,
     B: Tensor,
@@ -474,17 +471,12 @@ def gemm_a16w16_opus(
         must equal `dtype` (match_d_out). Accepted shapes:
         * [N]                  -- broadcast across batch.
         * [batch, N]           -- per-batch bias vector.
-        bias is consumed by the a16w16 split-barrier (kid 4..9) and the
-        a16w16_flatmm_splitk (kid 200..299) families. CSV-miss requests
-        with bias fall back to the C++ heuristic dispatcher (which only
-        returns bias-aware kids), so any (M, N, K) is supported even
-        without a tuned bias-aware winner -- accuracy is preserved at
-        whatever the heuristic kid achieves; performance may not be
-        optimal until the shape is re-tuned with `--bias`.
+        bias is fused when the resolved OPUS kid supports it. Requests that
+        the current raw tune ABI cannot serve use the terminal framework
+        fallback.
     dtype : output dtype, bf16 or fp32 (any kernel family supports either)
-    kernelId : optional explicit override. When given, bypass CSV / C++
-        dispatch and launch this specific tuned instance via
-        opus_gemm_a16w16_tune.
+    kernelId : optional explicit override. When given, bypass CSV/heuristic
+        selection and strictly validate this instance before launch.
     splitK : optional literal KBatch; only honored when kernelId is set.
     out : optional preallocated [batch, M, N] output; reused instead of
         allocating a fresh tensor.
@@ -493,50 +485,37 @@ def gemm_a16w16_opus(
     -------
     Tensor with shape [M, N] when A was 2D, [batch, M, N] when A was 3D.
     """
-    XQ, WQ, Y, M, N, K, _batch, reshape_out_to_2d = _validate_and_reshape(
+    XQ, WQ, Y, M, N, K, batch, reshape_out_to_2d = _validate_and_reshape(
         A, B, bias, dtype, out
     )
-
-    # 1) Explicit-kid override path. The C++ dispatcher gates non-bias-aware
-    #    kids when bias is present, so we just forward.
-    if kernelId is not None:
-        opus_gemm_a16w16_tune(XQ, WQ, Y, bias, int(kernelId), int(splitK or 0))
-        return _finalize_output(Y, reshape_out_to_2d)
-
-    # 2) Default path: opus-private tuned CSV lookup. lookup_tuned() keys
-    #    on bias=True/False as part of its 9-column tuple, so bias=True
-    #    only matches rows that were tuned with the bias path. CSV miss on
-    #    bias=True falls through to the explicit error below; we never
-    #    silently route bias to the no-bias fallback.
-    cfg = _opus_common.lookup_tuned(
+    arch, cu_num = _device_arch_and_cu(XQ.device)
+    config = select_launch_config(
+        arch=arch,
         M=M,
         N=N,
         K=K,
-        bias=(bias is not None),
-        dtype=A.dtype,
-        outdtype=dtype,
-        scaleAB=False,
-        bpreshuffle=False,
+        batch=batch,
+        cu_num=cu_num,
+        has_bias=bias is not None,
+        input_dtype=A.dtype,
+        output_dtype=dtype,
+        explicit_kid=kernelId,
+        explicit_split_k=splitK,
     )
-    if cfg is not None:
-        kid = cfg["solidx"]
-        # Both bf16 and fp32 Y are now valid for splitk kids (the reduce
-        # kernel handles the cast / passthrough), so no Y.dtype gating is
-        # needed here -- always honor the tuned winner.
-        opus_gemm_a16w16_tune(XQ, WQ, Y, bias, kid, int(cfg["splitK"]))
+    if config.is_framework_fallback:
+        _framework_a16w16(XQ, WQ, Y, bias)
         return _finalize_output(Y, reshape_out_to_2d)
 
-    # 3) CSV miss: fall through to the C++ heuristic dispatcher via
-    #    opus_gemm. Bias is forwarded through; the C++ entry skips its
-    #    bias-agnostic lookup map when bias is present and routes
-    #    directly to the heuristic (which only ever returns bias-aware
-    #    split-barrier / splitk kids).
-    #
-    #    (Note: this used to call `_opus_common.maybe_log_untuned_shape`
-    #    to autolog the missed shape to a private CSV for offline tuning.
-    #    The autolog feature has been removed -- collect untuned shapes
-    #    via gradlib's standard --input_file flow instead.)
-    _opus_gemm_bf16_dispatch(XQ, WQ, Y, None, None, None, bias)
+    # Explicit, tuned, and CSV-miss heuristic choices all converge here. The
+    # generic C++ shape selector is intentionally not part of production flow.
+    opus_gemm_a16w16_tune(
+        XQ,
+        WQ,
+        Y,
+        bias,
+        config.actual_kid,
+        config.launch_split_k,
+    )
     return _finalize_output(Y, reshape_out_to_2d)
 
 
