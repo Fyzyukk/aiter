@@ -1,320 +1,202 @@
-# Opus GEMM (C++ side)
+# OPUS GEMM C++ and code generation
 
-The user-facing documentation for the opus a16w16 GEMM lives at
-[**aiter/ops/opus/README.md**](../../aiter/ops/opus/README.md). It
-covers Quick Start, dispatch architecture, tuning workflow, env vars,
-testing, internals, and troubleshooting.
+The user-facing API guide lives in
+[`aiter/ops/opus/README.md`](../../aiter/ops/opus/README.md). This document
+describes the generated launch ABI and the C++ side of a16w16 dispatch.
 
-This directory holds the C++ / JIT build inputs only.
+## Supported architecture families
 
-## Layout
+The a16w16 path is implemented for gfx950, gfx942, and gfx1250. Kernel ids are
+architecture-scoped; an integer id is never sufficient without
+`(arch, family)`.
 
-| File | Role |
-|---|---|
-| `opus_gemm.cu` | Top-level entry points (`opus_gemm()` / `opus_gemm_a16w16_tune()`) and arch routers that switch on `opus_get_gfx_arch()` |
-| `opus_gemm_common.py` | Kernel instance metadata — all kids (a16w16 split-barrier, flatmm, flatmm_splitk) live here |
-| `gen_instances.py` | JIT codegen driver; `--tune_file` bakes the tuned CSV into `opus_gemm_lookup.h` |
-| `opus_gemm_tune.py` | Offline tuner CLI (see `aiter/ops/opus/README.md` §3 for usage) |
-| `include/opus_gemm.h`, `include/opus_gemm_arch.cuh` | Cross-arch declarations + `OpusGfxArch` enum + `opus_get_arch_info()` probe |
-| `include/opus_gemm_common.cuh`, `include/opus_gemm_utils.cuh` | Cross-arch traits umbrella + opus.hpp shim |
-| `include/gfx950/*.cuh` | gfx950-specific pipelines (a16w16 split-barrier / flatmm / flatmm_splitk, a8w8 noscale / scale), traits, splitk reduce, heuristic dispatch (`opus_a16w16_heuristic_dispatch_gfx950`), and the dispatch glue (`opus_gemm_arch_gfx950.cuh`). |
-
-The dispatch flow (gfx950 today):
-
-```
-opus_gemm() / opus_gemm_a16w16_tune()      [opus_gemm.cu]
-        │
-        ├─ opus_get_gfx_arch()  ──────────► OpusGfxArch::{Gfx950, ...}   [opus_gemm_arch.cuh]
-        │
-        └─ switch (arch) {
-             case Gfx950: opus_dispatch_a16w16_gfx950<T>(...)            [gfx950/opus_gemm_arch_gfx950.cuh]
-                 │
-                 ├─ tuned (M,N,K) lookup map  (baked from CSV)
-                 └─ opus_a16w16_heuristic_dispatch_gfx950<T>(...)        [gfx950/opus_gemm_heuristic_dispatch_gfx950.cuh]
-           }
-```
-
-Per-arch headers carry an `_<arch>` suffix on every file, every kargs
-struct, every traits class, and the heuristic dispatch function so two
-arches' headers can be visible in the same TU without ODR collisions.
-The launcher symbol names (e.g. `opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0`)
-are not suffixed because each arch picks a different valid tile set, so
-collisions cannot happen unless a future arch picks an identical tile;
-if that happens, prefix `gen_instances.py`'s emitted launcher names with
-the arch tag at that point.
-
-## Adding a new arch
-
-The codebase is staged so a new arch (e.g. `gfx942`) can be brought up
-without touching gfx950 code. The Python and JIT layers are
-arch-aware; only the kernel pipelines / traits are gfx950-specific
-today.
-
-### 1. Arch enum and runtime probe
-
-Edit [`include/opus_gemm_arch.cuh`](include/opus_gemm_arch.cuh):
-
-```cpp
-enum class OpusGfxArch
-{
-    Unknown = 0,
-    Gfx950,
-    Gfx942,           // (1) add the enum value
-};
-
-// inside opus_get_arch_info():
-if (name.rfind("gfx950", 0) == 0)  a = OpusGfxArch::Gfx950;
-else if (name.rfind("gfx942", 0) == 0)  a = OpusGfxArch::Gfx942;   // (2) prefix-match
-```
-
-### 2. Per-arch headers
-
-Create `include/gfx942/` and mirror the gfx950 layout:
-
-```
-include/gfx942/
-├── opus_gemm_arch_gfx942.cuh                        # dispatch glue (lookup + heuristic wrapper)
-├── opus_gemm_heuristic_dispatch_gfx942.cuh          # M-bucket → launcher symbol heuristic
-├── opus_gemm_traits_a16w16_gfx942.cuh               # traits + 5 kargs structs
-├── opus_gemm_traits_a8w8_noscale_gfx942.cuh
-├── opus_gemm_traits_a8w8_scale_gfx942.cuh
-├── opus_gemm_pipeline_a16w16_gfx942.cuh             # __global__ kernel bodies
-├── opus_gemm_pipeline_a16w16_flatmm_gfx942.cuh
-├── opus_gemm_pipeline_a16w16_flatmm_splitk_gfx942.cuh
-├── opus_gemm_pipeline_a8w8_noscale_gfx942.cuh
-├── opus_gemm_pipeline_a8w8_scale_gfx942.cuh
-└── splitk_reduce_gfx942.cuh
-```
-
-Naming rules (mirror gfx950, replace the suffix):
-
-- File names: `opus_gemm_*_gfx942.cuh` (one suffix per file).
-- Traits / kargs structs: `opus_gemm_a16w16_traits_gfx942`,
-  `opus_gemm_noscale_kargs_gfx942`, `opus_gemm_flatmm_kargs_gfx942`,
-  `opus_gemm_flatmm_splitk_kargs_gfx942`,
-  `opus_gemm_a16w16_flatmm_traits_gfx942`,
-  `opus_flatmm_splitk_traits_gfx942`,
-  `opus_gemm_a8w8_noscale_traits_gfx942`,
-  `opus_gemm_a8w8_scale_traits_gfx942`,
-  `opus_gemm_scale_kargs_gfx942`.
-- Shared-ABI kargs guard macro: `OPUS_GEMM_NOSCALE_KARGS_GFX942_DEFINED`.
-- Heuristic dispatch function: `opus_a16w16_heuristic_dispatch_gfx942<T>`.
-- Per-arch dispatch glue:
-  - `opus_dispatch_a16w16_gfx942<T>(int M, int N, int K, int batch)`
-  - `opus_a16w16_tune_dispatch_gfx942<T>(int id)`
-
-If gfx942 reuses the same launcher tile sizes, also rename the emitted
-launcher symbols (see step 5) to avoid ODR collisions in the manifest.
-
-### 3. Cross-arch umbrella
-
-Edit [`include/opus_gemm_common.cuh`](include/opus_gemm_common.cuh) to
-include the new arch's traits headers alongside gfx950's:
-
-```cpp
-#include "gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh"
-#include "gfx950/opus_gemm_traits_a8w8_noscale_gfx950.cuh"
-#include "gfx950/opus_gemm_traits_a16w16_gfx950.cuh"
-#include "gfx942/opus_gemm_traits_a8w8_scale_gfx942.cuh"     // new
-#include "gfx942/opus_gemm_traits_a8w8_noscale_gfx942.cuh"   // new
-#include "gfx942/opus_gemm_traits_a16w16_gfx942.cuh"         // new
-```
-
-The `_gfx942` suffix on every struct keeps the two arches' definitions
-from clashing in the same TU.
-
-### 4. Arch routers in `opus_gemm.cu`
-
-Edit [`opus_gemm.cu`](opus_gemm.cu) — add the include and one `case`
-per router:
-
-```cpp
-#include "gfx950/opus_gemm_arch_gfx950.cuh"
-#include "gfx942/opus_gemm_arch_gfx942.cuh"   // new
-
-template <typename CDataType>
-OpusA16W16NoscaleKernel opus_dispatch_a16w16(int M, int N, int K, int batch)
-{
-  switch (opus_get_gfx_arch()) {
-    case OpusGfxArch::Gfx950:
-      return opus_dispatch_a16w16_gfx950<CDataType>(M, N, K, batch);
-    case OpusGfxArch::Gfx942:                                          // new
-      return opus_dispatch_a16w16_gfx942<CDataType>(M, N, K, batch);   // new
-    default: { /* TORCH_CHECK with arch_info */ }
-  }
-}
-```
-
-Same edit for `opus_a16w16_tune_dispatch<T>` (id-based router) and the
-`a8w8` block (it currently `TORCH_CHECK`s on `arch == Gfx950`; widen
-the check or move a8w8 to its own arch router).
-
-### 5. Codegen tables
-
-`gen_instances.py` keeps four arch-tagged tables that drive launcher
-emission. Today they hard-code gfx950; the cleanest extension is to
-make them dispatch on a per-`OpusGemmInstance` `arch` field:
-
-| Table | What it controls | gfx950 entry today |
+| Architecture | a16w16 implementation | External workspace |
 |---|---|---|
-| `PIPELINE_HEADER_MAP` | `#include "{pipeline_header}"` in each launcher TU | `gfx950/opus_gemm_pipeline_*_gfx950.cuh` |
-| `TRAITS_NAME_MAP` | `using Traits = {traits_name}<...>` | `opus_gemm_*_traits_gfx950` |
-| `KARGS_NAME_MAP` | `{kargs_name} kargs{};` | `opus_gemm_*_kargs_gfx950` |
-| `KERNEL_FUNC_MAP` | `__global__` template name (unchanged across archs) | `gemm_*_kernel` |
+| gfx950 | split-barrier, flatmm, persistent, two-stage flatmm split-K | fp32 for two-stage kids |
+| gfx942 | WKC/direct and several two-stage split-K pipelines | fp32 or bf16, declared by the actual instance |
+| gfx1250 | cluster/TDM two-stage split-K | fp32; batch must be 1 |
 
-Two implementation options:
+The generic `opus_gemm()` entry still owns the existing gfx950 a8w8 paths.
+Its bf16 a16w16 branch is intentionally disabled: a16w16 must first resolve an
+actual kid in Python so a correctly typed Torch workspace can be supplied.
+The gfx942 a8w8 tune entry and the separately built a8w4 MoE modules are not
+part of the a16w16 workspace ABI.
 
-- **Per-arch dicts** (smallest surface change): add
-  `PIPELINE_HEADER_MAP_GFX942`, etc., and pick the right one inside the
-  `opus_gemm_codegen` methods based on the instance's arch.
-- **Tagged keys**: keep one dict but key by `(arch, kid_tag)`. Cleaner
-  long-term; needs more adapter code.
+## Source layout
 
-Also extend `OpusGemmInstance` (in `opus_gemm_common.py`) with an
-`arch: str` field, and make the launcher symbol name include the arch
-suffix when a launcher with the same tile already exists for another
-arch — otherwise the manifest will see two prototypes with the same
-function name.
+| Path | Role |
+|---|---|
+| `opus_gemm.cu` | Raw entries and strict architecture routers |
+| `opus_gemm_common.py` | Canonical per-architecture instance registry and subset-compile kid sets |
+| `gen_instances.py` | Cross-architecture codegen driver, manifests, and dispatch-table emission |
+| `codegen/gen_instances_gfx*.py` | Architecture-specific host launcher emission |
+| `include/opus_gemm_common.cuh` | Family-neutral checked extent and physical workspace validation helpers |
+| `include/gfx*/opus_gemm_arch_*.cuh` | Per-architecture non-workspace/workspace id tables |
+| `include/gfx*/**/opus_gemm_traits*.cuh` | Direct-pointer kernel argument types |
+| `include/gfx*/**/splitk_reduce*.cuh` | Architecture-specific reduce kernels |
 
-### 6. Python import-time guard
+Generated output contains one fused host TU per selected architecture, one
+device TU per `(kid, output specialization)`, and one reduce TU per
+architecture that has two-stage kernels.
 
-Edit [`aiter/ops/opus/__init__.py`](../../aiter/ops/opus/__init__.py)
-to widen the supported arch set:
+## a16w16 dispatch contract
 
-```python
-_SUPPORTED = {"gfx950", "gfx942"}   # new
+Selection policy is Python-owned and runs in this order:
+
+```text
+explicit kid
+  -> tuned CSV row
+  -> per-architecture Python heuristic
+  -> framework fallback
 ```
 
-The probe helper at
-[`aiter/ops/opus/_arch.py`](../../aiter/ops/opus/_arch.py) is
-non-raising: ``_detect_arch(supported)`` returns ``(ok, detected)`` so
-the package can install stubs and emit a ``RuntimeWarning`` instead of
-breaking ``from aiter.ops.opus import *`` (which sits inside the
-swallow-ImportError ``try`` block in ``aiter/__init__.py``). Calling a
-stub raises ``RuntimeError`` with the detected arch and the supported
-set. ``_check_arch`` (raising variant) is still available for callers
-that prefer hard failure.
+The selected object records requested kid, actual kid, allocation split-K,
+and launch split-K. In particular, gfx942 resolves legacy bf16-workspace
+redirects before allocation:
 
-### 7. Tuning data
+```text
+non-exact N: 10210 -> 10200, 10213 -> 10203, 10216 -> error
+exact N:     10210 / 10213 / 10216 remain unchanged
+```
 
-If gfx942 needs its own tuned CSV (different tile choices), either:
-
-- Co-locate per-arch CSV files (e.g.
-  `aiter/ops/opus/configs/opus_gemm_a16w16_tuned_gfx942.csv`) and have
-  `gen_instances.py --tune_file` consume the right one for the active
-  arch (or both, baked into separate macros consumed by the per-arch
-  glue header).
-- Keep one CSV with an `arch` column and filter at codegen time.
-
-### 8. Multi-arch wheel build
-
-The Layer-3 device-pass guard
-(`#if defined(__gfx950__)` wrapping the kernel body) is per-arch and
-already in place for gfx950. Add the matching guard at the top of each
-new gfx942 kernel body so multi-arch wheels (e.g.
-`GPU_ARCHS=gfx950;gfx942`) compile cleanly:
+The C++ raw tune entry is:
 
 ```cpp
-__global__ void gemm_a16w16_kernel_gfx942(...) {
-#ifdef __HIP_DEVICE_COMPILE__
-#if defined(__gfx942__)
-    /* real body */
-#else
-    /* empty stub: unreachable at runtime; here so other arches' device pass
-       does not try to instantiate gfx942-only intrinsics */
-#endif
-#endif
-}
+void opus_gemm_a16w16_tune(
+    aiter_tensor_t& XQ,
+    aiter_tensor_t& WQ,
+    aiter_tensor_t& Y,
+    std::optional<aiter_tensor_t> bias,
+    std::optional<aiter_tensor_t> workspace,
+    int kernelId,
+    int splitK);
 ```
 
-### 9. Validation
+Codegen emits two distinct function-pointer tables:
 
-Run the standard regression on a gfx950 box:
+- non-workspace launchers retain the five-argument launcher ABI
+  `(XQ, WQ, Y, bias, splitK)`;
+- workspace launchers use the six-argument launcher ABI
+  `(XQ, WQ, Y, workspace, bias, splitK)`.
+
+The tables are never type-punned or merged. The architecture router asks the
+generated workspace table whether a kid is a workspace kid. A workspace-table
+hit requires `workspace`; a non-workspace-table hit requires
+`workspace=None`. Shape lookup tables are policy probes that return a kid,
+not launch-ready five-argument pointers for split-K kernels.
+
+Subset compilation always unions CSV ids with
+`HEURISTIC_DEFAULT_KIDS_BY_ARCH`; therefore Python cannot select a heuristic
+kid omitted from the shared object.
+
+## Caller-owned Torch workspace
+
+Workspace ownership is entirely outside C++:
+
+```text
+Python actual-kid resolution
+  -> family planner computes typed extents
+  -> torch.empty for this call, or validate explicit Tensor
+  -> raw C++ entry
+  -> main kernel receives ptr_ws directly
+  -> reduce kernel receives the same direct pointer
+```
+
+There is no registry, handle mirror, stream-keyed scratch map, raw HIP
+allocation, capture query, or device synchronization in this path. C++ never
+retains the Tensor or pointer after the call. PyTorch's allocator owns stream
+safety and graph-private memory.
+
+Each generated workspace launcher independently enforces the final physical
+contract after its local split-K clamp:
+
+- workspace is present;
+- workspace device id equals `XQ.device_id`;
+- dtype equals the instance's `D_WS` (`bf16` or `fp32`);
+- storage is contiguous;
+- `data_ptr()` satisfies the instance alignment;
+- checked `size_t` extent products fit, and `required_numel <= numel`.
+
+Element count is not used as a substitute for dtype validation. Every extent
+product and required byte-span product is overflow-checked before launch.
+gfx1250 also rejects `batch != 1` in the generated launcher as a final C++
+defense.
+
+## gfx942 uniform direct pointer
+
+gfx942 retains a device helper that splits the 64-bit direct pointer and uses
+`__builtin_amdgcn_readfirstlane` for both halves. Main and reduce kernels call
+this helper; it no longer reads a handle or device mirror. Do not remove the
+uniformization merely because the kernel argument itself is direct. Any such
+optimization requires a separate ISA, register, and performance study.
+
+The Step 6 cross-compile comparison against the pre-direct-pointer source
+confirmed:
+
+- the representative main kernel keeps five `v_readfirstlane_b32`
+  instructions, identical before and after;
+- all 134 generated reduce kernels keep 276 total `v_readfirstlane_b32`
+  instructions;
+- main VGPR/SGPR use remains 169/96, while the obsolete handle dereference
+  load disappears;
+- no reduce kernel consumes a larger hardware VGPR allocation block (124 are
+  unchanged and 10 improve by one four-VGPR block).
+
+Performance still must be measured on gfx942 hardware; a gfx950 system cannot
+produce a meaningful gfx942 split-K timing.
+
+## Graph capture and concurrent streams
+
+No OPUS-specific prewarm is required. A fresh `torch.empty` executed during
+`torch.cuda.graph` capture belongs to the graph pool and is reused by replay.
+Two concurrent streams receive separate call-scoped Tensor objects; OPUS has
+no process-global scratch pointer to share between them.
+
+`opus_gemm_workspace_init()` remains only as a deprecated Python no-op so old
+callers do not fail during migration. It has no C++ implementation or pybind
+entry.
+
+## Code generation and validation
+
+Generate a default multi-architecture subset:
 
 ```bash
-GPU_ARCHS=gfx950 python op_tests/test_opus_a16w16_gemm.py -m 128 -n 256 -k 1024 -b 1
-# CSV sweep (optional, if you have a shapes file):
-GPU_ARCHS=gfx950 python op_tests/test_opus_a16w16_gemm.py --csv /path/to/shapes.csv
+GPU_ARCHS='gfx942;gfx950;gfx1250' \
+python csrc/opus_gemm/gen_instances.py -w /tmp/opus-generated
 ```
 
-Then, on the new arch hardware, repeat with `GPU_ARCHS=gfx942` and
-provide a tuned CSV (if any) to populate the lookup map.
+The generated manifests declare six launcher parameters only for workspace
+kids and five for all other a16w16 kids. Build or syntax-check every emitted
+host/device TU for its target architecture after changing traits, launcher
+signatures, or reduce overloads.
 
-For a multi-arch wheel sanity check, do a full rebuild:
+Run the focused regressions with:
 
 ```bash
-rm -f aiter/jit/module_deepgemm_opus.so
-AITER_REBUILD=1 GPU_ARCHS="gfx942;gfx950" python -c \
-    "from aiter.ops.opus import gemm_a16w16_opus; print('ok')"
+pytest -q \
+  op_tests/test_opus_dispatch.py \
+  op_tests/test_opus_workspace.py \
+  op_tests/test_opus_graph.py \
+  op_tests/test_opus_a16w16_gemm.py
 ```
 
-The build must finish without errors; both `--offload-arch=gfx950` and
-`--offload-arch=gfx942` must appear in the hipcc invocation; and the
-runtime call on whichever device the host machine has must produce
-correct results (no clean way to cross-test on a single-arch host).
+Runtime tests select only cases matching the installed GPU. On a single-arch
+host, skipped gfx942/gfx1250 cases are coverage definitions, not evidence of
+hardware validation.
 
-## Splitk workspace and TBO (two-batch overlap)
+Before landing workspace changes, also verify that no legacy allocator symbols
+have returned:
 
-The splitk kid family (kid 200..299, a16w16_flatmm_splitk) writes per-split
-partials into an fp32 scratch buffer that the reduce kernel folds into the
-final output. That buffer is owned host-side as a stable
-`opus_splitk_ws_handle*` slot: the kernel reads `slot->ptr` at launch, so
-captured HIP graphs bake in the slot address, not the raw buffer. The
-launcher grows `slot->ptr` lazily (4 MiB-aligned), draining outstanding work
-with `hipDeviceSynchronize` before freeing the old buffer.
+```bash
+rg -n 'SplitkWsRegistry|opus_splitk_ws_|ws_handle' \
+  csrc/opus_gemm aiter/ops/opus aiter/tuned_gemm.py
 
-### Ownership: per-stream, not per-thread
-
-The slot is registered in a **process-global, mutex-protected map keyed by
-`hipStream_t`** (see `opus_splitk_ws_get` in `opus_gemm.cu`). vLLM/sglang-
-style TBO drives two CUDA streams from two CPU threads; each captured graph
-must bake in its own buffer pointer so concurrent replays write disjoint
-scratch. A per-thread cache would either share one buffer between the two
-streams (corrupting concurrent replays) or fail the in-capture grow guard on
-the second thread's first call.
-
-### Framework usage
-
-```python
-import aiter
-
-compute = torch.cuda.Stream()
-comm    = torch.cuda.Stream()
-
-with torch.cuda.stream(compute):
-    aiter.opus_gemm_workspace_init()         # register handle for this stream
-    _ = gemm_a16w16_opus(A_max, B_max)       # warm: grow buffer to max size
-    # ... capture compute graph ...
-
-with torch.cuda.stream(comm):
-    aiter.opus_gemm_workspace_init()
-    _ = gemm_a16w16_opus(A_max, B_max)
-    # ... capture comm graph ...
-
-# Replay both graphs concurrently from two threads -- each sees its own
-# workspace; no aborts, no cross-stream interference.
+rg -n 'hipMalloc|hipFree|hipHostMalloc' \
+  csrc/opus_gemm/opus_gemm.cu \
+  csrc/opus_gemm/codegen/gen_instances_gfx950.py \
+  csrc/opus_gemm/codegen/gen_instances_gfx942.py \
+  csrc/opus_gemm/codegen/gen_instances_gfx1250.py
 ```
 
-Rules:
-
-* Call `opus_gemm_workspace_init()` once per TBO stream, **eagerly** (outside
-  HIP graph capture). Calling it during capture raises; capture cannot run
-  `hipHostMalloc`.
-* Before capture, run the largest expected splitk shape on that stream once,
-  so the buffer grows to its final size. Grow inside capture is illegal
-  (`hipMalloc` / `hipFree` are stream-capture-illegal) and aborts with a
-  message pointing back here.
-* Single-stream, single-thread (non-TBO) callers do **not** need to call
-  `opus_gemm_workspace_init` -- the registry lazy-creates a handle on the
-  first eager call on each new stream. Init only becomes mandatory when the
-  first call on a stream is inside HIP graph capture.
-
-### When the buffer is freed
-
-Never automatically. Each registered stream holds one `opus_splitk_ws_handle`
-plus its current `hipMalloc` buffer for the process lifetime. Streams the
-torch CUDAStream pool reuses are correctly reused via the same map entry;
-streams the pool never reclaims leak one handle + buffer (same shape as the
-prior `thread_local` cache's thread-exit leak). A future
-`opus_gemm_workspace_release` can be added if frameworks need explicit
-teardown.
+README prose may mention removed names when describing migration history; code
+paths must not contain them.

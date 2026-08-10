@@ -10,17 +10,13 @@ Usage:
 import argparse
 import sys
 
+import pytest
 import torch
 
 # Skip on unsupported arch via the same probe opus uses at import time.
 from aiter.ops.opus._arch import _detect_arch
 
 _arch_ok, _detected_gfx = _detect_arch({"gfx950", "gfx942", "gfx1250"})
-if not _arch_ok:
-    print(
-        f"[skip] test_opus_a16w16_gemm requires gfx950/gfx942/gfx1250 (detected {_detected_gfx!r})"
-    )
-    sys.exit(0)
 
 from aiter.ops.opus import gemm_a16w16_opus
 from aiter.test_common import checkAllclose, run_perftest
@@ -48,7 +44,7 @@ def _make_b(batch: int, N: int, K: int) -> torch.Tensor:
     return B2D.unsqueeze(0).expand(batch, -1, -1).contiguous()
 
 
-def test_a16w16(batch: int, M: int, N: int, K: int, out_dtype=torch.bfloat16):
+def run_a16w16_case(batch: int, M: int, N: int, K: int, out_dtype=torch.bfloat16):
     # gemm_a16w16_opus accepts either 2D or 3D A; test 3D to exercise the
     # batched reshape path. B is 2D when batch==1, 3D contiguous otherwise.
     A = torch.randn(batch, M, K, device="cuda", dtype=torch.bfloat16)
@@ -88,7 +84,7 @@ def load_shapes_from_csv(csv_path):
     return list(dict.fromkeys(shapes))
 
 
-def test_a16w16_csv_sweep(csv_path: str, batch: int = 1):
+def run_a16w16_csv_sweep(csv_path: str, batch: int = 1):
     shapes = load_shapes_from_csv(csv_path)
     print(f"\n{'=' * 80}")
     print(f"a16w16 sweep from {csv_path}: {len(shapes)} unique shapes, batch={batch}")
@@ -118,7 +114,129 @@ def test_a16w16_csv_sweep(csv_path: str, batch: int = 1):
     return failed == 0
 
 
+def _runtime_arch() -> str | None:
+    if not torch.cuda.is_available():
+        return None
+    props = torch.cuda.get_device_properties(torch.cuda.current_device())
+    return str(getattr(props, "gcnArchName", "")).split(":", 1)[0].lower()
+
+
+def _assert_matches_golden(actual, A, B, bias=None):
+    golden = A.float() @ B.float().transpose(-1, -2)
+    if bias is not None:
+        golden = golden + bias.float()
+    # BF16 output has one final rounding; fp32 output is normally much tighter.
+    atol = 0.5 if actual.dtype == torch.bfloat16 else 0.05
+    rtol = 0.03 if actual.dtype == torch.bfloat16 else 1e-3
+    torch.testing.assert_close(actual.float(), golden, rtol=rtol, atol=atol)
+
+
+@pytest.mark.parametrize(
+    ("arch", "kid", "M", "N", "K", "split_k", "out_dtype"),
+    [
+        ("gfx950", 200, 64, 64, 512, 2, torch.bfloat16),
+        ("gfx950", 200, 64, 64, 512, 2, torch.float32),
+        ("gfx942", 10200, 128, 128, 512, 2, torch.float32),
+        ("gfx942", 10210, 128, 128, 512, 2, torch.bfloat16),
+        ("gfx1250", 20000, 16, 32, 512, 2, torch.bfloat16),
+        ("gfx1250", 20000, 16, 32, 512, 2, torch.float32),
+    ],
+)
+def test_split_k_matches_torch_golden(arch, kid, M, N, K, split_k, out_dtype):
+    if _runtime_arch() != arch:
+        pytest.skip(f"requires {arch} hardware")
+    torch.manual_seed(8192 + kid)
+    A = torch.randn((M, K), device="cuda", dtype=torch.bfloat16)
+    B = torch.randn((N, K), device="cuda", dtype=torch.bfloat16)
+    actual = gemm_a16w16_opus(
+        A,
+        B,
+        dtype=out_dtype,
+        kernelId=kid,
+        splitK=split_k,
+    )
+    torch.cuda.synchronize()
+    _assert_matches_golden(actual, A, B)
+
+
+def test_gfx950_bias_dtype_rules_and_numerics():
+    if _runtime_arch() != "gfx950":
+        pytest.skip("requires gfx950 hardware")
+    A = torch.randn((64, 512), device="cuda", dtype=torch.bfloat16)
+    B = torch.randn((64, 512), device="cuda", dtype=torch.bfloat16)
+    bias = torch.randn((64,), device="cuda", dtype=torch.bfloat16)
+    actual = gemm_a16w16_opus(
+        A,
+        B,
+        bias=bias,
+        dtype=torch.bfloat16,
+        kernelId=200,
+        splitK=2,
+    )
+    torch.cuda.synchronize()
+    _assert_matches_golden(actual, A, B, bias)
+
+    with pytest.raises(RuntimeError, match="bias dtype must match Y dtype"):
+        gemm_a16w16_opus(
+            A,
+            B,
+            bias=bias.float(),
+            dtype=torch.bfloat16,
+            kernelId=200,
+            splitK=2,
+        )
+
+
+def test_gfx942_bias_keeps_framework_fallback_and_raw_rejection():
+    if _runtime_arch() != "gfx942":
+        pytest.skip("requires gfx942 hardware")
+    A = torch.randn((128, 4096), device="cuda", dtype=torch.bfloat16)
+    B = torch.randn((256, 4096), device="cuda", dtype=torch.bfloat16)
+    bias = torch.randn((256,), device="cuda", dtype=torch.float32)
+
+    # Automatic selection keeps the established framework fallback semantics.
+    actual = gemm_a16w16_opus(A, B, bias=bias, dtype=torch.bfloat16)
+    torch.cuda.synchronize()
+    _assert_matches_golden(actual, A, B, bias)
+
+    # An explicit workspace kid remains a strict error instead of silently
+    # changing the requested launcher.
+    with pytest.raises(ValueError, match="rejects bias on split-K kernels"):
+        gemm_a16w16_opus(
+            A,
+            B,
+            bias=bias,
+            dtype=torch.bfloat16,
+            kernelId=10201,
+            splitK=2,
+        )
+
+
+def test_gfx1250_bf16_output_accepts_fp32_bias():
+    if _runtime_arch() != "gfx1250":
+        pytest.skip("requires gfx1250 hardware")
+    A = torch.randn((16, 512), device="cuda", dtype=torch.bfloat16)
+    B = torch.randn((32, 512), device="cuda", dtype=torch.bfloat16)
+    bias = torch.randn((32,), device="cuda", dtype=torch.float32)
+    actual = gemm_a16w16_opus(
+        A,
+        B,
+        bias=bias,
+        dtype=torch.bfloat16,
+        kernelId=20000,
+        splitK=2,
+    )
+    torch.cuda.synchronize()
+    _assert_matches_golden(actual, A, B, bias)
+
+
 if __name__ == "__main__":
+    if not _arch_ok:
+        print(
+            "[skip] test_opus_a16w16_gemm requires "
+            f"gfx950/gfx942/gfx1250 (detected {_detected_gfx!r})"
+        )
+        sys.exit(0)
     parser = argparse.ArgumentParser(
         description="End-to-end test for aiter.ops.opus.gemm_a16w16_opus"
     )
@@ -149,8 +267,8 @@ if __name__ == "__main__":
     out_dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float32
 
     if args.csv_file is not None:
-        test_a16w16_csv_sweep(args.csv_file, batch=args.batch)
+        run_a16w16_csv_sweep(args.csv_file, batch=args.batch)
     else:
         # Clamp K>=128 so every kid the heuristic picks has K>=B_K (smallest is 128).
         k_eff = max(args.k, 128)
-        test_a16w16(args.batch, args.m, args.n, k_eff, out_dtype=out_dtype)
+        run_a16w16_case(args.batch, args.m, args.n, k_eff, out_dtype=out_dtype)

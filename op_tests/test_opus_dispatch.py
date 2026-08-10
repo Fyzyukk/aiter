@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import importlib
+import inspect
+from pathlib import Path
 
 import pytest
 import torch
@@ -59,6 +61,76 @@ def _select(
     )
 
 
+def _legacy_cpp_gfx950_kid(M, N, K, has_bias):
+    """Frozen copy of opus_a16w16_heuristic_kid_gfx950 for parity sweeps."""
+    split_barrier_ok = N % 16 == 0 and K % 64 == 0 and (K // 64) % 2 == 0
+    if M <= 4:
+        return 1208 if M % 64 == 0 and N % 64 == 0 and K % 128 == 0 else 208
+    if M <= 64:
+        return 1206 if M % 64 == 0 and N % 32 == 0 and K % 128 == 0 else 206
+    if M <= 128:
+        return 1200 if M % 64 == 0 and N % 64 == 0 and K % 64 == 0 else 200
+    if split_barrier_ok and not has_bias:
+        return 1300 if M % 256 == 0 and N % 256 == 0 else 300
+    return 1200 if M % 64 == 0 and N % 64 == 0 and K % 64 == 0 else 200
+
+
+def _legacy_cpp_gfx1250_kid(M, N):
+    """Frozen copy of opus_a16w16_heuristic_kid_gfx1250."""
+    if M % 32 == 0:
+        if N % 128 == 0:
+            return 20007
+        if N % 64 == 0:
+            return 20006
+        if N % 32 == 0:
+            return 20005
+    if N % 128 == 0:
+        return 20004
+    if N % 64 == 0:
+        return 20003
+    return 20000
+
+
+def _legacy_cpp_gfx942_split(instance, M, N, K, batch, cu_num, requested):
+    """Frozen generated-launcher split resolver, independent of Python port."""
+    if requested > 0:
+        allocation = requested
+    else:
+        tiles_mn = (
+            ((M + instance.B_M - 1) // instance.B_M)
+            * ((N + instance.B_N - 1) // instance.B_N)
+            * batch
+        )
+        target_wg = 2 * cu_num if instance.kernel_tag.endswith("_p1") else cu_num
+        allocation = min(16, max(1, (target_wg + tiles_mn - 1) // tiles_mn))
+
+    total_iters = (K + instance.B_K - 1) // instance.B_K
+    if total_iters < 2:
+        raise ValueError("too small")
+    even_tags = {
+        "a16w16_kbuf2v_sk",
+        "a16w16_kbuf2v_bk128_sk",
+        "a16w16_quad_mfma32_kbuf1_sk",
+    }
+    require_even = instance.kernel_tag in even_tags
+    effective = allocation
+    while effective > 1:
+        iters_full = (total_iters + effective - 1) // effective
+        last_loops = total_iters - (effective - 1) * iters_full
+        parity_ok = not require_even or (
+            iters_full % 2 == 0 and last_loops % 2 == 0
+        )
+        if iters_full >= 2 and last_loops >= 2 and parity_ok:
+            break
+        effective -= 1
+    if require_even:
+        iters_full = (total_iters + effective - 1) // effective
+        last_loops = total_iters - (effective - 1) * iters_full
+        if iters_full % 2 or last_loops % 2:
+            raise ValueError("even loops")
+    return requested, allocation, effective
+
+
 def test_common_queries_are_arch_and_family_scoped():
     instance = get_kernel_instance("gfx942", "a16w16", 10200)
     assert instance is not None
@@ -94,6 +166,13 @@ def test_gfx1250_heuristic_matches_cpp_branches(M, N, K, expected):
     assert select_gfx1250(M, N, K) == expected
 
 
+def test_gfx1250_python_selector_matches_legacy_cpp_boundary_sweep():
+    for M in (1, 15, 16, 17, 31, 32, 33, 63, 64, 65):
+        for N in (31, 32, 33, 63, 64, 65, 127, 128, 129, 256):
+            expected = _legacy_cpp_gfx1250_kid(M, N)
+            assert select_gfx1250(M, N, 4096) == expected
+
+
 @pytest.mark.parametrize(
     ("M", "N", "K", "has_bias", "expected"),
     [
@@ -110,6 +189,15 @@ def test_gfx1250_heuristic_matches_cpp_branches(M, N, K, expected):
 )
 def test_gfx950_heuristic_matches_cpp_branches(M, N, K, has_bias, expected):
     assert select_gfx950(M, N, K, has_bias=has_bias) == expected
+
+
+def test_gfx950_python_selector_matches_legacy_cpp_boundary_sweep():
+    for M in (1, 4, 5, 63, 64, 65, 127, 128, 129, 192, 255, 256, 257):
+        for N in (31, 32, 63, 64, 65, 240, 256, 257):
+            for K in (64, 127, 128, 192, 256):
+                for has_bias in (False, True):
+                    expected = _legacy_cpp_gfx950_kid(M, N, K, has_bias)
+                    assert select_gfx950(M, N, K, has_bias=has_bias) == expected
 
 
 @pytest.mark.parametrize(
@@ -213,6 +301,28 @@ def test_gfx942_split_k_rejects_too_few_k_iterations():
         )
 
 
+@pytest.mark.parametrize(
+    "kid", [10200, 10201, 10203, 10204, 10210, 10213, 10216]
+)
+@pytest.mark.parametrize("requested", [0, 1, 3, 17])
+def test_gfx942_split_resolver_matches_generated_cpp(kid, requested):
+    instance = get_kernel_instance("gfx942", "a16w16", kid)
+    assert instance is not None
+    expected = _legacy_cpp_gfx942_split(
+        instance, 257, 769, 4096, 2, 304, requested
+    )
+    actual = resolve_split_k(
+        instance,
+        M=257,
+        N=769,
+        K=4096,
+        batch=2,
+        cu_num=304,
+        requested=requested,
+    )
+    assert (actual.requested, actual.allocation, actual.effective) == expected
+
+
 def test_explicit_selection_precedes_tuned_lookup():
     def must_not_run(**_kwargs):
         raise AssertionError("tuned lookup ran before explicit selection")
@@ -280,11 +390,14 @@ def test_shape_invalid_tuned_mono_row_falls_back_as_a_pair():
     ("requested", "expected"),
     [(10210, 10200), (10213, 10203)],
 )
-def test_gfx942_non_exact_n_redirects_before_split_resolution(requested, expected):
+@pytest.mark.parametrize("N", [63, 65, 768, 2049])
+def test_gfx942_non_exact_n_redirects_before_split_resolution(
+    requested, expected, N
+):
     config = _select(
         "gfx942",
         128,
-        768,
+        N,
         4096,
         explicit_kid=requested,
         explicit_split_k=0,
@@ -294,15 +407,29 @@ def test_gfx942_non_exact_n_redirects_before_split_resolution(requested, expecte
     assert config.effective_split_k is not None
 
 
-def test_gfx942_10216_rejects_non_exact_n():
+@pytest.mark.parametrize("N", [63, 65, 768, 2049])
+def test_gfx942_10216_rejects_non_exact_n(N):
     with pytest.raises(ValueError, match="kid 10216 requires exact-N"):
         _select(
             "gfx942",
             256,
-            768,
+            N,
             4096,
             explicit_kid=10216,
         )
+
+
+@pytest.mark.parametrize("requested", [10210, 10213, 10216])
+@pytest.mark.parametrize("N", sorted(GFX942_BF16WS_EXACT_N))
+def test_gfx942_all_exact_n_values_keep_bf16_workspace_launcher(requested, N):
+    config = _select(
+        "gfx942",
+        256,
+        N,
+        4096,
+        explicit_kid=requested,
+    )
+    assert config.actual_kid == requested
 
 
 @pytest.mark.parametrize("requested", [10210, 10213, 10216])
@@ -361,7 +488,7 @@ def test_gfx942_bias_respects_current_tune_abi_gate():
     assert "rejects bias" in config.fallback_reason
 
 
-def test_csv_miss_production_path_uses_tune_wrapper_not_generic_cpp(monkeypatch):
+def test_csv_miss_production_path_uses_raw_binding_not_generic_cpp(monkeypatch):
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
     common = importlib.import_module("aiter.ops.opus.common")
     monkeypatch.setattr(gemm, "_device_arch_and_cu", lambda _device: ("gfx950", 256))
@@ -369,20 +496,112 @@ def test_csv_miss_production_path_uses_tune_wrapper_not_generic_cpp(monkeypatch)
 
     calls = []
 
-    def fake_tune(XQ, WQ, Y, bias, kernelId, splitK):
-        calls.append((tuple(XQ.shape), tuple(WQ.shape), kernelId, splitK, bias))
+    def fake_raw(XQ, WQ, Y, bias, workspace, kernelId, splitK):
+        calls.append(
+            (
+                tuple(XQ.shape),
+                tuple(WQ.shape),
+                workspace,
+                kernelId,
+                splitK,
+                bias,
+            )
+        )
         Y.zero_()
         return Y
 
     def generic_cpp_must_not_run(*_args, **_kwargs):
         raise AssertionError("CSV miss called the legacy generic C++ selector")
 
-    monkeypatch.setattr(gemm, "opus_gemm_a16w16_tune", fake_tune)
+    monkeypatch.setattr(gemm, "_opus_gemm_a16w16_tune_raw", fake_raw)
     monkeypatch.setattr(gemm, "_opus_gemm_bf16_dispatch", generic_cpp_must_not_run)
 
-    A = torch.empty((64, 128), dtype=torch.bfloat16)
-    B = torch.empty((32, 128), dtype=torch.bfloat16)
+    A = torch.empty((65, 512), dtype=torch.bfloat16)
+    B = torch.empty((33, 512), dtype=torch.bfloat16)
     output = gemm.gemm_a16w16_opus(A, B)
 
-    assert output.shape == (64, 32)
-    assert calls == [((1, 64, 128), (1, 32, 128), 1206, 0, None)]
+    assert output.shape == (65, 33)
+    assert len(calls) == 1
+    x_shape, w_shape, workspace, kid, split_k, bias = calls[0]
+    assert (x_shape, w_shape) == ((1, 65, 512), (1, 33, 512))
+    assert workspace.shape == (1, 1, 128, 64)
+    assert workspace.dtype == torch.float32
+    assert (kid, split_k, bias) == (200, 0, None)
+
+
+def test_workspace_scope_preserves_a8w8_and_a8w4_public_apis():
+    a8w8 = importlib.import_module("aiter.ops.opus.gemm_op_a8w8")
+    stage1 = importlib.import_module("aiter.ops.opus.moe_stage1_a8w4")
+    stage2 = importlib.import_module("aiter.ops.opus.moe_stage2_a8w4")
+
+    assert tuple(
+        inspect.signature(a8w8.opus_gemm_a8w8_blockscale_bpreshuffle_tune).parameters
+    ) == ("XQ", "WQ", "x_scale", "w_scale", "Y", "kernelId")
+    assert tuple(inspect.signature(stage1.opus_moe_stage1_a8w4_fwd).parameters) == (
+        "hidden_states",
+        "w1",
+        "hidden_scale",
+        "w1_scale",
+        "sorted_token_ids",
+        "sorted_expert_ids",
+        "num_valid_ids",
+        "topk",
+        "inter_dim_pad",
+        "block_m",
+        "kernelName",
+        "activation",
+        "bias",
+        "out",
+        "out_scale",
+        "output_sorted",
+        "swiglu_limit",
+        "situ_beta",
+        "situ_linear_beta",
+    )
+    assert tuple(
+        inspect.signature(stage2.opus_moe_stage2_a8w4_decode_fwd).parameters
+    ) == (
+        "inter_states",
+        "w2",
+        "a2_scale",
+        "w2_scale",
+        "sorted_token_ids",
+        "sorted_weights",
+        "sorted_expert_ids",
+        "num_valid_ids",
+        "block_m",
+        "inter_dim_pad",
+        "out",
+        "kernel_id",
+        "return_per_slot",
+        "route_out_dtype",
+        "token_num",
+        "topk",
+    )
+
+
+def test_gfx942_direct_workspace_pointer_keeps_wave_uniformization():
+    root = Path(__file__).resolve().parents[1]
+    include = root / "csrc/opus_gemm/include/gfx942/a16w16"
+    traits = (include / "opus_gemm_traits_a16w16.cuh").read_text()
+    assert "opus_gfx942_uniform_ws_ptr(Ptr ptr_ws)" in traits
+    assert traits.count("__builtin_amdgcn_readfirstlane") >= 2
+    assert "void*       __restrict__ ptr_ws" in traits
+    assert "opus_splitk_ws_handle" not in traits
+    assert "opus_splitk_ws_ptr" not in traits
+
+    main_pipelines = (
+        "opus_gemm_pipeline_a16w16_em3en4_lds1_pgr2_sk.cuh",
+        "opus_gemm_pipeline_a16w16_kbuf1.cuh",
+        "opus_gemm_pipeline_a16w16_kbuf2v.cuh",
+        "opus_gemm_pipeline_a16w16_kbuf2v_bk128.cuh",
+        "opus_gemm_pipeline_a16w16_quad_mfma32_kbuf1.cuh",
+    )
+    for filename in main_pipelines:
+        source = (include / filename).read_text()
+        assert "opus_gfx942_uniform_ws_ptr<D_WS>(kargs.ptr_ws)" in source
+
+    reduce = (include / "splitk_reduce_gfx942.cuh").read_text()
+    assert reduce.count("opus_gfx942_uniform_ws_ptr<D_WS>(ws_ptr)") >= 2
+    assert "const void*" in reduce
+    assert "opus_splitk_ws_handle" not in reduce

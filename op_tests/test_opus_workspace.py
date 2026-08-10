@@ -339,31 +339,78 @@ def test_prepared_step5_launch_path_allocates_and_passes_workspace():
     assert calls[0][5:] == (200, 2)
 
 
-def test_step2_production_path_does_not_enable_torch_workspace_yet(monkeypatch):
+def test_production_path_allocates_and_passes_call_scoped_workspace(monkeypatch):
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
     common = importlib.import_module("aiter.ops.opus.common")
     monkeypatch.setattr(gemm, "_device_arch_and_cu", lambda _device: ("gfx950", 256))
     monkeypatch.setattr(common, "lookup_tuned", lambda **_kwargs: None)
 
-    def must_not_allocate(*_args, **_kwargs):
-        raise AssertionError("Step 2 enabled Torch workspace before the raw ABI")
-
     calls = []
 
-    def fake_tune(XQ, WQ, Y, bias, kernelId, splitK):
-        calls.append((kernelId, splitK))
+    def fake_raw(XQ, WQ, Y, bias, workspace, kernelId, splitK):
+        calls.append((XQ, WQ, Y, bias, workspace, kernelId, splitK))
         Y.zero_()
         return Y
 
-    monkeypatch.setattr(gemm, "allocate_workspace", must_not_allocate)
-    monkeypatch.setattr(gemm, "opus_gemm_a16w16_tune", fake_tune)
+    monkeypatch.setattr(gemm, "_opus_gemm_a16w16_tune_raw", fake_raw)
 
     output = gemm.gemm_a16w16_opus(
-        torch.empty((64, 128), dtype=torch.bfloat16),
-        torch.empty((32, 128), dtype=torch.bfloat16),
+        torch.empty((65, 512), dtype=torch.bfloat16),
+        torch.empty((33, 512), dtype=torch.bfloat16),
     )
-    assert output.shape == (64, 32)
-    assert calls == [(1206, 0)]
+    assert output.shape == (65, 33)
+    assert len(calls) == 1
+    XQ, WQ, Y, bias, workspace, kid, split_k = calls[0]
+    assert (tuple(XQ.shape), tuple(WQ.shape), tuple(Y.shape)) == (
+        (1, 65, 512),
+        (1, 33, 512),
+        (1, 65, 33),
+    )
+    assert bias is None
+    assert kid == 200
+    assert split_k == 0
+    assert workspace.shape == (1, 1, 128, 64)
+    assert workspace.dtype == torch.float32
+    assert workspace.device.type == "cpu"
+
+
+def test_two_automatic_launches_do_not_share_a_workspace_tensor():
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    config = _workspace_config()
+    XQ = torch.empty((1, 64, 512), dtype=torch.bfloat16)
+    WQ = torch.empty((1, 64, 512), dtype=torch.bfloat16)
+    workspaces = []
+
+    def fake_raw(_XQ, _WQ, _Y, _bias, workspace, _kid, _split_k):
+        workspaces.append(workspace)
+
+    for _ in range(2):
+        Y = torch.empty((1, 64, 64), dtype=torch.bfloat16)
+        gemm._launch_a16w16_with_torch_workspace(
+            fake_raw, XQ, WQ, Y, None, config
+        )
+
+    assert len(workspaces) == 2
+    assert workspaces[0] is not workspaces[1]
+    assert workspaces[0].data_ptr() != workspaces[1].data_ptr()
+
+
+def test_split_k_limit_fails_before_torch_empty(monkeypatch):
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    config = _workspace_config(allocation_split_k=3, launch_split_k=2)
+    XQ = torch.empty((1, 64, 128), dtype=torch.bfloat16)
+    Y = torch.empty((1, 64, 64), dtype=torch.bfloat16)
+    allocations = 0
+
+    def must_not_allocate(*_args, **_kwargs):
+        nonlocal allocations
+        allocations += 1
+        raise AssertionError("invalid split-K reached torch.empty")
+
+    monkeypatch.setattr(gemm, "allocate_workspace", must_not_allocate)
+    with pytest.raises(ValueError, match="exceeds the per-kid K-tile limit 2"):
+        gemm._prepare_a16w16_workspace(config, XQ, Y)
+    assert allocations == 0
 
 
 def test_non_workspace_kid_rejects_explicit_workspace():
@@ -375,4 +422,196 @@ def test_non_workspace_kid_rejects_explicit_workspace():
     with pytest.raises(ValueError, match="does not use an external workspace"):
         gemm._prepare_a16w16_workspace(
             config, XQ, Y, torch.empty(1, dtype=torch.float32)
+        )
+
+
+def _runtime_arch(device: int | None = None) -> str | None:
+    if not torch.cuda.is_available():
+        return None
+    if device is None:
+        device = torch.cuda.current_device()
+    props = torch.cuda.get_device_properties(device)
+    return str(getattr(props, "gcnArchName", "")).split(":", 1)[0].lower()
+
+
+_RAW_CASES = {
+    "gfx950": dict(kid=200, M=64, N=64, K=512, split_k=2),
+    "gfx942": dict(kid=10200, M=128, N=128, K=512, split_k=2),
+    "gfx1250": dict(kid=20000, M=16, N=32, K=512, split_k=2),
+}
+
+
+def _make_raw_case(*, kid: int | None = None):
+    arch = _runtime_arch()
+    if arch not in _RAW_CASES:
+        pytest.skip("requires a gfx942/gfx950/gfx1250 ROCm GPU")
+    spec = dict(_RAW_CASES[arch])
+    if kid is not None:
+        spec["kid"] = kid
+    device = torch.device("cuda", torch.cuda.current_device())
+    config = select_launch_config(
+        arch=arch,
+        M=spec["M"],
+        N=spec["N"],
+        K=spec["K"],
+        batch=1,
+        cu_num=torch.cuda.get_device_properties(device).multi_processor_count,
+        has_bias=False,
+        input_dtype=torch.bfloat16,
+        output_dtype=torch.bfloat16,
+        explicit_kid=spec["kid"],
+        explicit_split_k=spec["split_k"],
+        tuned_lookup=lambda **_kwargs: None,
+    )
+    instance = _instance(arch, config.actual_kid)
+    plan = plan_a16w16_workspace(
+        instance,
+        arch=arch,
+        kid=config.actual_kid,
+        M=spec["M"],
+        N=spec["N"],
+        K=spec["K"],
+        batch=1,
+        split_k=config.allocation_split_k,
+    )
+    assert plan is not None
+    XQ = torch.randn(
+        (1, spec["M"], spec["K"]), device=device, dtype=torch.bfloat16
+    )
+    WQ = torch.randn(
+        (1, spec["N"], spec["K"]), device=device, dtype=torch.bfloat16
+    )
+    Y = torch.empty(
+        (1, spec["M"], spec["N"]), device=device, dtype=torch.bfloat16
+    )
+    return config, plan, XQ, WQ, Y
+
+
+def _raw_launch(case, workspace):
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    config, _plan, XQ, WQ, Y = case
+    return gemm._opus_gemm_a16w16_tune_raw(
+        XQ,
+        WQ,
+        Y,
+        None,
+        workspace,
+        config.actual_kid,
+        config.launch_split_k,
+    )
+
+
+@pytest.mark.parametrize(
+    ("arch", "kid", "expected_dtype"),
+    [
+        ("gfx950", 200, torch.float32),
+        ("gfx942", 10200, torch.float32),
+        ("gfx942", 10210, torch.bfloat16),
+        ("gfx1250", 20000, torch.float32),
+    ],
+)
+def test_raw_cpp_accepts_exact_typed_workspace(arch, kid, expected_dtype):
+    if _runtime_arch() != arch:
+        pytest.skip(f"requires {arch} hardware")
+    case = _make_raw_case(kid=kid)
+    _config, plan, _XQ, _WQ, Y = case
+    assert plan.dtype == expected_dtype
+    workspace = torch.empty(
+        plan.required_numel, device=Y.device, dtype=expected_dtype
+    )
+    _raw_launch(case, workspace)
+    torch.cuda.synchronize(Y.device)
+    assert torch.isfinite(Y).all()
+
+
+def test_raw_cpp_rejects_workspace_one_element_short():
+    case = _make_raw_case()
+    _config, plan, _XQ, _WQ, Y = case
+    workspace = torch.empty(
+        plan.required_numel - 1, device=Y.device, dtype=plan.dtype
+    )
+    with pytest.raises(RuntimeError, match="workspace capacity.*elements"):
+        _raw_launch(case, workspace)
+
+
+@pytest.mark.parametrize("failure", ["missing", "dtype", "noncontiguous", "alignment"])
+def test_raw_cpp_rejects_invalid_workspace_contract(failure):
+    case = _make_raw_case()
+    _config, plan, _XQ, _WQ, Y = case
+    if failure == "missing":
+        workspace = None
+        message = "requires a workspace tensor"
+    elif failure == "dtype":
+        wrong_dtype = (
+            torch.bfloat16 if plan.dtype == torch.float32 else torch.float32
+        )
+        workspace = torch.empty(
+            plan.required_numel, device=Y.device, dtype=wrong_dtype
+        )
+        message = "workspace dtype must be"
+    elif failure == "noncontiguous":
+        workspace = torch.empty(
+            (plan.required_numel, 2), device=Y.device, dtype=plan.dtype
+        )[:, 0]
+        assert not workspace.is_contiguous()
+        message = "workspace must be contiguous"
+    else:
+        workspace = torch.empty(
+            plan.required_numel + 1, device=Y.device, dtype=plan.dtype
+        )[1:]
+        assert workspace.is_contiguous()
+        assert workspace.data_ptr() % plan.alignment != 0
+        message = "workspace address must be aligned"
+
+    with pytest.raises(RuntimeError, match=message):
+        _raw_launch(case, workspace)
+
+
+@pytest.mark.skipif(
+    torch.cuda.device_count() < 2,
+    reason="requires two ROCm devices for the C++ device-id guard",
+)
+def test_raw_cpp_rejects_workspace_on_another_device():
+    case = _make_raw_case()
+    _config, plan, XQ, _WQ, _Y = case
+    input_index = XQ.device.index
+    other_index = (input_index + 1) % torch.cuda.device_count()
+    workspace = torch.empty(
+        plan.required_numel,
+        device=torch.device("cuda", other_index),
+        dtype=plan.dtype,
+    )
+    with pytest.raises(RuntimeError, match="workspace device.*must match input device"):
+        _raw_launch(case, workspace)
+
+
+def test_raw_cpp_non_workspace_kid_requires_none():
+    if _runtime_arch() != "gfx950":
+        pytest.skip("the checked non-workspace fixture is gfx950-specific")
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    device = torch.device("cuda", torch.cuda.current_device())
+    XQ = torch.empty((1, 192, 128), device=device, dtype=torch.bfloat16)
+    WQ = torch.empty((1, 64, 128), device=device, dtype=torch.bfloat16)
+    Y = torch.empty((1, 192, 64), device=device, dtype=torch.bfloat16)
+    workspace = torch.empty(1, device=device, dtype=torch.float32)
+    with pytest.raises(
+        RuntimeError, match="non-workspace kernel id 300.*workspace=None"
+    ):
+        gemm._opus_gemm_a16w16_tune_raw(
+            XQ, WQ, Y, None, workspace, 300, 0
+        )
+
+
+def test_gfx1250_raw_cpp_rejects_batch_greater_than_one():
+    if _runtime_arch() != "gfx1250":
+        pytest.skip("requires gfx1250 hardware")
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    device = torch.device("cuda", torch.cuda.current_device())
+    XQ = torch.empty((2, 16, 512), device=device, dtype=torch.bfloat16)
+    WQ = torch.empty((2, 32, 512), device=device, dtype=torch.bfloat16)
+    Y = torch.empty((2, 16, 32), device=device, dtype=torch.bfloat16)
+    workspace = torch.empty(2048, device=device, dtype=torch.float32)
+    with pytest.raises(RuntimeError, match="supports batch == 1 only"):
+        gemm._opus_gemm_a16w16_tune_raw(
+            XQ, WQ, Y, None, workspace, 20000, 2
         )
