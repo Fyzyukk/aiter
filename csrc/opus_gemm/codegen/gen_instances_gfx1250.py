@@ -2,12 +2,10 @@
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 """gfx1250 codegen -- emit launchers for gfx1250-targeted kid families.
 
-Wires the a16w16 cluster/TDM split-K pipeline that reduces via an fp32
-WORKSPACE + a separate REDUCE kernel (no atomic_add), mirroring the gfx950
-flatmm-splitk launcher (opus_splitk_ws_get + grow + main kernel + reduce
-kernel). The main kernel is always instantiated <fp32_t> (it writes the fp32
-workspace); the reduce kernel casts the fp32 partials to the runtime Y dtype
-(bf16 / fp32) and folds bias once.
+Wires the a16w16 cluster/TDM split-K pipeline to a caller-owned fp32 workspace
+and a separate reduce kernel (no atomic_add). The main kernel is always
+instantiated <fp32_t>; the reduce kernel casts the fp32 partials to the runtime
+Y dtype (bf16 / fp32) and folds bias once.
 
 Self-registers each emit into codegen.common.EMIT_REGISTRY at import time.
 """
@@ -58,10 +56,10 @@ def splitk_reduce_extra_device_instantiations():
     return (
         "// fp32-bias + bf16-out (gfx1250 f32 bias support)\n"
         "template __global__ void splitk_reduce_kernel_gfx1250<16, 64, __bf16, true,  float,  true>(\n"
-        "    const opus_splitk_ws_handle*, __bf16*, int, int, int, int, int, int,\n"
+        "    const void*, __bf16*, int, int, int, int, int, int,\n"
         "    const float*,  int);\n"
         "template __global__ void splitk_reduce_kernel_gfx1250<16, 64, __bf16, true,  float,  false>(\n"
-        "    const opus_splitk_ws_handle*, __bf16*, int, int, int, int, int, int,\n"
+        "    const void*, __bf16*, int, int, int, int, int, int,\n"
         "    const float*,  int);\n"
     )
 
@@ -102,8 +100,8 @@ def gen_cluster_tdm_splitk_ws_instance(
     NO-CLUSTER grid: grid = (M/B_M, N/B_N, split_k); each WG owns one
     B_M x B_N tile (so M %% B_M == 0, N %% B_N == 0). The main kernel writes
     its split's fp32 partial into ws[split, padded_M, padded_N]; the reduce
-    kernel sums split_k slices, folds bias, casts to Y dtype. batch handled by
-    a per-batch host launch (sequential on stream -> workspace reuse is safe).
+    kernel sums split_k slices, folds bias, and casts to Y dtype.  This family
+    is physically batch==1; the launcher checks that before constructing grids.
     """
     layout_int = _LAYOUT_INT[getattr(k, "ctdm_layout", "tileN")]
     has_oob_str = "true" if k.has_oob else "false"
@@ -210,6 +208,7 @@ using {k.name}_Traits = {traits_name}<{k.BLOCK_SIZE},
 #if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
 #include "aiter_tensor.h"
 #include "aiter_stream.h"
+#include "opus_gemm_common.cuh"
 #include <optional>
 #endif
 #ifdef OPUS_FUSED_HOST_TU
@@ -225,14 +224,14 @@ __global__ __launch_bounds__(128, 1)
 #endif
 {traits_aliases}
 #if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
-// Reduce kernel forward declaration (distinct gfx1250 name + ws_handle ABI so
-// it never collides with gfx950's identically-signatured splitk_reduce_kernel).
+// Reduce kernel forward declaration (the distinct gfx1250 name keeps it from
+// colliding with gfx950's splitk_reduce_kernel).
 // The definition lives in gfx1250/splitk_reduce_gfx1250.cuh; the explicit
 // instantiations live in the dedicated splitk_reduce_gfx1250.device.cu TU.
 template<int VEC_, int BLOCK_, typename D_OUT,
          bool HAS_BIAS_, typename D_BIAS_, bool HAS_OOB_>
 __global__ void splitk_reduce_kernel_gfx1250(
-    const opus_splitk_ws_handle* ws_handle, D_OUT* c_out,
+    const void* ws_ptr, D_OUT* c_out,
     int split_k, int M, int N, int batch,
     int padded_M, int padded_N,
     const D_BIAS_* bias, int stride_bias_batch);
@@ -243,6 +242,7 @@ void
     aiter_tensor_t &XQ,
     aiter_tensor_t &WQ,
     aiter_tensor_t &Y,
+    aiter_tensor_t &workspace,
     std::optional<aiter_tensor_t> bias,
     int splitK)
 {{{{
@@ -268,6 +268,9 @@ void
         "K=", K, " must be even (a16w16 family rejects odd K)");
     AITER_CHECK(M >= 1 && N >= 1 && K >= 1 && batch >= 1,
         "M, N, K, batch must be >= 1");
+    AITER_CHECK(batch == 1,
+        "gfx1250 cluster_tdm_splitk_ws supports batch == 1 only; got batch=",
+        batch);
 {gfx1250_bias_validate}
     using Traits = {k.name}_Traits<D_C>;
 
@@ -281,49 +284,30 @@ void
         split_k--;
     }}}}
 
-    int num_tiles_m = (M + {k.B_M} - 1) / {k.B_M};
-    int num_tiles_n = (N + {k.B_N} - 1) / {k.B_N};
-    int padded_M    = num_tiles_m * {k.B_M};
-    int padded_N    = num_tiles_n * {k.B_N};
+    int num_tiles_m = 1 + (M - 1) / {k.B_M};
+    int num_tiles_n = 1 + (N - 1) / {k.B_N};
+    const size_t padded_M_size = opus_checked_extent_product(
+        {{static_cast<size_t>(num_tiles_m), static_cast<size_t>({k.B_M})}},
+        "{k.name}");
+    const size_t padded_N_size = opus_checked_extent_product(
+        {{static_cast<size_t>(num_tiles_n), static_cast<size_t>({k.B_N})}},
+        "{k.name}");
+    const size_t workspace_slice_numel = opus_checked_extent_product(
+        {{padded_M_size, padded_N_size}}, "{k.name}");
+    AITER_CHECK(padded_M_size <= static_cast<size_t>(std::numeric_limits<int>::max())
+                    && padded_N_size <= static_cast<size_t>(std::numeric_limits<int>::max())
+                    && workspace_slice_numel <= static_cast<size_t>(std::numeric_limits<int>::max()),
+        "{k.name}: padded workspace extents exceed 32-bit kernel stride limits");
+    int padded_M = static_cast<int>(padded_M_size);
+    int padded_N = static_cast<int>(padded_N_size);
 
-    extern opus_splitk_ws_handle* opus_splitk_ws_get(hipStream_t, bool);
-    extern const opus_splitk_ws_handle* opus_splitk_ws_device_handle(hipStream_t, bool);
-    extern void opus_splitk_ws_sync_to_device(hipStream_t);
+    // One-batch layout: [split_k, padded_M, padded_N].
+    const size_t required_numel = opus_checked_extent_product(
+        {{static_cast<size_t>(split_k), workspace_slice_numel}},
+        "{k.name}");
+    void* workspace_ptr_ = opus_validate_workspace(
+        workspace, XQ, AITER_DTYPE_fp32, required_numel, 16, "{k.name}");
     auto stream = aiter::getCurrentHIPStream();
-    hipStreamCaptureStatus capture_status = hipStreamCaptureStatusNone;
-    HIP_CALL(hipStreamIsCapturing(stream, &capture_status));
-    const bool capturing = (capture_status != hipStreamCaptureStatusNone);
-    auto* ws_handle_ = opus_splitk_ws_get(stream, /*allow_create=*/!capturing);
-
-    // Workspace sized for ONE batch's split slices [split_k, padded_M, padded_N].
-    size_t ws_bytes = (size_t)split_k * (size_t)padded_M * (size_t)padded_N * sizeof(float);
-    if (ws_handle_->ptr == nullptr || ws_bytes > ws_handle_->bytes)
-    {{{{
-        AITER_CHECK(!capturing,
-            "splitk workspace grow inside HIP graph capture is not supported. "
-            "Warm the cache once eagerly via aiter.opus_gemm_workspace_init().");
-        void* new_ptr = nullptr;
-        const size_t kGrowAlign = (size_t)4 * 1024 * 1024;
-        size_t grow_bytes = ((ws_bytes + kGrowAlign - 1) / kGrowAlign) * kGrowAlign;
-        HIP_CALL(hipMalloc(&new_ptr, grow_bytes));
-        if (ws_handle_->ptr != nullptr)
-        {{{{
-            HIP_CALL(hipDeviceSynchronize());
-            HIP_CALL(hipFree(ws_handle_->ptr));
-        }}}}
-        ws_handle_->ptr = new_ptr;
-        ws_handle_->bytes = grow_bytes;
-        // Mirror the new buffer pointer into the device-resident handle that the
-        // kernels dereference (grow is eager-only; safe synchronous H2D copy).
-        opus_splitk_ws_sync_to_device(stream);
-    }}}}
-
-    // The kernels read the handle on-device: use the hipMalloc'd device mirror
-    // (L2-cached) rather than the host shadow (per-workgroup PCIe coherent read,
-    // ~5x slower). Address is stable, so a captured HIP graph stays valid across
-    // a post-capture grow (which only updates the mirror's contents in place).
-    const opus_splitk_ws_handle* ws_dev_ =
-        opus_splitk_ws_device_handle(stream, /*allow_create=*/!capturing);
 
 {cluster_fill_check}    dim3 grid_main(num_tiles_m, num_tiles_n, split_k);
     dim3 block_main({k.BLOCK_SIZE});
@@ -341,7 +325,7 @@ void
     {kargs_name} kargs{{{{}}}};
     kargs.ptr_a     = XQ.data_ptr();
     kargs.ptr_b     = WQ.data_ptr();
-    kargs.ws_handle = ws_dev_;
+    kargs.ptr_ws    = workspace_ptr_;
     kargs.ptr_c     = Y.data_ptr();
     kargs.ptr_bias  = ptr_bias_;
     kargs.m = M; kargs.n = N; kargs.k = K; kargs.batch = 1; kargs.split_k = split_k;
@@ -351,7 +335,7 @@ void
     kargs.stride_c        = N;
     kargs.stride_a_batch  = XQ.stride(0);
     kargs.stride_b_batch  = WQ.stride(0);
-    kargs.stride_ws_batch = padded_M * padded_N;
+    kargs.stride_ws_batch = static_cast<int>(workspace_slice_numel);
     kargs.stride_c_batch  = M * N;
     kargs.stride_bias_batch = stride_bias_batch_;
 
@@ -364,29 +348,29 @@ void
             // reduce (D_BIAS=float), then cast the fp32 sum to bf16.
             splitk_reduce_kernel_gfx1250<REDUCE_VEC, REDUCE_BS, __bf16, true, float, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_dev_, y_ptr, split_k, M, N, 1, padded_M, padded_N,
+                    workspace_ptr_, y_ptr, split_k, M, N, 1, padded_M, padded_N,
                     reinterpret_cast<const float*>(ptr_bias_), stride_bias_batch_);
         }}}} else if (ptr_bias_) {{{{
             splitk_reduce_kernel_gfx1250<REDUCE_VEC, REDUCE_BS, __bf16, true, __bf16, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_dev_, y_ptr, split_k, M, N, 1, padded_M, padded_N,
+                    workspace_ptr_, y_ptr, split_k, M, N, 1, padded_M, padded_N,
                     reinterpret_cast<const __bf16*>(ptr_bias_), stride_bias_batch_);
         }}}} else {{{{
             splitk_reduce_kernel_gfx1250<REDUCE_VEC, REDUCE_BS, __bf16, false, __bf16, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_dev_, y_ptr, split_k, M, N, 1, padded_M, padded_N, nullptr, 0);
+                    workspace_ptr_, y_ptr, split_k, M, N, 1, padded_M, padded_N, nullptr, 0);
         }}}}
     }}}} else {{{{
         float* y_ptr = reinterpret_cast<float*>(Y.data_ptr());
         if (ptr_bias_) {{{{
             splitk_reduce_kernel_gfx1250<REDUCE_VEC, REDUCE_BS, float, true, float, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_dev_, y_ptr, split_k, M, N, 1, padded_M, padded_N,
+                    workspace_ptr_, y_ptr, split_k, M, N, 1, padded_M, padded_N,
                     reinterpret_cast<const float*>(ptr_bias_), stride_bias_batch_);
         }}}} else {{{{
             splitk_reduce_kernel_gfx1250<REDUCE_VEC, REDUCE_BS, float, false, float, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_dev_, y_ptr, split_k, M, N, 1, padded_M, padded_N, nullptr, 0);
+                    workspace_ptr_, y_ptr, split_k, M, N, 1, padded_M, padded_N, nullptr, 0);
         }}}}
     }}}}
 }}}}
@@ -402,6 +386,7 @@ void
             f"    aiter_tensor_t &XQ,\n"
             f"    aiter_tensor_t &WQ,\n"
             f"    aiter_tensor_t &Y,\n"
+            f"    aiter_tensor_t &workspace,\n"
             f"    std::optional<aiter_tensor_t>,\n"
             f"    int);\n"
         )

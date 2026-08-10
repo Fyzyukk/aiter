@@ -1233,11 +1233,11 @@ def gen_flatmm_splitk_instance(
     instance_impl_preamble,
     instance_impl_host_tu_split,
     record_one_instantiation,
-    A16W16_TUNE_HOST_EXTRA,
+    A16W16_WORKSPACE_TUNE_HOST_EXTRA,
     BIAS_HOST_VALIDATE,
     **_unused,
 ):
-    """gfx950 a16w16_flatmm_splitk launcher emit (uses ws_handle + reduce kernel call)."""
+    """Emit a gfx950 split-K launcher using a caller-owned typed workspace."""
     _kargs_explicit_param, fwd_decl_kargs_tpl, fwd_decl_kargs_fnarg = (
         kargs_template_vars(k.kernel_tag, kargs_name)
     )
@@ -1254,7 +1254,7 @@ using {k.name}_Traits = {traits_name}<{k.BLOCK_SIZE},
     {has_oob_str}>;
 """
 
-    preamble = instance_impl_preamble()
+    preamble = instance_impl_preamble('\n#include "opus_gemm_common.cuh"')
     host_tu_split = instance_impl_host_tu_split(
         traits_header,
         pipeline_header,
@@ -1272,6 +1272,7 @@ void
     aiter_tensor_t &XQ,
     aiter_tensor_t &WQ,
     aiter_tensor_t &Y,
+    aiter_tensor_t &workspace,
     std::optional<aiter_tensor_t> bias,
     int splitK)
 {{{{
@@ -1311,55 +1312,35 @@ void
         "need total_iters >= pfk*B_K = ", pfk * {k.B_K},
         " (pfk=", pfk, ")");
 
-    int num_tiles_m = (M + {k.B_M} - 1) / {k.B_M};
-    int num_tiles_n = (N + {k.B_N} - 1) / {k.B_N};
-    int padded_M    = num_tiles_m * {k.B_M};
-    int padded_N    = num_tiles_n * {k.B_N};
+    int num_tiles_m = 1 + (M - 1) / {k.B_M};
+    int num_tiles_n = 1 + (N - 1) / {k.B_N};
+    const size_t padded_M_size = opus_checked_extent_product(
+        {{static_cast<size_t>(num_tiles_m), static_cast<size_t>({k.B_M})}},
+        "{k.name}");
+    const size_t padded_N_size = opus_checked_extent_product(
+        {{static_cast<size_t>(num_tiles_n), static_cast<size_t>({k.B_N})}},
+        "{k.name}");
+    const size_t workspace_slice_numel = opus_checked_extent_product(
+        {{padded_M_size, padded_N_size}}, "{k.name}");
+    AITER_CHECK(padded_M_size <= static_cast<size_t>(std::numeric_limits<int>::max())
+                    && padded_N_size <= static_cast<size_t>(std::numeric_limits<int>::max())
+                    && workspace_slice_numel <= static_cast<size_t>(std::numeric_limits<int>::max()),
+        "{k.name}: padded workspace extents exceed 32-bit kernel stride limits");
+    int padded_M = static_cast<int>(padded_M_size);
+    int padded_N = static_cast<int>(padded_N_size);
 
-    // Per-stream workspace handle (process-global registry, mutex-protected
-    // in opus_gemm.cu). Replaces the prior `static thread_local` cache --
-    // under TBO two CPU threads drive two streams concurrently, and each
-    // captured graph must bake in its own buffer pointer. Eager: lazy-
-    // create. Capture: must be pre-warmed via
-    // aiter.opus_gemm_workspace_init() on the capture stream.
-    // (opus_splitk_ws_handle is already a complete type at this point via
-    // the traits header included at the top of this launcher .cuh.)
-    extern opus_splitk_ws_handle* opus_splitk_ws_get(hipStream_t, bool);
-
+    const size_t required_numel = opus_checked_extent_product(
+        {{static_cast<size_t>(split_k), static_cast<size_t>(batch),
+          workspace_slice_numel}},
+        "{k.name}");
+    void* workspace_ptr_ = opus_validate_workspace(
+        workspace, XQ, AITER_DTYPE_fp32, required_numel, 16, "{k.name}");
     auto stream = aiter::getCurrentHIPStream();
-    hipStreamCaptureStatus capture_status = hipStreamCaptureStatusNone;
-    HIP_CALL(hipStreamIsCapturing(stream, &capture_status));
-    const bool capturing = (capture_status != hipStreamCaptureStatusNone);
-    auto* ws_handle_ = opus_splitk_ws_get(stream, /*allow_create=*/!capturing);
-
-    size_t ws_bytes = (size_t)split_k * (size_t)batch
-                    * (size_t)padded_M * (size_t)padded_N * sizeof(float);
-    if (ws_handle_->ptr == nullptr || ws_bytes > ws_handle_->bytes)
-    {{
-        AITER_CHECK(!capturing,
-            "splitk workspace grow inside HIP graph capture is not "
-            "supported (hipMalloc / hipFree are stream-capture-illegal). "
-            "Warm the cache once eagerly with the largest workspace before "
-            "capturing. Call aiter.opus_gemm_workspace_init() on the capture "
-            "stream first.");
-
-        void* new_ptr = nullptr;
-        const size_t kGrowAlign = (size_t)4 * 1024 * 1024;
-        size_t grow_bytes = ((ws_bytes + kGrowAlign - 1) / kGrowAlign) * kGrowAlign;
-        HIP_CALL(hipMalloc(&new_ptr, grow_bytes));
-        if (ws_handle_->ptr != nullptr)
-        {{
-            HIP_CALL(hipDeviceSynchronize());
-            HIP_CALL(hipFree(ws_handle_->ptr));
-        }}
-        ws_handle_->ptr = new_ptr;
-        ws_handle_->bytes = grow_bytes;
-    }}
 
     {kargs_name} kargs{{{{}}}};
     kargs.ptr_a         = XQ.data_ptr();
     kargs.ptr_b         = WQ.data_ptr();
-    kargs.ws_handle     = ws_handle_;
+    kargs.ptr_ws        = workspace_ptr_;
     kargs.ptr_c         = Y.data_ptr();
     kargs.ptr_bias      = ptr_bias_;
     kargs.m = M; kargs.n = N; kargs.k = K; kargs.batch = batch;
@@ -1370,7 +1351,7 @@ void
     kargs.stride_c        = N;
     kargs.stride_a_batch  = XQ.stride(0);
     kargs.stride_b_batch  = WQ.stride(0);
-    kargs.stride_ws_batch = padded_M * padded_N;
+    kargs.stride_ws_batch = static_cast<int>(workspace_slice_numel);
     kargs.stride_c_batch  = M * N;
     kargs.stride_bias_batch = stride_bias_batch_;
 
@@ -1388,7 +1369,7 @@ void
         if (bias.has_value()) {{{{
             splitk_reduce_kernel<REDUCE_VEC, REDUCE_BS, __bf16, true, __bf16, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_handle_,
+                    workspace_ptr_,
                     reinterpret_cast<__bf16*>(Y.data_ptr()),
                     split_k, M, N, batch, padded_M, padded_N,
                     reinterpret_cast<const __bf16*>(ptr_bias_),
@@ -1396,7 +1377,7 @@ void
         }}}} else {{{{
             splitk_reduce_kernel<REDUCE_VEC, REDUCE_BS, __bf16, false, __bf16, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_handle_,
+                    workspace_ptr_,
                     reinterpret_cast<__bf16*>(Y.data_ptr()),
                     split_k, M, N, batch, padded_M, padded_N,
                     nullptr, 0);
@@ -1405,7 +1386,7 @@ void
         if (bias.has_value()) {{{{
             splitk_reduce_kernel<REDUCE_VEC, REDUCE_BS, float, true, float, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_handle_,
+                    workspace_ptr_,
                     reinterpret_cast<float*>(Y.data_ptr()),
                     split_k, M, N, batch, padded_M, padded_N,
                     reinterpret_cast<const float*>(ptr_bias_),
@@ -1413,7 +1394,7 @@ void
         }}}} else {{{{
             splitk_reduce_kernel<REDUCE_VEC, REDUCE_BS, float, false, float, {has_oob_str}>
                 <<<grid_reduce, block_reduce, 0, stream>>>(
-                    ws_handle_,
+                    workspace_ptr_,
                     reinterpret_cast<float*>(Y.data_ptr()),
                     split_k, M, N, batch, padded_M, padded_N,
                     nullptr, 0);
@@ -1424,7 +1405,13 @@ void
 #endif // launcher only on regular host pass
 """
     Path(os.path.join(cg.impl_path, f"{k.name}.cuh")).write_text(INSTANCE_IMPL)
-    record_one_instantiation(cg, k, kernel_func, kargs_name, A16W16_TUNE_HOST_EXTRA)
+    record_one_instantiation(
+        cg,
+        k,
+        kernel_func,
+        kargs_name,
+        A16W16_WORKSPACE_TUNE_HOST_EXTRA,
+    )
 
 
 # ---------- Self-register at import time ----------
