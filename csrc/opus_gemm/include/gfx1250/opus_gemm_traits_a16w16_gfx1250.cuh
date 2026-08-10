@@ -3,8 +3,7 @@
 //
 // Traits + kargs for the gfx1250 a16w16 cluster/TDM split-K pipeline that
 // reduces via an fp32 WORKSPACE + a separate REDUCE kernel (no atomic_add,
-// no self-clear, no semaphore). Mirrors the gfx950 flatmm-splitk ABI
-// (opus_splitk_ws_handle + opus_gemm_flatmm_splitk_kargs_gfx950).
+// no self-clear, no semaphore). Uses a caller-owned direct workspace pointer.
 //
 // This header is the SINGLE source of truth for every compile-time constant
 // the pipeline needs: the pipeline file
@@ -37,31 +36,16 @@ __host__ __device__ constexpr inline int opus_ctdm_log2_i(int x) {
     int r = 0; while (x > 1) { x >>= 1; ++r; } return r;
 }
 
-#ifndef OPUS_GEMM_SPLITK_WS_HANDLE_DEFINED
-#define OPUS_GEMM_SPLITK_WS_HANDLE_DEFINED
-// Indirection slot for the split-K fp32 workspace pointer. Captured HIP
-// graphs hold the slot address (stable), not the workspace ptr, so a
-// post-capture grow + hipFree of the old buffer doesn't dangle the graph.
-struct opus_splitk_ws_handle {
-    void*         ptr;    // current backing workspace; null until first grow
-    unsigned long bytes;  // current capacity in bytes
-};
-#endif
-
 #ifndef OPUS_GEMM_CLUSTER_TDM_WS_KARGS_GFX1250_DEFINED
 #define OPUS_GEMM_CLUSTER_TDM_WS_KARGS_GFX1250_DEFINED
 // Kernel arguments for the gfx1250 a16w16 cluster/TDM split-K (workspace)
 // pipeline. The main kernel writes fp32 partial sums into
-// *ws_handle->ptr laid out as [split_k, padded_M, padded_N] (per host launch;
-// batch handled by a per-batch host launch with pointer offsets). The reduce
-// kernel consumes it, folds bias once, casts fp32 -> Y dtype, writes C[M, N].
-//
-// Field semantics mirror opus_gemm_flatmm_splitk_kargs_gfx950 so the shared
-// reduce kernel ABI (ws_handle*) is reused verbatim.
+// ptr_ws laid out as [split_k, padded_M, padded_N]. The reduce kernel consumes
+// it, folds bias once, casts fp32 -> Y dtype, and writes C[M, N].
 struct opus_gemm_cluster_tdm_ws_kargs_gfx1250 {
     const void* __restrict__ ptr_a;          // bf16 [M, K]
     const void* __restrict__ ptr_b;          // bf16 [N, K] (A @ B^T)
-    const opus_splitk_ws_handle* __restrict__ ws_handle;  // deref at kernel entry
+    void*       __restrict__ ptr_ws;         // D_WS [split_k, padded_M, padded_N]
     void*       __restrict__ ptr_c;          // bf16/fp32 [M, N] (filled by reduce kernel)
     const void* __restrict__ ptr_bias;       // consumed by reduce kernel only
     int m;
@@ -82,12 +66,12 @@ struct opus_gemm_cluster_tdm_ws_kargs_gfx1250 {
 #endif
 
 // ── User-facing traits = the SINGLE compile-time config the pipeline reads ──
-//   D_A=D_B=bf16, D_ACC=float (WMMA fp32 acc), D_C MUST be float (main kernel
+//   D_A=D_B=bf16, D_ACC=float (WMMA fp32 acc), D_WS MUST be float (main kernel
 //   writes the fp32 workspace; the reduce kernel casts to the final Y dtype).
 template<int BLOCK_SIZE_,
          int B_M_, int B_N_, int B_K_,
          int LAYOUT_,
-         typename D_A_, typename D_B_, typename D_C_, typename D_ACC_,
+         typename D_A_, typename D_B_, typename D_WS_, typename D_ACC_,
          bool ENABLE_BIAS_ = false,
          int NUM_SLOTS_ = 3,
          int WG_PER_CU_ = 2,
@@ -102,16 +86,16 @@ struct opus_cluster_tdm_splitk_ws_traits_gfx1250 {
 
     using D_A   = D_A_;
     using D_B   = D_B_;
-    using D_C   = D_C_;                                // workspace dtype
+    using D_WS  = D_WS_;
     using D_ACC = D_ACC_;
     static_assert(std::is_same<D_A, D_B>::value, "A/B dtype must match");
-    static_assert(std::is_same<D_C, float>::value,
-                  "cluster_tdm_splitk_ws main kernel writes an fp32 workspace; D_C must be float");
+    static_assert(std::is_same<D_WS, float>::value,
+                  "cluster_tdm_splitk_ws main kernel writes an fp32 workspace; D_WS must be float");
 
     // Aliases used by the pipeline / layout helpers.
     using DataA   = D_A;
     using DataB   = D_B;
-    using DataC   = D_C;
+    using DataWS  = D_WS;
     using DataAcc = D_ACC;
 
     static constexpr int VEC_A = 16 / (int)sizeof(D_A);   // 8 for bf16
@@ -236,7 +220,7 @@ struct opus_cluster_tdm_splitk_ws_traits_gfx1250 {
     static_assert(kLdsTotalBytes <= 320 * 1024, "LDS exceeds 320KB");
 
     // Workspace plain store: fp32 dwordx4.
-    static constexpr int kCVec = 16 / (int)sizeof(DataAcc);      // 4 (fp32)
+    static constexpr int kCVec = 16 / (int)sizeof(DataWS);       // 4 (fp32)
 
     // ── Warp-derived WMMA register-decomposition constants ───────────────────
     // (computed from kWarpRt so device/host passes match)

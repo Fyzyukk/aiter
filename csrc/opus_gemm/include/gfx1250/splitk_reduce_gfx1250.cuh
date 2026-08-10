@@ -4,9 +4,9 @@
 // gfx1250 split-K reduce kernel: tile-agnostic; sums an fp32 workspace across
 // the split-K axis, folds an optional per-N bias once, casts fp32 -> D_OUT,
 // and writes C. The body mirrors gfx950/splitk_reduce_gfx950.cuh (same
-// ws_handle ABI), but the kernel is given a DISTINCT name
+// direct-pointer ABI), but the kernel is given a DISTINCT name
 // (splitk_reduce_kernel_gfx1250) so the explicit instantiations do NOT collide
-// with gfx950's identically-signatured splitk_reduce_kernel<ws_handle*> in a
+// with gfx950's identically-signatured splitk_reduce_kernel<const void*> in a
 // multi-arch build (same mangled name + same ABI would be a duplicate symbol).
 //
 // The reduce path uses no WMMA -- on wave32 BLOCK=64 is simply 2 waves of
@@ -16,14 +16,13 @@
 #pragma once
 
 #include "../opus_gemm_utils.cuh"
-#include "opus_gemm_traits_a16w16_gfx1250.cuh"  // opus_splitk_ws_handle
 #include <cstdint>
 
 template<int VEC_ = 16, int BLOCK_ = 64, typename D_OUT = __bf16,
          bool HAS_BIAS_ = false, typename D_BIAS_ = D_OUT,
          bool HAS_OOB_ = true>
 __global__ void splitk_reduce_kernel_gfx1250(
-    const opus_splitk_ws_handle* __restrict__ ws_handle,
+    const void* __restrict__ ws_ptr,
     D_OUT*       __restrict__ c_out,
     int split_k, int M, int N, int batch,
     int padded_M, int padded_N,
@@ -32,8 +31,9 @@ __global__ void splitk_reduce_kernel_gfx1250(
 {
 #ifdef __HIP_DEVICE_COMPILE__
 #if defined(__gfx1250__)
-    const float* __restrict__ workspace =
-        reinterpret_cast<const float*>(ws_handle->ptr);
+    using D_WS = float;
+    const D_WS* __restrict__ workspace =
+        reinterpret_cast<const D_WS*>(ws_ptr);
     constexpr int VEC   = VEC_;
     constexpr int BLOCK = BLOCK_;
     constexpr bool HAS_BIAS = HAS_BIAS_;
@@ -76,7 +76,7 @@ __global__ void splitk_reduce_kernel_gfx1250(
     const long split_stride = (long)batch * padded_M * padded_N;
 
     auto g_ws = opus::make_gmem(workspace,
-                                (unsigned int)(split_stride * split_k * sizeof(float)));
+                                (unsigned int)(split_stride * split_k * sizeof(D_WS)));
 
     opus::vector_t<float, VEC> acc;
     #pragma unroll
@@ -173,7 +173,7 @@ __global__ void splitk_reduce_kernel_gfx1250(
 #undef OPUS_REDUCE_ST2
 #undef OPUS_REDUCE_ST1
 #else
-    (void)ws_handle; (void)c_out; (void)split_k; (void)M; (void)N; (void)batch;
+    (void)ws_ptr; (void)c_out; (void)split_k; (void)M; (void)N; (void)batch;
     (void)padded_M; (void)padded_N; (void)bias; (void)bias_stride_batch;
 #endif  // __gfx1250__
 #endif  // __HIP_DEVICE_COMPILE__

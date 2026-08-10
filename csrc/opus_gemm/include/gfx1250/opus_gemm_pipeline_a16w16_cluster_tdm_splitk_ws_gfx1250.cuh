@@ -56,6 +56,7 @@ void gemm_a16w16_cluster_tdm_splitk_ws_kernel_gfx1250(opus_gemm_cluster_tdm_ws_k
     using T = remove_cvref_t<UserTraits>;
     using DataA = typename T::DataA;
     using DataB = typename T::DataB;
+    using DataWS = typename T::DataWS;
     using DataAcc = typename T::DataAcc;
     DECLARE_NAMED_BARRIERS();   // __nbar_1..__nbar_15 (we use 1..2*kNumSlots <= 6)
 
@@ -383,13 +384,13 @@ void gemm_a16w16_cluster_tdm_splitk_ws_kernel_gfx1250(opus_gemm_cluster_tdm_ws_k
     // ---- Plain store the fp32 partial into ws[split_idx][padded_m][padded_n]. ----
     // bias is folded once by the reduce kernel (not here).
     constexpr int kCVec = T::kCVec;   // 4 (fp32 dwordx4)
-    DataAcc* ws_ptr = reinterpret_cast<DataAcc*>(kargs.ws_handle->ptr);
+    DataWS* ws_ptr = reinterpret_cast<DataWS*>(kargs.ptr_ws);
     const size_t ws_split = (size_t)split_idx * (size_t)kargs.stride_ws_batch;
     const size_t ws_base  = ws_split + (size_t)tile_row * (size_t)kargs.stride_ws + (size_t)tile_col;
     const unsigned int ws_bytes =
         (unsigned int)(((size_t)kargs.stride_ws_batch
-                        - ((size_t)tile_row * kargs.stride_ws + tile_col)) * sizeof(DataAcc));
-    auto g_ws = make_gmem<DataAcc>(ws_ptr + ws_base, ws_bytes);
+                        - ((size_t)tile_row * kargs.stride_ws + tile_col)) * sizeof(DataWS));
+    auto g_ws = make_gmem<DataWS>(ws_ptr + ws_base, ws_bytes);
     auto u_gc = partition_layout_c<kCVec>(mma, opus::make_tuple((int)kargs.stride_ws, 1_I),
                     opus::make_tuple(wave_m, lane_id % mma.grpn_c, wave_n, lane_id / mma.grpn_c));
     __builtin_amdgcn_s_barrier();
