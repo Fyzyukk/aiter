@@ -15,6 +15,7 @@ from codegen.common import (
     WARP_SIZE,
     register_arch_map,
     register_emit,
+    splitk_workspace_type,
 )
 
 
@@ -57,17 +58,6 @@ def _splitk_traits_geometry(k):
         return k.B_M, k.B_N, 2
     trait_bm, trait_bn = override["block"]
     return trait_bm, trait_bn, override["lds_depth"]
-
-
-def _splitk_workspace_types(k):
-    dtype = getattr(k, "splitk_workspace_dtype", "fp32_t")
-    if dtype == "bf16_t":
-        return "bf16_t", "__bf16"
-    return "fp32_t", "float"
-
-
-def _uses_bf16_workspace(k):
-    return getattr(k, "splitk_workspace_dtype", "fp32_t") == "bf16_t"
 
 
 PIPELINE_HEADER_MAP = {
@@ -207,7 +197,7 @@ def gen_splitk_gfx942_instance(
     kargs_name,
     kargs_template_vars,
     BIAS_HOST_VALIDATE,
-    A16W16_WORKSPACE_TUNE_HOST_EXTRA,
+    A16W16_WORKSPACE_LAUNCH_HOST_EXTRA,
     make_host_decl,
     make_device_decl,
     record_one_instantiation,
@@ -222,11 +212,10 @@ def gen_splitk_gfx942_instance(
         kargs_explicit_param = f", {k.GROUP_M}, opus_gemm_splitk_kargs"
         fwd_decl_kargs_tpl = ", int COL_MAJOR_GROUP_M, typename Kargs"
         fwd_decl_kargs_fnarg = "Kargs"
-    bf16ws = _uses_bf16_workspace(k)
-    workspace_dtype, workspace_ptr_type = _splitk_workspace_types(k)
-    workspace_aiter_dtype = (
-        "AITER_DTYPE_bf16" if bf16ws else "AITER_DTYPE_fp32"
+    workspace_dtype, workspace_ptr_type, workspace_aiter_dtype = (
+        splitk_workspace_type(k)
     )
+    bf16ws = workspace_dtype == "bf16_t"
     # gfx942 a16w16_traits: 7 params <BLOCK_SIZE, BLOCK, DTYPE, VEC, TILE, WAVE, LDS_DEPTH=2>.
     trait_bm, trait_bn, lds_depth = _splitk_traits_geometry(k)
     traits_aliases = f"""
@@ -396,7 +385,7 @@ void
     int splitK)
 {{{{
     static_assert(std::is_same<D_C, fp32_t>::value,
-    "{err_label} splitK launcher uses the fp32 tune-dispatch table");
+    "{err_label} split_k launcher uses the fp32 launch-dispatch table");
 
     int batch = XQ.size(0);
     int M = XQ.size(1);
@@ -544,7 +533,7 @@ void
         k,
         kernel_func,
         kargs_name,
-        A16W16_WORKSPACE_TUNE_HOST_EXTRA,
+        A16W16_WORKSPACE_LAUNCH_HOST_EXTRA,
         kargs_explicit_param,
     )
 
@@ -561,7 +550,7 @@ def _emit_a16w16_nosplit_launcher(
     kargs_name,
     instance_impl_preamble,
     instance_impl_host_tu_split,
-    A16W16_TUNE_TAGS,
+    A16W16_KID_DISPATCH_TAGS,
     fwd_decl_kargs_tpl,
     fwd_decl_kargs_fnarg,
     traits_extra,
@@ -571,15 +560,15 @@ def _emit_a16w16_nosplit_launcher(
     device_decl_for_dtype,
 ):
     extra_param = (
-        ",\n    std::optional<aiter_tensor_t> bias," "\n    int /*splitK*/"
-        if k.kernel_tag in A16W16_TUNE_TAGS
+            ",\n    std::optional<aiter_tensor_t> bias," "\n    int /*split_k*/"
+        if k.kernel_tag in A16W16_KID_DISPATCH_TAGS
         else ""
     )
 
     bias_kargs_block = (
         "    AITER_CHECK(!bias.has_value(),\n"
         '        "bias not supported on this a16w16 kid");\n'
-        if k.kernel_tag in A16W16_TUNE_TAGS
+        if k.kernel_tag in A16W16_KID_DISPATCH_TAGS
         else ""
     )
 
@@ -643,7 +632,7 @@ void
 
     inst_extra_param = (
         ",\n    std::optional<aiter_tensor_t>,\n    int"
-        if k.kernel_tag in A16W16_TUNE_TAGS
+        if k.kernel_tag in A16W16_KID_DISPATCH_TAGS
         else ""
     )
     for CDtype in k.output_dtypes:
@@ -680,8 +669,8 @@ def gen_a16w16_quad_mfma32_gfx942_instance(
     instance_impl_preamble,
     instance_impl_host_tu_split,
     record_one_instantiation,
-    A16W16_TUNE_HOST_EXTRA,
-    A16W16_TUNE_TAGS,
+    A16W16_LAUNCH_HOST_EXTRA,
+    A16W16_KID_DISPATCH_TAGS,
     **_unused,
 ):
     """gfx942 quad MFMA32 launcher emit."""
@@ -737,7 +726,7 @@ def gen_a16w16_quad_mfma32_gfx942_instance(
         kargs_name,
         instance_impl_preamble,
         instance_impl_host_tu_split,
-        A16W16_TUNE_TAGS,
+        A16W16_KID_DISPATCH_TAGS,
         fwd_decl_kargs_tpl,
         fwd_decl_kargs_fnarg,
         traits_extra,
@@ -762,8 +751,8 @@ def gen_a16w16_nosplit_gfx942_instance(
     instance_impl_preamble,
     instance_impl_host_tu_split,
     record_one_instantiation,
-    A16W16_TUNE_HOST_EXTRA,
-    A16W16_TUNE_TAGS,
+    A16W16_LAUNCH_HOST_EXTRA,
+    A16W16_KID_DISPATCH_TAGS,
     **_unused,
 ):
     """gfx942 a16w16 non-splitK launcher emit (kbuf2v / kbuf2v_bk128 /
@@ -830,7 +819,7 @@ def gen_a16w16_nosplit_gfx942_instance(
         kargs_name,
         instance_impl_preamble,
         instance_impl_host_tu_split,
-        A16W16_TUNE_TAGS,
+        A16W16_KID_DISPATCH_TAGS,
         fwd_decl_kargs_tpl,
         fwd_decl_kargs_fnarg,
         traits_extra,
@@ -855,14 +844,14 @@ def gen_a8w8_blockscale_bpreshuffle_gfx942_instance(
     instance_impl_preamble,
     instance_impl_host_tu_split,
     record_one_instantiation,
-    A8W8_SCALE_HOST_EXTRA,
+    A8W8_BLOCKSCALE_HOST_EXTRA,
+    make_a8w8_bpreshuffle_host_decl,
     **_unused,
 ):
     """gfx942 A8W8 blockscale bpreshuffle launcher emit.
 
-    This is an explicit tune path. The public C++ wrapper dispatches by
-    integer kid through opus_gemm_a8w8_tune_lookup.h; production opus_gemm()
-    fp8 dispatch remains gfx950-only.
+    The public family wrapper dispatches an exact kid through the generated
+    per-arch typed table; no generic mega-entry participates in this path.
     """
     info = _validate_a8w8_blockscale_bpreshuffle_gfx942(k)
     print(
@@ -908,32 +897,48 @@ void
 {k.name}(
     aiter_tensor_t &XQ,
     aiter_tensor_t &WQ,
-    aiter_tensor_t &Y,
-    std::optional<aiter_tensor_t> x_scale,
-    std::optional<aiter_tensor_t> w_scale)
+    aiter_tensor_t &x_scale,
+    aiter_tensor_t &w_scale,
+    aiter_tensor_t &Y)
 {{{{
     AITER_CHECK((XQ.dim() == 2 || XQ.dim() == 3),
-        "gfx942 a8w8 expects XQ [M,K] or [B,M,K]");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: XQ must be "
+        "[M,K] or [B,M,K]");
     AITER_CHECK((WQ.dim() == 2 || WQ.dim() == 3),
-        "gfx942 a8w8 expects WQ [N,K] or [B,N,K]");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: WQ must be "
+        "[N,K] or [B,N,K]");
     AITER_CHECK((Y.dim() == 2 || Y.dim() == 3),
-        "gfx942 a8w8 expects Y [M,N] or [B,M,N]");
-    AITER_CHECK(x_scale.has_value() && w_scale.has_value(),
-        "gfx942 a8w8 blockscale requires x_scale and w_scale");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: Y must be "
+        "[M,N] or [B,M,N]");
+    AITER_CHECK(XQ.dtype() == AITER_DTYPE_fp8 && WQ.dtype() == AITER_DTYPE_fp8,
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: expected fp8 XQ/WQ");
+    AITER_CHECK(Y.dtype() == AITER_DTYPE_bf16,
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: expected bf16 Y");
+    AITER_CHECK(XQ.is_contiguous() && WQ.is_contiguous() && Y.is_contiguous(),
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: expects contiguous "
+        "XQ/WQ/Y");
 
     int batch = XQ.dim() == 3 ? XQ.size(0) : 1;
     int M = XQ.dim() == 3 ? XQ.size(1) : XQ.size(0);
     int K = XQ.dim() == 3 ? XQ.size(2) : XQ.size(1);
     int N = WQ.dim() == 3 ? WQ.size(1) : WQ.size(0);
     AITER_CHECK(batch == 1,
-        "gfx942 a8w8 tune path currently supports batch=1 only");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: gfx942 currently "
+        "supports batch=1 only");
+    AITER_CHECK((WQ.dim() == 2 || WQ.size(0) == batch) &&
+                    (Y.dim() == 2 || Y.size(0) == batch),
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: batch dimensions "
+        "must match");
     AITER_CHECK(WQ.size(WQ.dim() - 1) == K,
-        "WQ K dim must match XQ K dim");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: WQ K dim must "
+        "match XQ K dim");
     AITER_CHECK((Y.dim() == 3 ? Y.size(1) : Y.size(0)) == M &&
                 (Y.dim() == 3 ? Y.size(2) : Y.size(1)) == N,
-        "Y shape must be [M,N] or [B,M,N]");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: Y shape must be "
+        "[M,N] or [B,M,N]");
     AITER_CHECK(N % {k.B_N} == 0 && K % {k.B_K} == 0,
-        "gfx942 a8w8 tune path requires exact N/K tiles: N%",
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: gfx942 requires "
+        "exact N/K tiles: N%",
         {k.B_N}, "=0 K%", {k.B_K}, "=0");
 
     int GROUP_N = {k.GROUP_N};
@@ -941,14 +946,22 @@ void
     int num_groups_n = N / GROUP_N;
     int num_groups_k = K / GROUP_K;
 
-    const auto& xs = x_scale.value();
-    const auto& ws = w_scale.value();
+    const auto& xs = x_scale;
+    const auto& ws = w_scale;
     AITER_CHECK(xs.dtype() == AITER_DTYPE_fp32 && ws.dtype() == AITER_DTYPE_fp32,
-        "gfx942 a8w8 blockscale expects fp32 scales");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: expects fp32 scales");
+    AITER_CHECK(xs.is_contiguous() && ws.is_contiguous(),
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: expects contiguous "
+        "scales");
+    AITER_CHECK(xs.device_id == XQ.device_id && ws.device_id == XQ.device_id,
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: scales must be on "
+        "the XQ device");
     AITER_CHECK(xs.dim() == 2 && xs.size(0) == M && xs.size(1) == num_groups_k,
-        "x_scale must use CK bpreshuffle layout [K/128,M] flattened as [M,K/128]");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: x_scale must use "
+        "the transposed storage contract with shape [M,K/128]");
     AITER_CHECK(ws.dim() == 2 && ws.size(0) == num_groups_n && ws.size(1) == num_groups_k,
-        "w_scale must be row-major [N/128,K/128]");
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch: w_scale must be "
+        "row-major [N/128,K/128]");
 
     int num_tiles_m = (M + {k.B_M} - 1) / {k.B_M};
     int num_tiles_n = N / {k.B_N};
@@ -979,8 +992,9 @@ void
         k,
         kernel_func,
         kargs_name,
-        A8W8_SCALE_HOST_EXTRA,
+        A8W8_BLOCKSCALE_HOST_EXTRA,
         kargs_explicit_param,
+        make_a8w8_bpreshuffle_host_decl,
     )
 
 
@@ -1018,7 +1032,7 @@ _GFX942_LDS_PER_WG_BYTES = 64 * 1024
 
 
 def _validate_a8w8_blockscale_bpreshuffle_gfx942(k: OpusGemmInstance):
-    """Validate gfx942 A8W8 blockscale bpreshuffle tune instances."""
+    """Validate gfx942 A8W8 blockscale bpreshuffle registry instances."""
     errors = []
     sizeof_da = 1  # fp8
     if k.BLOCK_SIZE != k.T_M * k.T_N * WARP_SIZE:

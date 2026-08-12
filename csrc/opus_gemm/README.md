@@ -1,198 +1,258 @@
 # OPUS GEMM C++ and code generation
 
-The user-facing API guide lives in
+The user-facing guide is
 [`aiter/ops/opus/README.md`](../../aiter/ops/opus/README.md). This document
-describes the generated launch ABI and the C++ side of a16w16 dispatch.
+describes the canonical registry, family-specific C++ entries, generated
+exact-kid tables and physical launch validation.
 
-## Supported architecture families
+## Architecture and family capability
 
-The a16w16 path is implemented for gfx950, gfx942, and gfx1250. Kernel ids are
-architecture-scoped; an integer id is never sufficient without
-`(arch, family)`.
+Kernel identity is always `(arch, logical family, kid, Y dtype)`. A bare kid is
+not a cross-architecture capability.
 
-| Architecture | a16w16 implementation | External workspace |
-|---|---|---|
-| gfx950 | split-barrier, flatmm, persistent, two-stage flatmm split-K | fp32 for two-stage kids |
-| gfx942 | WKC/direct and several two-stage split-K pipelines | fp32 or bf16, declared by the actual instance |
-| gfx1250 | cluster/TDM two-stage split-K | fp32; batch must be 1 |
+| Logical family | gfx942 | gfx950 | gfx1250 |
+|---|---|---|---|
+| `a16w16` | non-workspace and two-stage workspace | non-workspace and two-stage workspace | two-stage and fused workspace |
+| `a8w8` | empty | kid 2, FP32 Y | empty |
+| `a8w8_blockscale` | empty | kid 1, FP32 Y, plain WQ | empty |
+| `a8w8_blockscale_bpreshuffle` | kid 11000, BF16 Y | explicit empty table | explicit empty table |
 
-The generic `opus_gemm()` entry still owns the existing gfx950 a8w8 paths.
-Its bf16 a16w16 branch is intentionally disabled: a16w16 must first resolve an
-actual kid in Python so a correctly typed Torch workspace can be supplied.
-The gfx942 a8w8 tune entry and the separately built a8w4 MoE modules are not
-part of the a16w16 workspace ABI.
+Empty A8 tables are valid capability states. The stable public symbol still
+exists and reports no registered kernel for the current architecture rather
+than trying another architecture's table.
 
-The shared workspace layer deliberately has no architecture branches, a16w16
-kid ranges, redirects, or launcher signatures.  Those decisions belong to the
-a16w16 selector, planner, generated launcher, and architecture dispatch
-adapter.  Add another family adapter only when that family gains an external
-two-stage workspace kernel.  The existing a8w8 and a8w4 MoE families need no
-such adapter, and there is no a4w4 family to modify.
-
-## Source layout
-
-| Path | Role |
-|---|---|
-| `opus_gemm.cu` | Raw entries and strict architecture routers |
-| `opus_gemm_common.py` | Canonical per-architecture instance registry and subset-compile kid sets |
-| `gen_instances.py` | Cross-architecture codegen driver, manifests, and dispatch-table emission |
-| `codegen/gen_instances_gfx*.py` | Architecture-specific host launcher emission |
-| `include/opus_gemm_common.cuh` | Family-neutral checked extent and physical workspace validation helpers |
-| `include/gfx*/opus_gemm_arch_*.cuh` | Per-architecture non-workspace/workspace id tables |
-| `include/gfx*/**/opus_gemm_traits*.cuh` | Direct-pointer kernel argument types |
-| `include/gfx*/**/splitk_reduce*.cuh` | Architecture-specific reduce kernels |
-
-Generated output contains one fused host TU per selected architecture, one
-device TU per `(kid, output specialization)`, and one reduce TU per
-architecture that has two-stage kernels.
-
-## a16w16 dispatch contract
-
-Selection policy is Python-owned and runs in this order:
-
-```text
-explicit kid
-  -> tuned CSV row
-  -> per-architecture Python heuristic
-  -> framework fallback
-```
-
-The selected object records requested kid, actual kid, allocation split-K,
-and launch split-K. In particular, gfx942 resolves legacy bf16-workspace
-redirects before allocation:
-
-```text
-non-exact N: 10210 -> 10200, 10213 -> 10203, 10216 -> error
-exact N:     10210 / 10213 / 10216 remain unchanged
-```
-
-The C++ raw tune entry is:
+## Canonical C++ entries
 
 ```cpp
-void opus_gemm_a16w16_tune(
+void opus_gemm_a16w16_launch(
     aiter_tensor_t& XQ,
     aiter_tensor_t& WQ,
     aiter_tensor_t& Y,
     std::optional<aiter_tensor_t> bias,
     std::optional<aiter_tensor_t> workspace,
-    int kernelId,
-    int splitK);
+    int kid,
+    int split_k);
+
+void opus_gemm_a8w8_launch(
+    aiter_tensor_t& XQ,
+    aiter_tensor_t& WQ,
+    aiter_tensor_t& Y,
+    int kid);
+
+void opus_gemm_a8w8_blockscale_launch(
+    aiter_tensor_t& XQ,
+    aiter_tensor_t& WQ,
+    aiter_tensor_t& Y,
+    aiter_tensor_t& x_scale,
+    aiter_tensor_t& w_scale,
+    int kid);
+
+void opus_gemm_a8w8_blockscale_bpreshuffle_launch(
+    aiter_tensor_t& XQ,
+    aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale,
+    aiter_tensor_t& w_scale,
+    aiter_tensor_t& Y,
+    int kid);
 ```
 
-Codegen emits two distinct function-pointer tables:
+The production Python a16w16 path enters the same launcher through the exported
+status-returning C ABI `opus_gemm_a16w16_launch_cabi`. Optional tensors are
+nullable pointers and the caller supplies the live HIP stream. The wrapper
+checks integer ranges, switches/restores the XQ HIP device and thread-local
+stream, bridges exceptions through thread-local error text, and then calls
+`opus_gemm_a16w16_launch`; it owns no policy, dispatch table, Tensor, pointer,
+or workspace. The original pybind canonical entry remains available for
+compatibility and A/B testing.
 
-- non-workspace launchers retain the five-argument launcher ABI
-  `(XQ, WQ, Y, bias, splitK)`;
-- workspace launchers use the six-argument launcher ABI
-  `(XQ, WQ, Y, workspace, bias, splitK)`.
+The C++ entries never choose a default kid, query CSV data, allocate a Tensor
+or run a shape heuristic. They validate the common device/family/dtype surface,
+select only the current runtime architecture and output-dtype table, then
+perform strict exact-kid lookup.
 
-The tables are never type-punned or merged. The architecture router asks the
-generated workspace table whether a kid is a workspace kid. A workspace-table
-hit requires `workspace`; a non-workspace-table hit requires
-`workspace=None`. Shape lookup tables are policy probes that return a kid,
-not launch-ready five-argument pointers for split-K kernels.
+Three failure classes remain distinct:
 
-Subset compilation always unions CSV ids with
-`HEURISTIC_DEFAULT_KIDS_BY_ARCH`; therefore Python cannot select a heuristic
-kid omitted from the shared object.
+1. the module was not built for the runtime architecture;
+2. the selected architecture/family/dtype table has no registered kernel;
+3. a non-empty table does not contain the requested kid.
 
-## Caller-owned Torch workspace
+## Runtime policy and build-time CSV
 
-Workspace ownership is entirely outside C++:
+All runtime policy is Python-owned:
 
 ```text
-Python actual-kid resolution
-  -> family planner computes typed extents
-  -> torch.empty for this call, or validate explicit Tensor
-  -> raw C++ entry
-  -> main kernel receives ptr_ws directly
-  -> reduce kernel receives the same direct pointer
+explicit -> OPUS tuned row -> Python heuristic/default -> fallback/error
 ```
 
-There is no registry, handle mirror, stream-keyed scratch map, raw HIP
-allocation, capture query, or device synchronization in this path. C++ never
-retains the Tensor or pointer after the call. PyTorch's allocator owns stream
-safety and graph-private memory.
+Build-time CSV processing remains intentionally separate. `gen_instances.py`
+extracts OPUS `solidx`/`kernelId` values and combines them with the sidecar,
+Python heuristic-default kids and mandatory A8 kids to form the subset compile
+set. Shape rows do not become C++ runtime data.
 
-Each generated workspace launcher independently enforces the final physical
-contract after its local split-K clamp:
+Current mandatory A8 kids are gfx950 1/2 and gfx942 11000. The generator
+asserts that every Python a16 heuristic default is also compiled.
 
-- workspace is present;
-- workspace device id equals `XQ.device_id`;
-- dtype equals the instance's `D_WS` (`bf16` or `fp32`);
-- storage is contiguous;
-- `data_ptr()` satisfies the instance alignment;
-- checked `size_t` extent products fit, and `required_numel <= numel`.
+## Generated exact-kid tables
 
-Element count is not used as a substitute for dtype validation. Every extent
-product and required byte-span product is overflow-checked before launch.
-gfx1250 also rejects `batch != 1` in the generated launcher as a final C++
-defense.
+Generated roots are:
 
-## gfx942 uniform direct pointer
+```text
+opus_gemm_a16w16_kid_dispatch.h
+opus_gemm_a8w8_kid_dispatch.h
+opus_gemm_manifest.h
+opus_build_archs.h
+```
 
-gfx942 retains a device helper that splits the 64-bit direct pointer and uses
-`__builtin_amdgcn_readfirstlane` for both halves. Main and reduce kernels call
-this helper; it no longer reads a handle or device mirror. Do not remove the
-uniformization merely because the kernel argument itself is direct. Any such
-optimization requires a separate ISA, register, and performance study.
+A16 macros are:
 
-The Step 6 cross-compile comparison against the pre-direct-pointer source
-confirmed:
+```text
+GENERATE_A16W16_NONWORKSPACE_KID_DISPATCH_<ARCH>_<DTYPE>
+GENERATE_A16W16_WORKSPACE_KID_DISPATCH_<ARCH>
+```
 
-- the representative main kernel keeps five `v_readfirstlane_b32`
-  instructions, identical before and after;
-- all 134 generated reduce kernels keep 276 total `v_readfirstlane_b32`
-  instructions;
-- main VGPR/SGPR use remains 169/96, while the obsolete handle dereference
-  load disappears;
-- no reduce kernel consumes a larger hardware VGPR allocation block (124 are
-  unchanged and 10 improve by one four-VGPR block).
+A8 macros are:
 
-Performance still must be measured on gfx942 hardware; a gfx950 system cannot
-produce a meaningful gfx942 split-K timing.
+```text
+GENERATE_A8W8_NOSCALE_KID_DISPATCH_GFX950
+GENERATE_A8W8_BLOCKSCALE_KID_DISPATCH_GFX950
+GENERATE_A8W8_BLOCKSCALE_BPRESHUFFLE_KID_DISPATCH_<ARCH>_<DTYPE>
+```
 
-## Graph capture and concurrent streams
+Every base macro has a `_SIZE`. Rows are sorted by kid and use one typed
+function-pointer ABI per table. Empty tables use `std::array<Entry,0>` and do
+not reference an absent launcher symbol.
 
-No OPUS-specific prewarm is required. A fresh `torch.empty` executed during
-`torch.cuda.graph` capture belongs to the graph pool and is reused by replay.
-Two concurrent streams receive separate call-scoped Tensor objects; OPUS has
-no process-global scratch pointer to share between them.
+The full canonical A16 table sizes are:
 
-`opus_gemm_workspace_init()` remains only as a deprecated Python no-op so old
-callers do not fail during migration. It has no C++ implementation or pybind
-entry.
+| Architecture | Non-workspace BF16 | Non-workspace FP32 | Workspace |
+|---|---:|---:|---:|
+| gfx942 | 14 | 1 | 8 |
+| gfx950 | 92 | 92 | 48 |
+| gfx1250 | 0 | 0 | 1874 |
 
-## Code generation and validation
+## A16 requested/actual kid and workspace
 
-Generate a default multi-architecture subset:
+The Python selector resolves requested kid to actual kid before workspace
+allocation. This is required for the gfx942 non-exact-N redirects
+`10210 -> 10200` and `10213 -> 10203`; kid 10216 rejects non-exact N.
+
+The A16 function-pointer ABIs remain separate:
+
+```cpp
+using OpusA16W16Kernel = void (*)(
+    XQ, WQ, Y, optional_bias, split_k);
+
+using OpusA16W16WorkspaceKernel = void (*)(
+    XQ, WQ, Y, workspace, optional_bias, split_k);
+```
+
+The router first performs workspace-table membership. A hit requires a
+workspace Tensor; a miss requires `workspace=None` before the non-workspace
+table is queried.
+
+Task1 workspace ownership remains entirely in Torch. Let
+`padded_M=ceil_div(M,B_M)*B_M` and
+`padded_N=ceil_div(N,B_N)*B_N`:
+
+| Architecture/family | Physical Tensor shape | Storage distribution |
+|---|---|---|
+| gfx950 two-stage | `[allocation_split_k, batch, padded_M, padded_N]` | 48 FP32 kids |
+| gfx942 two-stage | `[allocation_split_k, batch, padded_M, padded_N]` | 3 BF16 + 5 FP32 kids |
+| gfx1250 two-stage | `[allocation_split_k, padded_M, padded_N]` | 496 BF16 kids |
+| gfx1250 fused | `[tiles_m, tiles_n, fuse_split_k - 1, B_M, B_N]` | 780 BF16 + 598 FP32 kids, 1378 total |
+
+gfx1250 fused is an active registry/codegen family. It uses the exact kid's
+compile-time `fuse_split_k`; a runtime `split_k` cannot change its workspace
+shape or launch schedule.
+
+Each generated workspace launcher repeats the final physical checks after its
+local split clamp:
+
+- XQ/WQ/Y shape, dtype, stride and batch contract;
+- workspace device, exact instance dtype and contiguous storage;
+- pointer alignment;
+- checked extent and byte-span arithmetic;
+- final required element capacity;
+- bias rules owned by that exact architecture and kid.
+
+C++ neither allocates nor retains the workspace Tensor or pointer.
+
+## A8 validation ownership
+
+The public C++ router checks only rules common to the logical family: GPU
+device agreement, FP8 XQ/WQ, output-dtype table selection and exact kid. Scale
+arguments are mandatory references for both blockscale APIs.
+
+Architecture-specific generated launchers own physical rules.
+
+### gfx950 no-scale kid 2
+
+- XQ/WQ/Y are matching 3D `[B,M,K]`, `[B,N,K]`, `[B,M,N]` tensors;
+- XQ/WQ are FP8 and K-contiguous; Y is FP32 and contiguous;
+- `ceil_div(K,B_K) >= 2`, K-tile loops are even, and K is even.
+
+### gfx950 plain-WQ blockscale kid 1
+
+- the no-scale tensor contract still applies;
+- x/w scales are both FP32, contiguous and on the XQ device;
+- N and K follow the 128 group contract;
+- x scale is `[B,M,K/128]`, w scale is `[B,N/128,K/128]`, with 2D forms
+  accepted for batch one;
+- the host launcher rejects one K tile or an odd K-tile count before the
+  device prefetch pipeline runs;
+- this ABI has no bias or `group_layout` parameter.
+
+### gfx942 blockscale-bpreshuffle kid 11000
+
+- XQ/WQ/Y may be 2D or explicit 3D, but batch must be one;
+- XQ/WQ are FP8, Y is BF16, and scales are FP32;
+- N and K are divisible by 128;
+- tensors, WQ shape/stride and scale shapes are explicitly checked;
+- x scale has shape `[M,K/128]` with the required transposed physical storage;
+- w scale is row-major `[N/128,K/128]`.
+
+WQ bpreshuffle is a content semantic. Metadata checks cannot prove that the
+bytes were produced by `shuffle_weight(..., layout=(16,16))`; callers and
+numerical tests must supply genuinely shuffled storage.
+
+The public bpreshuffle router contains none of the gfx942-only BF16, FP32
+scale, batch-one or 128-tile rules. Future gfx950/gfx1250 implementations can
+populate their own registry/emitter/table without changing the stable public
+ABI.
+
+## gfx942 direct workspace pointer
+
+gfx942 device code continues to uniformize both halves of the direct 64-bit
+workspace pointer with `__builtin_amdgcn_readfirstlane` in main and reduce
+kernels. The obsolete handle indirection is absent, but wave-uniform address
+semantics remain part of the verified Task1 implementation.
+
+## Source layout
+
+| Path | Role |
+|---|---|
+| `opus_gemm.cu` | Family routers, common validation and strict current-arch dispatch |
+| `opus_gemm_common.py` | Canonical registry, family mappings and compile invariants |
+| `gen_instances.py` | Cross-architecture generation, manifests and typed dispatch tables |
+| `codegen/gen_instances_gfx*.py` | Exact-instance host launcher and physical validation emission |
+| `include/opus_gemm_common.cuh` | Checked extent/workspace helpers |
+| `include/gfx*/opus_gemm_arch_*.cuh` | Per-arch sorted exact-kid tables |
+| `include/gfx*/**/opus_gemm_traits*.cuh` | Kernel argument and trait definitions |
+| `include/gfx*/**/splitk_reduce*.cuh` | Architecture-specific reduce paths |
+
+## Generation and tests
 
 ```bash
 GPU_ARCHS='gfx942;gfx950;gfx1250' \
 python csrc/opus_gemm/gen_instances.py -w /tmp/opus-generated
-```
 
-The generated manifests declare six launcher parameters only for workspace
-kids and five for all other a16w16 kids. Build or syntax-check every emitted
-host/device TU for its target architecture after changing traits, launcher
-signatures, or reduce overloads.
-
-Run the focused regressions with:
-
-```bash
 pytest -q \
+  op_tests/test_opus_interfaces.py \
   op_tests/test_opus_dispatch.py \
   op_tests/test_opus_workspace.py \
-  op_tests/test_opus_graph.py \
-  op_tests/test_opus_a16w16_gemm.py
+  op_tests/test_opus_graph.py
 ```
 
-Runtime tests select only cases matching the installed GPU. On a single-arch
-host, skipped gfx942/gfx1250 cases are coverage definitions, not evidence of
-hardware validation.
-
-Before landing workspace changes, run the repository-level absence scans from
-the task completion checklist.  Every scan must produce empty output.  Keep the
-literal forbidden identifiers out of this README as well, otherwise a scan
-that intentionally includes the whole source directory would match its own
-documentation rather than a code-path regression.
+Generation must be byte-stable across repeated runs. Single-arch builds must
+emit only that architecture's symbols, while every public bpreshuffle table
+slot still has a valid zero-size representation where the capability is empty.

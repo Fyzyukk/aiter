@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// gfx1250 bf16 TDM a16w16 GEMM, 4-wave split-K via fp32 workspace + separate
-// reduce kernel.  C[M,N] = A[M,K] @ B[N,K]^T (+ bias[N], folded in reduce).
+// gfx1250 bf16 TDM a16w16 GEMM, 4-wave split-K via per-kid bf16/fp32 workspace
+// + separate reduce kernel. C[M,N] = A[M,K] @ B[N,K]^T (+ bias[N], folded in
+// reduce).
 //
 // Plain grid (no cluster): grid = (M/B_M, N/B_N, split_k); each WG owns one
 // B_M x B_N tile and TDM-loads its own A/B. 4 waves: w0=A producer, w1=B
@@ -381,9 +382,9 @@ void gemm_a16w16_cluster_tdm_splitk_ws_kernel_gfx1250(opus_gemm_cluster_tdm_ws_k
     if (wave_split == 0) run(opus::true_type{});
     else                 run(opus::false_type{});
 
-    // ---- Plain store the fp32 partial into ws[split_idx][padded_m][padded_n]. ----
+    // ---- Store the partial into ws[split_idx][padded_m][padded_n]. ----
     // bias is folded once by the reduce kernel (not here).
-    constexpr int kCVec = T::kCVec;   // 4 (fp32 dwordx4)
+    constexpr int kCVec = T::kCVec;
     DataWS* ws_ptr = reinterpret_cast<DataWS*>(kargs.ptr_ws);
     const size_t ws_split = (size_t)split_idx * (size_t)kargs.stride_ws_batch;
     const size_t ws_base  = ws_split + (size_t)tile_row * (size_t)kargs.stride_ws + (size_t)tile_col;
@@ -394,7 +395,8 @@ void gemm_a16w16_cluster_tdm_splitk_ws_kernel_gfx1250(opus_gemm_cluster_tdm_ws_k
     auto u_gc = partition_layout_c<kCVec>(mma, opus::make_tuple((int)kargs.stride_ws, 1_I),
                     opus::make_tuple(wave_m, lane_id % mma.grpn_c, wave_n, lane_id / mma.grpn_c));
     __builtin_amdgcn_s_barrier();
-    store<kCVec>(g_ws, reg_c, u_gc, 0);
+    auto reg_c_ws = opus::cast<DataWS>(reg_c);
+    store<kCVec>(g_ws, reg_c_ws, u_gc, 0);
 
     // Consumer epilogue: rendezvous with the producers (matches the producer's
     // workgroup barrier above) so all 4 waves of the WG exit together.

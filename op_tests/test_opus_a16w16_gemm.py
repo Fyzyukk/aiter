@@ -159,6 +159,34 @@ def test_split_k_matches_torch_golden(arch, kid, M, N, K, split_k, out_dtype):
     _assert_matches_golden(actual, A, B)
 
 
+@pytest.mark.parametrize("kid", (1400, 6400))
+def test_gfx950_mono_fp32_overwrites_poisoned_output(kid):
+    """Regress the ordinary and 4G-safe mono FP32 physical-store paths."""
+    if _runtime_arch() != "gfx950":
+        pytest.skip("requires gfx950 hardware")
+
+    torch.manual_seed(0x950000 + kid)
+    A = torch.randn((1, 192, 128), device="cuda", dtype=torch.bfloat16)
+    B = torch.randn((1, 256, 128), device="cuda", dtype=torch.bfloat16)
+    out = torch.full(
+        (1, 192, 256), 12345.0, device="cuda", dtype=torch.float32
+    )
+
+    actual = gemm_a16w16_opus(
+        A,
+        B,
+        dtype=torch.float32,
+        kernelId=kid,
+        splitK=0,
+        out=out,
+    )
+    torch.cuda.synchronize()
+
+    assert actual is out
+    assert int((actual != 12345.0).sum().item()) == actual.numel()
+    _assert_matches_golden(actual, A, B)
+
+
 def test_gfx950_bias_dtype_rules_and_numerics():
     if _runtime_arch() != "gfx950":
         pytest.skip("requires gfx950 hardware")

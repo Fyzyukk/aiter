@@ -1249,8 +1249,14 @@ def _is_union(origin):
 ) = range(7)
 
 
-def _ctypes_call(func, fc_name, md_name):
-    """Build a ctypes-based caller for a torch-free .so module.
+def _ctypes_call(
+    func,
+    fc_name,
+    md_name,
+    *,
+    force_torch_exclude: bool = True,
+):
+    """Build a ctypes-based caller; modules are torch-free by default.
 
     Type-hint to C ABI mapping
     -------------------------------------------------------
@@ -1286,7 +1292,12 @@ def _ctypes_call(func, fc_name, md_name):
         so_path = os.path.join(get_user_jit_dir(), f"{md_name}.so")
         if not os.path.exists(so_path) or _needs_arch_rebuild(md_name):
             d_args = get_args_of_build(md_name)
-            d_args["torch_exclude"] = True
+            # Most ctypes modules are deliberately torch-free shared objects.
+            # A mixed module may instead contain both a Python/pybind surface
+            # and exported C ABI symbols; in that case preserve the module's
+            # configured build mode so both FFIs resolve to the same .so.
+            if force_torch_exclude:
+                d_args["torch_exclude"] = True
             build_module(
                 md_name,
                 d_args["srcs"],
@@ -1562,12 +1573,18 @@ def compile_ops(
     gen_fake: Callable[..., Any] | None = None,
     ffi_type: str = "pybind",
     develop: bool = False,
+    ctypes_force_torch_exclude: bool = True,
 ):
     def decorator(func):
         loadName = fc_name if fc_name is not None else func.__name__
 
         if ffi_type == "ctypes":
-            ctypes_caller = _ctypes_call(func, loadName, _md_name)
+            ctypes_caller = _ctypes_call(
+                func,
+                loadName,
+                _md_name,
+                force_torch_exclude=ctypes_force_torch_exclude,
+            )
 
             @functools.wraps(func)
             def ctypes_wrapper(*args, **kwargs):
@@ -1577,7 +1594,9 @@ def compile_ops(
             def ctypes_custom_wrapper(*args, **kwargs):
                 return ctypes_wrapper(*args, **kwargs)
 
-            return ctypes_custom_wrapper
+            # torch_compile_guard returns a dispatcher wrapper. Restore the
+            # declared signature for ctypes schema and runtime introspection.
+            return functools.wraps(func)(ctypes_custom_wrapper)
 
         elif ffi_type == "pybind":
             func.arg_checked = False

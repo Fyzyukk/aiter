@@ -278,40 +278,48 @@ namespace py = pybind11;
           py::arg("x_scale") = std::nullopt, \
           py::arg("w_scale") = std::nullopt);
 
-#define OPUS_GEMM_PYBIND                          \
-    m.def("opus_gemm",                            \
-          &opus_gemm,                             \
-          "opus_gemm",                            \
-          py::arg("XQ"),                          \
-          py::arg("WQ"),                          \
-          py::arg("Y"),                           \
-          py::arg("group_layout") = std::nullopt, \
-          py::arg("x_scale")      = std::nullopt, \
-          py::arg("w_scale")      = std::nullopt, \
-          py::arg("bias")         = std::nullopt);
-
-#define OPUS_GEMM_A16W16_TUNE_PYBIND          \
-    m.def("opus_gemm_a16w16_tune",            \
-          &opus_gemm_a16w16_tune,             \
-          "opus_gemm_a16w16_tune",            \
+#define OPUS_GEMM_A16W16_LAUNCH_PYBIND        \
+    m.def("opus_gemm_a16w16_launch",          \
+          &opus_gemm_a16w16_launch,            \
+          "opus_gemm_a16w16_launch",          \
           py::arg("XQ"),                      \
           py::arg("WQ"),                      \
           py::arg("Y"),                       \
           py::arg("bias"),                    \
           py::arg("workspace"),               \
-          py::arg("kernelId"),                \
-          py::arg("splitK"));
+          py::arg("kid"),                     \
+          py::arg("split_k"));
 
-#define OPUS_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_TUNE_PYBIND \
-    m.def("opus_gemm_a8w8_blockscale_bpreshuffle_tune",   \
-          &opus_gemm_a8w8_blockscale_bpreshuffle_tune,    \
-          "opus_gemm_a8w8_blockscale_bpreshuffle_tune",   \
-          py::arg("XQ"),                                  \
-          py::arg("WQ"),                                  \
-          py::arg("x_scale"),                             \
-          py::arg("w_scale"),                             \
-          py::arg("Y"),                                   \
-          py::arg("kernelId"));
+#define OPUS_GEMM_A8W8_LAUNCH_PYBIND     \
+    m.def("opus_gemm_a8w8_launch",       \
+          &opus_gemm_a8w8_launch,        \
+          "opus_gemm_a8w8_launch",       \
+          py::arg("XQ"),                 \
+          py::arg("WQ"),                 \
+          py::arg("Y"),                  \
+          py::arg("kid"));
+
+#define OPUS_GEMM_A8W8_BLOCKSCALE_LAUNCH_PYBIND \
+    m.def("opus_gemm_a8w8_blockscale_launch",   \
+          &opus_gemm_a8w8_blockscale_launch,    \
+          "opus_gemm_a8w8_blockscale_launch",   \
+          py::arg("XQ"),                        \
+          py::arg("WQ"),                        \
+          py::arg("Y"),                         \
+          py::arg("x_scale"),                   \
+          py::arg("w_scale"),                   \
+          py::arg("kid"));
+
+#define OPUS_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_LAUNCH_PYBIND \
+    m.def("opus_gemm_a8w8_blockscale_bpreshuffle_launch",   \
+          &opus_gemm_a8w8_blockscale_bpreshuffle_launch,    \
+          "opus_gemm_a8w8_blockscale_bpreshuffle_launch",   \
+          py::arg("XQ"),                                    \
+          py::arg("WQ"),                                    \
+          py::arg("x_scale"),                               \
+          py::arg("w_scale"),                               \
+          py::arg("Y"),                                     \
+          py::arg("kid"));
 
 #define OPUS_MOE_PYBIND                                                            \
     m.def("opus_moe_stage2_a8w4_decode_fwd",                                        \

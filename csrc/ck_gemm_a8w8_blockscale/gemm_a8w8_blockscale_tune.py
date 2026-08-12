@@ -19,7 +19,7 @@ from aiter.jit.core import (
 )
 from aiter.jit.utils.chip_info import get_gfx_runtime as get_gfx
 from aiter.ops.opus.gemm_op_a8w8 import (
-    opus_gemm_a8w8_blockscale_bpreshuffle_tune,
+    opus_gemm_a8w8_blockscale_bpreshuffle_launch,
 )
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.base_tuner import GemmCommonTuner
@@ -36,7 +36,7 @@ from gemm_a8w8_blockscale_cktile_instance import (
     candidate_kernels_cktile_dict,
 )
 from gemm_a8w8_blockscale_instance import candidate_kernels_dict
-from opus_gemm.opus_gemm_common import gfx942_a8w8_kernels_list
+from opus_gemm.opus_gemm_common import get_kernel_instance, kernels_list
 
 block_shape = (128, 128)
 
@@ -162,10 +162,13 @@ def run_gemm_a8w8_blockscale_opus(
     kernel_id,
 ):
     """
-    Run gfx942 Opus a8w8 blockscale bpreshuffle tuned kernel.
+    Run an exact-kid OPUS a8w8 blockscale bpreshuffle kernel.
+
+    ``weight`` must already be the real shuffled storage produced by
+    ``shuffle_weight``; its Tensor metadata alone cannot prove that semantic.
     """
-    return opus_gemm_a8w8_blockscale_bpreshuffle_tune(
-        x, weight, x_scale, w_scale, out, kernelId=kernel_id
+    return opus_gemm_a8w8_blockscale_bpreshuffle_launch(
+        x, weight, x_scale, w_scale, out, kid=kernel_id
     )
 
 
@@ -467,14 +470,24 @@ class GemmA8W8BlockScaleTuner(GemmCommonTuner):
         run_kwargs,
     ):
         gfx, _, M, N, K = info_keys
-        if not preshuffleB or gfx != "gfx942":
+        if not preshuffleB:
             return []
 
         gemm_keys = ["x", "weight_shuffle", "x_scale_t", "w_scale", "out"]
         ref_keys = ["x", "weight", "x_scale", "w_scale"]
         ref_args = (ref_keys, None, dtypes.bf16)
         tasks_opus = []
-        for kernel_id, kernel in gfx942_a8w8_kernels_list.items():
+        for kernel_id, kernel in kernels_list.items():
+            if (
+                get_kernel_instance(
+                    gfx,
+                    "a8w8_blockscale_bpreshuffle",
+                    kernel_id,
+                    "bf16_t",
+                )
+                is not kernel
+            ):
+                continue
             if N % kernel.B_N != 0 or K % kernel.B_K != 0:
                 continue
             if not kernel.has_oob and M % kernel.B_M != 0:

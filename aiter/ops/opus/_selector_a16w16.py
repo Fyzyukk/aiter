@@ -47,7 +47,7 @@ class LaunchConfig:
 
     A framework fallback has ``requested_kid`` and ``actual_kid`` set to
     ``None``.  Supported OPUS architectures have an always-compiled heuristic
-    set; they reach this arm only when the selected raw tune ABI cannot serve
+    set; they reach this arm only when the selected raw launch ABI cannot serve
     the request.
     """
 
@@ -106,9 +106,9 @@ def _instance_output_compatible(
     needs_workspace: bool,
     output_dtype: Any,
 ) -> bool:
-    # A two-stage kernel always enters tune dispatch as <fp32_t>; its reduce
-    # kernel owns the bf16/fp32 final cast.  For a direct-output kernel the
-    # instance's existing output_dtypes is authoritative.
+    # An external-workspace kernel always enters launch dispatch as <fp32_t>.
+    # Its separate reducer, or gfx1250's fused last WG, owns the bf16/fp32
+    # final cast. For a direct-output kernel output_dtypes is authoritative.
     if needs_workspace:
         return _output_dtype_name(output_dtype) in {"bf16", "fp32"}
     token = f"{_output_dtype_name(output_dtype)}_t"
@@ -128,6 +128,18 @@ def _instance_shape_compatible(
     # batched requests out of that raw path until its host loop/ABI is fixed.
     if arch == "gfx1250" and batch != 1:
         return False
+
+    if instance.kernel_tag == "a16w16_clusterlaunch_tdm_splitk_fuse":
+        split_k = int(instance.fuse_split_k)
+        n_cluster = int(instance.fuse_m_cluster)
+        if K % 2 != 0 or N % instance.B_N != 0:
+            return False
+        if split_k < 2 or split_k * n_cluster > 16:
+            return False
+        num_tiles_n = N // instance.B_N
+        if num_tiles_n % n_cluster != 0:
+            return False
+        return split_k <= (K + instance.B_K - 1) // instance.B_K
 
     # Mono-tile handles an M tail but has neither an N-tail nor K-tail mask.
     if instance.kernel_tag == "a16w16_mono_tile":
@@ -176,7 +188,7 @@ def _build_launch_config(
     except (TypeError, ValueError) as exc:
         raise ValueError(
             f"invalid OPUS {source} row: kid={requested_kid!r}, "
-            f"splitK={requested_split_k!r}"
+            f"split_k={requested_split_k!r}"
         ) from exc
 
     requested_instance = get_kernel_instance(arch, _FAMILY, requested_kid)
@@ -214,14 +226,31 @@ def _build_launch_config(
     if has_bias and actual_kid not in BIAS_AWARE_KIDS:
         raise ValueError(f"OPUS {source} kid {actual_kid} does not support bias")
 
+    # #4246's round-1 fused launcher accepts only a contiguous bf16 [N] bias,
+    # while the public a16w16 API also accepts fp32 and [batch, N].  The tuned
+    # CSV key records only a boolean bias flag, so it cannot distinguish those
+    # physical contracts.  Keep bias-bearing calls on the two-stage family
+    # until the selector/tuned schema carries the exact bias dtype and shape;
+    # otherwise a row tuned with bf16 [N] could be replayed with fp32 bias and
+    # fail only after workspace allocation at the generated launcher boundary.
+    if (
+        has_bias
+        and actual_instance.kernel_tag
+        == "a16w16_clusterlaunch_tdm_splitk_fuse"
+    ):
+        raise ValueError(
+            "gfx1250 splitk_fuse has a narrower bf16 [N] bias contract than "
+            "the public/tuned selector can represent"
+        )
+
     # The generated gfx942 split-K launchers have bias-aware reducers, but the
-    # current tune dispatcher intentionally rejects that combination before
+    # current launch path intentionally rejects that combination before
     # launcher entry.  Until the raw gate is changed with the workspace ABI,
     # keep automatic selection on the framework fallback.  Explicit callers
     # still receive the strict error from this function.
     if has_bias and arch == "gfx942" and needs_workspace:
         raise ValueError(
-            "the current gfx942 tune dispatcher rejects bias on split-K kernels"
+            "the current gfx942 a16w16 launch rejects bias on split_k kernels"
         )
 
     allocation_split_k = 1
@@ -229,7 +258,14 @@ def _build_launch_config(
     effective_split_k: int | None = None
     if needs_workspace:
         allocation_split_k = max(1, requested_split_k)
-        if arch == "gfx942":
+        if actual_instance.kernel_tag == "a16w16_clusterlaunch_tdm_splitk_fuse":
+            # Fused SplitK is baked into the kid's cluster geometry. Runtime
+            # CSV/explicit splitK values cannot change either execution or the
+            # tile-major workspace capacity.
+            effective_split_k = int(actual_instance.fuse_split_k)
+            allocation_split_k = effective_split_k
+            launch_split_k = effective_split_k
+        elif arch == "gfx942":
             resolution = resolve_gfx942_split_k(
                 actual_instance,
                 M=M,
@@ -375,7 +411,7 @@ def select_launch_config(
         )
     except ValueError as exc:
         # 4) The framework owns shapes that the always-available OPUS heuristic
-        # cannot legally serve (currently the gfx942 tune ABI's bias gap).
+        # cannot legally serve (currently the gfx942 launch ABI's bias gap).
         return _framework_fallback(arch, str(exc))
 
 

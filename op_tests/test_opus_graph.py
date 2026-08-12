@@ -40,12 +40,38 @@ def _load_raw_binding_without_workspace_launch(gemm) -> None:
     XQ = torch.empty((1, 1, 2), device=device, dtype=torch.bfloat16)
     WQ = torch.empty((1, 1, 2), device=device, dtype=torch.bfloat16)
     Y = torch.empty((1, 1, 1), device=device, dtype=torch.bfloat16)
-    with pytest.raises(RuntimeError, match="Kernel id -999"):
-        gemm._opus_gemm_a16w16_tune_raw(XQ, WQ, Y, None, None, -999, 0)
+    with pytest.raises(RuntimeError, match="unknown kid -999"):
+        gemm._opus_gemm_a16w16_launch_ctypes_raw(
+            XQ, WQ, Y, None, None, -999, 0
+        )
 
 
 def _golden(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     return A.float() @ B.float().transpose(-1, -2)
+
+
+def _make_gfx950_a8_case(seed: int):
+    from aiter import dtypes
+
+    generator = torch.Generator(device="cuda").manual_seed(seed)
+    shape = (1, 256, 256)
+    XQ = torch.randint(
+        -2, 3, shape, generator=generator, device="cuda", dtype=torch.int32
+    ).to(dtypes.fp8)
+    WQ = torch.randint(
+        -3, 4, shape, generator=generator, device="cuda", dtype=torch.int32
+    ).to(dtypes.fp8)
+    x_scale = torch.ones((1, 256, 2), device="cuda", dtype=torch.float32)
+    w_scale = torch.ones((1, 2, 2), device="cuda", dtype=torch.float32)
+    return XQ, WQ, x_scale, w_scale
+
+
+def _launch_gfx950_a8_family(family, a8, XQ, WQ, Y, x_scale, w_scale):
+    if family == "noscale":
+        return a8.opus_gemm_a8w8_launch(XQ, WQ, Y, kid=2)
+    return a8.opus_gemm_a8w8_blockscale_launch(
+        XQ, WQ, Y, x_scale, w_scale, kid=1
+    )
 
 
 @pytest.mark.parametrize("arch", ["gfx950", "gfx942", "gfx1250"])
@@ -58,15 +84,16 @@ def test_graph_capture_replay_allocates_in_capture_without_prewarm(monkeypatch, 
         raise AssertionError("graph path called the deprecated workspace prewarm")
 
     monkeypatch.setattr(gemm, "opus_gemm_workspace_init", forbidden_prewarm)
-    real_allocate = gemm.allocate_workspace
+    real_raw = gemm._opus_gemm_a16w16_launch_ctypes_raw
     allocation_ptrs = []
 
-    def record_allocate(plan, device):
-        workspace = real_allocate(plan, device)
+    def record_raw(XQ, WQ, Y, bias, workspace, kid, split_k):
         allocation_ptrs.append(workspace.data_ptr())
-        return workspace
+        return real_raw(XQ, WQ, Y, bias, workspace, kid, split_k)
 
-    monkeypatch.setattr(gemm, "allocate_workspace", record_allocate)
+    monkeypatch.setattr(
+        gemm, "_opus_gemm_a16w16_launch_ctypes_raw", record_raw
+    )
     A = torch.randn((spec["M"], spec["K"]), device="cuda", dtype=torch.bfloat16)
     B = torch.randn((spec["N"], spec["K"]), device="cuda", dtype=torch.bfloat16)
 
@@ -104,14 +131,16 @@ def test_two_streams_hold_distinct_call_scoped_workspaces(monkeypatch, arch):
     spec = _require_graph_case(arch)
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
     _load_raw_binding_without_workspace_launch(gemm)
-    real_raw = gemm._opus_gemm_a16w16_tune_raw
+    real_raw = gemm._opus_gemm_a16w16_launch_ctypes_raw
     held_workspaces = []
 
     def record_raw(XQ, WQ, Y, bias, workspace, kid, split_k):
         held_workspaces.append(workspace)
         return real_raw(XQ, WQ, Y, bias, workspace, kid, split_k)
 
-    monkeypatch.setattr(gemm, "_opus_gemm_a16w16_tune_raw", record_raw)
+    monkeypatch.setattr(
+        gemm, "_opus_gemm_a16w16_launch_ctypes_raw", record_raw
+    )
     streams = (torch.cuda.Stream(), torch.cuda.Stream())
     inputs = [
         (
@@ -151,6 +180,62 @@ def test_two_streams_hold_distinct_call_scoped_workspaces(monkeypatch, arch):
         )
 
 
+@pytest.mark.parametrize("family", ["noscale", "blockscale"])
+def test_gfx950_a8_graph_capture_replay(family):
+    if _runtime_arch() != "gfx950":
+        pytest.skip("requires gfx950 hardware; a skip is not a pass")
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    _load_raw_binding_without_workspace_launch(gemm)
+    a8 = importlib.import_module("aiter.ops.opus.gemm_op_a8w8")
+    XQ, WQ, x_scale, w_scale = _make_gfx950_a8_case(0x950A8)
+    Y = torch.empty((1, 256, 256), device="cuda", dtype=torch.float32)
+
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        returned = _launch_gfx950_a8_family(
+            family, a8, XQ, WQ, Y, x_scale, w_scale
+        )
+    assert returned is Y
+
+    for seed in (7, 11, 19):
+        new_XQ, new_WQ, _, _ = _make_gfx950_a8_case(seed)
+        XQ.copy_(new_XQ)
+        WQ.copy_(new_WQ)
+        graph.replay()
+        torch.cuda.synchronize()
+        torch.testing.assert_close(Y, _golden(XQ, WQ), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("family", ["noscale", "blockscale"])
+def test_gfx950_a8_two_streams(family):
+    if _runtime_arch() != "gfx950":
+        pytest.skip("requires gfx950 hardware; a skip is not a pass")
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    _load_raw_binding_without_workspace_launch(gemm)
+    a8 = importlib.import_module("aiter.ops.opus.gemm_op_a8w8")
+    streams = (torch.cuda.Stream(), torch.cuda.Stream())
+    cases = [_make_gfx950_a8_case(seed) for seed in (0x95051, 0x95052)]
+    outputs = [
+        torch.empty((1, 256, 256), device="cuda", dtype=torch.float32)
+        for _ in streams
+    ]
+    producer = torch.cuda.current_stream()
+
+    for stream, case, Y in zip(streams, cases, outputs, strict=True):
+        stream.wait_stream(producer)
+        with torch.cuda.stream(stream):
+            returned = _launch_gfx950_a8_family(family, a8, *case[:2], Y, *case[2:])
+            assert returned is Y
+    for stream in streams:
+        producer.wait_stream(stream)
+    torch.cuda.synchronize()
+
+    for Y, (XQ, WQ, _x_scale, _w_scale) in zip(
+        outputs, cases, strict=True
+    ):
+        torch.testing.assert_close(Y, _golden(XQ, WQ), rtol=0, atol=0)
+
+
 def test_many_shapes_leave_no_python_workspace_tensor_cache():
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
     dead_refs = []
@@ -181,15 +266,10 @@ def test_many_shapes_leave_no_python_workspace_tensor_cache():
     gc.collect()
     assert dead_refs and all(reference() is None for reference in dead_refs)
 
-    workspace_module = importlib.import_module("aiter.ops.opus._workspace")
-    planner_module = importlib.import_module("aiter.ops.opus._workspace_a16w16")
-    for module in (gemm, workspace_module, planner_module):
-        cached = [
-            name
-            for name, value in vars(module).items()
-            if isinstance(value, torch.Tensor)
-        ]
-        assert cached == [], f"{module.__name__} caches Tensor globals: {cached}"
+    cached = [
+        name for name, value in vars(gemm).items() if isinstance(value, torch.Tensor)
+    ]
+    assert cached == [], f"{gemm.__name__} caches Tensor globals: {cached}"
 
 
 def test_deprecated_workspace_init_is_a_warning_only_noop():

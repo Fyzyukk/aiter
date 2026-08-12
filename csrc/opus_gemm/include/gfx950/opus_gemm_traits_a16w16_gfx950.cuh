@@ -269,11 +269,11 @@ struct opus_gemm_a16w16_flatmm_traits_gfx950 {
     //   1. Python: aiter/ops/opus/__init__.py calls _arch._detect_arch({"gfx950"})
     //      at import time. On non-gfx950 the import still succeeds (so it
     //      cannot break the surrounding `from aiter.ops.opus import *` in
-    //      aiter/__init__.py) but gemm_a16w16_opus / opus_gemm_a16w16_tune
+    //      aiter/__init__.py) but gemm_a16w16_opus / opus_gemm_a16w16_launch
     //      are replaced with stubs that raise RuntimeError on call, plus a
     //      one-shot RuntimeWarning at import. Helper is reusable for future
     //      opus submodules with different supported sets.
-    //   2. Host:   opus_dispatch_a16w16<T> / opus_a16w16_tune_dispatch<T> in
+    //   2. Host:   opus_a16w16_kid_dispatch<T> in
     //      opus_gemm.cu are arch routers built on opus_get_gfx_arch(). Only
     //      the gfx950 branch is wired up today (delegates to
     //      opus_dispatch_a16w16_gfx950<T>); other archs return TORCH_CHECK
@@ -632,7 +632,8 @@ struct opus_gemm_flatmm_splitk_kargs_gfx950 {
 // Locked geometry, derived in the kernel itself:
 //   * T_M = 2, T_N = 4, T_K = 1  -> 8 waves / WG -> BLOCK_SIZE = 8 * 64 = 512.
 //   * W_M = 16, W_N = 16, W_K = 32 (MFMA 16x16x32 BF16).
-//   * VEC_A = VEC_B = VEC_C = 8.
+//   * VEC_A = VEC_B = VEC_C = 8 logical elements.  The pipeline splits an
+//     FP32 logical C vector into 4-element physical stores.
 //
 // Constraints (mirror the kernel-internal static_asserts in
 // gemm_a16w16_mono_tile_kernel_template.hpp; static_asserts here surface

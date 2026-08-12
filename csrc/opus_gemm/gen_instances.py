@@ -8,7 +8,6 @@ import shutil
 from pathlib import Path
 
 import pandas as pd
-import torch
 from codegen import gen_instances_gfx942 as _gfx942  # noqa: F401
 
 # Import for side-effect: each arch module self-registers into EMIT_REGISTRY
@@ -27,6 +26,7 @@ from codegen.common import (
 )
 from opus_gemm_common import (
     HEURISTIC_DEFAULT_KIDS,
+    OPUS_MANDATORY_A8_KIDS,
     OpusGemmInstance,
     a8w8_kernels_list,
     a8w8_scale_kernels_list,
@@ -34,10 +34,12 @@ from opus_gemm_common import (
     a16w16_flatmm_splitk_kernels_list,
     a16w16_kernels_list,
     a16w16_mono_tile_kernels_list,
-    default_kernels_dict,
     gfx942_a8w8_kernels_list,
     gfx942_nosplit_kernels_list,
     gfx942_splitk_kernels_list,
+    gfx1250_clusterlaunch_kernels_list,
+    gfx1250_kernels_list,
+    gfx1250_splitk_fuse_kernels_list,
     heuristic_kids_for_arch,
     kernels_list,
 )
@@ -85,7 +87,9 @@ SPLITK_REDUCE_ABI_MAP = {
         "baseline_has_oob": (True,),
     },
     "gfx1250": {
-        # gfx1250 cluster/TDM split-K: fp32 workspace + separate reduce kernel.
+        # gfx1250 cluster/TDM split-K: exact-kid bf16/fp32 workspace + separate
+        # reduce kernel. The baseline matrix below is the fp32-storage half;
+        # gen_instances_gfx1250.py contributes the bf16-storage half.
         # Distinct kernel NAME (splitk_reduce_kernel_gfx1250) keeps it from
         # colliding with gfx950 in a multi-arch build.
         "forward_decl_include": '#include "gfx1250/opus_gemm_traits_a16w16_gfx1250.cuh"\n',
@@ -93,6 +97,8 @@ SPLITK_REDUCE_ABI_MAP = {
         "ws_arg": "const void* ws_ptr",
         "ws_type": "const void*",
         "baseline_has_oob": (True, False),
+        "baseline_extra_template_args": ", float",
+        "forward_decl_extra_template_params": ", typename D_WS_",
     },
 }
 
@@ -100,20 +106,22 @@ SPLITK_REDUCE_ARCHES = tuple(SPLITK_REDUCE_ABI_MAP)
 LEGACY_OPUS_ARCH = "gfx950"
 
 
-def _splitk_reduce_baseline_instantiations(reduce_kernel, ws_ptr_type, has_oob):
+def _splitk_reduce_baseline_instantiations(
+    reduce_kernel, ws_ptr_type, has_oob, extra_template_args=""
+):
     has_oob_str = "true" if has_oob else "false"
     return (
         f"// HAS_OOB={has_oob_str} variants\n"
-        f"template __global__ void {reduce_kernel}<16, 64, __bf16, true,  __bf16, {has_oob_str}>(\n"
+        f"template __global__ void {reduce_kernel}<16, 64, __bf16, true,  __bf16, {has_oob_str}{extra_template_args}>(\n"
         f"    {ws_ptr_type}, __bf16*, int, int, int, int, int, int,\n"
         f"    const __bf16*, int);\n"
-        f"template __global__ void {reduce_kernel}<16, 64, __bf16, false, __bf16, {has_oob_str}>(\n"
+        f"template __global__ void {reduce_kernel}<16, 64, __bf16, false, __bf16, {has_oob_str}{extra_template_args}>(\n"
         f"    {ws_ptr_type}, __bf16*, int, int, int, int, int, int,\n"
         f"    const __bf16*, int);\n"
-        f"template __global__ void {reduce_kernel}<16, 64, float,  true,  float,  {has_oob_str}>(\n"
+        f"template __global__ void {reduce_kernel}<16, 64, float,  true,  float,  {has_oob_str}{extra_template_args}>(\n"
         f"    {ws_ptr_type}, float*,  int, int, int, int, int, int,\n"
         f"    const float*,  int);\n"
-        f"template __global__ void {reduce_kernel}<16, 64, float,  false, float,  {has_oob_str}>(\n"
+        f"template __global__ void {reduce_kernel}<16, 64, float,  false, float,  {has_oob_str}{extra_template_args}>(\n"
         f"    {ws_ptr_type}, float*,  int, int, int, int, int, int,\n"
         f"    const float*,  int);\n"
     )
@@ -143,20 +151,23 @@ INPUT_DTYPE_MAP = {
     **{tag: ("bf16_t", "bf16_t") for tag in _A16W16_TAGS},
 }
 
-# All a16w16 tags participate in id dispatch.  Workspace and non-workspace
-# launchers are emitted into different tables because their host ABIs differ.
-A16W16_TUNE_TAGS = set(_A16W16_TAGS)
-A8W8_TUNE_TAGS = {"a8w8_blockscale_bpreshuffle_singlebuf"}
+# All a16w16 tags participate in exact-kid dispatch. Workspace and
+# non-workspace launchers are emitted into different tables because their host
+# ABIs differ.
+A16W16_KID_DISPATCH_TAGS = set(_A16W16_TAGS)
+A8W8_BPRESHUFFLE_TAGS = {"a8w8_blockscale_bpreshuffle_singlebuf"}
 # NOSCALE: 3-arg launchers (a16w16 family + a8w8 non-scale).
-NOSCALE_TAGS = A16W16_TUNE_TAGS | {"a8w8"}
+NOSCALE_TAGS = A16W16_KID_DISPATCH_TAGS | {"a8w8"}
 
 # Split-K tags live in the workspace dispatch table and use their existing
 # <fp32_t> host specialization; each instance's traits pick the actual
-# workspace dtype and the reduce launcher writes the requested Y.
+# workspace dtype. Fused kids write Y in-kernel; the other tags launch a
+# standalone reducer.
 SPLITK_TAGS = {
     "a16w16_flatmm_splitk",
     "a16w16_cluster_tdm_splitk_ws",
     "a16w16_clusterlaunch_tdm_splitk_ws",
+    "a16w16_clusterlaunch_tdm_splitk_fuse",
     "a16w16_em3en4_lds1_pgr2_sk",
     *_SPLITK,
 }
@@ -227,15 +238,15 @@ def instance_impl_host_tu_split(
 # Launcher signature tails after Y.  Keep the original five-argument ABI for
 # non-workspace a16w16 launchers; two-stage split-K launchers receive the
 # caller-owned typed workspace before bias.
-A16W16_TUNE_HOST_EXTRA = ",\n    std::optional<aiter_tensor_t>,\n    int"
-A16W16_WORKSPACE_TUNE_HOST_EXTRA = (
+A16W16_LAUNCH_HOST_EXTRA = ",\n    std::optional<aiter_tensor_t>,\n    int"
+A16W16_WORKSPACE_LAUNCH_HOST_EXTRA = (
     ",\n    aiter_tensor_t &workspace,"
     "\n    std::optional<aiter_tensor_t>,"
     "\n    int"
 )
-A8W8_SCALE_HOST_EXTRA = (
-    ",\n    std::optional<aiter_tensor_t> x_scale,"
-    "\n    std::optional<aiter_tensor_t> w_scale"
+A8W8_BLOCKSCALE_HOST_EXTRA = (
+    ",\n    aiter_tensor_t &x_scale,"
+    "\n    aiter_tensor_t &w_scale"
 )
 
 
@@ -249,6 +260,19 @@ def _make_host_decl(kid_name, dtype, host_extra_params):
     )
 
 
+def _make_a8w8_bpreshuffle_host_decl(kid_name, dtype, _host_extra_params):
+    """Explicit instantiation for the family ABI ``XQ,WQ,xs,ws,Y``."""
+    return (
+        f"template void\n"
+        f"{kid_name}<{dtype}>(\n"
+        f"    aiter_tensor_t &XQ,\n"
+        f"    aiter_tensor_t &WQ,\n"
+        f"    aiter_tensor_t &x_scale,\n"
+        f"    aiter_tensor_t &w_scale,\n"
+        f"    aiter_tensor_t &Y);\n"
+    )
+
+
 def _make_device_decl(
     kid_name, dtype, kernel_func, kargs_name, kargs_explicit_param=""
 ):
@@ -259,7 +283,13 @@ def _make_device_decl(
 
 
 def _record_one_instantiation(
-    self_obj, k, kernel_func, kargs_name, host_extra, kargs_explicit_param=""
+    self_obj,
+    k,
+    kernel_func,
+    kargs_name,
+    host_extra,
+    kargs_explicit_param="",
+    host_decl_factory=_make_host_decl,
 ):
     """Record (host_decl, device_decl) for every (kid, dtype) in k.output_dtypes."""
     for CDtype in k.output_dtypes:
@@ -267,7 +297,7 @@ def _record_one_instantiation(
             {
                 "kid_name": k.name,
                 "dtype": CDtype,
-                "host_decl": _make_host_decl(k.name, CDtype, host_extra),
+                "host_decl": host_decl_factory(k.name, CDtype, host_extra),
             }
         )
         self_obj._device_instantiations.append(
@@ -404,10 +434,15 @@ class opus_gemm_codegen:
             "record_one_instantiation": _record_one_instantiation,
             "make_host_decl": _make_host_decl,
             "make_device_decl": _make_device_decl,
-            "A16W16_TUNE_HOST_EXTRA": A16W16_TUNE_HOST_EXTRA,
-            "A16W16_WORKSPACE_TUNE_HOST_EXTRA": A16W16_WORKSPACE_TUNE_HOST_EXTRA,
-            "A8W8_SCALE_HOST_EXTRA": A8W8_SCALE_HOST_EXTRA,
-            "A16W16_TUNE_TAGS": A16W16_TUNE_TAGS,
+            "A16W16_LAUNCH_HOST_EXTRA": A16W16_LAUNCH_HOST_EXTRA,
+            "A16W16_WORKSPACE_LAUNCH_HOST_EXTRA": (
+                A16W16_WORKSPACE_LAUNCH_HOST_EXTRA
+            ),
+            "A8W8_BLOCKSCALE_HOST_EXTRA": A8W8_BLOCKSCALE_HOST_EXTRA,
+            "make_a8w8_bpreshuffle_host_decl": (
+                _make_a8w8_bpreshuffle_host_decl
+            ),
+            "A16W16_KID_DISPATCH_TAGS": A16W16_KID_DISPATCH_TAGS,
             "BIAS_HOST_VALIDATE": self.BIAS_HOST_VALIDATE,
         }
         dispatch_emit(self, k, **emit_kwargs)
@@ -443,97 +478,7 @@ class opus_gemm_codegen:
     }}
 """
 
-    def gen_lookup_dict(self, kernels_dict):
-        """Emit per-arch `(M,N,K,outdtype) -> kid` selector tables.
-
-        The legacy shape lookup remains only as a policy probe.  It must not
-        embed a five-argument function pointer for a workspace launcher now
-        that split-K has a distinct six-argument ABI.  The arch header first
-        selects an integer kid; strict kid dispatch then chooses either the
-        non-workspace or workspace table.
-        """
-        HEADER = """#pragma once
-// SPDX-License-Identifier: MIT
-// Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-//
-// Auto-generated. Do not edit. See gen_instances.py:gen_lookup_dict.
-//
-// Per-arch, per-output-dtype sorted flat arrays for (M,N,K)->kid selection.
-// Same (M,N,K) can resolve to different kernels in the BF16 vs FP32
-// tables because get_tune_dict keys winners on (M, N, K, outdtype_str)
-// and gen_lookup_dict buckets the rows below.  Entries contain only integer
-// kids: workspace and non-workspace launcher pointers have different ABIs
-// and are deliberately kept out of this legacy selector table.
-//
-// Lookup is std::lower_bound on the lex-ordered (M, N, K) key. See
-// the per-arch opus_gemm_arch_<arch>.cuh selector wrappers.
-"""
-        ENTRY = """\
-    {{ {{{M}, {N}, {K}}}, {kid} }},  \\
-"""
-
-        # Map ctype short name -> CSV outdtype string emitted by the
-        # tuner's result_to_df.
-        ctype_to_outdtype = {
-            "bf16_t": "torch.bfloat16",
-            "fp32_t": "torch.float32",
-        }
-
-        kid_by_instance = {
-            (_kid_arch_common(instance), instance.name): kid
-            for kid, instance in kernels_list.items()
-        }
-
-        def _emit_map(f, arch: str, ctype: str):
-            target_outdtype = ctype_to_outdtype.get(ctype)
-            rows = []
-            for mnk, k in kernels_dict.items():
-                if self.istune and isinstance(mnk, int):
-                    continue
-                if not (isinstance(mnk, tuple) and mnk[0] > 0):
-                    continue
-                instance_arch = _kid_arch_common(k)
-                if instance_arch != arch:
-                    continue
-                if len(mnk) >= 4:
-                    row_outdtype = str(mnk[3])
-                    if target_outdtype is not None and row_outdtype != target_outdtype:
-                        continue
-                is_splitk = k.kernel_tag in SPLITK_TAGS
-                if not is_splitk and ctype not in k.output_dtypes:
-                    continue
-                try:
-                    kid = kid_by_instance[(instance_arch, k.name)]
-                except KeyError as exc:
-                    raise KeyError(
-                        f"runtime lookup instance has no canonical kid: "
-                        f"arch={instance_arch} name={k.name}"
-                    ) from exc
-                rows.append((int(mnk[0]), int(mnk[1]), int(mnk[2]), kid))
-
-            rows.sort(key=lambda r: (r[0], r[1], r[2]))
-            dtype_suffix = "BF16" if ctype == "bf16_t" else "FP32"
-            macro_name = f"GENERATE_OPUS_LOOKUP_TABLE_{arch.upper()}_{dtype_suffix}"
-            f.write(f"#define {macro_name}_SIZE {len(rows)}\n")
-            if not rows:
-                f.write(f"#define {macro_name}\n\n")
-                return
-            f.write(f"#define {macro_name} \\\n")
-            n = len(rows)
-            for i, (M, N, K, kid) in enumerate(rows):
-                line = ENTRY.format(M=M, N=N, K=K, kid=kid)
-                if i == n - 1:
-                    line = line.rstrip().rstrip("\\").rstrip() + "\n"
-                f.write(line)
-            f.write("\n")
-
-        with open(os.path.join(self.working_path, "opus_gemm_lookup.h"), "w") as f:
-            f.write(HEADER)
-            for arch in SPLITK_REDUCE_ARCHES:
-                _emit_map(f, arch, "bf16_t")
-                _emit_map(f, arch, "fp32_t")
-
-    def gen_a16w16_tune_lookup(self, kernels_dict):
+    def gen_a16w16_kid_dispatch(self, kernels_dict):
         """Emit arch-scoped non-workspace and workspace kid dispatch tables.
 
         A table has one function-pointer type.  Non-workspace launchers retain
@@ -546,11 +491,12 @@ class opus_gemm_codegen:
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// Auto-generated. Do not edit. See gen_instances.py:gen_a16w16_tune_lookup.
+// Auto-generated. Do not edit. See gen_instances.py:gen_a16w16_kid_dispatch.
 //
 // Per-arch sorted flat arrays for strict kid dispatch.  Non-workspace tables
 // contain five-argument OpusA16W16Kernel pointers.  Workspace tables contain
-// six-argument OpusA16W16WorkspaceKernel pointers.  Never combine them.
+// six-argument OpusA16W16WorkspaceKernel pointers. Never combine them with
+// the five-argument table.
 """
         NON_WORKSPACE_ENTRY = """\
     {{ {kid}, &{kernel_name}<CTYPE> }},  \\
@@ -558,7 +504,6 @@ class opus_gemm_codegen:
         WORKSPACE_ENTRY = """\
     {{ {kid}, &{kernel_name}<fp32_t> }},  \\
 """
-
         def _write_rows(f, macro_name, rows, entry, function_like=False):
             f.write(f"#define {macro_name}_SIZE {len(rows)}\n")
             macro_suffix = "(CTYPE)" if function_like else ""
@@ -576,7 +521,10 @@ class opus_gemm_codegen:
         def _emit_non_workspace_map(f, arch, ctype):
             rows = []
             for kid, k in kernels_dict.items():
-                if not (isinstance(kid, int) and k.kernel_tag in A16W16_TUNE_TAGS):
+                if not (
+                    isinstance(kid, int)
+                    and k.kernel_tag in A16W16_KID_DISPATCH_TAGS
+                ):
                     continue
                 if _kid_arch_common(k) != arch or k.kernel_tag in SPLITK_TAGS:
                     continue
@@ -586,7 +534,8 @@ class opus_gemm_codegen:
             rows.sort(key=lambda r: r[0])
             dtype_suffix = "BF16" if ctype == "bf16_t" else "FP32"
             macro_name = (
-                f"GENERATE_A16W16_TUNE_LOOKUP_{arch.upper()}_{dtype_suffix}"
+                "GENERATE_A16W16_NONWORKSPACE_KID_DISPATCH_"
+                f"{arch.upper()}_{dtype_suffix}"
             )
             _write_rows(
                 f, macro_name, rows, NON_WORKSPACE_ENTRY, function_like=True
@@ -595,7 +544,10 @@ class opus_gemm_codegen:
         def _emit_workspace_map(f, arch):
             rows = []
             for kid, k in kernels_dict.items():
-                if not (isinstance(kid, int) and k.kernel_tag in A16W16_TUNE_TAGS):
+                if not (
+                    isinstance(kid, int)
+                    and k.kernel_tag in A16W16_KID_DISPATCH_TAGS
+                ):
                     continue
                 if _kid_arch_common(k) != arch or k.kernel_tag not in SPLITK_TAGS:
                     continue
@@ -607,12 +559,12 @@ class opus_gemm_codegen:
                 rows.append((kid, k.name))
             rows.sort(key=lambda r: r[0])
             macro_name = (
-                f"GENERATE_A16W16_WORKSPACE_TUNE_LOOKUP_{arch.upper()}"
+                f"GENERATE_A16W16_WORKSPACE_KID_DISPATCH_{arch.upper()}"
             )
             _write_rows(f, macro_name, rows, WORKSPACE_ENTRY)
 
         with open(
-            os.path.join(self.working_path, "opus_gemm_a16w16_tune_lookup.h"), "w"
+            os.path.join(self.working_path, "opus_gemm_a16w16_kid_dispatch.h"), "w"
         ) as f:
             f.write(HEADER)
             for arch in SPLITK_REDUCE_ARCHES:
@@ -620,42 +572,77 @@ class opus_gemm_codegen:
                 _emit_non_workspace_map(f, arch, "fp32_t")
                 _emit_workspace_map(f, arch)
 
-    def gen_a8w8_tune_lookup(self, kernels_dict):
-        """Emit the int-ID-to-kernel map for A8W8 tuning."""
+    def gen_a8w8_kid_dispatch(self, kernels_dict):
+        """Emit sorted, family-typed A8W8 exact-kid dispatch tables."""
         header = """#pragma once
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// Auto-generated. Do not edit. See gen_instances.py:gen_a8w8_tune_lookup.
+// Auto-generated. Do not edit. See gen_instances.py:gen_a8w8_kid_dispatch.
 //
-// BF16-output flat array for A8W8 blockscale bpreshuffle tuning.
+// Family ABIs are intentionally separate even when their current argument
+// counts happen to match. Empty per-arch capability tables are represented by
+// SIZE=0 plus an empty initializer macro.
 """
         entry = """\
-    {{ {kid}, &{kernel_name}<CTYPE> }},  \\
+    {{ {kid}, &{kernel_name}<{ctype}> }},  \\
 """
 
-        def _emit_map(f, macro_name, ctype):
-            f.write(f"#define {macro_name}(CTYPE) \\\n")
+        def _rows(arch, tags, ctype):
             rows = []
             for kid, k in kernels_dict.items():
-                if not (isinstance(kid, int) and k.kernel_tag in A8W8_TUNE_TAGS):
+                if not isinstance(kid, int) or k.kernel_tag not in tags:
                     continue
-                if ctype not in k.output_dtypes:
+                if _kid_arch_common(k) != arch or ctype not in k.output_dtypes:
                     continue
                 rows.append((kid, k.name))
             rows.sort(key=lambda row: row[0])
+            return rows
+
+        def _emit_map(f, macro_name, rows, ctype):
+            f.write(f"#define {macro_name}_SIZE {len(rows)}\n")
+            if not rows:
+                f.write(f"#define {macro_name}\n\n")
+                return
+            f.write(f"#define {macro_name} \\\n")
             for index, (kid, name) in enumerate(rows):
-                line = entry.format(kid=kid, kernel_name=name)
+                line = entry.format(kid=kid, kernel_name=name, ctype=ctype)
                 if index == len(rows) - 1:
                     line = line.rstrip().rstrip("\\").rstrip() + "\n"
                 f.write(line)
             f.write("\n")
 
         with open(
-            os.path.join(self.working_path, "opus_gemm_a8w8_tune_lookup.h"), "w"
+            os.path.join(self.working_path, "opus_gemm_a8w8_kid_dispatch.h"), "w"
         ) as f:
             f.write(header)
-            _emit_map(f, "GENERATE_A8W8_TUNE_LOOKUP_BF16", "bf16_t")
+            _emit_map(
+                f,
+                "GENERATE_A8W8_NOSCALE_KID_DISPATCH_GFX950",
+                _rows("gfx950", {"a8w8"}, "fp32_t"),
+                "fp32_t",
+            )
+            _emit_map(
+                f,
+                "GENERATE_A8W8_BLOCKSCALE_KID_DISPATCH_GFX950",
+                _rows("gfx950", {"a8w8_scale"}, "fp32_t"),
+                "fp32_t",
+            )
+            for arch in SPLITK_REDUCE_ARCHES:
+                for ctype, dtype_suffix in (
+                    ("bf16_t", "BF16"),
+                    ("fp32_t", "FP32"),
+                ):
+                    macro_name = (
+                        "GENERATE_A8W8_BLOCKSCALE_BPRESHUFFLE_KID_DISPATCH_"
+                        f"{arch.upper()}_{dtype_suffix}"
+                    )
+                    _emit_map(
+                        f,
+                        macro_name,
+                        _rows(arch, A8W8_BPRESHUFFLE_TAGS, ctype),
+                        ctype,
+                    )
 
     def gen_manifest_head(self, kernels_dict):
         # Forward declarations for every launcher symbol the dispatcher references.
@@ -666,18 +653,27 @@ class opus_gemm_codegen:
 #include <cstdlib>
 #include <optional>
 """
-        MANIFEST_SCALE = """
+        MANIFEST_BLOCKSCALE = """
 template <typename D_C>
 void
 {kernel_name}(
     aiter_tensor_t &XQ,
     aiter_tensor_t &WQ,
     aiter_tensor_t &Y,
-    std::optional<aiter_tensor_t> x_scale,
-    std::optional<aiter_tensor_t> w_scale);
+    aiter_tensor_t &x_scale,
+    aiter_tensor_t &w_scale);
 """
-        # a8w8 noscale (3 args, no splitK): stays compatible with
-        # opus_gemm_lookup.h where a8w8 kids live.
+        MANIFEST_BLOCKSCALE_BPRESHUFFLE = """
+template <typename D_C>
+void
+{kernel_name}(
+    aiter_tensor_t &XQ,
+    aiter_tensor_t &WQ,
+    aiter_tensor_t &x_scale,
+    aiter_tensor_t &w_scale,
+    aiter_tensor_t &Y);
+"""
+        # a8w8 noscale (3 args, no splitK) has its own exact-kid table.
         MANIFEST_NOSCALE_3ARG = """
 template <typename D_C>
 void
@@ -697,7 +693,9 @@ void
     std::optional<aiter_tensor_t> bias,
     int splitK);
 """
-        # Two-stage split-K launchers receive a caller-owned typed workspace.
+        # External-workspace launchers receive a caller-owned typed tensor.
+        # This covers both two-stage reducers and gfx1250 fused in-cluster
+        # reduction.
         MANIFEST_A16W16_WORKSPACE = """
 template <typename D_C>
 void
@@ -716,12 +714,22 @@ void
                     f.write(
                         MANIFEST_A16W16_WORKSPACE.format(kernel_name=k.name)
                     )
-                elif k.kernel_tag in A16W16_TUNE_TAGS:
+                elif k.kernel_tag in A16W16_KID_DISPATCH_TAGS:
                     f.write(MANIFEST_A16W16.format(kernel_name=k.name))
-                elif k.kernel_tag in NOSCALE_TAGS:
+                elif k.kernel_tag == "a8w8":
                     f.write(MANIFEST_NOSCALE_3ARG.format(kernel_name=k.name))
+                elif k.kernel_tag == "a8w8_scale":
+                    f.write(MANIFEST_BLOCKSCALE.format(kernel_name=k.name))
+                elif k.kernel_tag in A8W8_BPRESHUFFLE_TAGS:
+                    f.write(
+                        MANIFEST_BLOCKSCALE_BPRESHUFFLE.format(
+                            kernel_name=k.name
+                        )
+                    )
                 else:
-                    f.write(MANIFEST_SCALE.format(kernel_name=k.name))
+                    raise ValueError(
+                        f"no manifest ABI for kernel tag {k.kernel_tag!r}"
+                    )
 
     # -- Per-pass TU emission -- Replaces the old "one .cpp per (kid, dtype)" scheme.
 
@@ -760,12 +768,15 @@ void
             reduce_abi = SPLITK_REDUCE_ABI_MAP[arch]
             extra_reduce = SPLITK_REDUCE_EXTRA_MAP.get(arch, {})
             extra_forward_decls = extra_reduce.get("forward_decls", lambda: "")()
+            extra_template_params = reduce_abi.get(
+                "forward_decl_extra_template_params", ""
+            )
             forward_decls = (
                 "// Forward declaration only. Specialisations live in per-arch device TUs.\n"
                 f"{reduce_abi['forward_decl_include']}"
                 "template<int VEC_, int BLOCK_, typename D_OUT,\n"
                 "         bool HAS_BIAS_, typename D_BIAS_,\n"
-                "         bool HAS_OOB_>\n"
+                f"         bool HAS_OOB_{extra_template_params}>\n"
                 f"__global__ void {reduce_abi['kernel']}(\n"
                 f"    {reduce_abi['ws_arg']}, D_OUT* c_out,\n"
                 "    int split_k, int M, int N, int batch,\n"
@@ -892,7 +903,10 @@ void
                 f'#include "{reduce_header}"\n'
                 + "".join(
                     _splitk_reduce_baseline_instantiations(
-                        reduce_kernel, ws_ptr_type, has_oob
+                        reduce_kernel,
+                        ws_ptr_type,
+                        has_oob,
+                        reduce_abi.get("baseline_extra_template_args", ""),
                     )
                     for has_oob in reduce_abi["baseline_has_oob"]
                 )
@@ -906,6 +920,15 @@ void
             ).write_text(contents)
 
     def gen_instances(self, kernels_dict):
+        # A rerun in an existing blob directory must not leave removed or
+        # renamed generated policy headers behind.
+        for legacy_header in (
+            "opus_gemm_lookup.h",
+            "opus_gemm_a16w16_tune_lookup.h",
+            "opus_gemm_a8w8_tune_lookup.h",
+        ):
+            Path(self.working_path, legacy_header).unlink(missing_ok=True)
+
         if os.path.exists(self.impl_path):
             shutil.rmtree(self.impl_path)
         os.mkdir(self.impl_path)
@@ -933,56 +956,9 @@ void
         if needs_reduce_tu:
             self._emit_splitk_reduce_tu()
 
-        self.gen_lookup_dict(kernels_dict)
         self.gen_manifest_head(kernels_dict)
-        self.gen_a16w16_tune_lookup(kernels_dict)
-        self.gen_a8w8_tune_lookup(kernels_dict)
-
-
-def get_tune_dict(tune_dict_csv):
-    """Load a tuned CSV into the lookup-dict shape consumed by gen_lookup_dict.
-
-    Key layout
-    ----------
-    Tuple keys: (M, N, K, outdtype_str). Promoting outdtype into the key
-    is what lets a single (M, N, K) shape carry distinct winners for bf16
-    vs fp32 output (the underlying main kernel hardware rules differ
-    enough that the best kid is not always the same; e.g. fp32 output
-    biases reduce-bound shapes toward larger split-K). gen_lookup_dict
-    then writes outdtype="torch.bfloat16" rows only into the BF16 (M,N,K)
-    map and outdtype="torch.float32" rows only into the FP32 (M,N,K) map.
-
-    Backwards compat
-    ----------------
-    Legacy CSVs without an `outdtype` column are interpreted as
-    bf16-output (matches what the tuner used to write). int keys from
-    default_kernels_dict are passed through untouched -- gen_lookup_dict
-    skips them via the `isinstance(mnk, tuple) and mnk[0] > 0` guard.
-    """
-    tune_dict = default_kernels_dict
-    if os.path.exists(tune_dict_csv):
-        tune_df = pd.read_csv(tune_dict_csv)
-        if torch.cuda.is_available():
-            gpu = torch.cuda.current_device()
-            device_properties = torch.cuda.get_device_properties(gpu)
-            cu_num = device_properties.multi_processor_count
-            tune_df = tune_df[tune_df["cu_num"] == cu_num].reset_index()
-        # Accept either the legacy "kernelId" column or the new "solidx" column.
-        kids = _tune_df_kids(tune_df)
-        has_outdtype = "outdtype" in tune_df.columns
-        for i in range(len(tune_df)):
-            if kids is None or pd.isna(kids.loc[i]):
-                continue
-            M = tune_df.loc[i, "M"]
-            N = tune_df.loc[i, "N"]
-            K = tune_df.loc[i, "K"]
-            outdtype = (
-                str(tune_df.loc[i, "outdtype"]) if has_outdtype else "torch.bfloat16"
-            )
-            kid = int(kids.loc[i])
-            if kid in kernels_list:
-                tune_dict[(M, N, K, outdtype)] = kernels_list[kid]
-    return tune_dict
+        self.gen_a16w16_kid_dispatch(kernels_dict)
+        self.gen_a8w8_kid_dispatch(kernels_dict)
 
 
 def _tune_df_kids(df):
@@ -1013,7 +989,7 @@ if __name__ == "__main__":
         "--tune",
         action="store_true",
         default=False,
-        help="generate all kernel instances for tuning (id-based lookup)",
+        help="generate all kernel instances for tuning (exact-kid dispatch)",
     )
 
     parser.add_argument(
@@ -1032,13 +1008,10 @@ if __name__ == "__main__":
             "GEMM CSVs (e.g. aiter/configs/bf16_tuned_gemm.csv and "
             "aiter/configs/model_configs/*_bf16_tuned_gemm.csv). Each "
             "file is filtered by `libtype == 'opus'`; surviving rows "
-            "contribute their `solidx` to the subset-compile set S and "
-            "are also baked into opus_gemm_lookup.h via "
-            "GENERATE_OPUS_LOOKUP_TABLE_*. Without this flag we still "
-            "generate a working module (only HEURISTIC_DEFAULT_KIDS + "
-            "sidecar contents), the lookup table stays empty, and the "
-            "C++ dispatch falls through to the heuristic for every "
-            "untuned shape."
+            "contribute their `solidx`/`kernelId` only to the subset-compile "
+            "set S. Runtime shape policy remains in the Python selector. "
+            "Without this flag the module is generated from the sidecar, "
+            "per-arch heuristic defaults, and mandatory family kids."
         ),
     )
 
@@ -1080,6 +1053,9 @@ if __name__ == "__main__":
         "gfx942_nosplit": gfx942_nosplit_kernels_list,
         "gfx942_splitk": gfx942_splitk_kernels_list,
         "gfx942_a8w8": gfx942_a8w8_kernels_list,
+        "a16w16_cluster_tdm_splitk_ws": gfx1250_kernels_list,
+        "a16w16_clusterlaunch_tdm_splitk_ws": gfx1250_clusterlaunch_kernels_list,
+        "a16w16_clusterlaunch_tdm_splitk_fuse": gfx1250_splitk_fuse_kernels_list,
     }
 
     # --- Compute the subset-compile set S ------------------------------------ S = (CSV opus rows'
@@ -1185,11 +1161,21 @@ if __name__ == "__main__":
             f"#define OPUS_BUILD_HAS_{a.upper()} 1\n" for a in archs_for_header
         )
 
-    # gfx950 a8w8 (kid 1, 2) is only needed when the module is built with
-    # gfx950 support. gfx942 has its own blockscale bpreshuffle A8W8 tune path.
-    if target_arches is None or "gfx950" in target_arches:
-        S |= set(a8w8_scale_kernels_list.keys())
-        S |= set(a8w8_kernels_list.keys())
+    # Family ABI defaults must be linkable even when no tuned row or sidecar
+    # mentions them.  This set is arch-scoped so single-arch builds never pull
+    # another architecture's launcher symbol into their host TU.
+    mandatory_arches = (
+        set(OPUS_MANDATORY_A8_KIDS)
+        if target_arches is None
+        else set(target_arches)
+    )
+    mandatory_a8_kids = set().union(
+        *(
+            OPUS_MANDATORY_A8_KIDS.get(arch, frozenset())
+            for arch in mandatory_arches
+        )
+    )
+    S |= mandatory_a8_kids & valid_kids
 
     # Honor --kernel_tag as a developer override that *further restricts* the set (within the a16w16
     # / a8w8 families).
@@ -1197,19 +1183,18 @@ if __name__ == "__main__":
         tag_keys = set(TAG_TO_LIST.get(args.kernel_tag, {}).keys())
         if tag_keys:
             # Restrict to the requested family + heuristic defaults.
-            S = (S & tag_keys) | set(HEURISTIC_DEFAULT_KIDS)
-            if target_arches is None or "gfx950" in target_arches:
-                S |= set(a8w8_scale_kernels_list.keys())
-                S |= set(a8w8_kernels_list.keys())
+            S = (S & tag_keys) | set(heuristic_kids_for_arch(target_arches))
+            S |= mandatory_a8_kids & valid_kids
 
-    # Heuristic-fallback invariant (single source of truth: opus_gemm_common.py).
+    # Python heuristic-default compile invariant (single source of truth:
+    # opus_gemm_common.py). C++ performs exact-kid dispatch only.
     required_heuristic = set(heuristic_kids_for_arch(target_arches))
     missing_heuristic = required_heuristic - S
     assert not missing_heuristic, (
-        f"Subset-compile error: heuristic-fallback kids "
+        f"Subset-compile error: Python heuristic-default kids "
         f"{sorted(missing_heuristic)} are missing from the compile set S; "
-        f"opus_a16w16_heuristic_kid_gfx950() would return an unbakeable "
-        f"kid. Add them to the compile set or update HEURISTIC_DEFAULT_KIDS "
+        f"the selector could return an uncompiled kid. Add them to the "
+        f"compile set or update HEURISTIC_DEFAULT_KIDS "
         f"in csrc/opus_gemm/opus_gemm_common.py."
     )
 
@@ -1218,85 +1203,14 @@ if __name__ == "__main__":
 
     print(
         f"[opus gen_instances] subset compile: |S|={len(S)} kids "
-        f"(CSV={len(csv_kids)}, sidecar={len(sidecar_kids)}, heuristic={len(HEURISTIC_DEFAULT_KIDS)})"
+        f"(sources: CSV={len(S & csv_kids)}, "
+        f"sidecar={len(S & sidecar_kids)}, "
+        f"heuristic-default={len(S & required_heuristic)}, "
+        f"mandatory-a8={len(S & mandatory_a8_kids)})"
     )
 
     codegen = opus_gemm_codegen(args.working_path, args.tune)
     codegen.gen_instances(kdict)
-
-    # Bake the (M, N, K) -> kernel runtime lookup.
-    if csv_paths:
-        # Concatenate all opus rows from all matched CSV files (filtered by libtype).
-        combined_frames = []
-        for path in csv_paths:
-            try:
-                df = pd.read_csv(path)
-            except (pd.errors.EmptyDataError, FileNotFoundError):
-                continue
-            if "libtype" not in df.columns:
-                continue
-            df = df[df["libtype"] == "opus"]
-            if df.empty:
-                continue
-            # Drop off-arch kids: lookup must only reference symbols S actually emitted.
-            kids = _tune_df_kids(df)
-            if kids is None:
-                continue
-            a16w16_lookup_rows = kids.apply(
-                lambda kid: (
-                    not pd.isna(kid)
-                    and int(kid) in kernels_list
-                    and kernels_list[int(kid)].kernel_tag in A16W16_TUNE_TAGS
-                )
-            )
-            df = df[kids.isin(S) & a16w16_lookup_rows]
-            if df.empty:
-                continue
-            if "kernelId" in df.columns:
-                df = df.copy()
-                if "solidx" in df.columns:
-                    df["solidx"] = df["solidx"].fillna(df["kernelId"])
-                    df = df.drop(columns=["kernelId"])
-                else:
-                    df = df.rename(columns={"kernelId": "solidx"})
-            if "solidx" in df.columns:
-                df["solidx"] = df["solidx"].astype(int)
-            combined_frames.append(df)
-
-        if combined_frames:
-            combined = pd.concat(combined_frames, ignore_index=True).drop_duplicates()
-            tmp_csv = os.path.join(args.working_path, "_combined_opus_tuned.csv")
-            combined.to_csv(tmp_csv, index=False)
-            tune_dict = get_tune_dict(tmp_csv)
-            try:
-                os.remove(tmp_csv)
-            except OSError:
-                pass
-            # Filter tune_dict entries to those whose kid is in S (defense
-            # in depth -- valid_kids should have already caught everything).
-            filtered = {}
-            for k, v in tune_dict.items():
-                if isinstance(k, tuple) and k[0] > 0:
-                    # Find the kid for this entry by reverse-lookup against S.
-                    filtered[k] = v
-                else:
-                    filtered[k] = v  # default_kernels_dict negative-int entries
-            codegen.gen_lookup_dict(filtered)
-            n_real = sum(1 for k in filtered if isinstance(k, tuple) and k[0] > 0)
-            print(
-                f"[opus gen_instances] baked {n_real} tuned entries from "
-                f"{len(csv_paths)} CSV file(s) into opus_gemm_lookup.h"
-            )
-        else:
-            print(
-                f"[opus gen_instances] no `libtype=='opus'` rows found in "
-                f"{len(csv_paths)} CSV file(s); using empty lookup"
-            )
-    elif args.tune_files:
-        print(
-            f"[opus gen_instances] --tune_files {args.tune_files} matched no "
-            f"existing files; using empty lookup"
-        )
 
     # Persist the expanded compile set so subsequent rebuilds reuse it.
     try:

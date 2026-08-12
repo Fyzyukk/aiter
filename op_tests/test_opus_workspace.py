@@ -1,53 +1,30 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""CPU-side tests for OPUS typed workspace planning and validation."""
+"""CPU and GPU tests for OPUS call-scoped Torch workspaces."""
 
 from __future__ import annotations
 
 import importlib
-import sys
+from collections import Counter
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
 
-from csrc.opus_gemm.opus_gemm_common import get_kernel_instance
+from csrc.opus_gemm.opus_gemm_common import (
+    SPLITK_KIDS,
+    GFX1250_SPLITK_FUSE_KID_OF,
+    GFX1250_SPLITK_FUSE_KIDS,
+    gfx1250_clusterlaunch_kernels_list,
+    gfx1250_kernels_list,
+    gfx1250_splitk_fuse_kernels_list,
+    kernel_needs_external_workspace,
+    kernels_list,
+)
 
 from aiter.ops.opus._selector_a16w16 import LaunchConfig, select_launch_config
-from aiter.ops.opus._workspace import (
-    WorkspacePlan,
-    allocate_workspace,
-    checked_numel,
-    validate_workspace,
-)
-from aiter.ops.opus._workspace_a16w16 import plan_a16w16_workspace
-
-
-def _instance(arch: str, kid: int):
-    instance = get_kernel_instance(arch, "a16w16", kid)
-    assert instance is not None
-    return instance
-
-
-def _plan(
-    arch: str,
-    kid: int,
-    *,
-    M: int,
-    N: int,
-    K: int,
-    batch: int,
-    split_k: int,
-) -> WorkspacePlan | None:
-    return plan_a16w16_workspace(
-        _instance(arch, kid),
-        arch=arch,
-        kid=kid,
-        M=M,
-        N=N,
-        K=K,
-        batch=batch,
-        split_k=split_k,
-    )
 
 
 def _workspace_config(
@@ -69,84 +46,243 @@ def _workspace_config(
     )
 
 
-def test_workspace_plan_validates_its_dynamic_contract():
-    plan = WorkspacePlan(
-        shape=(2, 3, 4),
-        dtype=torch.float32,
-        required_numel=23,
-        alignment=16,
+def _init_workspace(
+    arch: str,
+    kid: int,
+    *,
+    M: int,
+    N: int,
+    K: int,
+    batch: int,
+    split_k: int,
+    workspace: torch.Tensor | None = None,
+) -> torch.Tensor | None:
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    config = _workspace_config(
+        arch=arch,
+        kid=kid,
+        allocation_split_k=split_k,
+        launch_split_k=split_k,
     )
-    assert plan.shape == (2, 3, 4)
-    assert plan.allocation_numel == 24
-
-    with pytest.raises(ValueError, match="smaller than required_numel"):
-        WorkspacePlan((2, 3), torch.float32, 7, 16)
-    with pytest.raises(ValueError, match="power of two"):
-        WorkspacePlan((2, 3), torch.float32, 6, 12)
-    with pytest.raises(ValueError, match="must be positive"):
-        WorkspacePlan((2, 0), torch.float32, 1, 16)
+    XQ = torch.empty((batch, M, K), dtype=torch.bfloat16)
+    Y = torch.empty((batch, M, N), dtype=torch.bfloat16)
+    return gemm._init_a16w16_workspace(config, XQ, Y, workspace)
 
 
-def test_checked_numel_rejects_extent_overflow():
-    assert checked_numel((2, 3, 5), limit=30) == 30
-    with pytest.raises(OverflowError, match="supported limit"):
-        checked_numel((sys.maxsize, 2))
+def test_every_workspace_kid_explicitly_declares_storage_dtype():
+    assert SPLITK_KIDS
+    assert {
+        kernels_list[kid].splitk_workspace_dtype for kid in SPLITK_KIDS
+    } == {"bf16_t", "fp32_t"}
 
 
-def test_allocate_workspace_is_typed_shaped_and_not_cached():
-    plan = WorkspacePlan((2, 3, 4), torch.bfloat16, 24, 16)
-    first = allocate_workspace(plan, torch.device("cpu"))
-    second = allocate_workspace(plan, torch.device("cpu"))
-
-    assert first.shape == plan.shape
-    assert first.dtype == torch.bfloat16
-    assert first.device.type == "cpu"
-    assert first is not second
-    assert first.data_ptr() != second.data_ptr()
-
-
-def test_validate_workspace_accepts_exact_or_larger_flat_capacity():
-    plan = WorkspacePlan((2, 4), torch.float32, 8, 16)
-    exact = torch.empty(8, dtype=torch.float32)
-    larger = torch.empty(11, dtype=torch.float32)
-
-    assert validate_workspace(exact, plan, exact.device) is exact
-    assert validate_workspace(larger, plan, larger.device) is larger
+@pytest.mark.parametrize(
+    ("arch", "family", "kid"),
+    [
+        ("gfx950", "a8w8", 2),
+        ("gfx950", "a8w8_blockscale", 1),
+        ("gfx942", "a8w8_blockscale_bpreshuffle", 11000),
+    ],
+)
+def test_a8_families_do_not_acquire_workspace_capability(arch, family, kid):
+    assert kid not in SPLITK_KIDS
+    assert not kernel_needs_external_workspace(arch, family, kid)
 
 
-def test_validate_workspace_rejects_one_element_short():
-    plan = WorkspacePlan((8,), torch.float32, 8, 16)
-    with pytest.raises(ValueError, match="need at least 8 elements, got 7"):
-        validate_workspace(torch.empty(7, dtype=torch.float32), plan, "cpu")
+def test_gfx1250_two_stage_registry_matches_pr4246_bf16_contract():
+    assert len(gfx1250_kernels_list) == 28
+    assert len(gfx1250_clusterlaunch_kernels_list) == 468
+    assert {
+        instance.splitk_workspace_dtype
+        for instance in (
+            *gfx1250_kernels_list.values(),
+            *gfx1250_clusterlaunch_kernels_list.values(),
+        )
+    } == {"bf16_t"}
 
 
-def test_validate_workspace_rejects_wrong_dtype():
-    plan = WorkspacePlan((8,), torch.float32, 8, 16)
-    with pytest.raises(ValueError, match="dtype mismatch"):
-        validate_workspace(torch.empty(8, dtype=torch.bfloat16), plan, "cpu")
+def test_gfx1250_fused_registry_matches_pr4246_exact_dtype_contract():
+    assert len(gfx1250_splitk_fuse_kernels_list) == 1378
+    assert len(GFX1250_SPLITK_FUSE_KIDS) == 1378
+    assert (min(GFX1250_SPLITK_FUSE_KIDS), max(GFX1250_SPLITK_FUSE_KIDS)) == (
+        21000,
+        22377,
+    )
+    assert GFX1250_SPLITK_FUSE_KIDS <= SPLITK_KIDS
+    assert Counter(
+        instance.splitk_workspace_dtype
+        for instance in gfx1250_splitk_fuse_kernels_list.values()
+    ) == {"bf16_t": 780, "fp32_t": 598}
+    assert {
+        instance.kernel_tag
+        for instance in gfx1250_splitk_fuse_kernels_list.values()
+    } == {"a16w16_clusterlaunch_tdm_splitk_fuse"}
+    # Dtype is projected onto the shared exact-kid field; do not revive the
+    # old fuse_ws_dtype second source of truth.
+    assert all(
+        not hasattr(instance, "fuse_ws_dtype")
+        for instance in gfx1250_splitk_fuse_kernels_list.values()
+    )
 
 
-def test_validate_workspace_rejects_wrong_device():
-    plan = WorkspacePlan((8,), torch.float32, 8, 16)
-    workspace = torch.empty(8, dtype=torch.float32, device="meta")
-    with pytest.raises(ValueError, match="device mismatch"):
-        validate_workspace(workspace, plan, "cpu")
+@pytest.mark.parametrize(
+    ("workspace_dtype", "aiter_dtype", "reduce_vec", "workspace_cpp_type"),
+    [
+        ("bf16_t", "AITER_DTYPE_bf16", 8, "__bf16"),
+        ("fp32_t", "AITER_DTYPE_fp32", 16, "float"),
+    ],
+)
+def test_gfx1250_codegen_uses_exact_kid_workspace_dtype(
+    tmp_path, monkeypatch, workspace_dtype, aiter_dtype, reduce_vec, workspace_cpp_type
+):
+    monkeypatch.syspath_prepend(
+        str(Path(__file__).resolve().parents[1] / "csrc" / "opus_gemm")
+    )
+    from codegen.gen_instances_gfx1250 import (
+        KARGS_NAME_MAP,
+        KERNEL_FUNC_MAP,
+        PIPELINE_HEADER_MAP,
+        TRAITS_HEADER_MAP,
+        TRAITS_NAME_MAP,
+        gen_cluster_tdm_splitk_ws_instance,
+    )
+    from gen_instances import opus_gemm_codegen
+
+    instance = replace(
+        gfx1250_kernels_list[20000],
+        splitk_workspace_dtype=workspace_dtype,
+    )
+    codegen = SimpleNamespace(
+        impl_path=str(tmp_path),
+        _host_instantiations=[],
+        _device_instantiations=[],
+    )
+    tag = instance.kernel_tag
+    gen_cluster_tdm_splitk_ws_instance(
+        codegen,
+        instance,
+        PIPELINE_HEADER_MAP[tag],
+        TRAITS_HEADER_MAP[tag],
+        KERNEL_FUNC_MAP[tag],
+        "bf16_t",
+        "bf16_t",
+        TRAITS_NAME_MAP[tag],
+        KARGS_NAME_MAP[tag],
+    )
+    generated = (tmp_path / f"{instance.name}.cuh").read_text()
+    assert aiter_dtype in generated
+    assert f"constexpr int REDUCE_VEC = {reduce_vec};" in generated
+    assert f", {workspace_cpp_type}>" in generated
+
+    full_codegen_path = tmp_path / "full"
+    full_codegen_path.mkdir()
+    opus_gemm_codegen(str(full_codegen_path), False).gen_instances({20000: instance})
+    host_tu = (
+        full_codegen_path / "instances" / "all_instances_host_gfx1250.cu"
+    ).read_text()
+    assert "bool HAS_OOB_, typename D_WS_>" in host_tu
+    reduce_tu = (
+        full_codegen_path / "instances" / "splitk_reduce_gfx1250.device.cu"
+    ).read_text()
+    assert "16, 64, __bf16, true, float, true, float>" in reduce_tu
+    assert "8, 128, __bf16, true, float, true, __bf16>" in reduce_tu
 
 
-def test_validate_workspace_rejects_noncontiguous_tensor():
-    plan = WorkspacePlan((8,), torch.float32, 8, 16)
-    workspace = torch.empty((2, 4), dtype=torch.float32).transpose(0, 1)
-    with pytest.raises(ValueError, match="must be contiguous"):
-        validate_workspace(workspace, plan, "cpu")
+def test_gfx1250_fused_codegen_validates_tile_major_exact_dtype_workspace(
+    tmp_path, monkeypatch
+):
+    monkeypatch.syspath_prepend(
+        str(Path(__file__).resolve().parents[1] / "csrc" / "opus_gemm")
+    )
+    from codegen.gen_instances_gfx1250 import (
+        KARGS_NAME_MAP,
+        KERNEL_FUNC_MAP,
+        PIPELINE_HEADER_MAP,
+        TRAITS_HEADER_MAP,
+        TRAITS_NAME_MAP,
+        gen_splitk_fuse_instance,
+    )
+    from gen_instances import opus_gemm_codegen
+
+    selected = {}
+    for workspace_dtype, expected_aiter_dtype, expected_cpp_type in (
+        ("bf16_t", "AITER_DTYPE_bf16", "__bf16"),
+        ("fp32_t", "AITER_DTYPE_fp32", "float"),
+    ):
+        kid = GFX1250_SPLITK_FUSE_KID_OF[
+            (16, 32, 128, "tileN", 5, 1, workspace_dtype)
+        ]
+        instance = gfx1250_splitk_fuse_kernels_list[kid]
+        selected[kid] = instance
+        impl_dir = tmp_path / workspace_dtype
+        impl_dir.mkdir()
+        codegen = SimpleNamespace(
+            impl_path=str(impl_dir),
+            _host_instantiations=[],
+            _device_instantiations=[],
+        )
+        tag = instance.kernel_tag
+        gen_splitk_fuse_instance(
+            codegen,
+            instance,
+            PIPELINE_HEADER_MAP[tag],
+            TRAITS_HEADER_MAP[tag],
+            KERNEL_FUNC_MAP[tag],
+            "bf16_t",
+            "bf16_t",
+            TRAITS_NAME_MAP[tag],
+            KARGS_NAME_MAP[tag],
+        )
+        generated = (impl_dir / f"{instance.name}.cuh").read_text()
+        assert expected_aiter_dtype in generated
+        assert "[num_tiles_m, num_tiles_n, SplitK-1, B_M, B_N]" in generated
+        assert "static_cast<size_t>(4)" in generated
+        assert f"<Traits, 5, {expected_cpp_type}, 1, __bf16>" in generated
+        assert "opus_validate_workspace" in generated
+        assert "splitk_reduce_kernel_gfx1250" not in generated
+
+    full_codegen_path = tmp_path / "full_fused"
+    full_codegen_path.mkdir()
+    opus_gemm_codegen(str(full_codegen_path), False).gen_instances(selected)
+    dispatch = (
+        full_codegen_path / "opus_gemm_a16w16_kid_dispatch.h"
+    ).read_text()
+    assert "GENERATE_A16W16_WORKSPACE_KID_DISPATCH_GFX1250_SIZE 2" in dispatch
+    assert all(f"{{ {kid}," in dispatch for kid in selected)
+    # Fused-only generation must not manufacture a standalone reduce TU.
+    assert not (
+        full_codegen_path / "instances" / "splitk_reduce_gfx1250.device.cu"
+    ).exists()
+
+    pipeline = (
+        Path(__file__).resolve().parents[1]
+        / "csrc"
+        / "opus_gemm"
+        / "include"
+        / "gfx1250"
+        / "opus_gemm_pipeline_a16w16_clusterlaunch_tdm_splitk_fuse_gfx1250.cuh"
+    ).read_text()
+    assert "opus::tdm_window" in pipeline
+    assert "opus::make_tdm" not in pipeline
 
 
-def test_validate_workspace_rejects_misaligned_storage_offset():
-    plan = WorkspacePlan((8,), torch.float32, 8, 16)
-    workspace = torch.empty(9, dtype=torch.float32)[1:]
-    assert workspace.is_contiguous()
-    assert workspace.data_ptr() % plan.alignment != 0
-    with pytest.raises(ValueError, match="not sufficiently aligned"):
-        validate_workspace(workspace, plan, "cpu")
+def test_gfx1250_bf16_workspace_kid_accepts_fp32_output():
+    config = select_launch_config(
+        arch="gfx1250",
+        M=16,
+        N=32,
+        K=512,
+        batch=1,
+        cu_num=256,
+        has_bias=False,
+        input_dtype=torch.bfloat16,
+        output_dtype=torch.float32,
+        explicit_kid=20000,
+        explicit_split_k=2,
+        tuned_lookup=lambda **_kwargs: None,
+    )
+    assert config.actual_kid == 20000
+    assert config.allocation_split_k == 2
 
 
 @pytest.mark.parametrize(
@@ -194,14 +330,14 @@ def test_validate_workspace_rejects_misaligned_storage_offset():
             1,
             3,
             (3, 32, 64),
-            torch.float32,
+            torch.bfloat16,
         ),
     ],
 )
-def test_a16w16_workspace_plan_uses_instance_tile_and_dtype(
+def test_a16w16_workspace_init_uses_actual_kid_tile_and_dtype(
     arch, kid, M, N, K, batch, split_k, shape, dtype
 ):
-    plan = _plan(
+    workspace = _init_workspace(
         arch,
         kid,
         M=M,
@@ -210,11 +346,143 @@ def test_a16w16_workspace_plan_uses_instance_tile_and_dtype(
         batch=batch,
         split_k=split_k,
     )
-    assert plan is not None
-    assert plan.shape == shape
-    assert plan.dtype == dtype
-    assert plan.required_numel == plan.allocation_numel
-    assert plan.alignment == 16
+    assert workspace is not None
+    assert workspace.shape == shape
+    assert workspace.dtype == dtype
+    assert workspace.data_ptr() % 16 == 0
+
+
+@pytest.mark.parametrize(
+    ("workspace_dtype", "compile_split_k", "runtime_split_k", "torch_dtype"),
+    [
+        ("bf16_t", 5, 1, torch.bfloat16),
+        ("fp32_t", 4, 16, torch.float32),
+    ],
+)
+def test_gfx1250_fused_workspace_uses_tile_major_compile_time_layout(
+    workspace_dtype, compile_split_k, runtime_split_k, torch_dtype
+):
+    kid = GFX1250_SPLITK_FUSE_KID_OF[
+        (16, 32, 128, "tileN", compile_split_k, 1, workspace_dtype)
+    ]
+    workspace = _init_workspace(
+        "gfx1250",
+        kid,
+        M=17,
+        N=64,
+        K=1024,
+        batch=1,
+        split_k=runtime_split_k,
+    )
+    assert workspace is not None
+    assert workspace.shape == (2, 2, compile_split_k - 1, 16, 32)
+    assert workspace.dtype == torch_dtype
+    assert workspace.data_ptr() % 16 == 0
+    # This is intentionally not the two-stage [split_k, padded_M, padded_N]
+    # shape, and runtime_split_k cannot alter fused capacity.
+    assert workspace.shape != (runtime_split_k, 32, 64)
+
+
+def test_gfx1250_fused_selector_uses_baked_split_k_not_runtime_value():
+    kid = GFX1250_SPLITK_FUSE_KID_OF[
+        (16, 32, 128, "tileN", 5, 1, "bf16_t")
+    ]
+    config = select_launch_config(
+        arch="gfx1250",
+        M=17,
+        N=64,
+        K=1024,
+        batch=1,
+        cu_num=256,
+        has_bias=False,
+        input_dtype=torch.bfloat16,
+        output_dtype=torch.float32,
+        explicit_kid=kid,
+        explicit_split_k=2,
+        tuned_lookup=lambda **_kwargs: None,
+    )
+    assert config.requested_split_k == 2
+    assert config.allocation_split_k == 5
+    assert config.launch_split_k == 5
+    assert config.effective_split_k == 5
+
+
+def test_gfx1250_fused_selector_rejects_unrepresentable_public_bias_contract():
+    kid = GFX1250_SPLITK_FUSE_KID_OF[
+        (16, 32, 128, "tileN", 5, 1, "bf16_t")
+    ]
+    with pytest.raises(ValueError, match=r"narrower bf16 \[N\] bias contract"):
+        select_launch_config(
+            arch="gfx1250",
+            M=17,
+            N=64,
+            K=1024,
+            batch=1,
+            cu_num=256,
+            has_bias=True,
+            input_dtype=torch.bfloat16,
+            output_dtype=torch.bfloat16,
+            explicit_kid=kid,
+            explicit_split_k=5,
+            tuned_lookup=lambda **_kwargs: None,
+        )
+
+
+def test_gfx1250_tuner_omits_fused_kids_for_boolean_bias_rows(
+    monkeypatch,
+):
+    monkeypatch.syspath_prepend(
+        str(Path(__file__).resolve().parents[1] / "csrc" / "opus_gemm")
+    )
+    from opus_gemm_tune import _gfx1250_select_candidates, kid_rejects_bias
+
+    fused_instance = next(iter(gfx1250_splitk_fuse_kernels_list.values()))
+    two_stage_instance = next(iter(gfx1250_kernels_list.values()))
+    assert kid_rejects_bias(fused_instance, True)
+    assert not kid_rejects_bias(two_stage_instance, True)
+
+    candidates = _gfx1250_select_candidates(
+        64, 128, 4096, 256, include_fused=False
+    )
+    assert candidates
+    assert candidates.isdisjoint(GFX1250_SPLITK_FUSE_KIDS)
+
+
+def test_gfx1250_fused_tuner_selects_splitk_per_workspace_dtype(monkeypatch):
+    monkeypatch.syspath_prepend(
+        str(Path(__file__).resolve().parents[1] / "csrc" / "opus_gemm")
+    )
+    from opus_gemm_tune import _gfx1250_fuse_kids_for_tile
+
+    candidates = _gfx1250_fuse_kids_for_tile(
+        M=16,
+        N=32,
+        K=4096,
+        cu_num=256,
+        bm=16,
+        bn=32,
+        bk=128,
+    )
+    selected = [gfx1250_splitk_fuse_kernels_list[kid] for kid in candidates]
+    split_k_by_dtype = {
+        workspace_dtype: {
+            instance.fuse_split_k
+            for instance in selected
+            if instance.splitk_workspace_dtype == workspace_dtype
+        }
+        for workspace_dtype in ("bf16_t", "fp32_t")
+    }
+
+    # All SplitK values underfill this synthetic 256-CU shape, so each dtype
+    # should retain its own three largest (and therefore closest) values.
+    assert split_k_by_dtype == {
+        "bf16_t": {13, 14, 15},
+        "fp32_t": {6, 7, 8},
+    }
+    assert all(
+        instance.fuse_split_k * instance.fuse_m_cluster <= 16
+        for instance in selected
+    )
 
 
 @pytest.mark.parametrize(
@@ -227,13 +495,14 @@ def test_a16w16_workspace_plan_uses_instance_tile_and_dtype(
         ("gfx942", 10310),
     ],
 )
-def test_non_workspace_a16w16_instances_return_none(arch, kid):
+def test_non_workspace_a16w16_kids_initialize_no_workspace(arch, kid):
     assert (
-        _plan(arch, kid, M=64, N=64, K=4096, batch=1, split_k=1) is None
+        _init_workspace(arch, kid, M=64, N=64, K=4096, batch=1, split_k=1)
+        is None
     )
 
 
-def test_gfx942_redirect_plan_reads_actual_not_requested_instance():
+def test_gfx942_redirect_workspace_reads_actual_not_requested_kid():
     config = select_launch_config(
         arch="gfx942",
         M=128,
@@ -250,71 +519,44 @@ def test_gfx942_redirect_plan_reads_actual_not_requested_instance():
     )
     assert (config.requested_kid, config.actual_kid) == (10210, 10200)
 
-    plan = plan_a16w16_workspace(
-        _instance("gfx942", config.actual_kid),
-        arch=config.arch,
-        kid=config.actual_kid,
-        M=128,
-        N=768,
-        K=4096,
-        batch=1,
-        split_k=config.allocation_split_k,
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    XQ = torch.empty((1, 128, 4096), dtype=torch.bfloat16)
+    Y = torch.empty((1, 128, 768), dtype=torch.bfloat16)
+    workspace = gemm._init_a16w16_workspace(
+        config,
+        XQ,
+        Y,
     )
-    assert plan is not None
-    assert plan.dtype == torch.float32
+    assert workspace is not None
+    assert workspace.dtype == torch.float32
+    assert workspace.shape == (3, 1, 128, 768)
 
-    with pytest.raises(ValueError, match="canonical actual"):
-        plan_a16w16_workspace(
-            _instance("gfx942", config.requested_kid),
-            arch=config.arch,
-            kid=config.actual_kid,
-            M=128,
-            N=768,
-            K=4096,
-            batch=1,
-            split_k=config.allocation_split_k,
+
+def test_gfx1250_workspace_init_rejects_batch_greater_than_one():
+    with pytest.raises(ValueError, match="require batch=1"):
+        _init_workspace(
+            "gfx1250", 20000, M=32, N=64, K=4096, batch=2, split_k=3
         )
 
 
-def test_gfx1250_workspace_plan_rejects_batch_greater_than_one():
-    with pytest.raises(ValueError, match="require batch=1"):
-        _plan("gfx1250", 20000, M=32, N=64, K=4096, batch=2, split_k=3)
-
-
-def test_workspace_plan_rejects_split_k_above_per_kid_k_tile_limit():
+def test_workspace_init_rejects_split_k_above_per_kid_k_tile_limit():
     with pytest.raises(ValueError, match="exceeds the per-kid K-tile limit 2"):
-        _plan("gfx950", 200, M=64, N=64, K=128, batch=1, split_k=3)
+        _init_workspace("gfx950", 200, M=64, N=64, K=128, batch=1, split_k=3)
 
 
-def test_explicit_workspace_reuses_shared_validation_without_allocating(monkeypatch):
-    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
-    config = _workspace_config()
-    XQ = torch.empty((1, 65, 128), dtype=torch.bfloat16)
-    Y = torch.empty((1, 65, 33), dtype=torch.bfloat16)
-    plan = _plan("gfx950", 200, M=65, N=33, K=128, batch=1, split_k=2)
-    assert plan is not None
-    workspace = torch.empty(plan.required_numel, dtype=plan.dtype)
-
-    def must_not_allocate(*_args, **_kwargs):
-        raise AssertionError("explicit workspace triggered allocation")
-
-    monkeypatch.setattr(gemm, "allocate_workspace", must_not_allocate)
-    resolved_plan, resolved_workspace = gemm._prepare_a16w16_workspace(
-        config, XQ, Y, workspace
+def test_explicit_workspace_is_reused_without_allocation():
+    workspace = torch.empty(16384, dtype=torch.float32)
+    resolved_workspace = _init_workspace(
+        "gfx950",
+        200,
+        M=65,
+        N=33,
+        K=128,
+        batch=1,
+        split_k=2,
+        workspace=workspace,
     )
-    assert resolved_plan == plan
     assert resolved_workspace is workspace
-
-
-def test_explicit_workspace_uses_shared_dtype_validation():
-    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
-    config = _workspace_config()
-    XQ = torch.empty((1, 65, 128), dtype=torch.bfloat16)
-    Y = torch.empty((1, 65, 33), dtype=torch.bfloat16)
-    wrong = torch.empty(16384, dtype=torch.bfloat16)
-
-    with pytest.raises(ValueError, match="dtype mismatch"):
-        gemm._prepare_a16w16_workspace(config, XQ, Y, wrong)
 
 
 def test_prepared_step5_launch_path_allocates_and_passes_workspace():
@@ -352,7 +594,7 @@ def test_production_path_allocates_and_passes_call_scoped_workspace(monkeypatch)
         Y.zero_()
         return Y
 
-    monkeypatch.setattr(gemm, "_opus_gemm_a16w16_tune_raw", fake_raw)
+    monkeypatch.setattr(gemm, "_opus_gemm_a16w16_launch_ctypes_raw", fake_raw)
 
     output = gemm.gemm_a16w16_opus(
         torch.empty((65, 512), dtype=torch.bfloat16),
@@ -407,9 +649,9 @@ def test_split_k_limit_fails_before_torch_empty(monkeypatch):
         allocations += 1
         raise AssertionError("invalid split-K reached torch.empty")
 
-    monkeypatch.setattr(gemm, "allocate_workspace", must_not_allocate)
+    monkeypatch.setattr(gemm.torch, "empty", must_not_allocate)
     with pytest.raises(ValueError, match="exceeds the per-kid K-tile limit 2"):
-        gemm._prepare_a16w16_workspace(config, XQ, Y)
+        gemm._init_a16w16_workspace(config, XQ, Y)
     assert allocations == 0
 
 
@@ -420,7 +662,7 @@ def test_non_workspace_kid_rejects_explicit_workspace():
     Y = torch.empty((1, 256, 256), dtype=torch.bfloat16)
 
     with pytest.raises(ValueError, match="does not use an external workspace"):
-        gemm._prepare_a16w16_workspace(
+        gemm._init_a16w16_workspace(
             config, XQ, Y, torch.empty(1, dtype=torch.float32)
         )
 
@@ -463,18 +705,6 @@ def _make_raw_case(*, kid: int | None = None):
         explicit_split_k=spec["split_k"],
         tuned_lookup=lambda **_kwargs: None,
     )
-    instance = _instance(arch, config.actual_kid)
-    plan = plan_a16w16_workspace(
-        instance,
-        arch=arch,
-        kid=config.actual_kid,
-        M=spec["M"],
-        N=spec["N"],
-        K=spec["K"],
-        batch=1,
-        split_k=config.allocation_split_k,
-    )
-    assert plan is not None
     XQ = torch.randn(
         (1, spec["M"], spec["K"]), device=device, dtype=torch.bfloat16
     )
@@ -484,13 +714,16 @@ def _make_raw_case(*, kid: int | None = None):
     Y = torch.empty(
         (1, spec["M"], spec["N"]), device=device, dtype=torch.bfloat16
     )
-    return config, plan, XQ, WQ, Y
+    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
+    workspace = gemm._init_a16w16_workspace(config, XQ, Y)
+    assert workspace is not None
+    return config, workspace, XQ, WQ, Y
 
 
 def _raw_launch(case, workspace):
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
-    config, _plan, XQ, WQ, Y = case
-    return gemm._opus_gemm_a16w16_tune_raw(
+    config, _allocated_workspace, XQ, WQ, Y = case
+    return gemm._opus_gemm_a16w16_launch_raw(
         XQ,
         WQ,
         Y,
@@ -507,18 +740,15 @@ def _raw_launch(case, workspace):
         ("gfx950", 200, torch.float32),
         ("gfx942", 10200, torch.float32),
         ("gfx942", 10210, torch.bfloat16),
-        ("gfx1250", 20000, torch.float32),
+        ("gfx1250", 20000, torch.bfloat16),
     ],
 )
 def test_raw_cpp_accepts_exact_typed_workspace(arch, kid, expected_dtype):
     if _runtime_arch() != arch:
         pytest.skip(f"requires {arch} hardware")
     case = _make_raw_case(kid=kid)
-    _config, plan, _XQ, _WQ, Y = case
-    assert plan.dtype == expected_dtype
-    workspace = torch.empty(
-        plan.required_numel, device=Y.device, dtype=expected_dtype
-    )
+    _config, workspace, _XQ, _WQ, Y = case
+    assert workspace.dtype == expected_dtype
     _raw_launch(case, workspace)
     torch.cuda.synchronize(Y.device)
     assert torch.isfinite(Y).all()
@@ -526,9 +756,9 @@ def test_raw_cpp_accepts_exact_typed_workspace(arch, kid, expected_dtype):
 
 def test_raw_cpp_rejects_workspace_one_element_short():
     case = _make_raw_case()
-    _config, plan, _XQ, _WQ, Y = case
+    _config, allocated, _XQ, _WQ, Y = case
     workspace = torch.empty(
-        plan.required_numel - 1, device=Y.device, dtype=plan.dtype
+        allocated.numel() - 1, device=Y.device, dtype=allocated.dtype
     )
     with pytest.raises(RuntimeError, match="workspace capacity.*elements"):
         _raw_launch(case, workspace)
@@ -537,30 +767,28 @@ def test_raw_cpp_rejects_workspace_one_element_short():
 @pytest.mark.parametrize("failure", ["missing", "dtype", "noncontiguous", "alignment"])
 def test_raw_cpp_rejects_invalid_workspace_contract(failure):
     case = _make_raw_case()
-    _config, plan, _XQ, _WQ, Y = case
+    _config, allocated, _XQ, _WQ, Y = case
     if failure == "missing":
         workspace = None
         message = "requires a workspace tensor"
     elif failure == "dtype":
-        wrong_dtype = (
-            torch.bfloat16 if plan.dtype == torch.float32 else torch.float32
-        )
+        wrong_dtype = torch.bfloat16 if allocated.dtype == torch.float32 else torch.float32
         workspace = torch.empty(
-            plan.required_numel, device=Y.device, dtype=wrong_dtype
+            allocated.numel(), device=Y.device, dtype=wrong_dtype
         )
         message = "workspace dtype must be"
     elif failure == "noncontiguous":
         workspace = torch.empty(
-            (plan.required_numel, 2), device=Y.device, dtype=plan.dtype
+            (allocated.numel(), 2), device=Y.device, dtype=allocated.dtype
         )[:, 0]
         assert not workspace.is_contiguous()
         message = "workspace must be contiguous"
     else:
         workspace = torch.empty(
-            plan.required_numel + 1, device=Y.device, dtype=plan.dtype
+            allocated.numel() + 1, device=Y.device, dtype=allocated.dtype
         )[1:]
         assert workspace.is_contiguous()
-        assert workspace.data_ptr() % plan.alignment != 0
+        assert workspace.data_ptr() % 16 != 0
         message = "workspace address must be aligned"
 
     with pytest.raises(RuntimeError, match=message):
@@ -573,13 +801,13 @@ def test_raw_cpp_rejects_invalid_workspace_contract(failure):
 )
 def test_raw_cpp_rejects_workspace_on_another_device():
     case = _make_raw_case()
-    _config, plan, XQ, _WQ, _Y = case
+    _config, allocated, XQ, _WQ, _Y = case
     input_index = XQ.device.index
     other_index = (input_index + 1) % torch.cuda.device_count()
     workspace = torch.empty(
-        plan.required_numel,
+        allocated.numel(),
         device=torch.device("cuda", other_index),
-        dtype=plan.dtype,
+        dtype=allocated.dtype,
     )
     with pytest.raises(RuntimeError, match="workspace device.*must match input device"):
         _raw_launch(case, workspace)
@@ -595,9 +823,9 @@ def test_raw_cpp_non_workspace_kid_requires_none():
     Y = torch.empty((1, 192, 64), device=device, dtype=torch.bfloat16)
     workspace = torch.empty(1, device=device, dtype=torch.float32)
     with pytest.raises(
-        RuntimeError, match="non-workspace kernel id 300.*workspace=None"
+        RuntimeError, match="non-workspace kid 300.*workspace=None"
     ):
-        gemm._opus_gemm_a16w16_tune_raw(
+        gemm._opus_gemm_a16w16_launch_raw(
             XQ, WQ, Y, None, workspace, 300, 0
         )
 
@@ -612,6 +840,6 @@ def test_gfx1250_raw_cpp_rejects_batch_greater_than_one():
     Y = torch.empty((2, 16, 32), device=device, dtype=torch.bfloat16)
     workspace = torch.empty(2048, device=device, dtype=torch.float32)
     with pytest.raises(RuntimeError, match="supports batch == 1 only"):
-        gemm._opus_gemm_a16w16_tune_raw(
+        gemm._opus_gemm_a16w16_launch_raw(
             XQ, WQ, Y, None, workspace, 20000, 2
         )

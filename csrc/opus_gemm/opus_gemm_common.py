@@ -62,8 +62,10 @@ class OpusGemmInstance:
     arch_prefix: str = ""
     # Optional generated name tag override for same-pipeline variants.
     name_tag: str = ""
-    # SplitK workspace storage dtype; splitK launchers still use fp32 tune dispatch.
-    splitk_workspace_dtype: str = "fp32_t"
+    # Physical workspace storage dtype for this exact kid. External-workspace
+    # kids must declare it explicitly; non-workspace kids leave it unset.
+    # The launch-dispatch host specialization remains fp32 independently.
+    splitk_workspace_dtype: str | None = None
 
     # gfx1250 cluster/TDM split-K consumer tiling: "tileN" (split N) or
     # "tileM" (split M). Only consumed by the a16w16_cluster_tdm_splitk_ws tag.
@@ -82,6 +84,15 @@ class OpusGemmInstance:
     # a16w16_clusterlaunch_tdm_splitk_ws tag; ignored by every other pipeline.
     cluster_wg_m: int = 4
     cluster_wg_n: int = 4
+
+    # gfx1250 fused single-kernel split-K. SplitK and the N-direction cluster
+    # peer count are compile-time kernel properties. The partial storage dtype
+    # deliberately uses the shared splitk_workspace_dtype field above so every
+    # external-workspace kid has one exact-kid dtype source of truth.
+    fuse_split_k: int = 0
+    # Historical field name retained for #4246/tuned-config compatibility; in
+    # the current N-direction pipeline this is the number of N-tile peers.
+    fuse_m_cluster: int = 1
 
     @property
     def name(self) -> str:
@@ -107,7 +118,7 @@ class OpusGemmInstance:
         elif self.kernel_tag == "a16w16_mono_tile":
             parts.insert(tag_at, "mono_tile")
         elif self.kernel_tag == "a16w16_cluster_tdm_splitk_ws":
-            # gfx1250 fp32-workspace split-K with a separate reduce kernel.
+            # gfx1250 typed-workspace split-K with a separate reduce kernel.
             # Name it opus_gemm_gfx1250_splitk_* (note the "splitk_" segment) so
             # the reduce-TU arch detection in gen_instances.py -- which keys on
             # "opus_gemm_<arch>_splitk_" -- buckets it like the gfx942 splitk kids.
@@ -124,6 +135,18 @@ class OpusGemmInstance:
             # cCWMxCWN plus pPwW keep each (tile, cluster, P, wg) symbol unique.
             parts.insert(tag_at, "splitk_clusterlaunch_tdm_ws")
             parts.append(f"c{self.cluster_wg_m}x{self.cluster_wg_n}")
+            parts.append(f"p{self.num_slots}w{self.wg_per_cu}")
+        elif self.kernel_tag == "a16w16_clusterlaunch_tdm_splitk_fuse":
+            # Keep "splitk_" out of this visible segment: fused kids do not
+            # need a separate reduce-kernel TU. The historical fuse_m_cluster
+            # field is an N-peer count, hence the n{} spelling.
+            parts.insert(tag_at, "skfuse")
+            parts.append(f"n{self.fuse_m_cluster}s{self.fuse_split_k}")
+            parts.append(
+                "wsf32"
+                if self.splitk_workspace_dtype == "fp32_t"
+                else "wsbf16"
+            )
             parts.append(f"p{self.num_slots}w{self.wg_per_cu}")
         elif self.name_tag:
             parts.insert(tag_at, self.name_tag)
@@ -153,8 +176,7 @@ def _a16w16(bs, bm, bn, bk, tn, wm, wn, wk, has_oob=True, cachectl_a=0, cachectl
     This is the "legacy" policy used by KID 4..9 and 1004..1009 -- the
     `_LEGACY_CACHECTL` special-case in OpusGemmInstance.name keeps these
     kids emitting the bare `..._0x0x0` symbol (no `_cA0cB17` suffix) so
-    the production heuristic dispatcher and the opus tuned CSV stay
-    bit-compatible.
+    the Python policy and OPUS tuned CSV stay bit-compatible.
     """
     vec = 16 // 2  # VEC_A = VEC_B = 8 for bf16
     inst = OpusGemmInstance(
@@ -204,6 +226,7 @@ def _a16w16_flatmm_splitk(bm, bn, bk, wg_per_cu, has_oob=True):
         ["fp32_t"],
         wg_per_cu,
         has_oob=has_oob,
+        splitk_workspace_dtype="fp32_t",
     )
 
 
@@ -586,6 +609,7 @@ def _a16w16_splitk_tag_gfx942(bs, bm, bn, bk, tn, wm, wn, wk, tag):
         tag,
         ["fp32_t"],
         arch_prefix="gfx942",
+        splitk_workspace_dtype="fp32_t",
     )
 
 
@@ -640,6 +664,7 @@ def _a16w16_kbuf2v_sk_gfx942(bs, bm, bn, bk, tn, wm, wn, wk):
     return OpusGemmInstance(
         bs, bm, bn, bk, 2, tn, wm, wn, wk, vec, vec, 4, 0, 0, 0,
         "a16w16_kbuf2v_sk", ["fp32_t"], arch_prefix="gfx942",
+        splitk_workspace_dtype="fp32_t",
     )
 
 
@@ -649,6 +674,7 @@ def _a16w16_kbuf2v_bk128_sk_gfx942(bs, bm, bn, bk, tn, wm, wn, wk):
     return OpusGemmInstance(
         bs, bm, bn, bk, 2, tn, wm, wn, wk, vec, vec, 4, 0, 0, 0,
         "a16w16_kbuf2v_bk128_sk", ["fp32_t"], arch_prefix="gfx942",
+        splitk_workspace_dtype="fp32_t",
     )
 
 
@@ -676,6 +702,7 @@ def _a16w16_em3en4_lds1_pgr2_sk_gfx942(bs, bm, bn, bk, tn, wm, wn, wk):
     return OpusGemmInstance(
         bs, bm, bn, bk, 2, tn, wm, wn, wk, vec, vec, 4, 0, 0, 0,
         "a16w16_em3en4_lds1_pgr2_sk", ["fp32_t"], arch_prefix="gfx942",
+        splitk_workspace_dtype="fp32_t",
     )
 
 
@@ -752,8 +779,8 @@ gfx942_kernels_list = {
 
 # -- gfx1250 kernel lists ----------------------------------------------------
 # Kid offset: gfx1250 kids live in the 20000+ range, disjoint from gfx950
-# (<10000) and gfx942 (50000+). Today only the cluster/TDM split-K (atomic
-# fp32 reduction) pipeline is wired (????:fp32 output, no bias).
+# (<10000) and gfx942. Both #4246 families are represented: two-stage
+# cluster/TDM kids and fused in-cluster-reduce kids.
 GFX1250_KID_OFFSET = 20000
 
 
@@ -764,10 +791,11 @@ def _a16w16_cluster_tdm_splitk_ws_gfx1250(bm, bn, bk, layout, num_slots=3, wg_pe
     (demon_gcn/wmma_opus_rdna4/gemm_a16w16_cluster_tdm_splitk_reduce_4wave.cc):
     BLOCK_SIZE=128 (4 waves x 32 = 2 producer + 2 consumer), MFMA 16x16x32,
     NO-CLUSTER (one WG per B_M x B_N tile). The main kernel WMMA-accumulates in
-    fp32 and PLAIN-stores each split's partial into an fp32 workspace; a separate
-    reduce kernel sums the split slices, folds bias, and casts to the Y dtype.
-    output_dtypes = ["fp32_t"] (only the fp32-workspace main kernel is
-    instantiated; Y bf16/fp32 is a runtime decision in the reduce kernel).
+    fp32 and casts each split's partial into the exact kid's typed workspace; a
+    separate reduce kernel sums the split slices in fp32, folds bias, and casts
+    to the Y dtype. The #4246 two-stage contract uses bf16 workspace. The
+    output_dtypes = ["fp32_t"] token selects the existing host launch-dispatch
+    specialization; Y bf16/fp32 remains a runtime decision in the reducer.
 
     layout: "tileN" (consumers split N; B_N>=32) -> T_M=1, T_N=2;
             "tileM" (consumers split M; B_M>=32) -> T_M=2, T_N=1.
@@ -784,6 +812,7 @@ def _a16w16_cluster_tdm_splitk_ws_gfx1250(bm, bn, bk, layout, num_slots=3, wg_pe
         "a16w16_cluster_tdm_splitk_ws",
         ["fp32_t"],
         arch_prefix="gfx1250",
+        splitk_workspace_dtype="bf16_t",
         ctdm_layout=layout,
         num_slots=num_slots,
         wg_per_cu=wg_per_cu,
@@ -848,10 +877,9 @@ def _ctdm_pick_configs(bm, bn, bk):
 # per-TDM request count hits the 256 direct-copy limit on some operand (e.g.
 # 32x256x128, 32x128x256) yield no config and are dropped automatically.
 _GFX1250_CTDM_TILES = [
-    # -- ORIGINAL 11 tiles: KEEP THIS ORDER (indices 0..10) -- the C++ heuristic
-    #    opus_a16w16_heuristic_kid_gfx1250() hardcodes kids 20000/20024/20032
-    #    (16x32/64/128, idx 0/3/4) and 20040/20048/20056 (32x32/64/128, idx
-    #    5/6/7), and tuned CSVs reference these numbers. Do NOT reorder/insert.
+    # -- ORIGINAL 11 tiles: KEEP THIS ORDER (indices 0..10) -- tuned CSVs and
+    #    the Python heuristic reference the stable kids derived from these
+    #    indices. Do NOT reorder/insert.
     # tileN family (B_M=16)
     (16, 32, 128, "tileN"),
     (16, 32, 256, "tileN"),
@@ -891,16 +919,15 @@ _GFX1250_CTDM_TILES = [
     (128, 128, 128, "tileM"),
 ]
 
-# Kid numbering (clean, contiguous; heuristic / tuned-CSV back-compat dropped):
+# Kid numbering is stable for tuned CSVs and the Python heuristic:
 #   plain (no-cluster) kids occupy [20000, 20100), ONE P=3 kid per tile (P=2 is
 #   dropped -- unvalidated). Tiles the picker rejects (>=256-request TDM
 #   direct-copy, now FIXED) fall back to P=3, 1 WG/CU so every no-spill tile still
-#   emits a plain kid (LDS(P=3) <= 320 KB for this set). The C++ heuristic
-#   constants in opus_gemm_heuristic_dispatch_gfx1250.cuh are regenerated to match.
+#   emits a plain kid (LDS(P=3) <= 320 KB for this set).
 #
 # The consumer kExpN stability guard (previously _GFX1250_MAX_KEXPN=8) is removed.
 gfx1250_kernels_list = {}
-GFX1250_PLAIN_KID_OF = {}   # (B_M,B_N,B_K) -> kid (P=3; for tuner + heuristic regen)
+GFX1250_PLAIN_KID_OF = {}  # (B_M,B_N,B_K) -> kid (P=3; tuner + Python heuristic)
 _GFX1250_KID_BASE = 20000
 _p_kid = _GFX1250_KID_BASE
 for _bm, _bn, _bk, _layout in _GFX1250_CTDM_TILES:
@@ -919,7 +946,7 @@ GFX1250_BASE_KIDS = frozenset(gfx1250_kernels_list.keys())
 
 
 # -- gfx1250 CLUSTER-LAUNCH (multicast) variant ------------------------------
-# Same 4-wave TDM split-K + fp32 workspace + reduce kernel, but launched as a
+# Same 4-wave TDM split-K + typed workspace + reduce kernel, but launched as a
 # (cluster_wg_m x cluster_wg_n x 1) workgroup CLUSTER: peers co-reside and share
 # A/B TDM loads via CLUSTER_LOAD_ASYNC multicast (named-barrier producer/consumer
 # handshake, same as the plain base). The host launcher rounds the grid up to the
@@ -1018,6 +1045,113 @@ for _bm, _bn, _bk, _wg in _GFX1250_CLUSTERLAUNCH_TILES:
 assert _cl_kid <= 21000, f"clusterlaunch gfx1250 kids overflow [20100,21000): {_cl_kid}"
 GFX1250_CLUSTERLAUNCH_KIDS = frozenset(gfx1250_clusterlaunch_kernels_list.keys())
 
+
+# -- gfx1250 FUSED single-kernel split-K -------------------------------
+# The first SplitK-1 WGs publish typed partial tiles to caller-owned storage;
+# the last WG consumes those tiles after the cluster barrier and writes Y in
+# the same kernel. There is no separate reduce launch, but this remains an
+# external-workspace family. Workspace is tile-major:
+#   [num_tiles_m, num_tiles_n, SplitK-1, B_M, B_N]
+# SplitK and the N-peer count are compile-time properties of each exact kid.
+def _a16w16_splitk_fuse_gfx1250(
+    bm,
+    bn,
+    bk,
+    layout,
+    split_k,
+    n_cluster,
+    ws_dtype="bf16_t",
+    num_slots=3,
+    wg_per_cu=2,
+):
+    from dataclasses import replace
+
+    inst = _a16w16_cluster_tdm_splitk_ws_gfx1250(
+        bm, bn, bk, layout, num_slots=num_slots, wg_per_cu=wg_per_cu
+    )
+    return replace(
+        inst,
+        kernel_tag="a16w16_clusterlaunch_tdm_splitk_fuse",
+        # The <fp32_t> host token selects the workspace dispatch ABI. The
+        # fused launcher chooses the real bf16/fp32 Y type at runtime.
+        output_dtypes=["fp32_t"],
+        splitk_workspace_dtype=ws_dtype,
+        fuse_split_k=split_k,
+        # Historical #4246 field name; physically this is an N-peer count.
+        fuse_m_cluster=n_cluster,
+    )
+
+
+gfx1250_splitk_fuse_kernels_list = {}
+GFX1250_SPLITK_FUSE_KID_BASE = 21000
+GFX1250_SPLITK_FUSE_KID_OF = {}
+_sf_kid = GFX1250_SPLITK_FUSE_KID_BASE
+
+# The bounded LDS ring used by the fused reducer must fit inside the traits'
+# shared allocation. These constants mirror the fused pipeline.
+_FUSE_REDUCE_RING = 3
+_FUSE_NUM_SLOTS = 3
+
+
+def _fuse_ring_lds_ok(bm, bn, bk, wg, ws_bytes):
+    pitch = bk + 8
+    seg_ab = _FUSE_NUM_SLOTS * (bm + bn) * pitch * 2
+    lds_total = (
+        160 * 1024 + 1024 if wg == 1 and seg_ab <= 160 * 1024 else seg_ab
+    )
+    return _FUSE_REDUCE_RING * bm * bn * ws_bytes <= lds_total
+
+
+# BF16 storage covers SplitK 2..15; the conservative FP32 family covers 2..8.
+# Cluster dims are (SplitK, n_cluster, 1), so SplitK*n_cluster must fit the
+# 16-WG cluster budget and each axis stays within its hardware limit.
+_FUSE_WS_SWEEP = (("bf16_t", 2, 15), ("fp32_t", 4, 8))
+_FUSE_MAX_NCLUSTER = 5
+_fuse_tiles_seen = set()
+for _bm, _bn, _bk, _wg in _GFX1250_CLUSTERLAUNCH_TILES:
+    if (_bm, _bn, _bk) in _fuse_tiles_seen:
+        continue
+    _fuse_tiles_seen.add((_bm, _bn, _bk))
+    _layout = "tileN" if _bm == 16 else "tileM"
+    for _ws, _ws_bytes, _sk_hi in _FUSE_WS_SWEEP:
+        if not _fuse_ring_lds_ok(_bm, _bn, _bk, _wg, _ws_bytes):
+            continue
+        for _nc in range(1, _FUSE_MAX_NCLUSTER + 1):
+            for _sk in range(2, _sk_hi + 1):
+                if _sk * _nc > 16:
+                    continue
+                gfx1250_splitk_fuse_kernels_list[_sf_kid] = (
+                    _a16w16_splitk_fuse_gfx1250(
+                        _bm,
+                        _bn,
+                        _bk,
+                        _layout,
+                        split_k=_sk,
+                        n_cluster=_nc,
+                        ws_dtype=_ws,
+                        wg_per_cu=_wg,
+                    )
+                )
+                GFX1250_SPLITK_FUSE_KID_OF[
+                    (_bm, _bn, _bk, _layout, _sk, _nc, _ws)
+                ] = _sf_kid
+                _sf_kid += 1
+
+assert _sf_kid == 22378, (
+    "#4246 fused registry drift: expected kids 21000..22377, "
+    f"ended at {_sf_kid - 1}"
+)
+GFX1250_SPLITK_FUSE_KIDS = frozenset(gfx1250_splitk_fuse_kernels_list.keys())
+assert len(GFX1250_SPLITK_FUSE_KIDS) == 1378
+assert sum(
+    kernels.splitk_workspace_dtype == "bf16_t"
+    for kernels in gfx1250_splitk_fuse_kernels_list.values()
+) == 780
+assert sum(
+    kernels.splitk_workspace_dtype == "fp32_t"
+    for kernels in gfx1250_splitk_fuse_kernels_list.values()
+) == 598
+
 # combined list (used by production gen_instances / dispatch)
 kernels_list = {
     **a8w8_scale_kernels_list,
@@ -1042,17 +1176,13 @@ kernels_list = {
     **gfx942_kernels_list,
     **gfx1250_kernels_list,
     **gfx1250_clusterlaunch_kernels_list,
+    **gfx1250_splitk_fuse_kernels_list,
 }
 
-default_kernels_dict = {
-    (-1): OpusGemmInstance(512, 256, 256, 128, 4, 2, 16, 16, 128, 16, 16, 4, 1, 128, 128, "a8w8_scale", ["fp32_t"]),
-    (-2): OpusGemmInstance(512, 256, 256, 128, 2, 4, 16, 16, 128, 16, 16, 4, 0, 0, 0,     "a8w8",       ["fp32_t"]),
-    (-3): _a16w16(512, 256, 256, 64, 4, 16, 16, 32),  # same as a16w16 #9
-}
 # fmt: on
 
 
-# Subset-compile kid taxonomy (consumed by gen_instances.py for the `HEURISTIC_DEFAULT_KIDS ?
+# Subset-compile kid taxonomy consumed by gen_instances.py.
 
 # Splitk kids: a16w16_flatmm_splitk pipeline (kid 200..223 + nooob mirror).
 SPLITK_KIDS = (
@@ -1061,7 +1191,17 @@ SPLITK_KIDS = (
     | frozenset(gfx942_splitk_kernels_list.keys())
     | frozenset(gfx1250_kernels_list.keys())
     | frozenset(gfx1250_clusterlaunch_kernels_list.keys())
+    | frozenset(gfx1250_splitk_fuse_kernels_list.keys())
 )
+
+_SUPPORTED_SPLITK_WORKSPACE_DTYPES = frozenset({"bf16_t", "fp32_t"})
+for _workspace_kid in SPLITK_KIDS:
+    _workspace_dtype = kernels_list[_workspace_kid].splitk_workspace_dtype
+    if _workspace_dtype not in _SUPPORTED_SPLITK_WORKSPACE_DTYPES:
+        raise ValueError(
+            f"workspace kid {_workspace_kid} must explicitly declare "
+            f"splitk_workspace_dtype, got {_workspace_dtype!r}"
+        )
 
 # Non-splitk a16w16-family kids: split-barrier 4..9 + cpol/nooob mirrors, persistent 300..315 +
 # cpol/nooob mirrors.
@@ -1112,7 +1252,8 @@ BIAS_AWARE_KIDS = (
     | SPLITK_KIDS
 )
 
-# Heuristic-dispatch fallback kids (gfx950).
+# Python heuristic-default kids. These remain force-compiled even though C++
+# no longer performs runtime shape selection.
 HEURISTIC_DEFAULT_KIDS_GFX950 = frozenset(
     {
         # splitk fallback (small M / non-aligned big M)
@@ -1130,7 +1271,7 @@ HEURISTIC_DEFAULT_KIDS_GFX950 = frozenset(
 
 HEURISTIC_DEFAULT_KIDS_GFX942 = frozenset(
     {
-        # gfx942 heuristic dispatcher fallbacks.
+        # gfx942 Python heuristic fallbacks.
         10000,  # gfx942 split-barrier    512x128x128x64 16x16x16 (large problem)
         10001,  # gfx942 p1               256x64x64x64
         10003,  # gfx942 p1_bk128         256x64x64x128
@@ -1149,13 +1290,10 @@ HEURISTIC_DEFAULT_KIDS_GFX942 = frozenset(
     }
 )
 
-# gfx1250 has no shape-heuristic dispatch yet (tune-id entry only). This set
-# is used purely to keep the kid in the subset-compile set S so the tune-id
-# path can always reach it.
-# Only the kids the C++ heuristic (opus_a16w16_heuristic_kid_gfx1250) can return
-# must be force-compiled as the always-available (M,N,K) fallback. Every other
-# plain kid and ALL clusterlaunch kids are compiled on demand by the tuner
-# (candidate selection + sidecar expansion), so default builds stay small.
+# Only kids the gfx1250 Python heuristic can return are force-compiled as its
+# always-available defaults. Every other plain kid and all clusterlaunch kids
+# are compiled on demand by the tuner (candidate selection + sidecar
+# expansion), so default builds stay small.
 HEURISTIC_DEFAULT_KIDS_GFX1250 = frozenset(
     GFX1250_PLAIN_KID_OF[_t]
     for _t in (
@@ -1182,12 +1320,11 @@ HEURISTIC_DEFAULT_KIDS_BY_ARCH = {
 
 
 def heuristic_kids_for_arch(arches):
-    """Return the heuristic-default kid subset whose arch_prefix matches.
+    """Return the Python heuristic-default kid subset for ``arches``.
 
     ``arches`` is an iterable of lowercase arch strings (e.g. ``{"gfx942"}``)
     or ``None`` (caller does not know / multi-arch build) -- in the ``None``
-    case the full union is returned so the legacy multi-arch behaviour is
-    preserved.
+    case the full union is returned for a multi-arch build.
     """
     if arches is None:
         return HEURISTIC_DEFAULT_KIDS
@@ -1198,21 +1335,107 @@ def heuristic_kids_for_arch(arches):
     return out
 
 
-def get_kernel_instance(
-    arch: str, family: str, kid: int
-) -> OpusGemmInstance | None:
-    """Return the existing instance for the logical ``(arch, family, kid)``.
+# Logical family membership is an explicit arch/tag capability matrix.  Empty
+# tag sets are deliberate: the public family ABI exists on that architecture,
+# but no kernel is registered there yet.  Do not replace this with numeric kid
+# bands or tag-substring tests; both collide across OPUS families over time.
+OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
+    "gfx950": {
+        "a16w16": frozenset(
+            {
+                "a16w16",
+                "a16w16_flatmm",
+                "a16w16_flatmm_splitk",
+                "a16w16_mono_tile",
+                "a16w16_persistent",
+            }
+        ),
+        "a8w8": frozenset({"a8w8"}),
+        "a8w8_blockscale": frozenset({"a8w8_scale"}),
+        "a8w8_blockscale_bpreshuffle": frozenset(),
+    },
+    "gfx942": {
+        "a16w16": frozenset(
+            {
+                "a16w16_em3en4_lds1_pgr2_sk",
+                "a16w16_kbuf1_large_tile",
+                "a16w16_kbuf1_sk",
+                "a16w16_kbuf2v",
+                "a16w16_kbuf2v_bk128",
+                "a16w16_kbuf2v_bk128_sk",
+                "a16w16_kbuf2v_sk",
+                "a16w16_quad_mfma32_kbuf1",
+                "a16w16_quad_mfma32_kbuf1_sk",
+                "a16w16_wave_k_coop",
+                "a16w16_wave_k_coop_accum",
+            }
+        ),
+        "a8w8": frozenset(),
+        "a8w8_blockscale": frozenset(),
+        "a8w8_blockscale_bpreshuffle": frozenset(
+            {"a8w8_blockscale_bpreshuffle_singlebuf"}
+        ),
+    },
+    "gfx1250": {
+        "a16w16": frozenset(
+            {
+                "a16w16_cluster_tdm_splitk_ws",
+                "a16w16_clusterlaunch_tdm_splitk_fuse",
+                "a16w16_clusterlaunch_tdm_splitk_ws",
+            }
+        ),
+        "a8w8": frozenset(),
+        "a8w8_blockscale": frozenset(),
+        "a8w8_blockscale_bpreshuffle": frozenset(),
+    },
+}
 
-    This is intentionally a narrow view over ``kernels_list`` rather than a
-    projected runtime catalog: callers receive the canonical
-    :class:`OpusGemmInstance` object and read only the fields they need.
-    ``a16w16`` is the only family registered by task 1; in particular this
-    prevents the gfx942 a8w8 kid from being accepted merely because its integer
-    id exists in the cross-family registry.
+# These kernels must remain in every matching-arch subset build even when no
+# tuned CSV or compiled-kids sidecar mentions them.  This is a build-time
+# guarantee, not a runtime selector.
+OPUS_MANDATORY_A8_KIDS = {
+    "gfx950": frozenset({1, 2}),
+    "gfx942": frozenset({11000}),
+    "gfx1250": frozenset(),
+}
+
+
+def _canonical_output_dtype(output_dtype) -> str | None:
+    if output_dtype is None:
+        return None
+    value = str(output_dtype).strip().lower()
+    aliases = {
+        "bf16": "bf16_t",
+        "bfloat16": "bf16_t",
+        "bf16_t": "bf16_t",
+        "torch.bfloat16": "bf16_t",
+        "fp32": "fp32_t",
+        "float": "fp32_t",
+        "float32": "fp32_t",
+        "fp32_t": "fp32_t",
+        "torch.float32": "fp32_t",
+    }
+    return aliases.get(value, value)
+
+
+def get_kernel_instance(
+    arch: str,
+    family: str,
+    kid: int,
+    output_dtype=None,
+) -> OpusGemmInstance | None:
+    """Return the canonical instance for ``(arch, family, kid, Y.dtype)``.
+
+    ``output_dtype`` is optional for existing metadata callers.  When supplied,
+    it is checked against the exact instance's generated output
+    specializations.  The result is still the original
+    :class:`OpusGemmInstance`; this function does not create a second metadata
+    projection.
     """
     arch = str(arch).lower()
     family = str(family).lower()
-    if family != "a16w16":
+    family_tags = OPUS_KERNEL_TAGS_BY_ARCH_FAMILY.get(arch, {}).get(family)
+    if family_tags is None:
         return None
 
     try:
@@ -1221,21 +1444,37 @@ def get_kernel_instance(
         return None
 
     instance = kernels_list.get(kid)
-    if instance is None or not instance.kernel_tag.startswith("a16w16"):
+    if instance is None or instance.kernel_tag not in family_tags:
         return None
     instance_arch = (instance.arch_prefix or "gfx950").lower()
     if instance_arch != arch:
         return None
+
+    dtype = _canonical_output_dtype(output_dtype)
+    if dtype is not None and dtype not in instance.output_dtypes:
+        # External-workspace a16 launchers use an fp32_t host specialization
+        # regardless of final Y dtype; their reducer (or fused last WG) owns
+        # the bf16/fp32 cast.  For direct-output families, output_dtypes stays
+        # authoritative.
+        workspace_a16_output = (
+            family == "a16w16"
+            and kid in SPLITK_KIDS
+            and dtype in {"bf16_t", "fp32_t"}
+        )
+        if not workspace_a16_output:
+            return None
     return instance
 
 
 def kernel_needs_external_workspace(arch: str, family: str, kid: int) -> bool:
-    """Return whether a registered kernel writes a two-stage workspace.
+    """Return whether a registered kernel requires caller-owned workspace.
 
     Unknown logical keys are errors rather than ``False``: treating an unknown
     kid as a non-workspace kernel would let a caller launch it without the
     allocation required for memory safety.  Capability comes from the existing
     ``SPLITK_KIDS`` registry, never from a numeric kid range or tag substring.
+    The registry includes two-stage reducers and gfx1250 fused in-cluster
+    reduction, whose first SplitK-1 WGs still publish external partial tiles.
     """
     instance = get_kernel_instance(arch, family, kid)
     if instance is None:

@@ -2,9 +2,11 @@
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 """opus kernel Python user-facing API.
 
-Public API: `gemm_a16w16_opus` (CSV lookup + C++ heuristic) and
-`opus_gemm_a16w16_tune` (id-based binding). The gfx942 A8W8 blockscale
-bpreshuffle entry is an explicit tune API.
+Public API: `gemm_a16w16_opus` (shape-driven selection),
+`opus_gemm_a16w16_launch` (canonical explicit launch), and the legacy
+`opus_gemm_a16w16_tune` compatibility entry, plus three canonical A8W8 family
+launch APIs. Empty per-arch A8 capabilities fail at runtime rather than being
+hidden by import-time architecture stubs.
 """
 
 from ._arch import _detect_arch
@@ -13,7 +15,7 @@ _SUPPORTED = {"gfx950", "gfx942", "gfx1250"}
 _FEATURE = "aiter.ops.opus"
 _HINT = (
     "opus_gemm supports gfx950 (MFMA 16x16x32 / ds_read_b64_tr / 160 KiB "
-    "LDS) and gfx942 (MFMA 16x16x16 / ds_read_b128 / 64 KiB LDS). Set "
+    "LDS), gfx942 (MFMA 16x16x16 / ds_read_b128 / 64 KiB LDS), and gfx1250. Set "
     "GPU_ARCHS to one of these (or run on a matching device) to use this "
     "module."
 )
@@ -39,6 +41,7 @@ def _make_unsupported_arch_stub(name: str):
 if _arch_ok:
     from .gemm_op_a16w16 import (
         gemm_a16w16_opus,
+        opus_gemm_a16w16_launch,
         opus_gemm_a16w16_tune,
         opus_gemm_workspace_init,
     )
@@ -50,13 +53,44 @@ if _arch_ok:
 
         return _impl(*args, **kwargs)
 
+    def opus_gemm_a8w8_launch(*args, **kwargs):
+        from .gemm_op_a8w8 import opus_gemm_a8w8_launch as _impl
+
+        return _impl(*args, **kwargs)
+
+    def opus_gemm_a8w8_blockscale_launch(*args, **kwargs):
+        from .gemm_op_a8w8 import opus_gemm_a8w8_blockscale_launch as _impl
+
+        return _impl(*args, **kwargs)
+
+    def opus_gemm_a8w8_blockscale_bpreshuffle_launch(*args, **kwargs):
+        from .gemm_op_a8w8 import (
+            opus_gemm_a8w8_blockscale_bpreshuffle_launch as _impl,
+        )
+
+        return _impl(*args, **kwargs)
+
 else:
     # Don't raise ImportError -- aiter/__init__.py's star-import would catch
     # it and silently disable the 30+ subsequent op imports.
     gemm_a16w16_opus = _make_unsupported_arch_stub("gemm_a16w16_opus")
+    opus_gemm_a16w16_launch = _make_unsupported_arch_stub(
+        "opus_gemm_a16w16_launch"
+    )
     opus_gemm_a16w16_tune = _make_unsupported_arch_stub("opus_gemm_a16w16_tune")
     opus_gemm_a8w8_blockscale_bpreshuffle_tune = _make_unsupported_arch_stub(
         "opus_gemm_a8w8_blockscale_bpreshuffle_tune"
+    )
+    opus_gemm_a8w8_launch = _make_unsupported_arch_stub(
+        "opus_gemm_a8w8_launch"
+    )
+    opus_gemm_a8w8_blockscale_launch = _make_unsupported_arch_stub(
+        "opus_gemm_a8w8_blockscale_launch"
+    )
+    opus_gemm_a8w8_blockscale_bpreshuffle_launch = (
+        _make_unsupported_arch_stub(
+            "opus_gemm_a8w8_blockscale_bpreshuffle_launch"
+        )
     )
 
     def opus_gemm_workspace_init() -> None:
@@ -68,7 +102,11 @@ else:
 
 __all__ = [
     "gemm_a16w16_opus",
+    "opus_gemm_a8w8_launch",
+    "opus_gemm_a8w8_blockscale_launch",
+    "opus_gemm_a8w8_blockscale_bpreshuffle_launch",
     "opus_gemm_a8w8_blockscale_bpreshuffle_tune",
+    "opus_gemm_a16w16_launch",
     "opus_gemm_a16w16_tune",
     "opus_gemm_workspace_init",
 ]

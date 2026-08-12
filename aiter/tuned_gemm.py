@@ -41,9 +41,11 @@ from torch import Tensor
 from aiter.ops.gemm_op_common import get_padded_m
 
 try:
-    from aiter.ops.opus.gemm_op_a16w16 import opus_gemm_a16w16_tune as _opus_tune
+    from aiter.ops.opus.gemm_op_a16w16 import (
+        opus_gemm_a16w16_launch as _opus_launch,
+    )
 except Exception:  # noqa: BLE001  blanket catch is intentional here
-    _opus_tune = None
+    _opus_launch = None
 
 
 this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -512,7 +514,7 @@ def opus_gemm(
     bpreshuffle: bool | None = False,
     config: dict | None = None,
 ):
-    if _opus_tune is None:
+    if _opus_launch is None:
         logger.warning(
             "opus tuned config found but opus is not available; falling back to torch"
         )
@@ -536,13 +538,13 @@ def opus_gemm(
     m, _k = inp.shape
     n = weights.shape[0]
     Y = torch.empty(m, n, dtype=otype or inp.dtype, device=inp.device)
-    _opus_tune(
+    _opus_launch(
         inp.unsqueeze(0),
         weights.unsqueeze(0),
         Y.unsqueeze(0),
         bias=bias,
-        kernelId=int(solidx),
-        splitK=splitK,
+        kid=int(solidx),
+        split_k=splitK,
     )
     # NOTE: do NOT add bias again here -- the opus splitk reduce kernel already
     # folds `bias` into the fp32 accumulator before the bf16/fp32 cast (HAS_BIAS
