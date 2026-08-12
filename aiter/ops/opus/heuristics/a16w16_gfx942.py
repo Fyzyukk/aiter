@@ -1,11 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""gfx942 a16w16 fallback heuristic and split-K resolver.
+"""gfx942 a16w16 fallback selection and split-K resolution.
 
-The C++ heuristic still returns launcher function pointers.  This parity port
-keeps the branch decisions expressed in launcher-symbol names, then resolves
-those names through the canonical ``OpusGemmInstance.name`` values.  No second
-hand-written symbol-to-kid table is maintained.
+Maps ported C++ launcher choices to canonical registry kids.
 """
 
 from dataclasses import dataclass
@@ -47,7 +44,7 @@ _SYMBOL_TO_KID = _build_symbol_to_kid()
 
 
 def launcher_symbol_to_kid(symbol: str) -> int:
-    """Resolve a generated launcher symbol through canonical instance names."""
+    """Map a generated launcher symbol to its canonical kid."""
     try:
         return _SYMBOL_TO_KID[symbol]
     except KeyError as exc:
@@ -147,7 +144,7 @@ def select_kid(
     has_bias: bool = False,
     output_dtype: str = "bf16",
 ) -> int:
-    """Return the gfx942 C++ heuristic's launcher as a canonical kid."""
+    """Select the canonical gfx942 fallback kid."""
     del batch
     M = int(M)
     N = int(N)
@@ -167,7 +164,7 @@ def select_kid(
 
 @dataclass(frozen=True)
 class SplitKResolution:
-    """gfx942 split-K request, allocation upper bound, and clamped value."""
+    """Resolved gfx942 split-K values."""
 
     requested: int
     allocation: int
@@ -184,7 +181,7 @@ def resolve_split_k(
     cu_num: int,
     requested: int,
 ) -> SplitKResolution:
-    """Mirror the generated gfx942 launcher's auto-pick and down-clamp."""
+    """Resolve workspace allocation and effective gfx942 split-K."""
     M = int(M)
     N = int(N)
     K = int(K)
@@ -204,10 +201,7 @@ def resolve_split_k(
             * batch
         )
         tiles_mn = max(1, tiles_mn)
-        # Preserve the current generated launcher predicate verbatim for the
-        # Step-1 parity commit.  Current kernel tags do not end in ``_p1``;
-        # changing the intended P1 multiplier belongs in a separately paired
-        # Python/C++ behavior change, not this mechanical migration.
+        # Keep launcher parity; current kernel tags never end in "_p1".
         target_wg = (2 * cu_num) if instance.kernel_tag.endswith("_p1") else cu_num
         allocation = (target_wg + tiles_mn - 1) // tiles_mn
         allocation = min(_MAX_AUTO_SPLIT_K, max(1, allocation))

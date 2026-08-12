@@ -1,15 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""gfx1250 codegen -- emit launchers for gfx1250-targeted kid families.
-
-Wires the a16w16 cluster/TDM split-K pipeline to a caller-owned exact-kid typed
-workspace and a separate reduce kernel (no atomic_add). The host launch-dispatch
-specialization remains <fp32_t>, independently of whether the main stores bf16
-or fp32 partials. The reduce kernel re-accumulates them in fp32, casts to the
-runtime Y dtype (bf16 / fp32), and folds bias once.
-
-Self-registers each emit into codegen.common.EMIT_REGISTRY at import time.
-"""
+"""Generate gfx1250 OPUS A16W16 launchers."""
 
 import os
 from pathlib import Path
@@ -121,15 +112,7 @@ def gen_cluster_tdm_splitk_ws_instance(
     BIAS_HOST_VALIDATE="",
     **_unused,
 ):
-    """gfx1250 a16w16 TDM split-K (workspace + reduce) launcher emit.
-
-    NO-CLUSTER grid: grid = (M/B_M, N/B_N, split_k); each WG owns one
-    B_M x B_N tile. The main kernel casts its fp32 accumulator to the exact
-    kid's bf16/fp32 storage in ws[split, padded_M, padded_N]; the reduce kernel
-    reads the matching type, re-accumulates in fp32, folds bias, and casts to Y
-    dtype. This family is physically batch==1; the launcher checks that before
-    constructing grids.
-    """
+    """Emit a checked gfx1250 two-stage split-K launcher."""
     workspace_dtype, workspace_ptr_type, workspace_aiter_dtype = (
         splitk_workspace_type(k)
     )
@@ -448,13 +431,7 @@ def gen_splitk_fuse_instance(
     BIAS_HOST_VALIDATE="",
     **_unused,
 ):
-    """Emit #4246's fused in-cluster split-K launcher.
-
-    SplitK and the N-peer cluster geometry are compile-time exact-kid
-    properties. The first SplitK-1 WGs write a tile-major typed workspace and
-    the final WG reduces those partials in the same kernel, so no standalone
-    reduce kernel is emitted for this tag.
-    """
+    """Emit the fused gfx1250 split-K launcher and workspace checks."""
     del BIAS_HOST_VALIDATE
     workspace_dtype, workspace_ptr_type, workspace_aiter_dtype = (
         splitk_workspace_type(k)

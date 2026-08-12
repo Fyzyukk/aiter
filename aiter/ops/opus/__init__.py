@@ -1,13 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""opus kernel Python user-facing API.
-
-Public API: `gemm_a16w16_opus` (shape-driven selection),
-`opus_gemm_a16w16_launch` (canonical explicit launch), and the legacy
-`opus_gemm_a16w16_tune` compatibility entry, plus three canonical A8W8 family
-launch APIs. Empty per-arch A8 capabilities fail at runtime rather than being
-hidden by import-time architecture stubs.
-"""
+"""Public OPUS GEMM selection and launch APIs."""
 
 from ._arch import _detect_arch
 
@@ -24,7 +17,7 @@ _arch_ok, _detected_arch = _detect_arch(_SUPPORTED)
 
 
 def _make_unsupported_arch_stub(name: str):
-    """Build a callable that always raises with the detected-arch context."""
+    """Return a callable that reports the unsupported architecture."""
 
     def _stub(*_args, **_kwargs):
         raise RuntimeError(
@@ -71,8 +64,7 @@ if _arch_ok:
         return _impl(*args, **kwargs)
 
 else:
-    # Don't raise ImportError -- aiter/__init__.py's star-import would catch
-    # it and silently disable the 30+ subsequent op imports.
+    # Keep the top-level aiter import available on unsupported architectures.
     gemm_a16w16_opus = _make_unsupported_arch_stub("gemm_a16w16_opus")
     opus_gemm_a16w16_launch = _make_unsupported_arch_stub(
         "opus_gemm_a16w16_launch"

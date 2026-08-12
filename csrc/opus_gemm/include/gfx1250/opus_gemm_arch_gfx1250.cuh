@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// gfx1250 family-specific strict kid dispatch.
+// Exact-kid launcher tables for gfx1250.
 #pragma once
 
 #include "../opus_gemm_arch.cuh"
@@ -122,9 +122,7 @@ opus_a8w8_blockscale_bpreshuffle_kid_dispatch_gfx1250<fp32_t>(int id)
     return entry->func;
 }
 
-// gfx1250 currently has no non-workspace a16w16 kids.  These strict
-// specializations still query the generated empty tables so a wrong-ABI call
-// fails at the dispatch boundary instead of falling through to another arch.
+// Empty direct-output tables reject unsupported gfx1250 A16W16 calls.
 template <typename CDataType>
 inline OpusA16W16Kernel opus_a16w16_kid_dispatch_gfx1250(int kid);
 

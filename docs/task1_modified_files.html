@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task1：OPUS A16W16 Split-K Workspace Torch 化</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #5f6c7b;
+      --line: #d7e0ea;
+      --page: #f3f6fa;
+      --surface: #ffffff;
+      --blue: #145ea8;
+      --blue-soft: #eaf3ff;
+      --green: #237a45;
+      --green-soft: #eaf7ef;
+      --amber: #93651f;
+      --amber-soft: #fff6df;
+      --red: #a13f3f;
+      --red-soft: #fff0f0;
+      --code: #f6f8fb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+      line-height: 1.62;
+    }
+
+    main {
+      width: min(1500px, calc(100% - 40px));
+      margin: 28px auto 60px;
+    }
+
+    .hero, section {
+      margin-bottom: 24px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+      box-shadow: 0 8px 26px rgba(30, 47, 70, .07);
+    }
+
+    .hero { overflow: hidden; }
+
+    .hero-head {
+      padding: 26px 30px;
+      color: #fff;
+      background: linear-gradient(120deg, #0f4f91, #1972bc);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(25px, 3vw, 34px);
+      line-height: 1.25;
+    }
+
+    .hero-head p {
+      max-width: 980px;
+      margin: 0;
+      font-size: 17px;
+      opacity: .96;
+    }
+
+    .plain-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 22px 26px 26px;
+    }
+
+    .summary-card {
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .summary-card.before { background: var(--red-soft); }
+    .summary-card.after { background: var(--green-soft); }
+
+    .summary-card h2 {
+      margin: 0 0 6px;
+      font-size: 17px;
+    }
+
+    .summary-card p { margin: 0; }
+
+    section { padding: 24px 26px 28px; }
+
+    section > h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+    }
+
+    section > p { margin: 0 0 14px; }
+
+    .goals {
+      margin: 0;
+      padding-left: 24px;
+    }
+
+    .goals li + li { margin-top: 7px; }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin: 0 0 24px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    nav a {
+      padding: 6px 10px;
+      border-radius: 999px;
+      color: #174f83;
+      background: var(--blue-soft);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .group-note {
+      margin: -4px 0 15px;
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th, td {
+      padding: 12px 13px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th:last-child, td:last-child { border-right: 0; }
+    tbody tr:last-child td { border-bottom: 0; }
+
+    th {
+      color: #29415d;
+      background: #edf3f8;
+      font-size: 13px;
+    }
+
+    th:nth-child(1) { width: 29%; }
+    th:nth-child(2) { width: 34%; }
+    th:nth-child(3) { width: 37%; }
+
+    td { font-size: 13.5px; }
+    tbody tr:nth-child(even) td { background: #fbfcfe; }
+
+    code {
+      color: #263f5e;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: .92em;
+      overflow-wrap: anywhere;
+    }
+
+    .file-cell code {
+      display: block;
+      margin-top: 7px;
+      font-size: 12.5px;
+    }
+
+    .badge {
+      display: inline-block;
+      min-width: 48px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .badge.add { color: var(--green); background: var(--green-soft); }
+    .badge.change { color: var(--blue); background: var(--blue-soft); }
+
+    .symbols {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .symbols li + li { margin-top: 3px; }
+
+    .removed {
+      color: var(--red);
+    }
+
+    .removed::before {
+      content: "已删除：";
+      font-weight: 750;
+    }
+
+    .flow {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f8fbff;
+    }
+
+    .flow-entries {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .flow-node, .flow-decision, .flow-branch {
+      padding: 12px 14px;
+      border: 1px solid #b9cbe0;
+      border-radius: 9px;
+      background: #fff;
+      text-align: center;
+    }
+
+    .flow-node strong, .flow-decision strong, .flow-branch strong {
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    .flow-node.primary {
+      color: #103e68;
+      border-color: #7faed7;
+      background: var(--blue-soft);
+    }
+
+    .flow-node.cpp {
+      color: #5c451a;
+      border-color: #d8bc7b;
+      background: var(--amber-soft);
+    }
+
+    .flow-decision {
+      max-width: 560px;
+      margin: 0 auto;
+      border-style: dashed;
+      border-color: #7397bd;
+      background: #f2f7fd;
+    }
+
+    .arrow {
+      padding: 5px 0;
+      color: #55789b;
+      text-align: center;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .merge-label {
+      margin: 8px auto 0;
+      color: var(--muted);
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .flow-branches {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 14px;
+    }
+
+    .flow-branch.yes {
+      border-color: #8cc5a2;
+      background: var(--green-soft);
+    }
+
+    .flow-branch.no {
+      border-color: #87acd1;
+      background: #f7fbff;
+    }
+
+    .mini-chain {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .mini-step {
+      padding: 8px 10px;
+      border: 1px solid rgba(82, 113, 145, .28);
+      border-radius: 7px;
+      background: #fff;
+    }
+
+    .kernel-options {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+      margin-top: 10px;
+    }
+
+    .kernel-options div {
+      padding: 9px;
+      border: 1px solid #d7c38f;
+      border-radius: 7px;
+      background: #fffdf7;
+    }
+
+    .flow-note {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      main { width: calc(100% - 20px); margin-top: 10px; }
+      .plain-summary, .flow-entries, .flow-branches, .kernel-options {
+        grid-template-columns: 1fr;
+      }
+      section { padding: 20px 16px; }
+      table, thead, tbody, tr, th, td { display: block; }
+      thead { display: none; }
+      tbody tr { border-bottom: 8px solid var(--page); }
+      tbody tr:last-child { border-bottom: 0; }
+      td {
+        padding-left: 125px;
+        border-right: 0;
+        position: relative;
+      }
+      td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 12px;
+        width: 102px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+    }
+
+    @media print {
+      body { background: #fff; }
+      main { width: 100%; margin: 0; }
+      .hero, section { box-shadow: none; break-inside: auto; }
+      tr { break-inside: avoid; }
+      nav { display: none; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <div class="hero-head">
+      <h1>Task1：把 OPUS A16W16 的 Split-K workspace 交给 Torch 管理</h1>
+      <p>流程：Python 解析 actual kid 和 split-K → 创建或复用 Torch workspace → C++ 校验参数 → 启动 exact-kid kernel。</p>
+    </div>
+    <div class="plain-summary">
+      <div class="summary-card before">
+        <h2>以前</h2>
+        <p>Python 仅完成部分选核，CSV miss 后由 C++ 继续选择 kernel。Split-K workspace 由 C++ 按 stream 管理，调用方不可直接控制，并需要额外 warmup。</p>
+      </div>
+      <div class="summary-card after">
+        <h2>现在</h2>
+        <p>Python 一次解析最终 <code>actual_kid</code> 和 split-K，根据 kernel 注册信息确定 workspace 的 shape 和 dtype，并创建或复用 Torch Tensor。随后将 workspace pointer 传给 C++，workspace 生命周期由调用级 Tensor 管理。</p>
+      </div>
+    </div>
+  </header>
+
+  <section id="requirements">
+    <h2>任务和需求</h2>
+    <ul class="goals">
+      <li>选 kernel 只能做一次，而且必须在申请 workspace 之前完成。</li>
+      <li>workspace 由 Torch 管理：默认自动创建，也允许调用方传入自己的 Tensor。</li>
+      <li>C++ 不再维护全局或按 stream 的 workspace，不再调用隐藏的 <code>hipMalloc/hipFree</code>。</li>
+      <li>workspace 的 shape 和 dtype 必须来自最终 kernel：gfx942/gfx950 two-stage、gfx1250 two-stage 和 fused 各用自己的真实布局。</li>
+      <li>generated C++ launcher 继续做最后一道安全检查，包括 device、dtype、连续性、对齐和容量。</li>
+      <li>HIP graph、非默认 stream、多 stream、BF16/FP32 output 和 bias 行为不能退化。</li>
+      <li>生产路径使用 checked C ABI/ctypes；pybind raw 只留作兼容、测试和 A/B。</li>
+    </ul>
+  </section>
+
+  <nav aria-label="文档目录">
+    <a href="#python">Python/JIT：选核、workspace 分配与调用入口</a>
+    <a href="#host">C++ kernel 启动、workspace 校验与 launcher 生成</a>
+    <a href="#kernels">Kernel 写入 workspace、Split-K 归并与结果输出</a>
+    <a href="#tests">测试、benchmark 与文档</a>
+    <a href="#flow">实际调用流程</a>
+  </nav>
+
+  <section id="python">
+    <h2>1. Python/JIT：选核、workspace 分配与调用入口</h2>
+    <p class="group-note">负责选择 kernel、确定 workspace 大小，并统一 high-level、explicit 和 tuned 入口。</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>文件</th><th>修改函数 / 符号</th><th>最终改动</th></tr>
+        </thead>
+        <tbody>
+          <tr data-file="aiter/jit/core.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/jit/core.py</code></td>
+            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_ctypes_call()</code></li><li><code>_ctypes_call._ensure_loaded()</code></li><li><code>compile_ops()</code></li></ul></td>
+            <td data-label="最终改动">ctypes 可以复用现有的 torch-enabled 混合模块，并保留被装饰函数的签名。其他 ctypes 模块仍默认构建为 torch-free。</td>
+          </tr>
+          <tr data-file="aiter/ops/opus/_selector_a16w16.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>aiter/ops/opus/_selector_a16w16.py</code></td>
+            <td data-label="函数 / 符号"><ul class="symbols"><li><code>LaunchConfig</code></li><li><code>_framework_fallback()</code></li><li><code>_output_dtype_name()</code></li><li><code>_instance_output_compatible()</code></li><li><code>_instance_shape_compatible()</code></li><li><code>_resolve_actual_kid()</code></li><li><code>_build_launch_config()</code></li><li><code>select_launch_config()</code></li></ul></td>
+            <td data-label="最终改动">把 explicit、tuned CSV、架构 heuristic 和 framework fallback 收到一个地方。输出同时带 requested/actual kid，以及 allocation/launch/effective split-K。</td>
+          </tr>
+          <tr data-file="aiter/ops/opus/heuristics/__init__.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>aiter/ops/opus/heuristics/__init__.py</code></td>
+            <td data-label="函数 / 符号"><ul class="symbols"><li><code>A16W16_HEURISTICS</code></li><li><code>select_kid()</code></li></ul></td>
+            <td data-label="最终改动">按 arch 统一调用 gfx942、gfx950、gfx1250 的 Python heuristic。</td>
+          </tr>
+          <tr data-file="aiter/ops/opus/heuristics/a16w16_gfx942.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>aiter/ops/opus/heuristics/a16w16_gfx942.py</code></td>
+            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_build_symbol_to_kid()</code></li><li><code>launcher_symbol_to_kid()</code></li><li><code>_split_barrier_ok()</code></li><li><code>_bf16ws_band()</code></li><li><code>_select_bf16_symbol()</code></li><li><code>select_kid()</code></li><li><code>SplitKResolution</code></li><li><code>resolve_split_k()</code></li></ul></td>
+            <td data-label="最终改动">把 gfx942 的选核和 split-K clamp 搬到 Python；在分配 workspace 前完成 exact-N redirect、自动 split-K 和偶数循环限制。</td>
+          </tr>
+          <tr data-file="aiter/ops/opus/heuristics/a16w16_gfx950.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>aiter/ops/opus/heuristics/a16w16_gfx950.py</code></td>
+            <td data-label="函数 / 符号"><code>select_kid()</code></td>
+            <td data-label="最终改动">规则集中在无状态的 <code>select_kid()</code>：按 M/N/K、bias 和 tile 对齐选择 split-barrier、split-K 或 persistent kid。对应测试为 <code>test_gfx950_python_heuristic_policy_golden()</code> 和 boundary sweep。</td>
+          </tr>
+          <tr data-file="aiter/ops/opus/heuristics/a16w16_gfx1250.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>aiter/ops/opus/heuristics/a16w16_gfx1250.py</code></td>
+            <td data-label="函数 / 符号"><code>select_kid()</code></td>
+            <td data-label="最终改动">fallback 规则集中在无状态的 <code>select_kid()</code>：按 M/N tile 条件选择 kid；fused split-K 由 selector 和 kernel 注册信息处理。对应测试为 <code>test_gfx1250_python_heuristic_policy_golden()</code> 和 boundary sweep。</td>
+          </tr>
+          <tr data-file="aiter/ops/opus/gemm_op_a16w16.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/opus/gemm_op_a16w16.py</code></td>
+            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_device_arch_and_cu()</code></li><li><code>_gen_opus_gemm_a16w16_launch_fake_tensors()</code></li><li><code>_opus_gemm_a16w16_launch_raw()</code></li><li><code>_opus_gemm_a16w16_launch_ctypes_raw()</code></li><li><code>_check_a16w16_launch_layout()</code></li><li><code>_init_a16w16_workspace()</code></li><li><code>_launch_a16w16_with_torch_workspace()</code></li><li><code>_explicit_a16w16_launch()</code></li><li><code>opus_gemm_a16w16_launch()</code></li><li><code>opus_gemm_a16w16_tune()</code></li><li><code>is_splitk_kid()</code></li><li><code>_framework_a16w16()</code></li><li><code>gemm_a16w16_opus()</code></li><li><code>opus_gemm_workspace_init()</code></li></ul></td>
+            <td data-label="最终改动">高层入口只调用一次 selector；按 <code>actual_kid</code> 创建 two-stage 或 fused workspace；生产走 ctypes exact-kid launch。旧 tune 名只做参数兼容，旧 workspace-init 变为 warning/no-op。</td>
+          </tr>
+          <tr data-file="aiter/ops/opus/__init__.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/opus/__init__.py</code></td>
+            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_make_unsupported_arch_stub()</code></li><li><code>opus_gemm_workspace_init()</code></li><li><code>__all__</code> 中的 A16 exports</li></ul></td>
+            <td data-label="最终改动">导出新的 A16 canonical API；不支持的 arch 在调用时再报错；旧 workspace-init 名称保留但不再分配资源。</td>
+          </tr>
+          <tr data-file="aiter/tuned_gemm.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/tuned_gemm.py</code></td>
+            <td data-label="函数 / 符号"><ul class="symbols"><li><strong>修改：</strong><code>opus_gemm()</code></li><li class="removed"><code>_opus_needs_ws_prewarm()</code></li><li class="removed"><code>_opus_graph_capture_stream()</code></li><li class="removed"><code>_opus_prewarm_capture_workspace()</code></li></ul></td>
+            <td data-label="最终改动">tuned row 直接交给 <code>opus_gemm_a16w16_launch()</code>。删除 per-stream init、capture warmup 和 warmed-signature cache。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="host">
+    <h2>2. C++ kernel 启动、workspace 校验与 launcher 生成</h2>
+    <p class="group-note">Python 将已确定的 actual_kid、split-K 和 workspace 传给 C++。C++ 校验输入和 workspace，按 GPU 架构、输出类型和 actual_kid 查找对应 launcher，再启动 kernel；codegen 负责生成 launcher 及其注册表。</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>文件</th><th>修改函数 / 类型 / 宏</th><th>最终改动</th></tr>
+        </thead>
+        <tbody>
+          <tr data-file="csrc/opus_gemm/include/opus_gemm.h">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/opus_gemm.h</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>opus_gemm_a16w16_launch()</code></li><li><code>opus_gemm_a16w16_launch_cabi()</code></li></ul></td>
+            <td data-label="最终改动">公开 C++ launch 显式接收 optional workspace；新增带 stream 和状态码的 C ABI。</td>
+          </tr>
+          <tr data-file="csrc/include/rocm_ops.hpp">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/include/rocm_ops.hpp</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>OPUS_GEMM_A16W16_LAUNCH_PYBIND</code></li><li class="removed"><code>OPUS_GEMM_WORKSPACE_INIT_PYBIND</code></li></ul></td>
+            <td data-label="最终改动">pybind 参数固定为 XQ、WQ、Y、bias、workspace、kid、split_k；删除 C++ workspace-init binding。</td>
+          </tr>
+          <tr data-file="csrc/pybind/opus_gemm_pybind.cu">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/pybind/opus_gemm_pybind.cu</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>PYBIND11_MODULE(...)</code></li><li><code>OPUS_GEMM_A16W16_LAUNCH_PYBIND</code></li></ul></td>
+            <td data-label="最终改动">注册带 workspace 的 canonical A16 pybind 入口，供兼容、测试和 A/B 使用；不再注册 workspace init。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/opus_gemm.cu">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/opus_gemm.cu</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>opus_a16w16_has_workspace_kernel()</code></li><li><code>opus_a16w16_workspace_dispatch()</code></li><li><code>opus_gemm_a16w16_launch_impl()</code></li><li><code>opus_gemm_a16w16_launch()</code></li><li><code>opus_gemm_a16w16_launch_cabi()</code></li><li><code>OpusCabiDeviceStreamGuard</code></li><li><code>AITER_CTYPES_ERROR_DEF</code></li></ul></td>
+            <td data-label="最终改动">C++ 只做 device/dtype/kid 检查和 5/6 参数 typed dispatch。删除隐藏 workspace registry、allocator、handle、grow 和 runtime A16 shape policy。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/opus_gemm_common.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/opus_gemm_common.cuh</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>opus_checked_extent_product()</code></li><li><code>opus_validate_workspace()</code></li></ul></td>
+            <td data-label="最终改动">统一检查 extent overflow、device、dtype、contiguous、16-byte alignment 和容量。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/opus_gemm_common.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/opus_gemm_common.py</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>OpusGemmInstance</code> / <code>name</code></li><li><code>_a16w16_flatmm_splitk()</code></li><li><code>_a16w16_cluster_tdm_splitk_ws_gfx1250()</code></li><li><code>_a16w16_splitk_fuse_gfx1250()</code></li><li><code>_fuse_ring_lds_ok()</code></li><li><code>get_kernel_instance()</code></li><li><code>kernel_needs_external_workspace()</code></li><li><code>SPLITK_KIDS</code></li><li><code>GFX1250_SPLITK_FUSE_KIDS</code></li></ul></td>
+            <td data-label="最终改动">每个 workspace kid 明确声明 BF16/FP32 storage；登记 gfx1250 two-stage/fused；支持按 GPU 架构、接口类型和 kid 查询注册项。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/opus_gemm_tune.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/opus_gemm_tune.py</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>_kid_uses_bf16_workspace()</code></li><li><code>gfx1250_splitK_window()</code></li><li><code>_gfx1250_fuse_kids_for_tile()</code></li><li><code>_gfx1250_fuse_candidates()</code></li><li><code>_gfx1250_select_candidates()</code></li><li><code>candidate_splitK()</code></li><li><code>kid_rejects_shape()</code></li><li><code>kid_rejects_bias()</code></li><li><code>candidate_kids_for_shape()</code></li><li><code>_ensure_kids_compiled()</code></li><li><code>run_opus_gemm()</code></li><li><code>run_opus_gemm_bench()</code></li></ul></td>
+            <td data-label="最终改动">按真实 workspace dtype 计算容量；为 fused 选择 baked split-K；加入 shape、bias、cluster 和 K-tile 安全门；候选 kid 写入 subset sidecar。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/codegen/common.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/codegen/common.py</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>_SPLITK_WORKSPACE_TYPES</code></li><li><code>splitk_workspace_type()</code></li><li>gfx1250 fused emitter registry</li></ul></td>
+            <td data-label="最终改动">把 workspace dtype 注册信息统一映射成 C++ type、storage type 和 Aiter dtype，所有 codegen 共用一份规则。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/gen_instances.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/gen_instances.py</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>_splitk_reduce_baseline_instantiations()</code></li><li><code>_make_host_decl()</code></li><li><code>_make_device_decl()</code></li><li><code>_record_one_instantiation()</code></li><li><code>opus_gemm_codegen.gen_a16w16_kid_dispatch()</code></li><li><code>opus_gemm_codegen.gen_manifest_head()</code></li><li><code>opus_gemm_codegen.gen_instance()</code></li><li><code>opus_gemm_codegen.gen_instances()</code></li><li><code>_emit_splitk_reduce_tu()</code></li><li><code>_emit_fused_host_tu()</code></li></ul></td>
+            <td data-label="最终改动">生成 non-workspace 5 参数表和 workspace 6 参数表；生成 workspace manifest、typed reducer 和 fused host/device TU。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/codegen/gen_instances_gfx942.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/codegen/gen_instances_gfx942.py</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>splitk_reduce_extra_forward_decls()</code></li><li><code>splitk_reduce_extra_device_instantiations()</code></li><li><code>gen_splitk_gfx942_instance()</code></li></ul></td>
+            <td data-label="最终改动">generated launcher 接收 caller workspace，选择 BF16/FP32 storage，校验后把 direct pointer 交给 main kernel 和 reducer。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/codegen/gen_instances_gfx950.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/codegen/gen_instances_gfx950.py</code></td>
+            <td data-label="函数 / 类型 / 宏"><code>gen_flatmm_splitk_instance()</code></td>
+            <td data-label="最终改动">根据 kernel 注册信息生成 FP32 workspace validator 和 direct pointer launch；不接受错误的 workspace dtype 声明。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/codegen/gen_instances_gfx1250.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/codegen/gen_instances_gfx1250.py</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>splitk_reduce_extra_device_instantiations()</code></li><li><code>gen_cluster_tdm_splitk_ws_instance()</code></li><li><code>gen_splitk_fuse_instance()</code></li></ul></td>
+            <td data-label="最终改动">two-stage 支持 BF16/FP32 typed reducer；fused 校验 batch、cluster、K-tile、baked split-K 和 tile-major workspace。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx942/opus_gemm_arch_gfx942.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/opus_gemm_arch_gfx942.cuh</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>OpusA16W16KidEntry</code></li><li><code>OpusA16W16WorkspaceKidEntry</code></li><li><code>opus_a16w16_kid_dispatch_gfx942()</code></li><li><code>opus_a16w16_workspace_dispatch_gfx942()</code></li></ul></td>
+            <td data-label="最终改动">用 generated exact-kid 表分别保存 5 参数和 6 参数函数，按 output dtype 路由。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx950/opus_gemm_arch_gfx950.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx950/opus_gemm_arch_gfx950.cuh</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>OpusA16W16KidEntry</code></li><li><code>OpusA16W16WorkspaceKidEntry</code></li><li><code>opus_a16w16_kid_dispatch_gfx950()</code></li><li><code>opus_a16w16_workspace_dispatch_gfx950()</code></li></ul></td>
+            <td data-label="最终改动">non-workspace 与 workspace membership/函数指针分表保存，避免用 kid 数字范围猜 ABI。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx1250/opus_gemm_arch_gfx1250.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx1250/opus_gemm_arch_gfx1250.cuh</code></td>
+            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>OpusA16W16KidEntry</code></li><li><code>OpusA16W16WorkspaceKidEntry</code></li><li><code>opus_a16w16_workspace_dispatch_gfx1250()</code></li></ul></td>
+            <td data-label="最终改动">gfx1250 two-stage 和 fused 都进入 workspace exact-kid 表，并固定接收 caller workspace。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="kernels">
+    <h2>3. Kernel 写入 workspace、Split-K 归并与结果输出</h2>
+    <p class="group-note"><code>opus_gemm_pipeline_*</code> 文件修改 GPU kernel 内部的计算与写回流程；traits 和 kargs 定义 workspace 类型及 kernel 参数；reducer 读取并累加各分片结果。gfx1250 另新增 fused pipeline，在单个 kernel 中完成分片计算、归并和输出。</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>文件</th><th>修改函数 / 类型</th><th>最终改动</th></tr>
+        </thead>
+        <tbody>
+          <tr data-file="csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_helpers_a16w16.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_helpers_a16w16.cuh</code></td>
+            <td data-label="函数 / 类型"><code>epilogue_store_workspace_sc0nt()</code></td>
+            <td data-label="最终改动">按 <code>T::D_WS</code> cast/store，不再固定用 accumulator 或 output dtype。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_em3en4_lds1_pgr2_sk.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_em3en4_lds1_pgr2_sk.cuh</code></td>
+            <td data-label="函数 / 类型"><code>gemm_a16w16_em3en4_lds1_pgr2_sk_kernel()</code></td>
+            <td data-label="最终改动">从 <code>kargs.ptr_ws</code> 取得 wave-uniform typed pointer。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf1.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf1.cuh</code></td>
+            <td data-label="函数 / 类型"><code>gemm_a16w16_kbuf1_kernel()</code></td>
+            <td data-label="最终改动">non-split 继续写 Y；split 分支改用 <code>D_WS</code> 和 direct workspace pointer。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf2v.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf2v.cuh</code></td>
+            <td data-label="函数 / 类型"><code>gemm_a16w16_kbuf2v_kernel()</code></td>
+            <td data-label="最终改动">split 路径按 <code>D_WS</code> 构造 gmem view，并直接写 caller workspace。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf2v_bk128.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf2v_bk128.cuh</code></td>
+            <td data-label="函数 / 类型"><ul class="symbols"><li><code>bk64_traits_view</code></li><li><code>gemm_a16w16_kbuf2v_bk128_kernel()</code></li></ul></td>
+            <td data-label="最终改动">traits view 继续传递 <code>D_WS</code>；BK128 split 分支使用 direct typed pointer。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_quad_mfma32_kbuf1.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_quad_mfma32_kbuf1.cuh</code></td>
+            <td data-label="函数 / 类型"><code>gemm_a16w16_quad_mfma32_kbuf1_kernel()</code></td>
+            <td data-label="最终改动">用 <code>D_STORE = split ? D_WS : D_C</code> 统一推导 LDS、cast、vector store 和 chunks。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_traits_a16w16.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_traits_a16w16.cuh</code></td>
+            <td data-label="函数 / 类型"><ul class="symbols"><li><code>opus_gfx942_uniform_ws_ptr()</code></li><li><code>opus_gemm_splitk_kargs</code></li><li>split-K traits tuple</li></ul></td>
+            <td data-label="最终改动">kargs 保存 <code>void* ptr_ws</code>；64 位地址用两次 readfirstlane 保持 wave-uniform。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx942/a16w16/splitk_reduce_gfx942.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/a16w16/splitk_reduce_gfx942.cuh</code></td>
+            <td data-label="函数 / 类型"><ul class="symbols"><li><code>splitk_reduce_kernel_fallback_body()</code></li><li><code>splitk_reduce_kernel_fallback()</code></li><li><code>splitk_reduce_kernel_bf16ws_fallback()</code></li><li><code>splitk_reduce_kernel_exact_n_rowblock()</code></li></ul></td>
+            <td data-label="最终改动">所有 reducer 首参统一为 <code>const void* ws_ptr</code>，内部再转换成 exact <code>D_WS</code> pointer。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_flatmm_splitk_gfx950.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_flatmm_splitk_gfx950.cuh</code></td>
+            <td data-label="函数 / 类型">FlatMM split-K kernel</td>
+            <td data-label="最终改动">从 <code>kargs.ptr_ws</code> 构造 <code>D_WS*</code>，不再读取 workspace handle。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx950/opus_gemm_traits_a16w16_gfx950.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx950/opus_gemm_traits_a16w16_gfx950.cuh</code></td>
+            <td data-label="函数 / 类型"><ul class="symbols"><li><code>opus_flatmm_splitk_traits_gfx950</code></li><li><code>opus_gemm_flatmm_splitk_kargs_gfx950</code></li><li>mono output-vector contract</li></ul></td>
+            <td data-label="最终改动">workspace 类型明确为 <code>D_WS</code>，kargs 改为 direct pointer；补充 mono FP32 的逻辑/物理 vector 约束。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx950/splitk_reduce_gfx950.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx950/splitk_reduce_gfx950.cuh</code></td>
+            <td data-label="函数 / 类型"><code>splitk_reduce_kernel()</code></td>
+            <td data-label="最终改动">首参改为 direct <code>ws_ptr</code>，按 FP32 workspace element size 建 descriptor。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_mono_tile_gfx950.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_mono_tile_gfx950.cuh</code></td>
+            <td data-label="函数 / 类型"><code>gemm_a16w16_mono_tile_kernel_gfx950()</code></td>
+            <td data-label="最终改动">BF16 仍做一次 vec8 store；FP32 从正确的逻辑 vec8 base 拆成两次 vec4/16-byte store，确保整块 Y 都被写回。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_mono_tile_4g_safe_gfx950.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_mono_tile_4g_safe_gfx950.cuh</code></td>
+            <td data-label="函数 / 类型"><code>gemm_a16w16_mono_tile_4g_safe_kernel_gfx950()</code></td>
+            <td data-label="最终改动">同步普通 mono 的 dtype-aware lane swap 和 FP32 两笔写回。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx1250/opus_gemm_traits_a16w16_gfx1250.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx1250/opus_gemm_traits_a16w16_gfx1250.cuh</code></td>
+            <td data-label="函数 / 类型"><ul class="symbols"><li><code>opus_gemm_cluster_tdm_ws_kargs_gfx1250</code></li><li><code>opus_gemm_splitk_fuse_kargs_gfx1250</code></li><li><code>opus_cluster_tdm_splitk_ws_traits_gfx1250</code></li></ul></td>
+            <td data-label="最终改动">kargs 保存 direct pointer；traits 用 <code>D_WS/DataWS</code> 支持 BF16/FP32；新增 fused 所需 tile/stride/shape 字段。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_cluster_tdm_splitk_ws_gfx1250.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_cluster_tdm_splitk_ws_gfx1250.cuh</code></td>
+            <td data-label="函数 / 类型"><code>gemm_a16w16_cluster_tdm_splitk_ws_kernel_gfx1250()</code></td>
+            <td data-label="最终改动">plain two-stage writer 按 exact <code>DataWS</code> 写 split-major partial。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_clusterlaunch_tdm_splitk_ws_gfx1250.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_clusterlaunch_tdm_splitk_ws_gfx1250.cuh</code></td>
+            <td data-label="函数 / 类型"><code>gemm_a16w16_clusterlaunch_tdm_splitk_ws_kernel_gfx1250()</code></td>
+            <td data-label="最终改动">clusterlaunch two-stage 的 pointer、descriptor、cast 和 store 全部使用 exact <code>DataWS</code>。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx1250/splitk_reduce_gfx1250.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx1250/splitk_reduce_gfx1250.cuh</code></td>
+            <td data-label="函数 / 类型"><code>splitk_reduce_kernel_gfx1250()</code></td>
+            <td data-label="最终改动">读取 BF16/FP32 partial 后转 FP32 累加；支持 direct pointer 和 VEC=8/16 tail。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_clusterlaunch_tdm_splitk_fuse_gfx1250.cuh">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_clusterlaunch_tdm_splitk_fuse_gfx1250.cuh</code></td>
+            <td data-label="函数 / 类型"><ul class="symbols"><li>fused cluster kernel</li><li>TDM window</li><li>partial publish / ring reduction</li><li>output epilogue</li></ul></td>
+            <td data-label="最终改动">非末 WG 写 tile-major partial；末 WG 在同一个 kernel 中读取 <code>SplitK-1</code> partial、FP32 累加并写 BF16/FP32 Y。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tests">
+    <h2>4. 测试、benchmark 与文档</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>文件</th><th>修改函数 / 测试</th><th>最终覆盖</th></tr>
+        </thead>
+        <tbody>
+          <tr data-file="op_tests/test_opus_a16w16_gemm.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>op_tests/test_opus_a16w16_gemm.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>test_split_k_matches_torch_golden()</code></li><li><code>test_gfx950_mono_fp32_overwrites_poisoned_output()</code></li><li><code>test_gfx950_bias_dtype_rules_and_numerics()</code></li><li><code>test_gfx942_bias_keeps_framework_fallback_and_raw_rejection()</code></li><li><code>test_gfx1250_bf16_output_accepts_fp32_bias()</code></li></ul></td>
+            <td data-label="最终覆盖">split-K 数值、三架构 bias 规则和 gfx950 mono FP32 完整写回。</td>
+          </tr>
+          <tr data-file="op_tests/test_opus_dispatch.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/test_opus_dispatch.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>test_*_python_heuristic_policy_golden()</code></li><li><code>test_explicit_selection_precedes_tuned_lookup()</code></li><li><code>test_valid_tuned_row_preserves_its_kid_split_pair()</code></li><li><code>test_gfx942_*redirect*()</code></li><li><code>test_gfx942_*split_k*()</code></li><li><code>test_framework_fallback_executes_without_touching_raw_binding()</code></li><li><code>test_csv_miss_production_path_uses_canonical_raw_binding()</code></li></ul></td>
+            <td data-label="最终覆盖">selector 优先级、三架构 heuristic、gfx942 redirect/clamp、失效 CSV、framework fallback 和 production ctypes 路径。</td>
+          </tr>
+          <tr data-file="op_tests/test_opus_workspace.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/test_opus_workspace.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>test_every_workspace_kid_explicitly_declares_storage_dtype()</code></li><li><code>test_a16w16_workspace_init_uses_actual_kid_tile_and_dtype()</code></li><li><code>test_gfx1250_fused_workspace_uses_tile_major_compile_time_layout()</code></li><li><code>test_explicit_workspace_is_reused_without_allocation()</code></li><li><code>test_two_automatic_launches_do_not_share_a_workspace_tensor()</code></li><li><code>test_raw_cpp_rejects_invalid_workspace_contract()</code></li></ul></td>
+            <td data-label="最终覆盖">kernel 注册信息、actual-kid shape/dtype、fused layout、caller reuse、调用级 ownership，以及 C++ device/dtype/alignment/capacity 负例。</td>
+          </tr>
+          <tr data-file="op_tests/test_opus_graph.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/test_opus_graph.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>test_graph_capture_replay_allocates_in_capture_without_prewarm()</code></li><li><code>test_two_streams_hold_distinct_call_scoped_workspaces()</code></li><li><code>test_many_shapes_leave_no_python_workspace_tensor_cache()</code></li><li><code>test_deprecated_workspace_init_is_a_warning_only_noop()</code></li></ul></td>
+            <td data-label="最终覆盖">graph capture/replay、双 stream、无隐藏 Tensor cache 和旧 init no-op。</td>
+          </tr>
+          <tr data-file="op_tests/test_opus_gfx950_exhaustive.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/test_opus_gfx950_exhaustive.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>_Case</code></li><li><code>_canonical_cases()</code></li><li><code>test_every_gfx950_workspace_kid()</code></li><li><code>test_every_gfx950_non_workspace_kid()</code></li></ul></td>
+            <td data-label="最终覆盖">按 shard 枚举 gfx950 全部 A16 workspace/non-workspace kids，并记录数值误差。</td>
+          </tr>
+          <tr data-file="op_tests/test_opus_ctypes.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/test_opus_ctypes.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>test_ctypes_phase1_surface_is_private_production_backend()</code></li><li><code>test_ctypes_cabi_reuses_checked_launcher_and_tls_error_bridge()</code></li><li><code>test_gfx950_ctypes_matches_pybind_and_golden()</code></li><li><code>test_gfx950_ctypes_errors_cross_cabi_safely()</code></li><li><code>test_gfx950_ctypes_uses_live_nondefault_stream()</code></li><li><code>test_gfx950_ctypes_graph_capture_and_replay()</code></li><li><code>test_gfx950_ctypes_switches_and_restores_current_device()</code></li></ul></td>
+            <td data-label="最终覆盖">C ABI/pybind parity、TLS error bridge、stream、graph、双 stream 和 current-device 恢复。</td>
+          </tr>
+          <tr data-file="op_tests/test_opus_interfaces.py">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>op_tests/test_opus_interfaces.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>test_a16_python_high_level_and_compat_signature_golden()</code></li><li><code>test_canonical_a16_python_cpp_and_pybind_signatures()</code></li><li><code>test_a16_tune_compat_warns_once_and_calls_canonical()</code></li><li><code>test_compat_and_canonical_explicit_launch_contracts_match()</code></li><li><code>test_gfx950_canonical_raw_workspace_errors()</code></li><li><code>test_gfx950_canonical_raw_numerical_result()</code></li></ul></td>
+            <td data-label="最终覆盖">A16 Python/C++/pybind 签名、compat 转发、actual kid/workspace 参数和 raw 数值/错误合同。</td>
+          </tr>
+          <tr data-file="op_tests/bench_opus_gfx950_workspace_ab.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/bench_opus_gfx950_workspace_ab.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>_parse_args()</code></li><li><code>_launch()</code></li><li><code>_measure()</code></li><li><code>_stats()</code></li><li><code>main()</code></li></ul></td>
+            <td data-label="最终覆盖">固定 48 个 gfx950 workspace kids，对比 pybind、ctypes、public-pybind 和 public 端点。</td>
+          </tr>
+          <tr data-file="op_tests/bench_opus_task1_task2_interfaces.py">
+            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/bench_opus_task1_task2_interfaces.py</code></td>
+            <td data-label="函数 / 测试"><ul class="symbols"><li><code>_task1_a16_raw()</code></li><li><code>_task1_generic_raw()</code></li><li><code>_capture_direct()</code></li><li><code>_task1_explicit()</code></li><li><code>Runner</code></li><li><code>main()</code></li></ul></td>
+            <td data-label="最终覆盖">保留冻结的 Task1 端点，并分层测量 raw、public、高层和 graph replay。这里只记录其中的 Task1 部分。</td>
+          </tr>
+          <tr data-file="aiter/ops/opus/README.md">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/opus/README.md</code></td>
+            <td data-label="函数 / 测试">无代码函数；更新 API、selector、workspace、graph、bias 和 troubleshooting。</td>
+            <td data-label="最终覆盖">说明 <code>LaunchConfig</code>、actual kid、caller workspace、two-stage/fused shape，以及 ctypes production 与 pybind A/B 的关系。</td>
+          </tr>
+          <tr data-file="csrc/opus_gemm/README.md">
+            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/README.md</code></td>
+            <td data-label="函数 / 测试">无代码函数；更新 exact dispatch、typed table、validator、fused 和 C ABI。</td>
+            <td data-label="最终覆盖">记录 5/6 参数 ABI、<code>ptr_ws</code>、BF16/FP32 workspace dtype 声明、tile-major fused layout 和 device/stream guard。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="flow">
+    <h2>5. 当前代码的实际调用流程</h2>
+    <div class="flow" role="img" aria-label="OPUS A16W16 Task1 实际调用流程">
+      <div class="flow-entries">
+        <div class="flow-node">
+          <strong>高层 shape API</strong>
+          <code>gemm_a16w16_opus()</code><br>
+          validate / reshape
+        </div>
+        <div class="flow-node">
+          <strong>显式 canonical API</strong>
+          <code>opus_gemm_a16w16_launch()</code><br>
+          <code>_explicit_a16w16_launch()</code>
+        </div>
+        <div class="flow-node">
+          <strong>兼容和 tuned 调用</strong>
+          <code>opus_gemm_a16w16_tune()</code><br>
+          或 <code>tuned_gemm.opus_gemm()</code>
+        </div>
+      </div>
+
+      <div class="merge-label">三个入口最终都进入同一个 selector / launch 语义</div>
+      <div class="arrow">↓</div>
+
+      <div class="flow-node primary">
+        <strong><code>select_launch_config()</code></strong>
+        explicit kid → tuned CSV → per-arch heuristic → PyTorch fallback<br>
+        输出 <code>actual_kid</code>、<code>allocation_split_k</code>、<code>launch_split_k</code>
+      </div>
+
+      <div class="arrow">↓</div>
+      <div class="flow-decision">
+        <strong>是否需要改用 PyTorch 计算？</strong><br>
+        <code>actual_kid is None</code> 表示没有可合法启动的 OPUS kernel
+      </div>
+      <div class="arrow">↓</div>
+
+      <div class="flow-branches">
+        <div class="flow-branch yes">
+          <strong>是：使用 PyTorch</strong>
+          <code>_framework_a16w16()</code><br>
+          <code>torch.bmm()</code> + bias<br>
+          <code>Y.copy_()</code>
+          <div class="arrow">↓</div>
+          返回 Y
+        </div>
+
+        <div class="flow-branch no">
+          <strong>否：启动已选定的 OPUS kernel</strong>
+          <div class="mini-chain">
+            <div class="mini-step"><code>_launch_a16w16_with_torch_workspace()</code></div>
+            <div class="mini-step"><code>_check_a16w16_launch_layout()</code></div>
+            <div class="mini-step">
+              <code>_init_a16w16_workspace()</code><br>
+              用 <code>actual_kid</code> 查 registry：
+              不需要 workspace → <code>None</code>；
+              需要 workspace → 复用 caller Tensor 或 <code>torch.empty()</code>
+            </div>
+            <div class="mini-step"><code>_opus_gemm_a16w16_launch_ctypes_raw()</code></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+      <div class="flow-node cpp">
+        <strong>C ABI 和 checked C++ launcher</strong>
+        <code>opus_gemm_a16w16_launch_cabi()</code><br>
+        → device/stream guard + TLS error bridge<br>
+        → <code>opus_gemm_a16w16_launch()</code><br>
+        → <code>opus_gemm_a16w16_launch_impl()</code><br>
+        → 当前 arch 的 exact 5/6 参数 typed table
+        <div class="kernel-options">
+          <div><strong>non-workspace</strong>main kernel 直接写 Y</div>
+          <div><strong>two-stage</strong>main 写 Torch workspace，reducer 读 partial 后写 Y</div>
+          <div><strong>gfx1250 fused</strong>前序 WG 写 partial，末 WG 在同一 kernel 内 reduce 并写 Y</div>
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+      <div class="flow-node primary"><strong>返回已经写好的 Y</strong></div>
+
+      <p class="flow-note">
+        兼容 pybind raw <code>_opus_gemm_a16w16_launch_raw()</code> 仍然存在，但只用于兼容、validator 测试和 pybind/ctypes A/B；生产 public/high-level 路径使用 ctypes raw。
+      </p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

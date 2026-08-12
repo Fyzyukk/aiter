@@ -1,16 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""
-DeepGEMM front-end (CK backend).
-
-Hosts the CK-backed `deepgemm_ck` binding plus a thin `deepgemm()`
-wrapper. Opus entries have been extracted under `aiter.ops.opus.*`;
-see `aiter.ops.opus.gemm_a16w16_opus` for BF16 matmul and
-`aiter.ops.opus.opus_gemm_a16w16_launch` for explicit kid launch.
-
-`opus_gemm_a16w16_tune` is kept here as a deprecation shim for one
-release to ease migration from the old aggregate entry.
-"""
+"""DeepGEMM CK binding and deprecated OPUS compatibility entry."""
 
 import warnings
 
@@ -50,6 +40,7 @@ def opus_gemm_a16w16_tune(
     kernelId: int = 0,
     splitK: int = 0,
 ) -> torch.Tensor:
+    """Forward the legacy tune name to the OPUS exact-kid launcher."""
     warnings.warn(
         "aiter.ops.deepgemm.opus_gemm_a16w16_tune has moved to "
         "aiter.ops.opus.gemm_op_a16w16.opus_gemm_a16w16_launch; this "

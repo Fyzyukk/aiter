@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// gfx950 family-specific strict kid dispatch.
+// Exact-kid launcher tables for gfx950.
 #pragma once
 
 #include "../opus_gemm_arch.cuh"
@@ -16,8 +16,7 @@
 #include <cstddef>
 #include <optional>
 
-// These types are a16w16 adapter ABI, not family-neutral OPUS types.  A
-// multi-arch dispatcher TU includes several arch headers, so define them once.
+// Multi-arch builds include this ABI from several headers; define it once.
 #ifndef OPUS_A16W16_DISPATCH_KERNEL_TYPES_DEFINED
 #define OPUS_A16W16_DISPATCH_KERNEL_TYPES_DEFINED
 using OpusA16W16Kernel = void (*)(
@@ -155,8 +154,7 @@ opus_a8w8_blockscale_bpreshuffle_kid_dispatch_gfx950<fp32_t>(int id)
     return entry->func;
 }
 
-// Strict non-workspace kid dispatch.  Workspace kids are absent by
-// construction and therefore cannot be called through the five-argument ABI.
+// Workspace kids are absent from the direct-output table.
 template <typename CDataType>
 inline OpusA16W16Kernel opus_a16w16_kid_dispatch_gfx950(int kid);
 

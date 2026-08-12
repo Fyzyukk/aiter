@@ -301,15 +301,20 @@ def select_kid(arch, M, N, K, batch=1,
       <article class="file-card" data-file="aiter/ops/opus/gemm_op_a16w16.py">
         <h3 class="file-head"><span class="badge change">修改</span><code>aiter/ops/opus/gemm_op_a16w16.py</code></h3>
         <div class="file-detail">
-          <div class="field"><h4>修改位置</h4><p>低级 binding 区、<code>_check_a16w16_launch_layout()</code>、<code>_init_a16w16_workspace()</code>、<code>_launch_a16w16_with_torch_workspace()</code>、<code>_explicit_a16w16_launch()</code>、public/compat/high-level 入口。</p></div>
-          <div class="field added"><h4>新增或修改后的函数代码</h4><ul><li>新增 pybind 兼容 raw <code>_opus_gemm_a16w16_launch_raw(..., workspace, kid, split_k)</code>。</li><li>新增生产 ctypes raw <code>_opus_gemm_a16w16_launch_ctypes_raw(...)</code>，public <code>opus_gemm_a16w16_launch()</code> 与 <code>gemm_a16w16_opus()</code> 最终传入该 raw。</li><li><code>_init_a16w16_workspace()</code> 按 exact instance 生成 two-stage split-major 或 fused tile-major Tensor，并支持 caller 复用。</li></ul><pre><code>old: _prepare_a16w16_workspace(...) -&gt; (WorkspacePlan, Tensor)
-new: _init_a16w16_workspace(...) -&gt; Tensor | None
+          <div class="field"><h4>修改位置</h4><p>模块级 runtime policy、设备架构读取、低级 pybind/ctypes binding、layout 检查、workspace 初始化、统一 launch helper、canonical/compat API、registry capability、framework fallback、高层入口和旧 workspace-init 兼容函数。</p></div>
+          <div class="field added"><h4>新增或修改后的函数代码</h4><ul><li>新增 <code>_device_arch_and_cu()</code>，高层入口先取得 live tensor device 的 arch/CU，再调用 <code>select_launch_config()</code>。</li><li>用带 <code>workspace/kid/split_k</code> 的 canonical pybind raw <code>_opus_gemm_a16w16_launch_raw()</code> 替换旧 tune raw，并新增生产 ctypes raw <code>_opus_gemm_a16w16_launch_ctypes_raw()</code>；pybind raw只用于兼容、测试和 A/B。</li><li>新增 <code>_init_a16w16_workspace()</code>，按 resolved <code>actual_kid</code> 的 exact instance/dtype 生成 gfx942/gfx950 two-stage、gfx1250 two-stage 或 fused tile-major Tensor；caller Tensor可复用，最终物理验证仍由 generated C++ launcher负责。</li><li>新增 <code>_launch_a16w16_with_torch_workspace()</code>、<code>_explicit_a16w16_launch()</code>、public <code>opus_gemm_a16w16_launch()</code> 和 <code>_framework_a16w16()</code>；旧 <code>opus_gemm_a16w16_tune()</code> 改为 deprecated 参数适配器。</li><li><code>gemm_a16w16_opus()</code> 从 explicit/CSV/C++ miss 三路分支改为一次 selector，framework请求走 Torch，其余统一进入 exact-kid workspace + ctypes raw。</li></ul><pre><code>original baseline:
+explicit/CSV -&gt; _opus_gemm_a16w16_tune_raw(..., kid, splitK)
+CSV miss     -&gt; _opus_gemm_bf16_dispatch(...) -&gt; C++ opus_gemm
+workspace    -&gt; C++ per-stream registry / hipMalloc
 
-production raw:
+current:
+config = select_launch_config(...)
+workspace = _init_a16w16_workspace(config, XQ, Y, workspace)
 _opus_gemm_a16w16_launch_ctypes_raw(
-    XQ, WQ, Y, bias, workspace, actual_kid, launch_split_k)</code></pre></div>
-          <div class="field removed"><h4>删除或替换前的函数代码</h4><p>删除 <code>WorkspacePlan</code>/<code>allocate_workspace</code>/<code>validate_workspace</code>/<code>plan_a16w16_workspace</code> imports；删除旧 private tune raw/fake、生产用 generic <code>_opus_gemm_bf16_dispatch</code>、kid 数值区间判定与预热要求。原 pybind raw 不再是生产末端，只保留兼容和 A/B。</p></div>
-          <div class="field effect"><h4>功能意义</h4><p>主链变为“选择一次 → exact-kid workspace 一次 → checked C ABI launch”；不改变 selector、workspace 物理合同或 device kernel，却减少 pybind Tensor 转换开销。</p></div>
+    XQ, WQ, Y, bias, workspace,
+    config.actual_kid, config.launch_split_k)</code></pre></div>
+          <div class="field removed"><h4>删除或替换前的函数代码</h4><p>删除旧 <code>_gen_opus_gemm_a16w16_tune_fake_tensors()</code>/<code>_opus_gemm_a16w16_tune_raw()</code>、generic <code>_opus_gemm_bf16_dispatch</code>/fake、复制的 <code>_SPLITK_KID_RANGES</code> 和 C++ <code>opus_gemm_workspace_init</code> binding；<code>is_splitk_kid()</code> 改查 canonical registry。Task1 中间版本曾新增 <code>WorkspacePlan</code>、<code>_prepare_a16w16_workspace()</code> 和两个独立 workspace 模块，最终又撤销；它们不是最初基线。当前 pybind raw 是新的 canonical A/B 端点，不是旧 tune raw 原样保留。</p></div>
+          <div class="field effect"><h4>功能意义</h4><p>总体主链从“Python部分选择 → generic C++再选核 → C++隐藏workspace”改为“Python一次解析 <code>LaunchConfig</code> → actual-kid调用级Torch workspace → checked exact-kid launch”。最后的 ctypes 性能阶段只替换已完成主链的 pybind边界，不再改变 selector、workspace物理合同或 device kernel，并减少逐调用 pybind Tensor转换开销。</p></div>
         </div>
       </article>
 
@@ -880,11 +885,14 @@ new production hook: _opus_gemm_a16w16_launch_ctypes_raw</code></pre><p>pybind r
         <div class="file-detail">
           <div class="field"><h4>修改位置</h4><p>Task2 范围：canonical raw/fake、<code>_explicit_a16w16_launch()</code>、public <code>opus_gemm_a16w16_launch()</code>、compat <code>opus_gemm_a16w16_tune()</code> 和 <code>gemm_a16w16_opus()</code> 的 launch 目标。</p></div>
           <div class="field added"><h4>新增或修改后的函数代码</h4><pre><code>def _opus_gemm_a16w16_launch_raw(
-    XQ, WQ, Y, bias, workspace, kid, split_k): ...
+    XQ, WQ, Y, bias, workspace, kid, split_k): ...  # pybind A/B
+
+def _opus_gemm_a16w16_launch_ctypes_raw(
+    XQ, WQ, Y, bias, workspace, kid, split_k) -&gt; None: ...
 
 def opus_gemm_a16w16_launch(
-    XQ, WQ, Y, bias=None, workspace=None,
-    kid=None, split_k=None): ...</code></pre><p>explicit、CSV tuned、heuristic 都复用 selector 和 exact workspace 后进入同一 canonical 逻辑入口；旧 tune wrapper 只解析旧参数、warning、转发。</p></div>
+    XQ, WQ, Y, bias=None, *, kid: int,
+    split_k: int = 0, workspace=None): ...</code></pre><p>explicit、CSV tuned、heuristic 都复用 selector 和 exact workspace 后进入同一 canonical 语义；最终生产路径使用 ctypes raw，pybind raw保留作兼容/A-B，旧 tune wrapper只解析旧参数、warning并转发。</p></div>
           <div class="field removed"><h4>删除或替换前的函数代码</h4><p>删除旧 private <code>_opus_gemm_a16w16_tune_raw</code>/fake、generic <code>_opus_gemm_bf16_dispatch</code>/fake 和未使用 <code>group_layout</code>；C++/pybind 不再保留 tune symbol。Task1 后续把 production FFI 切到 ctypes，但不改变这里建立的 canonical 合同。</p></div>
           <div class="field effect"><h4>功能意义</h4><p>A16 public 行为和 Task1 actual-kid/workspace 不变，成功路径只有一个 family-specific API 语义。</p></div>
         </div>

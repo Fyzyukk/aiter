@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
+"""OPUS kernel registrations shared by selection and code generation."""
+
 import os
 from dataclasses import dataclass, field
 
@@ -1320,12 +1322,7 @@ HEURISTIC_DEFAULT_KIDS_BY_ARCH = {
 
 
 def heuristic_kids_for_arch(arches):
-    """Return the Python heuristic-default kid subset for ``arches``.
-
-    ``arches`` is an iterable of lowercase arch strings (e.g. ``{"gfx942"}``)
-    or ``None`` (caller does not know / multi-arch build) -- in the ``None``
-    case the full union is returned for a multi-arch build.
-    """
+    """Return heuristic default kids for the requested architectures."""
     if arches is None:
         return HEURISTIC_DEFAULT_KIDS
     arches = {a.lower() for a in arches}
@@ -1335,10 +1332,8 @@ def heuristic_kids_for_arch(arches):
     return out
 
 
-# Logical family membership is an explicit arch/tag capability matrix.  Empty
-# tag sets are deliberate: the public family ABI exists on that architecture,
-# but no kernel is registered there yet.  Do not replace this with numeric kid
-# bands or tag-substring tests; both collide across OPUS families over time.
+# Map each architecture and interface to its registered kernel tags.
+# An empty set means that the interface exists but has no kernel on that arch.
 OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
     "gfx950": {
         "a16w16": frozenset(
@@ -1390,9 +1385,7 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
     },
 }
 
-# These kernels must remain in every matching-arch subset build even when no
-# tuned CSV or compiled-kids sidecar mentions them.  This is a build-time
-# guarantee, not a runtime selector.
+# Always include these A8W8 kernels in matching-architecture subset builds.
 OPUS_MANDATORY_A8_KIDS = {
     "gfx950": frozenset({1, 2}),
     "gfx942": frozenset({11000}),
@@ -1401,6 +1394,7 @@ OPUS_MANDATORY_A8_KIDS = {
 
 
 def _canonical_output_dtype(output_dtype) -> str | None:
+    """Normalize supported output dtype names for registry lookup."""
     if output_dtype is None:
         return None
     value = str(output_dtype).strip().lower()
@@ -1424,14 +1418,7 @@ def get_kernel_instance(
     kid: int,
     output_dtype=None,
 ) -> OpusGemmInstance | None:
-    """Return the canonical instance for ``(arch, family, kid, Y.dtype)``.
-
-    ``output_dtype`` is optional for existing metadata callers.  When supplied,
-    it is checked against the exact instance's generated output
-    specializations.  The result is still the original
-    :class:`OpusGemmInstance`; this function does not create a second metadata
-    projection.
-    """
+    """Return a kernel registered for ``(arch, interface, kid, Y.dtype)``."""
     arch = str(arch).lower()
     family = str(family).lower()
     family_tags = OPUS_KERNEL_TAGS_BY_ARCH_FAMILY.get(arch, {}).get(family)
@@ -1452,10 +1439,7 @@ def get_kernel_instance(
 
     dtype = _canonical_output_dtype(output_dtype)
     if dtype is not None and dtype not in instance.output_dtypes:
-        # External-workspace a16 launchers use an fp32_t host specialization
-        # regardless of final Y dtype; their reducer (or fused last WG) owns
-        # the bf16/fp32 cast.  For direct-output families, output_dtypes stays
-        # authoritative.
+        # Workspace reducers cast Y; direct kernels use their registered dtype.
         workspace_a16_output = (
             family == "a16w16"
             and kid in SPLITK_KIDS

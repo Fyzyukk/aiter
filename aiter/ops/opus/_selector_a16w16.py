@@ -1,15 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Python runtime policy for the OPUS a16w16 family.
+"""OPUS a16w16 runtime selection.
 
-Selection is deliberately family-local and ordered as follows:
-
-``explicit kid -> tuned CSV -> architecture heuristic -> framework fallback``
-
-The returned :class:`LaunchConfig` records both the requested kernel and the
-launcher that will actually execute.  That distinction is required for the
-legacy gfx942 bf16-workspace redirects: workspace planning must use the actual
-launcher, never the requested id.
+Resolves ``explicit -> tuned -> heuristic -> fallback`` to the actual kid used
+for workspace planning and launch.
 """
 
 from __future__ import annotations
@@ -37,18 +31,10 @@ TunedLookup = Callable[..., Mapping[str, object] | None]
 
 @dataclass(frozen=True)
 class LaunchConfig:
-    """Fully resolved a16w16 launch decision.
+    """Resolved a16w16 kernel and split-K decision.
 
-    ``allocation_split_k`` is a safe allocation upper bound.  On gfx942,
-    ``launch_split_k`` is also the already-clamped effective value.  The
-    gfx950/gfx1250 launchers retain their existing local down-clamp in Step 1,
-    so their launch value remains the caller/CSV request while allocation uses
-    ``max(1, request)``.
-
-    A framework fallback has ``requested_kid`` and ``actual_kid`` set to
-    ``None``.  Supported OPUS architectures have an always-compiled heuristic
-    set; they reach this arm only when the selected raw launch ABI cannot serve
-    the request.
+    ``allocation_split_k`` sizes the workspace; ``launch_split_k`` is passed
+    to the launcher. ``actual_kid=None`` denotes framework fallback.
     """
 
     arch: str
@@ -106,9 +92,7 @@ def _instance_output_compatible(
     needs_workspace: bool,
     output_dtype: Any,
 ) -> bool:
-    # An external-workspace kernel always enters launch dispatch as <fp32_t>.
-    # Its separate reducer, or gfx1250's fused last WG, owns the bf16/fp32
-    # final cast. For a direct-output kernel output_dtypes is authoritative.
+    # Workspace reducers cast output; direct kernels use the registered dtypes.
     if needs_workspace:
         return _output_dtype_name(output_dtype) in {"bf16", "fp32"}
     token = f"{_output_dtype_name(output_dtype)}_t"
@@ -124,8 +108,7 @@ def _instance_shape_compatible(
     K: int,
     batch: int,
 ) -> bool:
-    # The current gfx1250 generated launcher executes exactly one batch.  Keep
-    # batched requests out of that raw path until its host loop/ABI is fixed.
+    # The gfx1250 launcher is single-batch.
     if arch == "gfx1250" and batch != 1:
         return False
 
@@ -141,12 +124,11 @@ def _instance_shape_compatible(
             return False
         return split_k <= (K + instance.B_K - 1) // instance.B_K
 
-    # Mono-tile handles an M tail but has neither an N-tail nor K-tail mask.
+    # Mono-tile masks only the M tail.
     if instance.kernel_tag == "a16w16_mono_tile":
         return N % instance.B_N == 0 and K % instance.B_K == 0
 
-    # Non-OOB mirrors are only valid when their M/N tiles are exact.  K-tail
-    # rules remain launcher-owned in Step 1 because they differ by pipeline.
+    # Non-OOB kernels require exact M/N tiles; launchers validate K.
     if not instance.has_oob:
         return M % instance.B_M == 0 and N % instance.B_N == 0
     return True
@@ -226,13 +208,7 @@ def _build_launch_config(
     if has_bias and actual_kid not in BIAS_AWARE_KIDS:
         raise ValueError(f"OPUS {source} kid {actual_kid} does not support bias")
 
-    # #4246's round-1 fused launcher accepts only a contiguous bf16 [N] bias,
-    # while the public a16w16 API also accepts fp32 and [batch, N].  The tuned
-    # CSV key records only a boolean bias flag, so it cannot distinguish those
-    # physical contracts.  Keep bias-bearing calls on the two-stage family
-    # until the selector/tuned schema carries the exact bias dtype and shape;
-    # otherwise a row tuned with bf16 [N] could be replayed with fp32 bias and
-    # fail only after workspace allocation at the generated launcher boundary.
+    # Fused bias constraints are narrower than the selector can represent.
     if (
         has_bias
         and actual_instance.kernel_tag
@@ -243,11 +219,7 @@ def _build_launch_config(
             "the public/tuned selector can represent"
         )
 
-    # The generated gfx942 split-K launchers have bias-aware reducers, but the
-    # current launch path intentionally rejects that combination before
-    # launcher entry.  Until the raw gate is changed with the workspace ABI,
-    # keep automatic selection on the framework fallback.  Explicit callers
-    # still receive the strict error from this function.
+    # The current gfx942 raw ABI rejects workspace kernels with bias.
     if has_bias and arch == "gfx942" and needs_workspace:
         raise ValueError(
             "the current gfx942 a16w16 launch rejects bias on split_k kernels"
@@ -259,9 +231,7 @@ def _build_launch_config(
     if needs_workspace:
         allocation_split_k = max(1, requested_split_k)
         if actual_instance.kernel_tag == "a16w16_clusterlaunch_tdm_splitk_fuse":
-            # Fused SplitK is baked into the kid's cluster geometry. Runtime
-            # CSV/explicit splitK values cannot change either execution or the
-            # tile-major workspace capacity.
+            # Fused split-K and workspace size are fixed by the kernel entry.
             effective_split_k = int(actual_instance.fuse_split_k)
             allocation_split_k = effective_split_k
             launch_split_k = effective_split_k

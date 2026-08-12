@@ -900,6 +900,7 @@ def gemm_a8w8_blockscale_bpreshuffle(
     w_scale: Tensor,
     dtype: torch.dtype = dtypes.bf16,
 ) -> Tensor:
+    """Dispatch blockscale bpreshuffle GEMM through its tuned backend."""
     assert dtype in [
         dtypes.bf16,
         dtypes.fp16,
@@ -1037,6 +1038,7 @@ def gemm_a8w8_blockscale_bpreshuffle(
                 XQ, WQ, Y, x_scale, w_scale, splitK=splitK, kernelName=kernelName
             )
         elif libtype == "opus":
+            # Only an OPUS-tuned row enters the OPUS exact-kid interface.
             kid = int(config["kernelId"])
             from aiter.ops.opus.gemm_op_a8w8 import (
                 opus_gemm_a8w8_blockscale_bpreshuffle_launch,

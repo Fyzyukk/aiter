@@ -514,6 +514,7 @@ def opus_gemm(
     bpreshuffle: bool | None = False,
     config: dict | None = None,
 ):
+    """Run one tuned OPUS A16W16 row through the exact-kid interface."""
     if _opus_launch is None:
         logger.warning(
             "opus tuned config found but opus is not available; falling back to torch"
@@ -546,11 +547,7 @@ def opus_gemm(
         kid=int(solidx),
         split_k=splitK,
     )
-    # NOTE: do NOT add bias again here -- the opus splitk reduce kernel already
-    # folds `bias` into the fp32 accumulator before the bf16/fp32 cast (HAS_BIAS
-    # path). The previous `Y = Y + bias` double-counted bias (output = A@B^T +
-    # 2*bias), causing ~54% miscompare (maxabs ~= bias range) for every bias!=None
-    # opus shape under tgemm (e.g. ATOM's bf16 linear).
+    # The OPUS launcher already applies bias, including split-K reduction.
     return Y
 
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""gfx942 codegen -- emit launchers for gfx942-targeted kid families."""
+"""Generate gfx942 OPUS launchers."""
 
 import os
 from pathlib import Path
@@ -848,11 +848,7 @@ def gen_a8w8_blockscale_bpreshuffle_gfx942_instance(
     make_a8w8_bpreshuffle_host_decl,
     **_unused,
 ):
-    """gfx942 A8W8 blockscale bpreshuffle launcher emit.
-
-    The public family wrapper dispatches an exact kid through the generated
-    per-arch typed table; no generic mega-entry participates in this path.
-    """
+    """Emit the checked gfx942 A8W8 bpreshuffle launcher."""
     info = _validate_a8w8_blockscale_bpreshuffle_gfx942(k)
     print(
         f"  {k.name}: E=({info['E_M']},{info['E_N']},{info['E_K']})"
@@ -1032,7 +1028,7 @@ _GFX942_LDS_PER_WG_BYTES = 64 * 1024
 
 
 def _validate_a8w8_blockscale_bpreshuffle_gfx942(k: OpusGemmInstance):
-    """Validate gfx942 A8W8 blockscale bpreshuffle registry instances."""
+    """Validate one gfx942 A8W8 bpreshuffle kernel entry."""
     errors = []
     sizeof_da = 1  # fp8
     if k.BLOCK_SIZE != k.T_M * k.T_N * WARP_SIZE:

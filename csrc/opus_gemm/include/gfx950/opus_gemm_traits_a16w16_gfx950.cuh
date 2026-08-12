@@ -265,24 +265,7 @@ struct opus_gemm_a16w16_flatmm_traits_gfx950 {
     // only defined on the device pass; host pass would see 65536 and cause
     // pfk<3 and break static_asserts.
     //
-    // All aiter a16w16 kernels are gfx950-only today. Three-layer enforcement:
-    //   1. Python: aiter/ops/opus/__init__.py calls _arch._detect_arch({"gfx950"})
-    //      at import time. On non-gfx950 the import still succeeds (so it
-    //      cannot break the surrounding `from aiter.ops.opus import *` in
-    //      aiter/__init__.py) but gemm_a16w16_opus / opus_gemm_a16w16_launch
-    //      are replaced with stubs that raise RuntimeError on call, plus a
-    //      one-shot RuntimeWarning at import. Helper is reusable for future
-    //      opus submodules with different supported sets.
-    //   2. Host:   opus_a16w16_kid_dispatch<T> in
-    //      opus_gemm.cu are arch routers built on opus_get_gfx_arch(). Only
-    //      the gfx950 branch is wired up today (delegates to
-    //      opus_dispatch_a16w16_gfx950<T>); other archs return TORCH_CHECK
-    //      fail with a 'pipeline TBD' message. Future archs are added by
-    //      extending OpusGfxArch + adding a per-arch dispatch function.
-    //   3. Device: each __global__ kernel body wraps real code in
-    //      #if defined(__gfx950__) so non-gfx950 device passes (in multi-arch
-    //      wheels like GPU_ARCHS='gfx942;gfx950') compile to an empty stub.
-    //      Combined with layer 1/2 the empty stub is unreachable at runtime.
+    // Python selects the kid; the host router then enters the gfx950 table.
     static constexpr int WG_PER_CU = WG_PER_CU_;
     static constexpr int LDS_SIZE_TOTAL = 163840;
     static constexpr int max_lds_size_per_wg = LDS_SIZE_TOTAL / WG_PER_CU_;

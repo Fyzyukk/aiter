@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Canonical OPUS A8W8 family launch APIs and legacy compatibility shim.
+"""OPUS A8W8 launch APIs.
 
-Each public wrapper resolves an exact ``(runtime arch, logical family, kid,
-Y.dtype)`` registry entry before calling its private raw binding. Physical
-shape, stride, tile, scale and prefetch contracts remain final-checked by the
-generated launcher for that exact instance.
+The no-scale, blockscale and bpreshuffle interfaces validate their registered
+kernel before launch. Generated launchers enforce the physical tensor rules.
 """
 
 from __future__ import annotations
@@ -26,13 +24,10 @@ _A8W8_BPRESHUFFLE_FAMILY = "a8w8_blockscale_bpreshuffle"
 _SUPPORTED_OPUS_ARCHES = ("gfx942", "gfx950", "gfx1250")
 _MISSING_TENSOR = object()
 
-# A tensor's explicit device index is stable for the process lifetime, as is
-# the architecture attached to that visible device.  Keep this cache scoped by
-# the full torch.device instead of assuming a homogeneous multi-GPU host.
+# Cache by full device so mixed-GPU processes resolve each architecture.
 _DEVICE_ARCH_CACHE: dict[torch.device, str] = {}
 
-# A default is a deliberate no-tuned-row fallback, never "the first registry
-# entry".  Empty capabilities stay None until that arch lands a real kernel.
+# ``None`` means that the architecture has no default bpreshuffle kernel.
 OPUS_DEFAULT_A8W8_BPRESHUFFLE_KID_BY_ARCH: dict[str, int | None] = {
     "gfx942": 11000,
     "gfx950": None,
@@ -58,13 +53,7 @@ def _read_device_arch(device: torch.device) -> str:
 
 
 def _device_arch(device: torch.device) -> str:
-    """Return the tensor device's cached gfx name.
-
-    ``Tensor.device`` is explicit, but normalizing an index-less ``cuda``
-    device keeps this helper correct for direct internal callers that switch
-    the current device.  The cache never stores Tensor objects or data
-    pointers.
-    """
+    """Return the cached gfx name for one explicit device."""
     if not isinstance(device, torch.device):
         device = torch.device(device)
     if device.type == "cuda" and device.index is None:
@@ -85,7 +74,7 @@ def _check_same_device(
     x_scale: object = _MISSING_TENSOR,
     w_scale: object = _MISSING_TENSOR,
 ) -> None:
-    """Validate dynamic Tensor devices without allocating on valid calls."""
+    """Require Tensor inputs on one device."""
     has_x_scale = x_scale is not _MISSING_TENSOR
     has_w_scale = w_scale is not _MISSING_TENSOR
     if not (
@@ -130,12 +119,7 @@ def _check_same_device(
 def _require_registered_kid_cached(
     arch: str, family: str, resolved: int, output_dtype: torch.dtype
 ) -> int:
-    """Validate one immutable exact capability and memoize successful hits.
-
-    ``lru_cache`` does not cache exceptions, so an unavailable capability is
-    re-evaluated instead of becoming a stale negative if a development test or
-    future runtime extension adds registry metadata.
-    """
+    """Validate one kernel registration and cache successful lookups."""
     instance = get_kernel_instance(arch, family, resolved, output_dtype)
     if instance is None:
         raise ValueError(
@@ -149,6 +133,7 @@ def _require_registered_kid_cached(
 def _require_registered_kid(
     *, arch: str, family: str, kid: object, output_dtype: torch.dtype
 ) -> int:
+    """Normalize a kid and require a matching kernel registration."""
     try:
         resolved = int(kid)
     except (TypeError, ValueError) as exc:
@@ -246,12 +231,10 @@ def opus_gemm_a8w8_launch(
     *,
     kid: int = 2,
 ) -> Tensor:
-    """Launch the gfx950 no-scale A8W8 family with an exact kid.
+    """Launch a registered no-scale A8W8 kid.
 
-    ``XQ/WQ/Y`` must be contiguous 3D ``[B,M,K]``, ``[B,N,K]`` and
-    ``[B,M,N]`` tensors. Inputs are FP8 and ``Y`` is FP32. The generated kid-2
-    launcher additionally enforces its two-tile minimum, even K-tile loop and
-    even-K prefetch contract.
+    Inputs are contiguous FP8 ``[B,M,K]`` and ``[B,N,K]``; output is contiguous
+    FP32 ``[B,M,N]``. The generated launcher checks its K-loop limits.
     """
     entry = "opus_gemm_a8w8_launch"
     _check_same_device(entry, XQ, WQ, Y)
@@ -272,13 +255,10 @@ def opus_gemm_a8w8_blockscale_launch(
     *,
     kid: int = 1,
 ) -> Tensor:
-    """Launch the gfx950 plain-WQ blockscale A8W8 family.
+    """Launch a registered blockscale A8W8 kid with plain WQ.
 
-    This API accepts neither bias nor ``group_layout``. ``XQ/WQ/Y`` use the
-    same 3D FP8/FP8/FP32 contract as :func:`opus_gemm_a8w8_launch`; ``WQ`` is
-    plain, not pre-shuffled. Both FP32 contiguous scales are mandatory:
-    ``x_scale=[B,M,K/128]`` and ``w_scale=[B,N/128,K/128]``. For ``B=1`` the
-    leading scale dimension may be omitted.
+    Both contiguous FP32 scales are required. Their shapes are
+    ``[B,M,K/128]`` and ``[B,N/128,K/128]``; batch 1 may omit the first axis.
     """
     entry = "opus_gemm_a8w8_blockscale_launch"
     _check_same_device(entry, XQ, WQ, Y, x_scale, w_scale)
@@ -331,6 +311,7 @@ def _resolve_bpreshuffle_kid(
     arch: str,
     kid: int | None,
 ) -> int:
+    """Resolve and validate an explicit, tuned or architecture-default kid."""
     if kid is not None:
         candidate: object = kid
         source = "explicit"
@@ -369,17 +350,13 @@ def opus_gemm_a8w8_blockscale_bpreshuffle_launch(
     *,
     kid: int | None = None,
 ) -> Tensor:
-    """Launch the per-arch blockscale-bpreshuffle family.
+    """Launch a registered blockscale A8W8 kid with pre-shuffled WQ.
 
-    Resolution order is ``explicit -> OPUS A8 tuned row -> per-arch default``.
-    The private raw binding always receives a resolved integer kid.
-
-    ``WQ`` must already contain the pre-shuffled weight representation required
-    by the resolved launcher. Pre-shuffle is a content/layout semantic and
-    cannot be proven from Tensor shape or strides. The current gfx942 kid 11000
-    requires a real ``shuffle_weight(WQ, layout=(16, 16))`` result, BF16 ``Y``,
-    FP32 scales, batch 1, and exact 128-wide N/K groups. gfx950 and gfx1250
-    expose this same stable API but currently have empty OPUS family tables.
+    Kid order is ``explicit -> OPUS tuned row -> architecture default``.
+    ``WQ`` pre-shuffle is a content/layout semantic. It
+    cannot be proven from Tensor shape or strides. Build it with
+    ``shuffle_weight(WQ, layout=(16, 16))``. The generated launcher checks
+    output dtype, scale layout, batch and tile alignment.
     """
     entry = "opus_gemm_a8w8_blockscale_bpreshuffle_launch"
     _check_same_device(entry, XQ, WQ, Y, x_scale, w_scale)

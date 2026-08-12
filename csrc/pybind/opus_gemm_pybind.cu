@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// pybind glue is host-only. Skip the entire TU on the device pass so we
-// don't pay the libtorch + pybind11 + HIP runtime parse (~15s) for code
-// that has no GPU side at all.
+// Register the four OPUS launch interfaces on the host pass only.
 #ifndef __HIP_DEVICE_COMPILE__
 
 #include "rocm_ops.hpp"

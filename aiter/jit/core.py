@@ -1292,10 +1292,7 @@ def _ctypes_call(
         so_path = os.path.join(get_user_jit_dir(), f"{md_name}.so")
         if not os.path.exists(so_path) or _needs_arch_rebuild(md_name):
             d_args = get_args_of_build(md_name)
-            # Most ctypes modules are deliberately torch-free shared objects.
-            # A mixed module may instead contain both a Python/pybind surface
-            # and exported C ABI symbols; in that case preserve the module's
-            # configured build mode so both FFIs resolve to the same .so.
+            # Preserve the configured mode for mixed pybind/C ABI modules.
             if force_torch_exclude:
                 d_args["torch_exclude"] = True
             build_module(

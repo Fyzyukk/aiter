@@ -1,12 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""OPUS a16w16 Python API and id-based launch wrapper.
-
-The shape-driven entry resolves policy in Python, in the fixed order
-``explicit -> tuned CSV -> per-arch heuristic -> framework fallback``.  Every
-OPUS result is represented by a resolved ``LaunchConfig`` and launched through
-the typed Torch-workspace path.
-"""
+"""OPUS a16w16 selection and Torch workspace launch APIs."""
 
 import warnings
 from collections.abc import Callable
@@ -30,7 +24,7 @@ _WORKSPACE_DTYPES = {
 
 
 def _device_arch_and_cu(device: torch.device) -> tuple[str, int]:
-    """Return the live tensor device's gfx name and CU count without caching."""
+    """Return the device architecture and CU count."""
     props = torch.cuda.get_device_properties(device)
     raw_arch = str(getattr(props, "gcnArchName", "")).strip()
     arch = raw_arch.split(":", 1)[0].lower()
@@ -78,18 +72,14 @@ def _opus_gemm_a16w16_launch_raw(
 ) -> torch.Tensor: ...
 
 
-# Keep the original pybind raw above as a compatibility/A-B endpoint.  The
-# production public and shape-driven paths use the C ABI binding below after
-# Phase 1 correctness, graph/stream, multi-arch syntax, and ABBA acceptance.
+# Keep pybind for compatibility/A-B; production uses C ABI.
 
 
 @compile_ops(
     "module_deepgemm_opus",
     fc_name="opus_gemm_a16w16_launch_cabi",
     ffi_type="ctypes",
-    # This C symbol intentionally lives in the existing mixed pybind module so
-    # both paths share one generated-kernel image. Preserve that module's
-    # configured build mode instead of forcing a second torch-free .so.
+    # Reuse the mixed pybind module's shared object.
     ctypes_force_torch_exclude=False,
 )
 def _opus_gemm_a16w16_launch_ctypes_raw(
@@ -104,23 +94,7 @@ def _opus_gemm_a16w16_launch_ctypes_raw(
 
 
 def _check_a16w16_launch_layout(XQ: torch.Tensor, WQ: torch.Tensor, Y: torch.Tensor):
-    """Reject layouts that the opus launcher's hardcoded strides cannot serve.
-
-    Mirrors the kargs setup in csrc/opus_gemm/gen_instances.py
-    (_gen_flatmm_splitk_instance et al.):
-        kargs.stride_a        = K
-        kargs.stride_b        = K
-        kargs.stride_c        = N
-        kargs.stride_a_batch  = M * K
-        kargs.stride_b_batch  = N * K
-        kargs.stride_c_batch  = M * N
-    The kernel reads memory at `ptr + batch_id * stride_*_batch + ...`
-    directly. Any broadcast view (batch stride == 0), transpose, or
-    sliced layout will hit garbage / unmapped memory.
-
-    Cheap to run (a handful of integer comparisons); only raised on real
-    misuse so the hot path pays nothing.
-    """
+    """Validate launcher-required 3D shapes and strides."""
     for name, t in (("XQ", XQ), ("WQ", WQ), ("Y", Y)):
         if t.dim() != 3:
             raise ValueError(
@@ -145,15 +119,7 @@ def _check_a16w16_launch_layout(XQ: torch.Tensor, WQ: torch.Tensor, Y: torch.Ten
             f"Y.shape={tuple(Y.shape)}, expected ({batch}, {M}, {N}))"
         )
 
-    # XQ / WQ: the K (innermost / contraction) dimension may be padded -- the
-    # launcher passes the tensor's real leading stride as kargs.stride_a/stride_b
-    # and the kernels use it as the lda for BOTH addressing and the gmem buffer
-    # bound, so a row pitch > K (e.g. a 2880-wide tensor stored at lda 3072) is
-    # served correctly. We only require:
-    #   * innermost stride == 1   (the kernel layout hardcodes the K stride to 1)
-    #   * row pitch (stride[1]) >= K
-    #   * batch stride == rows * row pitch (or batch == 1) -- rejects broadcast
-    #     (stride 0) and transposed / overlapping views.
+    # XQ/WQ allow padded rows but require contiguous K and dense batches.
     for name, t, rows in (("XQ", XQ, M), ("WQ", WQ, N)):
         s0, s1, s2 = t.stride()
         k_inner = t.shape[2]
@@ -168,8 +134,7 @@ def _check_a16w16_launch_layout(XQ: torch.Tensor, WQ: torch.Tensor, Y: torch.Ten
                 f"non-K-contiguous slices are not supported; materialize with "
                 f"`{name} = {name}.contiguous()` before calling."
             )
-    # Y is the output: the launcher hardcodes stride_c == N and
-    # stride_c_batch == M*N, so it must be fully contiguous.
+    # Y must match the launcher's contiguous output strides.
     y_want = (M * N, N, 1)
     if tuple(Y.stride()) != y_want:
         raise NotImplementedError(
@@ -186,12 +151,7 @@ def _init_a16w16_workspace(
     Y: torch.Tensor,
     workspace: torch.Tensor | None = None,
 ) -> torch.Tensor | None:
-    """Initialize the workspace for an already-resolved actual kid.
-
-    Shape and dtype come directly from the canonical instance selected by
-    ``config.actual_kid``. Caller-provided tensors are passed through to the
-    generated launcher, which owns the final physical contract validation.
-    """
+    """Prepare workspace for ``config.actual_kid``."""
     if config.is_framework_fallback or config.actual_kid is None:
         raise ValueError(
             "opus_gemm_a16w16_launch: cannot initialize a workspace for "
@@ -220,8 +180,7 @@ def _init_a16w16_workspace(
     is_fused = (
         instance.kernel_tag == "a16w16_clusterlaunch_tdm_splitk_fuse"
     )
-    # Two-stage families use the selector's runtime allocation upper bound.
-    # Fused SplitK is compile-time and must never inherit a CSV/runtime knob.
+    # Fused split-K comes from the kernel entry; other kernels use selector output.
     split_k = (
         int(instance.fuse_split_k)
         if is_fused
@@ -260,8 +219,8 @@ def _init_a16w16_workspace(
                     f"gfx1250 fused kid {config.actual_kid} must declare "
                     f"compile-time SplitK >= 2, got {split_k}"
                 )
-            # #4246 fused physical order is tile -> published partial -> tile
-            # element. Keep that contract visible in the Torch tensor shape.
+            # Fused layout: M tile, N tile, published partial,
+            # M element, N element.
             shape = (
                 num_tiles_m,
                 num_tiles_n,
@@ -314,7 +273,7 @@ def _launch_a16w16_with_torch_workspace(
     *,
     workspace: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Run the centralized ``resolved kid -> workspace init -> raw`` path."""
+    """Prepare workspace and launch the resolved kid."""
     _check_a16w16_launch_layout(XQ, WQ, Y)
     workspace = _init_a16w16_workspace(config, XQ, Y, workspace)
     raw_launch(
@@ -340,7 +299,7 @@ def _explicit_a16w16_launch(
     *,
     workspace: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Resolve one explicit kid and enter the shared workspace launch path."""
+    """Resolve and launch an explicit kid."""
     _check_a16w16_launch_layout(XQ, WQ, Y)
     batch, M, K = XQ.shape
     N = Y.shape[2]
@@ -385,12 +344,7 @@ def opus_gemm_a16w16_launch(
     split_k: int = 0,
     workspace: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Launch an explicit canonical a16w16 kid on gfx942/gfx950/gfx1250.
-
-    The requested kid is resolved through the same selector used by the legacy
-    wrapper, including gfx942 requested-to-actual redirects. Workspace shape,
-    dtype, and allocation ownership remain centralized in the Task1 planner.
-    """
+    """Resolve and launch an explicit a16w16 kid."""
     return _explicit_a16w16_launch(
         _opus_gemm_a16w16_launch_ctypes_raw,
         XQ,
@@ -413,42 +367,10 @@ def opus_gemm_a16w16_tune(
     *,
     workspace: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Deprecated compatibility wrapper for the canonical explicit launcher.
-
-    This wrapper preserves the legacy positional and ``kernelId``/``splitK``
-    calling conventions for one migration window. New code should call
-    :func:`opus_gemm_a16w16_launch` with ``kid`` and ``split_k``.
-
-    Parameters
-    ----------
-    bias : optional D_OUT-typed bias tensor, accepted shapes:
-           [M] (broadcast across batch; requires batch==1) or [batch, M].
-           Only honored on bias-aware kid ranges (split-barrier kid 4..9
-           and a16w16_flatmm_splitk kid 200..299); the C++ dispatcher
-           rejects bias on other kids.
-    workspace : optional advanced override for a workspace kernel. When
-           omitted, a fresh correctly typed Torch tensor is allocated for
-           this call. A supplied tensor is validated and reused; non-workspace
-           kernels require ``None``.
-
-    Backwards-compatibility note
-    ----------------------------
-    Older callers used ``opus_gemm_a16w16_tune(XQ, WQ, Y, kernelId, splitK)``
-    with positional args (no bias slot). When the 4th positional argument
-    is an int, we silently treat it as kernelId and shift remaining args
-    accordingly so existing tuner / test scripts keep working without an
-    edit. Mixed-style calls (``..., bias=t, kernelId=k``) keep their kwargs
-    semantics.
-    """
-    # Positional-int back-compat: opus_gemm_a16w16_tune(XQ, WQ, Y, kid, splitK).
-    # When `bias` arrives as an int (which torch_library would otherwise
-    # reject as not Optional[Tensor]), reinterpret as kernelId.
+    """Forward deprecated calls to ``opus_gemm_a16w16_launch``."""
+    # Support legacy (XQ, WQ, Y, kernelId, splitK) calls.
     if isinstance(bias, int) and not isinstance(bias, bool):
-        # Positional int means "this was meant to be kernelId"; treat the
-        # next positional (kernelId) as splitK and the original splitK
-        # (default 0) as truly unset.
         if splitK != 0 and kernelId == 0:
-            # Shouldn't happen in old call sites, but be defensive.
             new_splitK = splitK
         else:
             new_splitK = kernelId
@@ -475,12 +397,7 @@ def opus_gemm_a16w16_tune(
 # ---- High-level shape-driven API -----------------------------------------
 
 def is_splitk_kid(kid: int) -> bool:
-    """Return whether ``kid`` is a registered a16w16 workspace kernel.
-
-    This compatibility helper has no arch argument, so it searches the three
-    disjoint a16w16 registries. Capability still comes from the canonical
-    instance registry rather than a copied integer band.
-    """
+    """Return whether ``kid`` is a registered a16w16 workspace kernel."""
     for arch in _SUPPORTED_OPUS_ARCHES:
         if get_kernel_instance(arch, "a16w16", kid) is not None:
             return kernel_needs_external_workspace(arch, "a16w16", kid)
@@ -503,7 +420,7 @@ def _validate_and_reshape(A: Tensor, B: Tensor, bias, dtype, out):
             f"gemm_a16w16_opus only supports bf16/fp32 output dtype, got {dtype}"
         )
 
-    # Resolve A first so we know `batch`.
+    # Normalize A and determine batch.
     if A.dim() == 2:
         M, K = A.shape
         batch = 1
@@ -516,19 +433,7 @@ def _validate_and_reshape(A: Tensor, B: Tensor, bias, dtype, out):
     else:
         raise ValueError(f"A must be 2D or 3D, got shape {tuple(A.shape)}")
 
-    # B accepted shapes:
-    #   * [N, K]                       - allowed only when batch == 1
-    #   * [batch, N, K] real-strided   - allowed for any batch
-    #
-    # The opus a16w16-family launchers hardcode `kargs.stride_b_batch = N * K`
-    # (csrc/opus_gemm/gen_instances.py around lines 531/634/735/865) and the
-    # device kernel computes `ptr_b + batch_id * stride_b_batch` directly,
-    # ignoring the tensor's reported stride. A `B.unsqueeze(0).expand(batch,
-    # -1, -1)` view has batch_stride == 0, so the kernel reads garbage past
-    # B's real allocation -- this manifests as NaN, large numerical errors,
-    # or HIP "Memory access fault by GPU node-1" depending on what the
-    # caching allocator parked next to B. Reject the broken case at the
-    # Python boundary rather than letting it through.
+    # B is [N, K] for batch 1 or dense [batch, N, K]; broadcasts are unsafe.
     if B.dim() == 2:
         N, K_b = B.shape
         if K_b != K:
@@ -546,7 +451,7 @@ def _validate_and_reshape(A: Tensor, B: Tensor, bias, dtype, out):
                 f"-1).contiguous()\n"
                 f"  2. Pass a real 3D weight: B with shape ({batch}, N, K)"
             )
-        WQ = B.unsqueeze(0)  # batch == 1 here; kernel never reads stride_b_batch.
+        WQ = B.unsqueeze(0)  # Batch stride is unused when batch == 1.
     elif B.dim() == 3:
         b_b, N, K_b = B.shape
         if K_b != K:
@@ -555,10 +460,7 @@ def _validate_and_reshape(A: Tensor, B: Tensor, bias, dtype, out):
             raise ValueError(
                 f"B batch mismatch: A has batch={batch}, B has batch={b_b}"
             )
-        # Reject expand-style broadcast views (batch_stride=0) up front. Any
-        # other layout (contiguous, transposed N/K, etc.) is still rejected
-        # below by the elements-per-row check; the launcher requires
-        # B[b].stride(0) == N*K and B[b].stride(1) == K.
+        # Reject broadcasts and other non-dense batch layouts.
         bs0, bs1, bs2 = B.stride()
         if bs0 != N * K or bs1 != K or bs2 != 1:
             raise NotImplementedError(
@@ -581,15 +483,7 @@ def _validate_and_reshape(A: Tensor, B: Tensor, bias, dtype, out):
     else:
         Y = torch.empty(batch, M, N, dtype=dtype, device=A.device)
 
-    # Bias validation. Bias may be fp32 OR match the output dtype. The gfx1250
-    # two-stage reducer folds bias into an fp32 accumulator before the final
-    # cast to Y, independently of whether the exact kid's workspace is bf16 or
-    # fp32. The #4246 fused family retains its narrower bf16 [N] round-1 bias
-    # contract and is therefore excluded by the selector whenever bias is
-    # present. Bias is per-output-feature [N] (F.linear convention):
-    #   * [N]          -> stride_bias_batch = 0 (broadcast across batch)
-    #   * [batch, N]   -> stride_bias_batch = N
-    # Matches the C++-side gfx1250 bias validation in gen_instances_gfx1250.py.
+    # Bias must be contiguous fp32/output dtype with shape [N] or [batch, N].
     if bias is not None:
         if bias.dtype not in (dtype, torch.float32):
             raise ValueError(
@@ -632,7 +526,7 @@ def _framework_a16w16(
     Y: Tensor,
     bias: Tensor | None,
 ) -> None:
-    """Execute the selector's terminal framework fallback into ``Y``."""
+    """Run the Torch fallback into ``Y``."""
     if Y.dtype == torch.float32:
         result = torch.bmm(XQ.float(), WQ.float().transpose(1, 2))
     else:
@@ -655,38 +549,13 @@ def gemm_a16w16_opus(
     splitK: int | None = None,
     out: Tensor | None = None,
 ) -> Tensor:
-    """Shape-driven opus a16w16 GEMM.
+    """Run shape-selected bf16 a16w16 GEMM.
 
-    Parameters
-    ----------
-    A : [M, K] or [batch, M, K], bf16
-    B : bf16 weight, plain layout (not pre-shuffled). Two accepted shapes:
-        * [N, K]            -- requires batch == 1 (i.e. A is 2D, or A is
-                               3D with leading dim 1).
-        * [batch, N, K]     -- contiguous strides (N*K, K, 1) only.
-                               Broadcast views (e.g. ``B.unsqueeze(0).
-                               expand(batch, -1, -1)``) are rejected
-                               because the opus launcher assumes
-                               ``stride_b_batch == N*K``; pass
-                               ``.contiguous()`` if you need to broadcast
-                               a single-batch weight across A.
-    bias : optional per-output-feature bias (F.linear convention), dtype may
-        be fp32 or equal `dtype`. Accepted shapes:
-        * [N]                  -- broadcast across batch.
-        * [batch, N]           -- per-batch bias vector.
-        bias is fused when the resolved OPUS kid supports it. Requests that
-        the current raw launch ABI cannot serve use the terminal framework
-        fallback.
-    dtype : output dtype, bf16 or fp32 (any kernel family supports either)
-    kernelId : optional explicit override. When given, bypass CSV/heuristic
-        selection and strictly validate this instance before launch.
-    splitK : optional literal KBatch; only honored when kernelId is set.
-    out : optional preallocated [batch, M, N] output; reused instead of
-        allocating a fresh tensor.
-
-    Returns
-    -------
-    Tensor with shape [M, N] when A was 2D, [batch, M, N] when A was 3D.
+    A is ``[M,K]`` or ``[batch,M,K]``. B is ``[N,K]`` for batch 1 or dense
+    ``[batch,N,K]``. Bias is contiguous fp32/output-dtype ``[N]`` or
+    ``[batch,N]``. Output is bf16/fp32 and follows A's rank. ``kernelId``
+    selects a strict explicit launch; ``splitK`` configures it. ``out`` reuses
+    a 3D output tensor.
     """
     XQ, WQ, Y, M, N, K, batch, reshape_out_to_2d = _validate_and_reshape(
         A, B, bias, dtype, out
@@ -709,9 +578,7 @@ def gemm_a16w16_opus(
         _framework_a16w16(XQ, WQ, Y, bias)
         return _finalize_output(Y, reshape_out_to_2d)
 
-    # Explicit, tuned, and CSV-miss heuristic choices all converge here. Use
-    # the already-resolved config so workspace planning sees the actual kid and
-    # allocation split-K without a second selector pass.
+    # Launch the resolved actual kid without selecting again.
     _launch_a16w16_with_torch_workspace(
         _opus_gemm_a16w16_launch_ctypes_raw,
         XQ,
@@ -724,7 +591,7 @@ def gemm_a16w16_opus(
 
 
 def opus_gemm_workspace_init() -> None:
-    """Deprecated no-op; workspaces are now ordinary per-call Torch tensors."""
+    """Deprecated no-op; workspace setup is automatic."""
     warnings.warn(
         "opus_gemm_workspace_init() is deprecated and no longer required; "
         "OPUS split-K workspaces are allocated by the Python wrapper",

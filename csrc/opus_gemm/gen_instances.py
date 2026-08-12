@@ -10,8 +10,7 @@ from pathlib import Path
 import pandas as pd
 from codegen import gen_instances_gfx942 as _gfx942  # noqa: F401
 
-# Import for side-effect: each arch module self-registers into EMIT_REGISTRY
-# and ARCH_MAP_REGISTRY at import time.
+# Architecture modules register their code emitters at import time.
 from codegen import gen_instances_gfx950 as _gfx950  # noqa: F401
 from codegen import gen_instances_gfx1250 as _gfx1250  # noqa: F401
 from codegen.common import (
@@ -44,9 +43,7 @@ from opus_gemm_common import (
     kernels_list,
 )
 
-# Cross-arch maps merged from per-arch contributions. Each arch module
-# registers its piece into ARCH_MAP_REGISTRY at import; we merge gfx950 first
-# (legacy default) then overlay gfx942 entries.
+# Merge the codegen maps registered by each architecture.
 PIPELINE_HEADER_MAP = {
     **get_arch_map("gfx950", "pipeline_header"),
     **get_arch_map("gfx942", "pipeline_header"),
@@ -151,12 +148,10 @@ INPUT_DTYPE_MAP = {
     **{tag: ("bf16_t", "bf16_t") for tag in _A16W16_TAGS},
 }
 
-# All a16w16 tags participate in exact-kid dispatch. Workspace and
-# non-workspace launchers are emitted into different tables because their host
-# ABIs differ.
+# A16W16 uses separate direct-output and workspace launcher tables.
 A16W16_KID_DISPATCH_TAGS = set(_A16W16_TAGS)
 A8W8_BPRESHUFFLE_TAGS = {"a8w8_blockscale_bpreshuffle_singlebuf"}
-# NOSCALE: 3-arg launchers (a16w16 family + a8w8 non-scale).
+# Three-tensor launchers: A16W16 and A8W8 no-scale.
 NOSCALE_TAGS = A16W16_KID_DISPATCH_TAGS | {"a8w8"}
 
 # Split-K tags live in the workspace dispatch table and use their existing
@@ -235,9 +230,7 @@ def instance_impl_host_tu_split(
     )
 
 
-# Launcher signature tails after Y.  Keep the original five-argument ABI for
-# non-workspace a16w16 launchers; two-stage split-K launchers receive the
-# caller-owned typed workspace before bias.
+# Extra parameters appended to each generated launcher signature.
 A16W16_LAUNCH_HOST_EXTRA = ",\n    std::optional<aiter_tensor_t>,\n    int"
 A16W16_WORKSPACE_LAUNCH_HOST_EXTRA = (
     ",\n    aiter_tensor_t &workspace,"
@@ -261,7 +254,7 @@ def _make_host_decl(kid_name, dtype, host_extra_params):
 
 
 def _make_a8w8_bpreshuffle_host_decl(kid_name, dtype, _host_extra_params):
-    """Explicit instantiation for the family ABI ``XQ,WQ,xs,ws,Y``."""
+    """Emit the ``XQ,WQ,x_scale,w_scale,Y`` host declaration."""
     return (
         f"template void\n"
         f"{kid_name}<{dtype}>(\n"
@@ -479,14 +472,7 @@ class opus_gemm_codegen:
 """
 
     def gen_a16w16_kid_dispatch(self, kernels_dict):
-        """Emit arch-scoped non-workspace and workspace kid dispatch tables.
-
-        A table has one function-pointer type.  Non-workspace launchers retain
-        the five-argument ABI and are split by output template dtype.  Every
-        two-stage split-K launcher is emitted only in its architecture's
-        six-argument workspace table with the existing `<fp32_t>` host
-        specialization.
-        """
+        """Emit per-arch A16W16 direct and workspace launcher tables."""
         HEADER = """#pragma once
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
@@ -573,16 +559,15 @@ class opus_gemm_codegen:
                 _emit_workspace_map(f, arch)
 
     def gen_a8w8_kid_dispatch(self, kernels_dict):
-        """Emit sorted, family-typed A8W8 exact-kid dispatch tables."""
+        """Emit sorted A8W8 launcher tables for each interface."""
         header = """#pragma once
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
 // Auto-generated. Do not edit. See gen_instances.py:gen_a8w8_kid_dispatch.
 //
-// Family ABIs are intentionally separate even when their current argument
-// counts happen to match. Empty per-arch capability tables are represented by
-// SIZE=0 plus an empty initializer macro.
+// Interfaces remain separate even when argument counts match. Missing kernels
+// use a size-0 table.
 """
         entry = """\
     {{ {kid}, &{kernel_name}<{ctype}> }},  \\
@@ -920,6 +905,7 @@ void
             ).write_text(contents)
 
     def gen_instances(self, kernels_dict):
+        """Regenerate launchers, manifests and exact-kid tables."""
         # A rerun in an existing blob directory must not leave removed or
         # renamed generated policy headers behind.
         for legacy_header in (
@@ -962,6 +948,7 @@ void
 
 
 def _tune_df_kids(df):
+    """Read kid values from either supported tuned-CSV column name."""
     kids = None
     for col in ("solidx", "kernelId"):
         if col not in df.columns:

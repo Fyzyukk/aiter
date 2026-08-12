@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Python parity port of the gfx950 a16w16 C++ fallback heuristic."""
+"""gfx950 a16w16 fallback selection."""
 
 
 def select_kid(
@@ -11,7 +11,7 @@ def select_kid(
     has_bias: bool = False,
     output_dtype: str = "bf16",
 ) -> int:
-    """Return the same kid as ``opus_a16w16_heuristic_kid_gfx950``."""
+    """Select the gfx950 fallback kid."""
     del batch, output_dtype
     M = int(M)
     N = int(N)

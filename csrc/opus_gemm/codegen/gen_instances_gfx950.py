@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""gfx950 codegen -- emit launchers for gfx950-targeted kid families.
-
-Free functions taking the parent opus_gemm_codegen instance as first arg.
-Self-registers each emit into codegen.common.EMIT_REGISTRY at import time.
-"""
+"""Generate gfx950 OPUS launchers."""
 
 import os
 from pathlib import Path
@@ -703,7 +699,7 @@ def gen_scale_instance(
     A8W8_BLOCKSCALE_HOST_EXTRA,
     **_unused,
 ):
-    """gfx950 a8w8_scale launcher emit."""
+    """Emit the checked gfx950 A8W8 blockscale launcher."""
     _kargs_explicit_param, fwd_decl_kargs_tpl, fwd_decl_kargs_fnarg = (
         kargs_template_vars(k.kernel_tag, kargs_name)
     )
@@ -867,8 +863,7 @@ def gen_noscale_instance_gfx950(
     A16W16_KID_DISPATCH_TAGS,
     **_unused,
 ):
-    """gfx950 noscale launcher emit: a16w16 split-barrier (bias-aware double-traits)
-    and a8w8 noscale (single traits). a8w8 falls through the else branch."""
+    """Emit a gfx950 A16W16 or A8W8 no-scale launcher."""
     kargs_explicit_param, fwd_decl_kargs_tpl, fwd_decl_kargs_fnarg = (
         kargs_template_vars(k.kernel_tag, kargs_name)
     )

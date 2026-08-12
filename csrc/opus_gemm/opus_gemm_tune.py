@@ -1,38 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""[DEBUG-ONLY] Single-shape / single-kid opus a16w16 tuner.
+"""Debug-only single-shape OPUS A16W16 tuner.
 
-This script used to be the production opus tuning entry point and wrote
-directly into a private CSV under aiter/ops/opus/configs/. Production
-tuning has moved to gradlib:
-
-    python3 gradlib/gemm_tuner.py --libtype opus
-    # or as part of a multi-backend tune:
-    python3 gradlib/gemm_tuner.py --libtype all
-
-gradlib writes to aiter/configs/bf16_tuned_gemm.csv (or whatever the
-user passes via --tuned_file / GTUNE_TUNED), stamping every opus row
-with `libtype=='opus'`. The opus runtime dispatch
-(aiter/ops/opus/common.py) reads those rows from the global CSV.
-
-This file is retained for two reasons only:
-
-  1. **Single-(M,N,K) smoke / debug**: hand-running a specific kid against
-     a specific shape (-m M -n N -k K --kid K --splitK S) to compare
-     against the gradlib winner or to investigate a bug.
-  2. **Source of truth for tune-time helpers**: candidate_kids_for_shape,
-     candidate_splitK, kid_rejects_shape / kid_rejects_bias, and
-     _ensure_kids_compiled live here. They are imported by:
-       - gradlib's GemmTuner (gradlib/gradlib/GemmTuner.py) for the
-         production `--libtype opus` path,
-       - this script's own `tune()` for the single-shape debug path.
-     csrc/opus_gemm/opus_gemm_common.py only owns the data constants
-     (SPLITK_KIDS / NON_SPLITK_KIDS / BIAS_AWARE_KIDS /
-     HEURISTIC_DEFAULT_KIDS) plus _opus_sidecar_path(); it does NOT
-     re-export any tune-time helper.
-
-The default output path is /tmp/opus_debug_tuned.csv so this script can
-never accidentally pollute the global aiter/configs/ tree.
+Production tuning uses ``gradlib/gemm_tuner.py``. This module keeps the
+single-kid runner and candidate helpers imported by Gradlib; output defaults
+to ``/tmp``.
 """
 
 import json
@@ -1254,13 +1226,7 @@ def opus_gemm_ref(XQ, WQ, bias=None, out_dtype=None):
 
 
 def run_opus_gemm(XQ, WQ, Y, bias, kernelId, splitK):
-    """Eager-path tuner func: runs the kernel AND an on-the-fly max_delta check.
-
-    The check raises RuntimeError when the output is numerically off; mp_tuner's
-    worker catches it and marks the candidate invalid. Used when --no-graph is
-    passed (i.e. graph mode disabled) so the per-iter check is safe (no CUDA
-    graph capture).
-    """
+    """Launch one eager kid and reject excessive numerical error."""
     _quiet_aiter_logger_once()
     _opus_gemm_a16w16_launch(
         XQ, WQ, Y, bias, kid=kernelId, split_k=splitK
@@ -1305,31 +1271,7 @@ _bench_max_delta_checked = set()  # module-level per-subprocess cache
 
 
 def run_opus_gemm_bench(XQ, WQ, Y, bias, kernelId, splitK):
-    """Tuner bench func with capture-safe stream sync + per-task max_delta
-    safety check.
-
-    Stream sync rationale
-    ---------------------
-    When our custom run_perftest replacement (_opus_run_perftest below) uses
-    torch.cuda.Event to time the graph replay, the end-event record needs
-    the kernel in flight. The sync inside the bench func itself is for the
-    WARMUP phase (outside capture), so that max_delta check and torch.bmm
-    reference see a stable Y before validating.
-
-    The sync is gated on is_current_stream_capturing() because
-    cudaStreamSynchronize during CUDA graph capture invalidates the graph
-    (HIP returns hipErrorStreamCaptureInvalidated).
-
-    Correctness gate
-    ----------------
-    mp_tuner.worker's post-run checkAllclose(ref, Y, rtol, atol) gates on
-    *fraction* of cells above tolerance, not the max single-cell absolute
-    delta. We add a per-task max_delta check:
-      * Runs once per (XQ, WQ, Y, kid, splitK) tuple per subprocess.
-      * Skipped inside CUDA graph capture (.item() forbidden there).
-      * Raises RuntimeError on violation; mp_tuner.worker marks the
-        candidate us=-1, err_ratio=1.0.
-    """
+    """Benchmark one kid with a capture-safe, once-per-task accuracy check."""
     _quiet_aiter_logger_once()
     _opus_gemm_a16w16_launch(
         XQ, WQ, Y, bias, kid=kernelId, split_k=splitK

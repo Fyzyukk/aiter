@@ -49,9 +49,7 @@ public:
     aiter::setCurrentHIPStream(previous_stream_);
     if (restore_device_)
     {
-      // Destructors must not throw across the C ABI. The target launch already
-      // completed synchronously on the host; restoring a previously valid HIP
-      // device is best-effort only if the runtime itself is tearing down.
+      // Never throw while restoring state across the C ABI.
       (void)hipSetDevice(previous_device_);
     }
   }
@@ -236,10 +234,7 @@ opus_a16w16_kid_dispatch(int kid)
   }
 }
 
-// The generated per-arch workspace tables are the sole source of truth for
-// the five-argument vs. six-argument launcher ABI. Keep this routing next to
-// the strict non-workspace router so a kid from another architecture cannot
-// accidentally match a copied numeric range.
+// Query the current architecture's generated workspace table.
 static bool opus_a16w16_has_workspace_kernel(int kid)
 {
   switch (opus_get_gfx_arch())
@@ -295,7 +290,7 @@ opus_a16w16_workspace_dispatch(int kid)
   }
 }
 
-// Shared validation and dispatch implementation for the canonical launch entry.
+// Validate A16W16 inputs, then call the matching generated launcher table.
 static void opus_gemm_a16w16_launch_impl(
     aiter_tensor_t &XQ,
     aiter_tensor_t &WQ,
@@ -377,7 +372,7 @@ static void opus_gemm_a16w16_launch_impl(
   }
 }
 
-// opus_gemm_a16w16_launch() — canonical exact-kid family entry.
+// A16W16 exact-kid entry used by pybind and the C ABI.
 void opus_gemm_a16w16_launch(
     aiter_tensor_t &XQ,
     aiter_tensor_t &WQ,
@@ -457,6 +452,7 @@ static void opus_check_a8_family_tensors(
               AiterDtype_to_str(WQ.dtype()));
 }
 
+// A8W8 entry points perform common checks before exact-kid table lookup.
 static void opus_check_a8_scale_devices(
     const char* entry,
     const aiter_tensor_t &XQ,

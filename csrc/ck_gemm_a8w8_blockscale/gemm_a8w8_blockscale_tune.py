@@ -161,12 +161,7 @@ def run_gemm_a8w8_blockscale_opus(
     out,
     kernel_id,
 ):
-    """
-    Run an exact-kid OPUS a8w8 blockscale bpreshuffle kernel.
-
-    ``weight`` must already be the real shuffled storage produced by
-    ``shuffle_weight``; its Tensor metadata alone cannot prove that semantic.
-    """
+    """Launch one OPUS bpreshuffle kid with a pre-shuffled weight tensor."""
     return opus_gemm_a8w8_blockscale_bpreshuffle_launch(
         x, weight, x_scale, w_scale, out, kid=kernel_id
     )

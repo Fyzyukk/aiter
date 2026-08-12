@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// gfx942 family-specific strict kid dispatch.
+// Exact-kid launcher tables for gfx942.
 #pragma once
 
 #include "../opus_gemm_arch.cuh"

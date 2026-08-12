@@ -278,6 +278,7 @@ namespace py = pybind11;
           py::arg("x_scale") = std::nullopt, \
           py::arg("w_scale") = std::nullopt);
 
+// OPUS exact-kid bindings; blockscale scale tensors are required.
 #define OPUS_GEMM_A16W16_LAUNCH_PYBIND        \
     m.def("opus_gemm_a16w16_launch",          \
           &opus_gemm_a16w16_launch,            \
