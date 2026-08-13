@@ -146,7 +146,10 @@ def test_ctypes_raw_fake_registration_is_torch_compile_visible():
             return Y
 
         assert raw_call(XQ, WQ, Y, workspace) is Y
-        compiled = torch.compile(raw_call, fullgraph=True)
+        # This test exercises Dynamo visibility of the registered fake
+        # implementation. Inductor creates its own FakeTensorMode on PyTorch
+        # 2.9, which conflicts with the explicit mode owning these inputs.
+        compiled = torch.compile(raw_call, backend="eager", fullgraph=True)
         result = compiled(XQ, WQ, Y, workspace)
         assert result.fake_mode is mode
 

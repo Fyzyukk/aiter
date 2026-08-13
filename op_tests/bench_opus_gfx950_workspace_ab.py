@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Isolated gfx950 benchmark for baseline, pybind, ctypes, and public paths.
+"""Isolated gfx950/gfx942 benchmark for workspace and public launch paths.
 
 Run each endpoint in a fresh process with the matching PYTHONPATH and JIT
 directory. The script intentionally benchmarks the raw binding so the old
@@ -41,7 +41,14 @@ from csrc.opus_gemm.opus_gemm_common import kernels_list
 opus_gemm = getattr(opus_package, "opus_gemm", None)
 
 
-WORKSPACE_KIDS = tuple(range(200, 224)) + tuple(range(1200, 1224))
+WORKSPACE_KIDS_BY_ARCH = {
+    "gfx950": tuple(range(200, 224)) + tuple(range(1200, 1224)),
+    "gfx942": (10200, 10201, 10203, 10204, 10205, 10210, 10213, 10216),
+}
+WORKSPACE_DTYPES = {
+    "bf16_t": torch.bfloat16,
+    "fp32_t": torch.float32,
+}
 
 
 # Historical bindings are declared locally so the current production package
@@ -80,6 +87,7 @@ else:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--arch", choices=tuple(WORKSPACE_KIDS_BY_ARCH), default="gfx950")
     parser.add_argument(
         "--endpoint",
         choices=(
@@ -189,8 +197,9 @@ def main() -> None:
     args = _parse_args()
     props = torch.cuda.get_device_properties(0)
     arch = str(getattr(props, "gcnArchName", "")).split(":", 1)[0].lower()
-    if arch != "gfx950":
-        raise RuntimeError(f"requires gfx950, got {arch!r}")
+    if arch != args.arch:
+        raise RuntimeError(f"requires {args.arch}, got {arch!r}")
+    workspace_kids = WORKSPACE_KIDS_BY_ARCH[args.arch]
 
     start_record = {
         "endpoint": args.endpoint,
@@ -202,7 +211,7 @@ def main() -> None:
         "warmup": args.warmup,
         "rounds": args.rounds,
         "iters": args.iters,
-        "kids": list(WORKSPACE_KIDS),
+        "kids": list(workspace_kids),
     }
     print("PERF_START " + json.dumps(start_record, sort_keys=True), flush=True)
 
@@ -217,23 +226,26 @@ def main() -> None:
         graph_stream.synchronize()
 
     with torch.inference_mode():
-        for kid in WORKSPACE_KIDS:
+        for kid in workspace_kids:
             inst = kernels_list[kid]
             m, n, k = int(inst.B_M), int(inst.B_N), 32 * int(inst.B_K)
-            torch.manual_seed(0x950000 + kid)
+            torch.manual_seed((0x950000 if args.arch == "gfx950" else 0x942000) + kid)
             xq = torch.randn((1, m, k), device="cuda", dtype=torch.bfloat16)
             wq = torch.randn((1, n, k), device="cuda", dtype=torch.bfloat16)
             golden = torch.bmm(xq.float(), wq.float().transpose(1, 2))
-            workspace = (
-                None
-                if args.endpoint in {"baseline", "baseline-public"}
-                else torch.empty((2, 1, m, n), device="cuda", dtype=torch.float32)
-            )
+            workspace_dtype = WORKSPACE_DTYPES[inst.splitk_workspace_dtype]
+            workspace = None
+            if args.endpoint not in {"baseline", "baseline-public"}:
+                workspace = torch.empty(
+                    (2, 1, m, n),
+                    device="cuda",
+                    dtype=workspace_dtype,
+                )
 
-            for dtype_name, dtype, rtol, atol in (
-                ("bf16", torch.bfloat16, 0.03, 0.5),
-                ("fp32", torch.float32, 1e-3, 0.05),
-            ):
+            output_cases = [("bf16", torch.bfloat16, 0.03, 0.5)]
+            if inst.splitk_workspace_dtype != "bf16_t":
+                output_cases.append(("fp32", torch.float32, 1e-3, 0.05))
+            for dtype_name, dtype, rtol, atol in output_cases:
                 y = torch.empty((1, m, n), device="cuda", dtype=dtype)
 
                 def eager_call():
@@ -266,6 +278,11 @@ def main() -> None:
                     "pass": args.pass_id,
                     "kid": kid,
                     "dtype": dtype_name,
+                    "workspace_dtype": str(workspace_dtype),
+                    "workspace_shape": [2, 1, m, n],
+                    "workspace_ptr_mod_256": (
+                        None if workspace is None else workspace.data_ptr() % 256
+                    ),
                     "shape": [1, m, n, k],
                     "warmup": args.warmup,
                     "rounds": args.rounds,

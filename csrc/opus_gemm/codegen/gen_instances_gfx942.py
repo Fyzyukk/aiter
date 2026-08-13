@@ -791,7 +791,17 @@ def gen_a16w16_nosplit_gfx942_instance(
     AITER_CHECK(M >= 1 && N >= 1, "M and N must be >= 1");
 """
 
-    launch_block = f"""
+    if is_wkc_accum:
+        launch_block = f"""
+    auto stream = aiter::getCurrentHIPStream();
+    auto memset_status = hipMemsetAsync(
+        Y.data_ptr(), 0, static_cast<size_t>(batch) * M * N * sizeof(D_C), stream);
+    AITER_CHECK(memset_status == hipSuccess,
+        "hipMemsetAsync failed before gfx942 wave-K accumulate launch: ",
+        hipGetErrorString(memset_status));
+    {kernel_func}<{k.name}_Traits<D_C>><<<grid, block, 0, stream>>>(kargs);"""
+    else:
+        launch_block = f"""
     auto stream = aiter::getCurrentHIPStream();
     {kernel_func}<{k.name}_Traits<D_C>><<<grid, block, 0, stream>>>(kargs);"""
     if is_wkc_accum:

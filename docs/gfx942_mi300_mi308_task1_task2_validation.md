@@ -23,9 +23,10 @@ Task1 的目标是 `OPUS A16W16 Split-K workspace To Torch`。验收必须比较
 | Task1 最终端点 | Torch 创建或复用 workspace，并把 Tensor pointer 传给 A16 启动路径 | 验证 workspace 改造本身 |
 | 当前最终端点 | Task1 workspace 语义加上 Task2 的统一 public 与 Python 选核 | 验证累计版本没有破坏 Task1 |
 
-Task1 正确性至少覆盖全部 8 个 gfx942 workspace kid、两种输出 dtype、自动 workspace、调用方
-workspace、Graph、双 stream 和错误 Tensor。性能必须用原始基线与 Task1/current 的相同输入做
-`A1 → B1 → B2 → A2` 配对。
+Task1 正确性至少覆盖全部 8 个 gfx942 workspace kid 的合法输出 dtype、自动 workspace、调用方
+workspace、Graph、双 stream 和错误 Tensor。5 个 FP32-workspace kid 同时覆盖 BF16/FP32 Y；
+3 个 BF16-workspace kid 覆盖 BF16 Y，并验证 FP32 Y 被明确拒绝。性能必须用原始基线与
+Task1/current 的相同输入做 `A1 → B1 → B2 → A2` 配对。
 
 ### 1.2 Task2
 
@@ -94,7 +95,8 @@ CPU、module SHA-256 和性能重复漂移。Python heuristic 使用实际 CU �
 - 断言 runtime arch 为 gfx942，否则失败或明确 skip，且该 skip 不能计为通过；
 - 从 `kernels_list` 与 `get_kernel_instance("gfx942", "a16w16", kid)` 得到 22 个 A16 kid；
 - 断言其中 workspace 为 8、non-workspace 为 14；
-- 对 workspace kid 同时执行 BF16、FP32 输出，并检查该 kid 声明的 BF16/FP32 workspace dtype；
+- 对 5 个 FP32-workspace kid 同时执行 BF16、FP32 输出；对 3 个 BF16-workspace kid 执行
+  BF16 输出并验证 FP32 输出被拒绝；同时检查每个 kid 声明的 workspace dtype；
 - 对 non-workspace kid 执行其声明支持的输出 dtype，并证明没有创建 workspace；
 - 每个 case 使用固定 seed、Torch FP32 golden、`torch.cuda.synchronize()` 和有限值检查；
 - workspace case 同时覆盖 caller Tensor 复用与正常自动创建；
@@ -113,9 +115,10 @@ WORKSPACE_KIDS = 10200, 10201, 10203, 10204,
                  10205, 10210, 10213, 10216
 ```
 
-每个 kid 使用 `M=B_M, N=B_N, K=32*B_K, batch=1, split-K=2`，分别测 BF16 与 FP32 Y，共
-`8 × 2 = 16 case`。当前端点的 workspace 不能统一硬编码为 FP32，必须按该 kid 的
-`splitk_workspace_dtype` 创建。
+每个 kid 使用 `M=B_M, N=B_N, K=32*B_K, batch=1, split-K=2`。5 个 FP32-workspace kid
+分别测 BF16 与 FP32 Y，3 个 BF16-workspace kid 只测 BF16 Y，共 `5 × 2 + 3 × 1 = 13`
+个数值 case；另执行 3 个 FP32 Y 预期拒绝 case。当前端点的 workspace 不能统一硬编码为
+FP32，必须按该 kid 的 `splitk_workspace_dtype` 创建。
 
 Task2 分层 benchmark 至少包含：
 
@@ -448,8 +451,8 @@ non-workspace kids: 14/14 passed
 target-arch skips:   0
 ```
 
-对于 8 个 workspace kid，BF16/FP32 两种 Y 都必须通过；不能因为一个 pytest node 内循环两个 dtype
-就只报告其中一个。
+对于 5 个 FP32-workspace kid，BF16/FP32 两种 Y 都必须通过；对于 3 个 BF16-workspace kid，
+BF16 Y 必须通过且 FP32 Y 必须被明确拒绝。最终报告为 `13/13` 数值通过和 `3/3` 合同拒绝。
 
 ### 10.2 Task1 原始基线 workspace 数值
 
@@ -467,9 +470,10 @@ python3 -m pytest -q -s -rs \
   2>&1 | tee "$LOG_DIR/baseline_gfx942_workspace_numeric.log"
 ```
 
-baseline 模式只需执行 Task1 相关的 8 个 workspace kid，但必须是 `16/16` 数值通过。runner 未实现
-该模式时，本项保持 `BLOCKED`。该 runner 应像现有性能 benchmark 一样在当前测试源码中局部声明
-旧 `opus_gemm_a16w16_tune` binding，再加载 `$BASELINE_JIT`；不能让 pytest 因 cwd/PYTHONPATH 顺序
+baseline 模式只需执行 Task1 相关的 8 个 workspace kid，但必须是 `13/13` 合法数值 case 通过，
+并且 3 个 BF16-workspace kid 的 FP32 Y 为 `3/3` 明确拒绝。runner 未实现该模式时，本项保持
+`BLOCKED`。该 runner 应像现有性能 benchmark 一样在当前测试源码中局部声明旧
+`opus_gemm_a16w16_tune` binding，再加载 `$BASELINE_JIT`；不能让 pytest 因 cwd/PYTHONPATH 顺序
 意外导入错误端点。
 
 ### 10.3 gfx942 A8 kid 11000
@@ -532,7 +536,8 @@ python3 -m pytest -q -rs \
 
 ### 12.1 测量口径
 
-- 8 个 workspace kid × BF16/FP32 Y，共 16 case；
+- 5 个 FP32-workspace kid × BF16/FP32 Y，加 3 个 BF16-workspace kid × BF16 Y，
+  共 13 个合法数值 case；
 - 每个 case：warmup 20、9 rounds、每 round 100 次；
 - Eager 与 Graph 分开；
 - 固定同一 CPU core；
@@ -593,13 +598,14 @@ taskset -c "$CPU_CORE" env \
 
 每台机器分别填写：
 
-| 路径 | Eager 16-case 总和 | Graph 16-case 总和 | 相对原始基线 |
+| 路径 | Eager 13-case 总和 | Graph 13-case 总和 | 相对原始基线 |
 |---|---:|---:|---:|
 | 原始基线：C++ 内部 workspace | | | 基准 |
 | Task1 raw：Torch workspace pointer → A16 C 接口 | | | |
 | Task1 当前私有 A16 启动 | | | |
 
-同时保存 16 个逐 case 结果。总和提升不能掩盖单个大幅退化；逐 case 的快/慢数量、最大退化和对应
+同时保存 13 个逐 case 结果和 3 个 FP32 Y 拒绝结果。总和提升不能掩盖单个大幅退化；逐 case
+的快/慢数量、最大退化和对应
 kid/dtype 必须报告。
 
 ## 13. Task2 性能：私有启动与统一 public
@@ -615,9 +621,9 @@ private A1 → public B1 → public B2 → private A2
 private 使用 `_launch_a16w16()`；public 使用 `aiter.ops.opus.opus_gemm()`。两端都传同一个 caller
 workspace，不运行 tuned/heuristic。这样只测统一 public 的 Python kid → kernel 类型路由成本。
 
-仍使用 16 个 A16 case，输出：
+仍使用 13 个合法 A16 数值 case，输出：
 
-| 路径 | Eager 16-case 总和 | Graph 16-case 总和 | 相对私有 A16 启动 |
+| 路径 | Eager 13-case 总和 | Graph 13-case 总和 | 相对私有 A16 启动 |
 |---|---:|---:|---:|
 | Task1：私有 A16 启动 | | | 基准 |
 | Task2：统一 public `opus_gemm()` | | | |
@@ -706,8 +712,8 @@ MI308、MI300 不互相作为性能基线。每台机器分别用 A1/A2 与 B1/B
 | runtime/build/offload 都为 gfx942 | | | |
 | 当前 focused，0 failed、0 gfx942 skip | | | |
 | 当前 A16 22/22 | | | |
-| workspace kid 8/8，BF16/FP32 Y | | | |
-| baseline workspace 数值 16/16 | | | |
+| workspace kid 8/8，合法数值 13/13、拒绝 3/3 | | | |
+| baseline workspace 数值 13/13、拒绝 3/3 | | | |
 | A8 kid 11000 raw/public/tuned | | | |
 | Python tuned → heuristic → fallback | | | |
 | A16 Graph / 双 stream | | | |
@@ -716,7 +722,7 @@ MI308、MI300 不互相作为性能基线。每台机器分别用 A1/A2 与 B1/B
 
 ### 14.3 Task1 性能
 
-| 机器 | 路径 | Eager 16-case 总和 | Graph 16-case 总和 | 相对基线 |
+| 机器 | 路径 | Eager 13-case 总和 | Graph 13-case 总和 | 相对基线 |
 |---|---|---:|---:|---:|
 | MI308 | 原始基线 | | | 基准 |
 | MI308 | Task1 raw | | | |
@@ -727,14 +733,14 @@ MI308、MI300 不互相作为性能基线。每台机器分别用 A1/A2 与 B1/B
 
 ### 14.4 Task2 性能
 
-| 机器 | 路径 | Eager 16-case 总和 | Graph 16-case 总和 | 相对私有启动 |
+| 机器 | 路径 | Eager 13-case 总和 | Graph 13-case 总和 | 相对私有启动 |
 |---|---|---:|---:|---:|
 | MI308 | Task1 私有 A16 启动 | | | 基准 |
 | MI308 | Task2 unified public | | | |
 | MI300 | Task1 私有 A16 启动 | | | 基准 |
 | MI300 | Task2 unified public | | | |
 
-A8 kid 11000 的 high-level、raw、direct、Graph 另列逐层表，不与 A16 16-case 总和相加。
+A8 kid 11000 的 high-level、raw、direct、Graph 另列逐层表，不与 A16 13-case 总和相加。
 
 ## 15. 日志封存
 
@@ -763,7 +769,7 @@ find "$LOG_DIR" -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
 - [ ] 两台机器各自 fresh build 原始基线、Task1 冻结和当前最终端点；
 - [ ] 当前端点 focused suite 为 0 failed，且没有 gfx942 测试被 skip；
 - [ ] 两台机器当前 A16 均为 22/22，workspace/non-workspace 数量不减少；
-- [ ] 两台机器原始基线的 8 个 workspace kid × 两种 Y dtype 均为 16/16；
+- [ ] 两台机器原始基线的 8 个 workspace kid 均为合法数值 13/13、FP32 Y 拒绝 3/3；
 - [ ] kid 11000 的 raw、unified public、真实 tuned 高层、Graph、双 stream均通过；
 - [ ] Python tuned、invalid tuned、heuristic、fallback 和 gfx942 redirect policy 均在实机通过；
 - [ ] Task1 的 raw 与私有 A16 两组 ABBA 均完成，数值正确且无未解释退化；

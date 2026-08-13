@@ -42,6 +42,7 @@ from aiter.jit.core import compile_ops
 from aiter.ops.opus import opus_gemm as current_opus_gemm
 from aiter.ops.opus import gemm_op_a16w16 as a16
 from aiter.ops.opus import gemm_op_a8w8 as a8
+from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.dtypes import torch_to_aiter_pybind
 
 
@@ -58,6 +59,7 @@ A8_K = 256
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--arch", choices=("gfx942", "gfx950"), default="gfx950")
     parser.add_argument(
         "--endpoint", choices=("task1", "task2", "current"), required=True
     )
@@ -95,6 +97,21 @@ def _task1_generic_raw(
     x_scale: Tensor | None = None,
     w_scale: Tensor | None = None,
     bias: Tensor | None = None,
+) -> Tensor: ...
+
+
+@compile_ops(
+    "module_deepgemm_opus",
+    fc_name="opus_gemm_a8w8_blockscale_bpreshuffle_tune",
+    develop=True,
+)
+def _task1_bpreshuffle_raw(
+    XQ: Tensor,
+    WQ: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    Y: Tensor,
+    kernelId: int,
 ) -> Tensor: ...
 
 
@@ -180,6 +197,9 @@ def _task1_explicit(
     WQ: Tensor,
     Y: Tensor,
     workspace: Tensor,
+    *,
+    kid: int = A16_KID,
+    split_k: int = A16_SPLIT_K,
 ) -> Tensor:
     """B0 valid-call path, without the legacy positional compatibility branch."""
     batch, M, K = XQ.shape
@@ -195,10 +215,10 @@ def _task1_explicit(
         has_bias=False,
         input_dtype=XQ.dtype,
         output_dtype=Y.dtype,
-        kid=A16_KID,
-        split_k=A16_SPLIT_K,
+        kid=kid,
+        split_k=split_k,
     )
-    if config.actual_kid != A16_KID:
+    if config.actual_kid != kid:
         raise RuntimeError(f"Task1 explicit kid resolved to {config.actual_kid}")
     return a16._launch_a16w16_with_torch_workspace(
         raw,
@@ -261,7 +281,7 @@ class Runner:
         row = {
             "endpoint": self.args.endpoint,
             "pass": self.args.pass_id,
-            "arch": "gfx950",
+            "arch": self.args.arch,
             "family": family,
             "actual_kid": None,
             "split_k": None,
@@ -433,6 +453,284 @@ class Runner:
                 stream=graph_stream,
                 **common,
             )
+
+    def run_a16_gfx942(self) -> None:
+        """Benchmark one FP32-workspace and one BF16-workspace gfx942 kid."""
+        cases = (
+            (10200, torch.float32, "fp32", torch.float32),
+            (10210, torch.bfloat16, "bf16", torch.bfloat16),
+        )
+        for kid, output_dtype, dtype_name, workspace_dtype in cases:
+            instance = a16.get_kernel_instance("gfx942", "a16w16", kid)
+            if instance is None:
+                raise RuntimeError(f"missing gfx942 a16w16 kid {kid}")
+            M, N, K = (
+                int(instance.B_M),
+                int(instance.B_N),
+                32 * int(instance.B_K),
+            )
+            split_k = 2
+            torch.manual_seed(0x942000 + kid)
+            XQ = torch.randn((1, M, K), device="cuda", dtype=torch.bfloat16)
+            WQ = torch.randn((1, N, K), device="cuda", dtype=torch.bfloat16)
+            Y = torch.empty((1, M, N), device="cuda", dtype=output_dtype)
+            workspace = torch.empty(
+                (split_k, 1, M, N),
+                device="cuda",
+                dtype=workspace_dtype,
+            )
+            golden = torch.bmm(XQ.float(), WQ.float().transpose(1, 2))
+            rtol, atol = (
+                (0.03, 0.5)
+                if output_dtype == torch.bfloat16
+                else (1e-3, 0.05)
+            )
+
+            raw = (
+                _task1_a16_raw
+                if self.args.endpoint == "task1"
+                else a16._opus_gemm_a16w16_launch_ctypes_raw
+            )
+
+            def check() -> None:
+                torch.cuda.synchronize()
+                torch.testing.assert_close(Y.float(), golden, rtol=rtol, atol=atol)
+
+            if self.args.endpoint == "task1":
+
+                def high_level() -> Tensor:
+                    return _task1_explicit(
+                        raw,
+                        XQ,
+                        WQ,
+                        Y,
+                        workspace,
+                        kid=kid,
+                        split_k=split_k,
+                    )
+
+                explicit = high_level
+            else:
+
+                def high_level() -> Tensor:
+                    return current_opus_gemm(
+                        XQ,
+                        WQ,
+                        Y,
+                        kid=kid,
+                        split_k=split_k,
+                        workspace=workspace,
+                    )
+
+                def explicit() -> Tensor:
+                    return a16._launch_a16w16(
+                        XQ,
+                        WQ,
+                        Y,
+                        kid=kid,
+                        split_k=split_k,
+                        workspace=workspace,
+                    )
+
+            def raw_call() -> object:
+                return raw(XQ, WQ, Y, None, workspace, kid, split_k)
+
+            XQ_a, WQ_a, Y_a, workspace_a = map(
+                _to_aiter, (XQ, WQ, Y, workspace)
+            )
+            if self.args.endpoint == "task1":
+
+                def direct() -> object:
+                    return self.module.opus_gemm_a16w16_tune(
+                        XQ_a,
+                        WQ_a,
+                        Y_a,
+                        None,
+                        workspace_a,
+                        kid,
+                        split_k,
+                    )
+
+            else:
+
+                def direct() -> object:
+                    return self.module.opus_gemm_a16w16_launch(
+                        XQ_a,
+                        WQ_a,
+                        Y_a,
+                        None,
+                        workspace_a,
+                        kid,
+                        split_k,
+                    )
+
+            common = {
+                "family": "a16w16",
+                "actual_kid": kid,
+                "split_k": split_k,
+                "output_dtype": dtype_name,
+                "shape": [1, M, N, K],
+                "check": check,
+            }
+            for suffix, layer, call in (
+                ("high_level", "high_level_python", high_level),
+                ("private", "private_family_python", explicit),
+                ("raw", "compile_ops_raw", raw_call),
+            ):
+                self.emit_case(
+                    case=f"a16_kid{kid}_{suffix}",
+                    layer=layer,
+                    call=call,
+                    **common,
+                )
+            _set_module_stream(self.module)
+            self.emit_case(
+                case=f"a16_kid{kid}_direct",
+                layer="direct_pybind_cpp",
+                call=direct,
+                **common,
+            )
+            graph, graph_stream = _capture_direct(self.module, direct)
+            self.emit_case(
+                case=f"a16_kid{kid}_graph",
+                layer="graph_replay",
+                call=graph.replay,
+                stream=graph_stream,
+                **common,
+            )
+
+    def run_a8_bpreshuffle_gfx942(self) -> None:
+        M, N, K, kid = 128, 256, 256, 11000
+        XQ = (
+            torch.arange(M * K, device="cuda", dtype=torch.int32)
+            .remainder(5)
+            .sub(2)
+            .reshape(M, K)
+            .to(dtypes.fp8)
+        )
+        WQ = (
+            torch.arange(N * K, device="cuda", dtype=torch.int32)
+            .remainder(7)
+            .sub(3)
+            .reshape(N, K)
+            .to(dtypes.fp8)
+        )
+        WQ_storage = shuffle_weight(WQ, layout=(16, 16))
+        x_scale = torch.ones((M, K // 128), device="cuda", dtype=torch.float32)
+        x_scale[1::2].mul_(0.5)
+        x_scale[:, 1].mul_(2.0)
+        x_scale_storage = x_scale.T.contiguous().view_as(x_scale)
+        w_scale = torch.ones(
+            (N // 128, K // 128), device="cuda", dtype=torch.float32
+        )
+        w_scale[1].mul_(2.0)
+        w_scale[:, 1].mul_(0.25)
+        Y = torch.empty((M, N), device="cuda", dtype=torch.bfloat16)
+        golden = torch.zeros((M, N), device="cuda", dtype=torch.float32)
+        for block_k in range(K // 128):
+            partial = XQ[:, block_k * 128 : (block_k + 1) * 128].float() @ WQ[
+                :, block_k * 128 : (block_k + 1) * 128
+            ].float().T
+            golden.add_(
+                partial
+                * x_scale[:, block_k].unsqueeze(1)
+                * w_scale[:, block_k].repeat_interleave(128).unsqueeze(0)
+            )
+        golden = golden.to(torch.bfloat16)
+
+        def check() -> None:
+            torch.cuda.synchronize()
+            torch.testing.assert_close(Y, golden, rtol=0.03, atol=0.5)
+
+        raw = (
+            _task1_bpreshuffle_raw
+            if self.args.endpoint == "task1"
+            else a8._opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw
+        )
+
+        if self.args.endpoint == "task1":
+
+            def high_level() -> Tensor:
+                raw(XQ, WQ_storage, x_scale_storage, w_scale, Y, kid)
+                return Y
+
+            private = high_level
+        else:
+
+            def high_level() -> Tensor:
+                return current_opus_gemm(
+                    XQ,
+                    WQ_storage,
+                    Y,
+                    kid=kid,
+                    layout="bpreshuffle",
+                    x_scale=x_scale_storage,
+                    w_scale=w_scale,
+                )
+
+            def private() -> Tensor:
+                return a8._launch_a8w8_blockscale_bpreshuffle(
+                    XQ,
+                    WQ_storage,
+                    x_scale_storage,
+                    w_scale,
+                    Y,
+                    kid=kid,
+                )
+
+        def raw_call() -> object:
+            return raw(XQ, WQ_storage, x_scale_storage, w_scale, Y, kid)
+
+        tensors = (XQ, WQ_storage, x_scale_storage, w_scale, Y)
+        XQ_a, WQ_a, x_scale_a, w_scale_a, Y_a = map(_to_aiter, tensors)
+        if self.args.endpoint == "task1":
+
+            def direct() -> object:
+                return self.module.opus_gemm_a8w8_blockscale_bpreshuffle_tune(
+                    XQ_a, WQ_a, x_scale_a, w_scale_a, Y_a, kid
+                )
+
+        else:
+
+            def direct() -> object:
+                return self.module.opus_gemm_a8w8_blockscale_bpreshuffle_launch(
+                    XQ_a, WQ_a, x_scale_a, w_scale_a, Y_a, kid
+                )
+
+        common = {
+            "family": "a8w8_blockscale_bpreshuffle",
+            "actual_kid": kid,
+            "split_k": None,
+            "output_dtype": "bf16",
+            "shape": [M, N, K],
+            "check": check,
+        }
+        for suffix, layer, call in (
+            ("high_level", "high_level_python", high_level),
+            ("private", "private_family_python", private),
+            ("raw", "compile_ops_raw", raw_call),
+        ):
+            self.emit_case(
+                case=f"a8_bpreshuffle_{suffix}",
+                layer=layer,
+                call=call,
+                **common,
+            )
+        _set_module_stream(self.module)
+        self.emit_case(
+            case="a8_bpreshuffle_direct",
+            layer="direct_pybind_cpp",
+            call=direct,
+            **common,
+        )
+        graph, graph_stream = _capture_direct(self.module, direct)
+        self.emit_case(
+            case="a8_bpreshuffle_graph",
+            layer="graph_replay",
+            call=graph.replay,
+            stream=graph_stream,
+            **common,
+        )
 
     def _a8_inputs(self):
         XQ = (
@@ -656,13 +954,17 @@ class Runner:
     def run(self) -> None:
         props = torch.cuda.get_device_properties(0)
         arch = str(getattr(props, "gcnArchName", "")).split(":", 1)[0].lower()
-        if arch != "gfx950":
-            raise RuntimeError(f"requires gfx950, got {arch!r}")
+        if arch != self.args.arch:
+            raise RuntimeError(f"requires {self.args.arch}, got {arch!r}")
 
         module_path = pathlib.Path(self.module.__file__).resolve()
         exports = sorted(name for name in dir(self.module) if "opus" in name)
         if self.args.endpoint == "task1":
-            required = {"opus_gemm", "opus_gemm_a16w16_tune"}
+            required = {"opus_gemm_a16w16_tune"}
+            if self.args.arch == "gfx950":
+                required.add("opus_gemm")
+            else:
+                required.add("opus_gemm_a8w8_blockscale_bpreshuffle_tune")
         else:
             required = {
                 "opus_gemm_a16w16_launch",
@@ -679,6 +981,7 @@ class Runner:
         start = {
             "endpoint": self.args.endpoint,
             "pass": self.args.pass_id,
+            "requested_arch": self.args.arch,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "device": torch.cuda.get_device_name(0),
             "arch": str(getattr(props, "gcnArchName", None)),
@@ -692,20 +995,24 @@ class Runner:
         print("PERF_START " + json.dumps(start, sort_keys=True), flush=True)
 
         with torch.inference_mode():
-            self.run_a16()
-            XQ, WQ, x_scale, w_scale = self._a8_inputs()
-            self.run_a8_noscale(XQ, WQ)
-            self.run_a8_blockscale(XQ, WQ, x_scale, w_scale)
-            if self.args.endpoint == "task1":
-                reason = (
-                    "B0 bpreshuffle tune was gfx942-only (kid 11000); gfx950 "
-                    "had no kernel"
-                )
+            if self.args.arch == "gfx942":
+                self.run_a16_gfx942()
+                self.run_a8_bpreshuffle_gfx942()
             else:
-                reason = "Task2 gfx950 bpreshuffle typed tables are empty"
-            self.emit_unavailable(
-                family="a8w8_blockscale_bpreshuffle", reason=reason
-            )
+                self.run_a16()
+                XQ, WQ, x_scale, w_scale = self._a8_inputs()
+                self.run_a8_noscale(XQ, WQ)
+                self.run_a8_blockscale(XQ, WQ, x_scale, w_scale)
+                if self.args.endpoint == "task1":
+                    reason = (
+                        "B0 bpreshuffle tune was gfx942-only (kid 11000); "
+                        "gfx950 had no kernel"
+                    )
+                else:
+                    reason = "Task2 gfx950 bpreshuffle typed tables are empty"
+                self.emit_unavailable(
+                    family="a8w8_blockscale_bpreshuffle", reason=reason
+                )
 
         summary = {
             "endpoint": self.args.endpoint,
