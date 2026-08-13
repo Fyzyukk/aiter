@@ -1,15 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""OPUS A8W8 launch APIs.
-
-The no-scale, blockscale and bpreshuffle interfaces validate their registered
-kernel before launch. Generated launchers enforce the physical tensor rules.
-"""
+"""Private OPUS A8W8 exact-kid launch APIs."""
 
 from __future__ import annotations
 
 import functools
-import warnings
 
 import torch
 from torch import Tensor
@@ -17,53 +12,138 @@ from torch import Tensor
 from csrc.opus_gemm.opus_gemm_common import get_kernel_instance
 
 from ...jit.core import compile_ops
+from ._arch import _device_arch
 
 _A8W8_FAMILY = "a8w8"
 _A8W8_BLOCKSCALE_FAMILY = "a8w8_blockscale"
 _A8W8_BPRESHUFFLE_FAMILY = "a8w8_blockscale_bpreshuffle"
-_SUPPORTED_OPUS_ARCHES = ("gfx942", "gfx950", "gfx1250")
-_MISSING_TENSOR = object()
-
-# Cache by full device so mixed-GPU processes resolve each architecture.
-_DEVICE_ARCH_CACHE: dict[torch.device, str] = {}
-
-# ``None`` means that the architecture has no default bpreshuffle kernel.
-OPUS_DEFAULT_A8W8_BPRESHUFFLE_KID_BY_ARCH: dict[str, int | None] = {
-    "gfx942": 11000,
-    "gfx950": None,
-    "gfx1250": None,
+_A8W8_MXSCALE_BMM_FAMILY = "a8w8_mxscale_bmm"
+_A8W8_MXSCALE_BMM_TAGS = frozenset(
+    {
+        "a8w8_mxscale_bmm_flatmm_splitk",
+        "a8w8_mxscale_bmm_fused",
+        "a8w8_mxscale_bmm_minterleave",
+        "a8w8_mxscale_bmm_mouter",
+        "a8w8_mxscale_bmm_mouter_tunable",
+        "a8w8_mxscale_bmm_pipeline",
+        "a8w8_mxscale_bmm_wave8n2",
+        "a8w8_mxscale_bmm_wave4m2_selfload",
+    }
+)
+_A8W8_MXSCALE_BMM_WORKSPACE_TAGS = frozenset(
+    {
+        "a8w8_mxscale_bmm_flatmm_splitk",
+        "a8w8_mxscale_bmm_fused",
+    }
+)
+_A8W8_FAMILY_BY_TAG = {
+    "a8w8": _A8W8_FAMILY,
+    "a8w8_scale": _A8W8_BLOCKSCALE_FAMILY,
+    "a8w8_blockscale_bpreshuffle_singlebuf": _A8W8_BPRESHUFFLE_FAMILY,
+    **{tag: _A8W8_MXSCALE_BMM_FAMILY for tag in _A8W8_MXSCALE_BMM_TAGS},
 }
+_A8W8_FAMILY_LAYOUT = {
+    _A8W8_FAMILY: "plain",
+    _A8W8_BLOCKSCALE_FAMILY: "plain",
+    _A8W8_BPRESHUFFLE_FAMILY: "bpreshuffle",
+    _A8W8_MXSCALE_BMM_FAMILY: "mxscale_bmm",
+}
+_FP8_DTYPES = frozenset(
+    dtype
+    for dtype in (
+        getattr(torch, "float8_e4m3fnuz", None),
+        getattr(torch, "float8_e4m3fn", None),
+    )
+    if dtype is not None
+)
+_MISSING_TENSOR = object()
+_E8M0_DTYPES = frozenset(
+    dtype
+    for dtype in (
+        torch.uint8,
+        getattr(torch, "float8_e8m0fnu", None),
+    )
+    if dtype is not None
+)
 
 
-def _read_device_arch(device: torch.device) -> str:
-    """Read one explicit device's gfx name from the runtime."""
-    props = torch.cuda.get_device_properties(device)
-    raw_arch = str(getattr(props, "gcnArchName", "")).strip()
-    arch = raw_arch.split(":", 1)[0].lower()
-    if not arch.startswith("gfx"):
-        try:
-            from ...jit.utils.chip_info import get_gfx_runtime
+def _validate_a8w8_public_contract(
+    *,
+    kernel_tag: str,
+    kid: int,
+    input_dtype: torch.dtype,
+    weight_dtype: torch.dtype,
+    output_dtype: torch.dtype,
+    layout: str,
+    has_x_scale: bool,
+    has_w_scale: bool,
+    has_bias: bool,
+    has_workspace: bool,
+    split_k: int,
+) -> str:
+    """Validate A8W8-only options for the unified public router."""
+    try:
+        family = _A8W8_FAMILY_BY_TAG[kernel_tag]
+    except KeyError as exc:
+        raise ValueError(
+            f"OPUS kid {kid} has unsupported registry tag {kernel_tag!r}"
+        ) from exc
 
-            arch = get_gfx_runtime().lower()
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                f"cannot determine the AMD gfx architecture for device {device}"
-            ) from exc
-    return arch
+    if input_dtype != weight_dtype:
+        raise ValueError(
+            f"opus_gemm requires matching XQ/WQ dtypes; got "
+            f"{input_dtype}/{weight_dtype}"
+        )
+    if input_dtype not in _FP8_DTYPES:
+        raise ValueError(
+            f"OPUS kid {kid} requires FP8 XQ/WQ; got {input_dtype}"
+        )
 
+    if family == _A8W8_MXSCALE_BMM_FAMILY:
+        if output_dtype not in (torch.bfloat16, torch.float32):
+            raise ValueError(
+                f"OPUS kid {kid} requires BF16 or FP32 Y; got {output_dtype}"
+            )
+    else:
+        expected_output_dtype = (
+            torch.bfloat16
+            if family == _A8W8_BPRESHUFFLE_FAMILY
+            else torch.float32
+        )
+        if output_dtype != expected_output_dtype:
+            raise ValueError(
+                f"OPUS kid {kid} does not support Y.dtype={output_dtype}; "
+                f"expected {expected_output_dtype}"
+            )
 
-def _device_arch(device: torch.device) -> str:
-    """Return the cached gfx name for one explicit device."""
-    if not isinstance(device, torch.device):
-        device = torch.device(device)
-    if device.type == "cuda" and device.index is None:
-        device = torch.device("cuda", torch.cuda.current_device())
-
-    arch = _DEVICE_ARCH_CACHE.get(device)
-    if arch is None:
-        arch = _read_device_arch(device)
-        _DEVICE_ARCH_CACHE[device] = arch
-    return arch
+    expected_layout = _A8W8_FAMILY_LAYOUT[family]
+    if layout != expected_layout:
+        raise ValueError(
+            f"OPUS kid {kid} belongs to family {family} and requires "
+            f"layout={expected_layout!r}; got {layout!r}"
+        )
+    if has_x_scale != has_w_scale:
+        raise ValueError("opus_gemm requires x_scale and w_scale together")
+    if has_bias:
+        raise ValueError(f"OPUS family {family} does not support bias")
+    if family == _A8W8_MXSCALE_BMM_FAMILY:
+        if not has_x_scale:
+            raise ValueError("OPUS a8w8_mxscale_bmm requires x_scale and w_scale")
+        if split_k == 0 and has_workspace:
+            raise ValueError(
+                "OPUS a8w8_mxscale_bmm split_k=0 does not use workspace"
+            )
+        return family
+    if has_workspace:
+        raise ValueError(f"OPUS family {family} does not use workspace")
+    if split_k != 0:
+        raise ValueError(f"OPUS family {family} does not accept split_k")
+    if family == _A8W8_FAMILY:
+        if has_x_scale:
+            raise ValueError("OPUS a8w8 kid does not accept scales")
+    elif not has_x_scale:
+        raise ValueError(f"OPUS family {family} requires x_scale and w_scale")
+    return family
 
 
 def _check_same_device(
@@ -221,15 +301,46 @@ def _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
 ) -> Tensor: ...
 
 
-# ---- Canonical public wrappers -------------------------------------------
+def _gen_opus_gemm_a8w8_mxscale_bmm_launch_fake_tensors(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    workspace: Tensor | None,
+    kid: int,
+    split_k: int,
+) -> Tensor:
+    return Y
 
 
-def opus_gemm_a8w8_launch(
+@compile_ops(
+    "module_deepgemm_opus",
+    fc_name="opus_gemm_a8w8_mxscale_bmm_launch",
+    gen_fake=_gen_opus_gemm_a8w8_mxscale_bmm_launch_fake_tensors,
+    develop=True,
+)
+def _opus_gemm_a8w8_mxscale_bmm_launch_raw(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    workspace: Tensor | None,
+    kid: int,
+    split_k: int,
+) -> Tensor: ...
+
+
+# ---- Exact-kid adapters used by the unified public entry -----------------
+
+
+def _launch_a8w8(
     XQ: Tensor,
     WQ: Tensor,
     Y: Tensor,
     *,
-    kid: int = 2,
+    kid: int,
 ) -> Tensor:
     """Launch a registered no-scale A8W8 kid.
 
@@ -246,14 +357,14 @@ def opus_gemm_a8w8_launch(
     return Y
 
 
-def opus_gemm_a8w8_blockscale_launch(
+def _launch_a8w8_blockscale(
     XQ: Tensor,
     WQ: Tensor,
     Y: Tensor,
     x_scale: Tensor,
     w_scale: Tensor,
     *,
-    kid: int = 1,
+    kid: int,
 ) -> Tensor:
     """Launch a registered blockscale A8W8 kid with plain WQ.
 
@@ -275,84 +386,17 @@ def opus_gemm_a8w8_blockscale_launch(
     return Y
 
 
-def _lookup_opus_bpreshuffle_tuned_kid(
-    XQ: Tensor,
-    WQ: Tensor,
-) -> int | None:
-    """Read the existing A8 config and return only an OPUS winner."""
-    from ...jit.core import AITER_CONFIGS
-    from ..gemm_op_a8w8 import get_CKGEMM_config
-
-    M = int(XQ.shape[-2])
-    K = int(XQ.shape[-1])
-    N = int(WQ.shape[-2])
-    config = get_CKGEMM_config(
-        M,
-        N,
-        K,
-        AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_FILE,
-    )
-    if config is None or str(config.get("libtype", "")).lower() != "opus":
-        return None
-    value = config.get("kernelId", config.get("solidx"))
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _resolve_bpreshuffle_kid(
-    XQ: Tensor,
-    WQ: Tensor,
-    Y: Tensor,
-    *,
-    arch: str,
-    kid: int | None,
-) -> int:
-    """Resolve and validate an explicit, tuned or architecture-default kid."""
-    if kid is not None:
-        candidate: object = kid
-        source = "explicit"
-    else:
-        tuned = _lookup_opus_bpreshuffle_tuned_kid(XQ, WQ)
-        if tuned is not None:
-            candidate = tuned
-            source = "OPUS tuned row"
-        else:
-            candidate = OPUS_DEFAULT_A8W8_BPRESHUFFLE_KID_BY_ARCH.get(arch)
-            source = "per-arch default"
-
-    if candidate is None:
-        raise RuntimeError(
-            "no registered OPUS kernel for "
-            f"(arch={arch!r}, family={_A8W8_BPRESHUFFLE_FAMILY!r}, "
-            f"Y.dtype={Y.dtype}); no OPUS tuned row or per-arch default exists"
-        )
-    try:
-        return _require_registered_kid(
-            arch=arch,
-            family=_A8W8_BPRESHUFFLE_FAMILY,
-            kid=candidate,
-            output_dtype=Y.dtype,
-        )
-    except ValueError as exc:
-        raise ValueError(f"invalid {source} for OPUS bpreshuffle: {exc}") from exc
-
-
-def opus_gemm_a8w8_blockscale_bpreshuffle_launch(
+def _launch_a8w8_blockscale_bpreshuffle(
     XQ: Tensor,
     WQ: Tensor,
     x_scale: Tensor,
     w_scale: Tensor,
     Y: Tensor,
     *,
-    kid: int | None = None,
+    kid: int,
 ) -> Tensor:
     """Launch a registered blockscale A8W8 kid with pre-shuffled WQ.
 
-    Kid order is ``explicit -> OPUS tuned row -> architecture default``.
     ``WQ`` pre-shuffle is a content/layout semantic. It
     cannot be proven from Tensor shape or strides. Build it with
     ``shuffle_weight(WQ, layout=(16, 16))``. The generated launcher checks
@@ -361,12 +405,11 @@ def opus_gemm_a8w8_blockscale_bpreshuffle_launch(
     entry = "opus_gemm_a8w8_blockscale_bpreshuffle_launch"
     _check_same_device(entry, XQ, WQ, Y, x_scale, w_scale)
     arch = _device_arch(XQ.device)
-    if arch not in _SUPPORTED_OPUS_ARCHES:
-        raise RuntimeError(
-            f"{entry} requires one of {_SUPPORTED_OPUS_ARCHES}; got {arch!r}"
-        )
-    resolved = _resolve_bpreshuffle_kid(
-        XQ, WQ, Y, arch=arch, kid=kid
+    resolved = _require_registered_kid(
+        arch=arch,
+        family=_A8W8_BPRESHUFFLE_FAMILY,
+        kid=kid,
+        output_dtype=Y.dtype,
     )
     _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
         XQ, WQ, x_scale, w_scale, Y, resolved
@@ -374,39 +417,185 @@ def opus_gemm_a8w8_blockscale_bpreshuffle_launch(
     return Y
 
 
-# ---- Legacy Python-only compatibility ------------------------------------
-
-
-def opus_gemm_a8w8_blockscale_bpreshuffle_tune(
+def _validate_a8w8_mxscale_bmm_tensors(
     XQ: Tensor,
     WQ: Tensor,
+    Y: Tensor,
     x_scale: Tensor,
     w_scale: Tensor,
-    Y: Tensor | None = None,
-    kernelId: int = 11000,
-) -> Tensor:
-    """Deprecated gfx942 compatibility wrapper around the canonical launch."""
-    warnings.warn(
-        "opus_gemm_a8w8_blockscale_bpreshuffle_tune is deprecated; use "
-        "opus_gemm_a8w8_blockscale_bpreshuffle_launch(..., kid=...) instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    if Y is None:
-        Y = torch.empty(
-            (XQ.shape[-2], WQ.shape[-2]),
-            device=XQ.device,
-            dtype=torch.bfloat16,
+) -> tuple[int, int, int, int]:
+    entry = "opus_gemm_a8w8_mxscale_bmm_launch"
+    _check_same_device(entry, XQ, WQ, Y, x_scale, w_scale)
+    if any(tensor.dim() != 3 for tensor in (XQ, WQ, Y, x_scale, w_scale)):
+        raise ValueError(f"{entry}: all inputs and Y must be 3D")
+    if XQ.dtype not in _FP8_DTYPES or WQ.dtype != XQ.dtype:
+        raise ValueError(f"{entry}: XQ and WQ must have the same FP8 dtype")
+    if Y.dtype not in (torch.bfloat16, torch.float32):
+        raise ValueError(f"{entry}: Y must be BF16 or FP32")
+    if x_scale.dtype not in _E8M0_DTYPES or w_scale.dtype not in _E8M0_DTYPES:
+        raise ValueError(
+            f"{entry}: x_scale and w_scale must contain one-byte E8M0 values"
         )
-    return opus_gemm_a8w8_blockscale_bpreshuffle_launch(
-        XQ, WQ, x_scale, w_scale, Y, kid=kernelId
+
+    M, batch, K = map(int, XQ.shape)
+    w_batch, N, w_K = map(int, WQ.shape)
+    if min(M, batch, N, K) <= 0:
+        raise ValueError(f"{entry}: M, batch, N and K must be positive")
+    if N % 128 or K % 128:
+        raise ValueError(
+            f"{entry}: N and K must be multiples of 128; got N={N}, K={K}"
+        )
+    if (w_batch, w_K) != (batch, K):
+        raise ValueError(
+            f"{entry}: WQ must have shape [{batch},N,{K}], got {tuple(WQ.shape)}"
+        )
+    if tuple(Y.shape) != (M, batch, N):
+        raise ValueError(
+            f"{entry}: Y must have shape {(M, batch, N)}, got {tuple(Y.shape)}"
+        )
+    expected_x_scale = (M, batch, K // 128)
+    expected_w_scale = (batch, N // 128, K // 128)
+    if tuple(x_scale.shape) != expected_x_scale:
+        raise ValueError(
+            f"{entry}: x_scale must have shape {expected_x_scale}, "
+            f"got {tuple(x_scale.shape)}"
+        )
+    if tuple(w_scale.shape) != expected_w_scale:
+        raise ValueError(
+            f"{entry}: w_scale must have shape {expected_w_scale}, "
+            f"got {tuple(w_scale.shape)}"
+        )
+    if any(tensor.stride(-1) != 1 for tensor in (XQ, WQ, Y, x_scale, w_scale)):
+        raise ValueError(f"{entry}: every tensor must be contiguous in its last axis")
+    return M, batch, N, K
+
+
+@functools.lru_cache(maxsize=4096)
+def _cached_a8w8_mxscale_bmm_plan(
+    arch: str,
+    kid: int,
+    output_dtype: torch.dtype,
+    M: int,
+    batch: int,
+    N: int,
+    K: int,
+    split_k: int,
+) -> tuple[int, int]:
+    """Return effective split and required FP32 workspace elements."""
+    instance = get_kernel_instance(arch, _A8W8_MXSCALE_BMM_FAMILY, kid, output_dtype)
+    if instance is None:
+        raise ValueError(
+            "no registered OPUS kernel for "
+            f"(arch={arch!r}, family={_A8W8_MXSCALE_BMM_FAMILY!r}, "
+            f"kid={kid}, Y.dtype={output_dtype})"
+        )
+    tag = instance.kernel_tag
+    if tag not in _A8W8_MXSCALE_BMM_TAGS:
+        raise ValueError(f"OPUS kid {kid} is not an MXFP8 BMM kernel")
+
+    effective_split = max(1, split_k)
+    m_align = max(1, int(instance.m_align))
+    if M % m_align:
+        raise ValueError(
+            f"OPUS BMM kid {kid} requires M % {m_align} == 0; got M={M}"
+        )
+    if instance.direct_only and effective_split != 1:
+        raise ValueError(f"OPUS BMM kid {kid} requires split_k <= 1")
+
+    workspace_numel = 0
+    if tag in _A8W8_MXSCALE_BMM_WORKSPACE_TAGS:
+        if effective_split > 1:
+            tiles_m = (M + instance.B_M - 1) // instance.B_M
+            tiles_n = (N + instance.B_N - 1) // instance.B_N
+            padded_m = tiles_m * instance.B_M
+            padded_n = tiles_n * instance.B_N
+            partial_numel = effective_split * batch * padded_m * padded_n
+            if tag == "a8w8_mxscale_bmm_fused":
+                counter_offset = (partial_numel * 4 + 255) & ~255
+                counter_bytes = batch * tiles_m * tiles_n * 4
+                workspace_numel = (counter_offset + counter_bytes + 3) // 4
+            else:
+                workspace_numel = partial_numel
+    elif tag == "a8w8_mxscale_bmm_mouter_tunable":
+        pass
+    elif effective_split != 1:
+        raise ValueError(f"OPUS BMM kid {kid} requires split_k <= 1")
+
+    return effective_split, workspace_numel
+
+
+def _launch_a8w8_mxscale_bmm(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    *,
+    kid: int,
+    split_k: int,
+    workspace: Tensor | None,
+) -> Tensor:
+    """Launch one registered gfx950 MXFP8 BMM kid."""
+    M, batch, N, K = _validate_a8w8_mxscale_bmm_tensors(
+        XQ, WQ, Y, x_scale, w_scale
+    )
+    arch = _device_arch(XQ.device)
+    resolved = _require_registered_kid(
+        arch=arch,
+        family=_A8W8_MXSCALE_BMM_FAMILY,
+        kid=kid,
+        output_dtype=Y.dtype,
+    )
+    effective_split, required_numel = _cached_a8w8_mxscale_bmm_plan(
+        arch, resolved, Y.dtype, M, batch, N, K, split_k
     )
 
+    launch_workspace = workspace
+    if required_numel:
+        if launch_workspace is None:
+            launch_workspace = torch.empty(
+                required_numel, dtype=torch.float32, device=XQ.device
+            )
+        else:
+            if not isinstance(launch_workspace, Tensor):
+                raise TypeError(
+                    "opus_gemm_a8w8_mxscale_bmm_launch: workspace must be a Tensor"
+                )
+            if launch_workspace.device != XQ.device:
+                raise ValueError(
+                    "opus_gemm_a8w8_mxscale_bmm_launch: workspace must be on "
+                    f"{XQ.device}, got {launch_workspace.device}"
+                )
+            if launch_workspace.dtype != torch.float32:
+                raise ValueError(
+                    "opus_gemm_a8w8_mxscale_bmm_launch: workspace must be FP32"
+                )
+            if not launch_workspace.is_contiguous():
+                raise ValueError(
+                    "opus_gemm_a8w8_mxscale_bmm_launch: workspace must be contiguous"
+                )
+            if launch_workspace.numel() < required_numel:
+                raise ValueError(
+                    "opus_gemm_a8w8_mxscale_bmm_launch: workspace capacity is "
+                    f"{launch_workspace.numel()}, but {required_numel} elements "
+                    "are required"
+                )
+    elif launch_workspace is not None:
+        raise ValueError(
+            f"OPUS BMM kid {resolved} with split_k={split_k} does not use workspace"
+        )
 
-__all__ = [
-    "OPUS_DEFAULT_A8W8_BPRESHUFFLE_KID_BY_ARCH",
-    "opus_gemm_a8w8_launch",
-    "opus_gemm_a8w8_blockscale_launch",
-    "opus_gemm_a8w8_blockscale_bpreshuffle_launch",
-    "opus_gemm_a8w8_blockscale_bpreshuffle_tune",
-]
+    _opus_gemm_a8w8_mxscale_bmm_launch_raw(
+        XQ,
+        WQ,
+        Y,
+        x_scale,
+        w_scale,
+        launch_workspace,
+        resolved,
+        effective_split,
+    )
+    return Y
+
+
+__all__: list[str] = []

@@ -41,9 +41,7 @@ from torch import Tensor
 from aiter.ops.gemm_op_common import get_padded_m
 
 try:
-    from aiter.ops.opus.gemm_op_a16w16 import (
-        opus_gemm_a16w16_launch as _opus_launch,
-    )
+    from aiter.ops.opus import opus_gemm as _opus_launch
 except Exception:  # noqa: BLE001  blanket catch is intentional here
     _opus_launch = None
 
@@ -115,6 +113,41 @@ def is_skinny_default_shape(
     )
 
 
+def _resolve_opus_a16w16_caller_candidate(
+    *,
+    gfx: str,
+    cu_num: int,
+    M: int,
+    N: int,
+    K: int,
+    bias: bool,
+    dtype,
+    otype,
+    requested_kid=None,
+    requested_split_k=0,
+):
+    """Resolve tuned/heuristic policy before the exact public OPUS call."""
+    if _opus_launch is None:
+        return None
+    from aiter.ops.opus.gemm_op_a16w16 import (
+        _resolve_a16w16_caller_candidate,
+    )
+
+    return _resolve_a16w16_caller_candidate(
+        arch=gfx,
+        M=M,
+        N=N,
+        K=K,
+        batch=1,
+        cu_num=cu_num,
+        has_bias=bias,
+        input_dtype=dtype,
+        output_dtype=otype,
+        requested_kid=requested_kid,
+        requested_split_k=requested_split_k,
+    )
+
+
 @functools.lru_cache(maxsize=4096)
 def get_GEMM_A16W16_config(
     M: int,
@@ -164,6 +197,26 @@ def get_GEMM_A16W16_config(
                     config = None
             if config is None:
                 continue
+            if config["libtype"] == "opus":
+                resolved = _resolve_opus_a16w16_caller_candidate(
+                    gfx=gfx,
+                    cu_num=cu_num,
+                    M=M,
+                    N=N,
+                    K=K,
+                    bias=bias,
+                    dtype=eval(dtype),
+                    otype=eval(otype),
+                    requested_kid=config.get("solidx"),
+                    requested_split_k=config.get("splitK"),
+                )
+                if resolved is None:
+                    # Discard the whole stale (kid, split-K) pair before
+                    # trying another padded row or the architecture heuristic.
+                    config = None
+                    continue
+                config = dict(config)
+                config["solidx"] = int(resolved.actual_kid)
             if AITER_LOG_TUNED_CONFIG:
                 kernelName = (
                     config["kernelName"] if config["libtype"] != "hipblaslt" else ""
@@ -175,6 +228,32 @@ def get_GEMM_A16W16_config(
 
     if config is None:
         default_config = {}
+        opus_plain = (
+            not bpreshuffle
+            and not scaleAB
+            and eval(dtype) == dtypes.bf16
+            and eval(otype) in (dtypes.bf16, dtypes.fp32)
+        )
+        if opus_plain:
+            resolved = _resolve_opus_a16w16_caller_candidate(
+                gfx=gfx,
+                cu_num=cu_num,
+                M=M,
+                N=N,
+                K=K,
+                bias=bias,
+                dtype=eval(dtype),
+                otype=eval(otype),
+                requested_kid=None,
+                requested_split_k=0,
+            )
+            if resolved is not None:
+                default_config.update(
+                    libtype="opus",
+                    solidx=int(resolved.actual_kid),
+                    splitK=0,
+                    kernelName="",
+                )
         if bpreshuffle:
             default_config["bpreshuffle"] = True
             if gfx == "gfx942":
@@ -195,7 +274,7 @@ def get_GEMM_A16W16_config(
                 assert (
                     False
                 ), f"no solution for {M=} {N=} {K=} {dtype=} {bias=}, {scaleAB=}, {bpreshuffle=}"
-        elif is_skinny_default_shape(M, N, K, dtype, cu_num):
+        elif not opus_plain and is_skinny_default_shape(M, N, K, dtype, cu_num):
             # soltype, solution_idx = 3, 2
             default_config["libtype"] = "skinny"
             default_config["solidx"] = 2
@@ -543,8 +622,8 @@ def opus_gemm(
         inp.unsqueeze(0),
         weights.unsqueeze(0),
         Y.unsqueeze(0),
-        bias=bias,
         kid=int(solidx),
+        bias=bias,
         split_k=splitK,
     )
     # The OPUS launcher already applies bias, including split-K reduction.

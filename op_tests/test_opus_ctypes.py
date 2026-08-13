@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Phase-1 C ABI/ctypes adoption tests for OPUS A16W16.
+"""C ABI/ctypes tests for the private OPUS A16W16 exact-kid backend.
 
-The ctypes raw remains private, while the public explicit and shape-driven
-paths use it after the full ABBA benchmark accepted the lower-conversion
-boundary.  The original pybind raw remains available as an A/B endpoint.
+The ctypes raw remains private, while the unified public exact-kid entry uses
+it after scalar validation and workspace planning. The original pybind raw
+remains available as an A/B endpoint.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def _gfx950_case(*, output_dtype: torch.dtype = torch.bfloat16):
         pytest.skip("requires idle gfx950 hardware; a skip is not a pass")
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
     device = torch.device("cuda", torch.cuda.current_device())
-    config = gemm.select_launch_config(
+    config = gemm._resolve_exact_a16w16_config(
         arch="gfx950",
         M=64,
         N=64,
@@ -42,9 +42,8 @@ def _gfx950_case(*, output_dtype: torch.dtype = torch.bfloat16):
         has_bias=False,
         input_dtype=torch.bfloat16,
         output_dtype=output_dtype,
-        explicit_kid=200,
-        explicit_split_k=2,
-        tuned_lookup=lambda **_kwargs: None,
+        kid=200,
+        split_k=2,
     )
     XQ = torch.randn((1, 64, 512), device=device, dtype=torch.bfloat16)
     WQ = torch.randn((1, 64, 512), device=device, dtype=torch.bfloat16)
@@ -83,15 +82,15 @@ def test_ctypes_phase1_surface_is_private_production_backend():
     python_source = (
         _ROOT / "aiter/ops/opus/gemm_op_a16w16.py"
     ).read_text(encoding="utf-8")
-    assert 'fc_name="opus_gemm_a16w16_launch_cabi"' in python_source
-    assert 'ffi_type="ctypes"' in python_source
-    assert "ctypes_force_torch_exclude=False" in python_source
+    assert "ctypes.CDLL(module_path)" in python_source
+    assert "def _load_opus_a16w16_cabi(" in python_source
+    assert "def _invoke_opus_a16w16_cabi(" in python_source
+    assert 'ffi_type="ctypes"' not in python_source
+    assert "ctypes_force_torch_exclude" not in python_source
     assert "_opus_gemm_a16w16_launch_ctypes_raw" in inspect.getsource(
-        gemm.opus_gemm_a16w16_launch
+        gemm._launch_a16w16
     )
-    assert "_opus_gemm_a16w16_launch_ctypes_raw" in inspect.getsource(
-        gemm.gemm_a16w16_opus
-    )
+    assert gemm.__all__ == []
 
 
 def test_ctypes_cabi_reuses_checked_launcher_and_tls_error_bridge():
@@ -112,8 +111,8 @@ def test_ctypes_cabi_reuses_checked_launcher_and_tls_error_bridge():
         in implementation
     )
     assert "opus_gemm_a16w16_launch(" in implementation
-    assert "ctypes_force_torch_exclude: bool = True" in core
-    assert "if force_torch_exclude:" in core
+    assert "ctypes_force_torch_exclude" not in core
+    assert "force_torch_exclude" not in core
 
     cabi_body = implementation.split(
         "AITER_CTYPES_DEFINE_ENTRYPOINT_VOID(\n"
@@ -189,6 +188,11 @@ def test_gfx950_ctypes_matches_pybind_and_golden(output_dtype):
 )
 def test_gfx950_ctypes_errors_cross_cabi_safely(failure, message):
     gemm, config, XQ, WQ, Y, allocated = _gfx950_case()
+    # The local adapter intentionally lets the existing pybind wrapper own the
+    # first lazy JIT build, then uses the C ABI. Prime with a valid launch so
+    # this test exercises exception transport across the C ABI itself even
+    # when selected in isolation.
+    _ctypes_launch(gemm, config, XQ, WQ, Y, allocated)
     if failure == "missing":
         workspace = None
     elif failure == "dtype":
@@ -300,8 +304,8 @@ def test_gfx950_ctypes_switches_and_restores_current_device():
         (2, 1, 64, 64), device=device, dtype=torch.float32
     )
 
-    gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
-    gemm.opus_gemm_a16w16_launch(
+    opus = importlib.import_module("aiter.ops.opus")
+    opus.opus_gemm(
         XQ, WQ, Y, kid=200, split_k=2, workspace=workspace
     )
     assert torch.cuda.current_device() == initial
@@ -314,7 +318,8 @@ def test_gfx950_ctypes_switches_and_restores_current_device():
     reason="requires two devices for the C ABI mixed-device rejection",
 )
 def test_gfx950_ctypes_rejects_mixed_input_devices_before_launch():
-    gemm, config, XQ, _WQ, Y, workspace = _gfx950_case()
+    gemm, config, XQ, valid_WQ, Y, workspace = _gfx950_case()
+    _ctypes_launch(gemm, config, XQ, valid_WQ, Y, workspace)
     other_index = (XQ.device.index + 1) % torch.cuda.device_count()
     other_arch = str(
         getattr(torch.cuda.get_device_properties(other_index), "gcnArchName", "")

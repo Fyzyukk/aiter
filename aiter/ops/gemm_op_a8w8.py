@@ -1040,12 +1040,16 @@ def gemm_a8w8_blockscale_bpreshuffle(
         elif libtype == "opus":
             # Only an OPUS-tuned row enters the OPUS exact-kid interface.
             kid = int(config["kernelId"])
-            from aiter.ops.opus.gemm_op_a8w8 import (
-                opus_gemm_a8w8_blockscale_bpreshuffle_launch,
-            )
+            from aiter.ops.opus import opus_gemm
 
-            return opus_gemm_a8w8_blockscale_bpreshuffle_launch(
-                XQ, WQ, x_scale, w_scale, Y, kid=kid
+            return opus_gemm(
+                XQ,
+                WQ,
+                Y,
+                kid=kid,
+                layout="bpreshuffle",
+                x_scale=x_scale,
+                w_scale=w_scale,
             )
         elif libtype == "flydsl" and is_flydsl_available():
             return gemm_a8w8_mxfp8_128_bpreshuffle_flydsl(

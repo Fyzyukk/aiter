@@ -1,655 +1,374 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Task2：OPUS GEMM 四类接口重构</title>
+  <title>Task2：OPUS 选核归 AITER/Torch 与 C++ kid dispatch</title>
   <style>
     :root {
       color-scheme: light;
-      --ink: #172033;
-      --muted: #5f6c7b;
-      --line: #d7e0ea;
-      --page: #f3f6fa;
-      --surface: #ffffff;
-      --blue: #145ea8;
-      --blue-soft: #eaf3ff;
-      --green: #237a45;
-      --green-soft: #eaf7ef;
-      --amber: #93651f;
-      --amber-soft: #fff6df;
-      --red: #a13f3f;
-      --red-soft: #fff0f0;
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #5d687c;
+      --line: #dce3ef;
+      --violet: #5b35b5;
+      --violet-soft: #f1edff;
+      --green: #087a50;
+      --green-soft: #e8f8f1;
+      --amber: #9a5a00;
+      --amber-soft: #fff5de;
+      --code: #edf1f7;
     }
-
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
-      color: var(--ink);
-      background: var(--page);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-        "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
-      line-height: 1.62;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.65 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "PingFang SC", "Microsoft YaHei", sans-serif;
     }
-
-    main {
-      width: min(1500px, calc(100% - 40px));
-      margin: 28px auto 60px;
-    }
-
-    .hero, section {
-      margin-bottom: 24px;
+    main { width: min(1180px, calc(100% - 32px)); margin: 32px auto 72px; }
+    header, section {
+      background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 14px;
-      background: var(--surface);
-      box-shadow: 0 8px 26px rgba(30, 47, 70, .07);
+      box-shadow: 0 8px 28px rgba(31, 48, 83, .06);
     }
-
-    .hero { overflow: hidden; }
-
-    .hero-head {
-      padding: 26px 30px;
-      color: #fff;
-      background: linear-gradient(120deg, #0f4f91, #1972bc);
-    }
-
-    h1 {
-      margin: 0 0 8px;
-      font-size: clamp(25px, 3vw, 34px);
-      line-height: 1.25;
-    }
-
-    .hero-head p {
-      max-width: 1080px;
-      margin: 0;
-      font-size: 17px;
-      opacity: .96;
-    }
-
-    .plain-summary {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      padding: 22px 26px 26px;
-    }
-
-    .summary-card {
-      padding: 16px 18px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-    }
-
-    .summary-card.before { background: var(--red-soft); }
-    .summary-card.after { background: var(--green-soft); }
-    .summary-card h2 { margin: 0 0 6px; font-size: 17px; }
-    .summary-card p { margin: 0; }
-
-    section { padding: 24px 26px 28px; }
-    section > h2 { margin: 0 0 12px; font-size: 22px; }
-    section > p { margin: 0 0 14px; }
-
-    .goals { margin: 0; padding-left: 24px; }
-    .goals li + li { margin-top: 7px; }
-
-    nav {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 9px;
-      margin: 0 0 24px;
-      padding: 14px 16px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: var(--surface);
-    }
-
-    nav a {
-      padding: 6px 10px;
+    header { padding: 30px 34px; }
+    section { margin-top: 18px; padding: 24px 28px; }
+    h1 { margin: 0 0 8px; font-size: clamp(25px, 4vw, 38px); line-height: 1.25; }
+    h2 { margin: 0 0 14px; font-size: 21px; }
+    h3 { margin: 22px 0 10px; font-size: 17px; }
+    p { margin: 8px 0; }
+    .meta, .muted { color: var(--muted); }
+    .status {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 4px 10px;
       border-radius: 999px;
-      color: #174f83;
-      background: var(--blue-soft);
-      text-decoration: none;
-      font-size: 13px;
-      font-weight: 650;
+      color: var(--green);
+      background: var(--green-soft);
+      font-weight: 700;
     }
-
-    .group-note { margin: -4px 0 15px; color: var(--muted); }
-
-    .table-wrap {
-      overflow-x: auto;
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .card {
+      padding: 15px;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 11px;
+      background: #fbfcff;
     }
-
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-
-    th, td {
-      padding: 12px 13px;
-      border-right: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-      text-align: left;
-      vertical-align: top;
-    }
-
-    th:last-child, td:last-child { border-right: 0; }
-    tbody tr:last-child td { border-bottom: 0; }
-    th { color: #29415d; background: #edf3f8; font-size: 13px; }
-    th:nth-child(1) { width: 29%; }
-    th:nth-child(2) { width: 34%; }
-    th:nth-child(3) { width: 37%; }
-    td { font-size: 13.5px; }
-    tbody tr:nth-child(even) td { background: #fbfcfe; }
-
+    .card strong { display: block; margin-bottom: 5px; color: var(--violet); }
     code {
-      color: #263f5e;
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: var(--code);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: .92em;
       overflow-wrap: anywhere;
     }
-
-    .file-cell code { display: block; margin-top: 7px; font-size: 12.5px; }
-
-    .badge {
-      display: inline-block;
-      min-width: 48px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      text-align: center;
-      font-size: 11px;
-      font-weight: 750;
+    pre {
+      margin: 12px 0 0;
+      padding: 16px;
+      overflow-x: auto;
+      border-radius: 10px;
+      background: #111827;
+      color: #e8eefb;
+      font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
-
-    .badge.add { color: var(--green); background: var(--green-soft); }
-    .badge.change { color: var(--blue); background: var(--blue-soft); }
-    .badge.delete { color: var(--red); background: var(--red-soft); }
-
-    .symbols { margin: 0; padding-left: 18px; }
-    .symbols li + li { margin-top: 3px; }
-    .removed { color: var(--red); }
-    .removed::before { content: "已删除："; font-weight: 750; }
-
-    .capability { margin-top: 18px; }
-    .capability th:nth-child(1) { width: 34%; }
-    .capability th:nth-child(2),
-    .capability th:nth-child(3),
-    .capability th:nth-child(4) { width: 22%; }
-
-    .completion th:nth-child(1) { width: 25%; }
-    .completion th:nth-child(2) { width: 63%; }
-    .completion th:nth-child(3) { width: 12%; }
-
-    .flow {
-      margin-top: 18px;
-      padding: 18px;
+    pre code { padding: 0; background: transparent; color: inherit; }
+    .flow { display: grid; gap: 8px; margin-top: 14px; }
+    .node {
+      padding: 12px 14px;
+      border: 1px solid #d4c9f3;
+      border-radius: 9px;
+      background: var(--violet-soft);
+    }
+    .arrow { text-align: center; color: var(--violet); font-weight: 800; }
+    .flow-compare {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+      margin-top: 14px;
+    }
+    .flow-panel {
+      padding: 16px;
       border: 1px solid var(--line);
       border-radius: 12px;
-      background: #f8fbff;
+      background: #fbfcff;
     }
-
-    .api-grid, .route-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-    }
-
-    .route-grid { grid-template-columns: 1fr 3fr; }
-
-    .flow-node, .flow-stage {
-      padding: 12px 14px;
-      border: 1px solid #b9cbe0;
+    .flow-panel.before { border-top: 5px solid var(--amber); }
+    .flow-panel.current { border-top: 5px solid var(--green); }
+    .flow-panel h3 { margin: 0 0 12px; }
+    .flow-step {
+      padding: 11px 12px;
+      border: 1px solid #ddd6f2;
       border-radius: 9px;
       background: #fff;
-      text-align: center;
     }
-
-    .flow-node strong, .flow-stage strong { display: block; margin-bottom: 4px; }
-    .flow-node.a16 { border-color: #7faed7; background: var(--blue-soft); }
-    .flow-node.a8 { border-color: #8cc5a2; background: var(--green-soft); }
-    .flow-stage.cpp { border-color: #d8bc7b; background: var(--amber-soft); }
-
-    .arrow {
-      padding: 6px 0;
-      color: #55789b;
+    .flow-step strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--violet);
+    }
+    .flow-panel.before .flow-step.key { background: var(--amber-soft); }
+    .flow-panel.current .flow-step.key { background: var(--green-soft); }
+    .flow-arrow {
+      padding: 4px 0;
       text-align: center;
-      font-size: 24px;
+      color: var(--violet);
+      font-size: 18px;
+      font-weight: 800;
       line-height: 1;
     }
-
-    .flow-note { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
-
-    @media (max-width: 900px) {
-      main { width: calc(100% - 20px); margin-top: 10px; }
-      .plain-summary, .api-grid, .route-grid { grid-template-columns: 1fr; }
-      section { padding: 20px 16px; }
-      table, thead, tbody, tr, th, td { display: block; }
-      thead { display: none; }
-      tbody tr { border-bottom: 8px solid var(--page); }
-      tbody tr:last-child { border-bottom: 0; }
-      td { padding-left: 125px; border-right: 0; position: relative; }
-      td::before {
-        content: attr(data-label);
-        position: absolute;
-        left: 12px;
-        width: 102px;
-        color: var(--muted);
-        font-weight: 700;
-      }
+    .branch-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
     }
-
-    @media print {
-      body { background: #fff; }
-      main { width: 100%; margin: 0; }
-      .hero, section { box-shadow: none; break-inside: auto; }
-      tr { break-inside: avoid; }
-      nav { display: none; }
+    .branch-card {
+      padding: 9px 10px;
+      border: 1px dashed #c5b9e5;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .75);
+    }
+    .branch-card b { display: block; margin-bottom: 3px; }
+    .flow-result {
+      border-color: #acd8c5;
+      background: var(--green-soft);
+    }
+    .ok {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--green);
+      background: var(--green-soft);
+    }
+    .note {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--amber);
+      background: var(--amber-soft);
+      color: #633d08;
+    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td {
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f0edf9; white-space: nowrap; }
+    td:first-child { min-width: 235px; }
+    .group-row td {
+      min-width: 0;
+      padding: 8px 12px;
+      color: var(--violet);
+      background: var(--violet-soft);
+      font-weight: 750;
+    }
+    ul { margin: 8px 0; padding-left: 22px; }
+    li + li { margin-top: 5px; }
+    .metric { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    @media (max-width: 850px) {
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .flow-compare { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      main { width: min(100% - 18px, 1180px); margin-top: 10px; }
+      header, section { padding: 20px 16px; border-radius: 10px; }
+      .grid { grid-template-columns: 1fr; }
+      .branch-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 <main>
-  <header class="hero">
-    <div class="hero-head">
-      <h1>Task2：将 OPUS GEMM 拆成四类明确接口</h1>
-      <p>统一 Python、pybind、C++ 和 generated launcher 的参数与路由。A16W16 只启动 Python 已确定的 kid；三种 A8W8 计算分别使用自己的接口、注册表和输入检查。</p>
-    </div>
-    <div class="plain-summary">
-      <div class="summary-card before">
-        <h2>以前</h2>
-        <p>generic <code>opus_gemm</code>、旧 tune 入口和 C++ shape heuristic 同时存在。A8W8 的 no-scale、plain blockscale 和 bpreshuffle 合同没有完全分开，scale 还可以缺省。</p>
-      </div>
-      <div class="summary-card after">
-        <h2>现在</h2>
-        <p>四条 launch 接口分别接收固定参数。C++ 按当前 GPU 架构、输出类型和已确定的 kid 查表启动；旧 C++ tune、generic 路由和 C++ runtime heuristic 已删除。</p>
-      </div>
+  <header>
+    <h1>Task2：OPUS 选核归 AITER/Torch，C++ 只按 kid dispatch</h1>
+    <p class="meta">最终代码状态 · 更新日期：2026-08-13 · 本页比较 Task2 改造前与当前最终版本，不记录中间版本。</p>
+    <span class="status">Task2 功能与回归验收完成</span>
+    <div class="grid">
+      <div class="card"><strong>gfx950</strong>A16/A8 原有路径接入与其他架构一致的 Python 选核和 kid 表。</div>
+      <div class="card"><strong>Python 选核</strong>tuned CSV 与 per-arch heuristic 只保留在 AITER/Torch。</div>
+      <div class="card"><strong>C++ 边界</strong>只保留启动所需检查、kernel 入口和 kid → launcher dispatch。</div>
+      <div class="card"><strong>接口整理</strong>dtype、layout、scale 和输出合同按 kernel 类型拆开。</div>
     </div>
   </header>
 
-  <section id="original-requirements">
-    <h2>原始需求与完成情况</h2>
-    <p>原始要求集中在四件事：gfx950 接入统一路径、删除 Python/C++ 重复选核、缩小 C++ 职责，以及整理 dtype/layout 接口。当前代码均已完成。</p>
-    <div class="table-wrap completion">
-      <table>
-        <thead>
-          <tr><th>原始要求</th><th>最终实现</th><th>状态</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td data-label="原始要求"><strong>将 gfx950 的原有路径切到统一架构</strong></td>
-            <td data-label="最终实现">A16W16 的 gfx950 选核由 <code>heuristics/a16w16_gfx950.py::select_kid()</code> 和 <code>select_launch_config()</code> 完成；C++ 使用 <code>opus_a16w16_kid_dispatch_gfx950()</code> 启动指定 kid。gfx950 A8W8 kid 2 和 blockscale kid 1 也分别进入独立 launcher 表。旧 <code>opus_gemm_heuristic_dispatch_gfx950.cuh</code> 已整文件删除。</td>
-            <td data-label="状态"><span class="badge add">已完成</span></td>
-          </tr>
-          <tr>
-            <td data-label="原始要求"><strong>简化 tune lookup，只保留 Python 选核</strong></td>
-            <td data-label="最终实现"><code>select_launch_config()</code> 按 explicit kid → tuned CSV → 架构 heuristic → PyTorch fallback 选择最终 kid。Codegen 已删除 <code>gen_lookup_dict()</code>、<code>get_tune_dict()</code>、<code>opus_gemm_lookup.h</code> 和旧 <code>*_tune_lookup.h</code>；三个架构的 C++ heuristic 文件也已删除。</td>
-            <td data-label="状态"><span class="badge add">已完成</span></td>
-          </tr>
-          <tr>
-            <td data-label="原始要求"><strong>C++ 只保留 kernel 启动和按 kid dispatch</strong></td>
-            <td data-label="最终实现">Python 负责 A16W16 的 CSV/heuristic 选择、actual kid、split-K、workspace 和 PyTorch fallback，也负责 A8W8 的 kid 解析与 kernel 注册查询。C++ 只读取当前 GPU 架构和输出类型，检查必要的安全条件，按指定 kid 查 launcher 表并启动 kernel；不再执行 shape lookup、heuristic 或 framework fallback。</td>
-            <td data-label="状态"><span class="badge add">已完成</span></td>
-          </tr>
-          <tr>
-            <td data-label="原始要求"><strong>整理 dtype 和 layout 接口</strong></td>
-            <td data-label="最终实现">原 generic 入口拆成 A16W16、A8W8 no-scale、A8W8 plain blockscale、A8W8 blockscale bpreshuffle 四条接口。Python 检查 Tensor、device 和 kernel 注册项；<code>opus_gemm.cu</code> 检查接口支持的 dtype、输出类型和必选 scale；generated launcher 最终检查 shape、stride、layout、tile 与 prefetch 条件。</td>
-            <td data-label="状态"><span class="badge add">已完成</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="flow-note"><strong>验收边界：</strong>gfx950 已完成实机数值、负例、graph、双 stream 和 A16W16 全 kid 验证。gfx942/gfx1250 已完成接口、codegen、语法和对象编译检查；由于当前节点没有对应 GPU，实机数值、graph、并发和性能仍需在目标机器执行。</p>
-  </section>
-
-  <section id="requirements">
-    <h2>最终接口与约束</h2>
-    <ul class="goals">
-      <li>提供 <code>opus_gemm_a16w16_launch()</code>、<code>opus_gemm_a8w8_launch()</code>、<code>opus_gemm_a8w8_blockscale_launch()</code> 和 <code>opus_gemm_a8w8_blockscale_bpreshuffle_launch()</code> 四条统一接口。</li>
-      <li>A16W16 的 shape、CSV 和 heuristic 选择只在 Python 完成；C++ 不再根据 shape 选择另一个 kid。</li>
-      <li>三种 A8W8 接口分别定义参数、scale、WQ 表示和输出类型；两个 blockscale scale 都是必选 Tensor。</li>
-      <li>kernel 注册按 GPU 架构、接口类型、kid 和输出类型查询，禁止跨架构、跨接口类型或跨输出类型复用相同数字 kid。</li>
-      <li>即使某个架构当前没有对应 A8W8 kernel，公开函数仍存在，并在调用时明确报告没有可用 kernel。</li>
-      <li>CSV、compiled-kids sidecar、Python heuristic 默认 kid 和 mandatory A8 kid 继续进入 subset compile，保证运行时可选 kid 已编译。</li>
-      <li>仓内生产调用方和 tuner 改用新接口；旧 Python tune 名仅保留 warning 和参数转发。</li>
+  <section id="status">
+    <h2>1. 最终验收结论</h2>
+    <ul>
+      <li>gfx950 A16 tuned miss 已由 Python heuristic 选择最终 kid；C++ 只按 kid 启动。gfx950 A8 no-scale kid 2 与 blockscale kid 1 也分别进入自己的生成表。</li>
+      <li>tune lookup 和 per-arch heuristic 只保留在 Python/AITER：先查 tuned CSV，未命中或配置无效时进入 Python heuristic，再失败才进入 framework fallback；C++ runtime shape/tune lookup 和 C++ heuristic 已删除。</li>
+      <li>选核、dtype/layout/scale 路由、输出准备、split-K/workspace 和 framework fallback 均由 AITER/Torch 负责；C++ 只保留启动所需安全检查、kid → launcher 查询和 kernel launch。</li>
+      <li>generic C++ 入口已拆成 A16、A8 no-scale、A8 blockscale 和 A8 bpreshuffle，并固定各自的 dtype、layout、scale 与输出合同；当前 Python public 收敛为 <code>opus_gemm()</code>，后续 MXFP8 BMM 沿用同一边界。</li>
     </ul>
-
-    <div class="table-wrap capability">
-      <table>
-        <thead><tr><th>A8W8 接口类型</th><th>gfx942</th><th>gfx950</th><th>gfx1250</th></tr></thead>
-        <tbody>
-          <tr>
-            <td data-label="接口类型"><code>a8w8</code></td>
-            <td data-label="gfx942">空表</td>
-            <td data-label="gfx950">kid 2，FP32 Y</td>
-            <td data-label="gfx1250">空表</td>
-          </tr>
-          <tr>
-            <td data-label="接口类型"><code>a8w8_blockscale</code></td>
-            <td data-label="gfx942">空表</td>
-            <td data-label="gfx950">kid 1，FP32 Y，plain WQ</td>
-            <td data-label="gfx1250">空表</td>
-          </tr>
-          <tr>
-            <td data-label="接口类型"><code>a8w8_blockscale_bpreshuffle</code></td>
-            <td data-label="gfx942">kid 11000，BF16 Y</td>
-            <td data-label="gfx950">可编译空表</td>
-            <td data-label="gfx1250">可编译空表</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
   </section>
 
-  <nav aria-label="文档目录">
-    <a href="#original-requirements">原始需求与完成情况</a>
-    <a href="#python">Python 接口与仓内调用方</a>
-    <a href="#cpp">C++ 接口与指定 kid 启动</a>
-    <a href="#codegen">Kernel 注册、codegen 与 launcher 表</a>
-    <a href="#tests">测试、benchmark 与文档</a>
-    <a href="#flow">当前代码的实际调用流程</a>
-  </nav>
-
-  <section id="python">
-    <h2>1. Python 接口与仓内调用方</h2>
-    <p class="group-note">这里定义四条公开 Python 接口，并把生产调用方和 tuner 迁移到对应的 launch。旧 Python 名只负责兼容参数和转发。</p>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>文件</th><th>修改函数 / 符号</th><th>最终改动</th></tr>
-        </thead>
-        <tbody>
-          <tr data-file="aiter/ops/opus/gemm_op_a16w16.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/opus/gemm_op_a16w16.py</code></td>
-            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_gen_opus_gemm_a16w16_launch_fake_tensors()</code></li><li><code>_opus_gemm_a16w16_launch_raw()</code></li><li><code>_explicit_a16w16_launch()</code></li><li><code>opus_gemm_a16w16_launch()</code></li><li><code>opus_gemm_a16w16_tune()</code></li><li><code>gemm_a16w16_opus()</code></li><li class="removed"><code>_opus_gemm_a16w16_tune_raw()</code> / fake</li><li class="removed"><code>_opus_gemm_bf16_dispatch()</code> / fake</li></ul></td>
-            <td data-label="最终改动">A16W16 公开接口统一为 <code>launch(..., workspace, kid, split_k)</code> 语义；explicit、高层入口和兼容 wrapper 使用同一接口合同。旧 tune raw 和 generic BF16 C++ 选择 binding 已删除，原有 selector 与 workspace 行为保持不变。</td>
-          </tr>
-          <tr data-file="aiter/ops/opus/gemm_op_a8w8.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/opus/gemm_op_a8w8.py</code></td>
-            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_read_device_arch()</code> / <code>_device_arch()</code></li><li><code>_check_same_device()</code></li><li><code>_require_registered_kid_cached()</code></li><li><code>_require_registered_kid()</code></li><li><code>_opus_gemm_a8w8_launch_raw()</code> / fake</li><li><code>_opus_gemm_a8w8_blockscale_launch_raw()</code> / fake</li><li><code>_opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw()</code> / fake</li><li><code>opus_gemm_a8w8_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_launch()</code></li><li><code>_lookup_opus_bpreshuffle_tuned_kid()</code></li><li><code>_resolve_bpreshuffle_kid()</code></li><li><code>opus_gemm_a8w8_blockscale_bpreshuffle_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_bpreshuffle_tune()</code></li></ul></td>
-            <td data-label="最终改动">新增 no-scale、plain blockscale 和 bpreshuffle 三条独立 public/raw 接口。每次调用检查 Tensor 与 device，并按 GPU 架构、接口类型、kid 和 <code>Y.dtype</code> 验证 kernel；只缓存成功的注册查询。bpreshuffle 按 explicit → OPUS tuned row → 架构默认值解析整数 kid，旧 tune 名 warning 后转发。</td>
-          </tr>
-          <tr data-file="aiter/ops/opus/__init__.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/opus/__init__.py</code></td>
-            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_make_unsupported_arch_stub()</code></li><li><code>opus_gemm_a8w8_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_bpreshuffle_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_bpreshuffle_tune()</code></li><li><code>__all__</code></li></ul></td>
-            <td data-label="最终改动">gfx942、gfx950、gfx1250 统一导出四条 launch 接口。当前没有 kernel 的接口仍保留函数名，由调用时的 kernel 注册检查报告不支持；其他架构使用调用时 stub，不再中断顶层 <code>aiter</code> import。</td>
-          </tr>
-          <tr data-file="aiter/ops/opus/_selector_a16w16.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/opus/_selector_a16w16.py</code></td>
-            <td data-label="函数 / 符号"><ul class="symbols"><li><code>LaunchConfig</code></li><li><code>_build_launch_config()</code></li><li><code>select_launch_config()</code></li></ul></td>
-            <td data-label="最终改动">错误和注释统一使用 <code>launch</code>、<code>kid</code>、<code>split_k</code>，明确 A16W16 runtime 选核只由 Python selector 完成。explicit → tuned CSV → 架构 heuristic → PyTorch fallback 的规则不变。</td>
-          </tr>
-          <tr data-file="aiter/tuned_gemm.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/tuned_gemm.py</code></td>
-            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_opus_launch</code></li><li><code>opus_gemm()</code></li><li class="removed">生产调用 <code>opus_gemm_a16w16_tune()</code></li></ul></td>
-            <td data-label="最终改动">OPUS tuned row 直接调用 <code>opus_gemm_a16w16_launch(..., kid=solidx, split_k=splitK)</code>；CSV 字段保持兼容，生产路径不再经过旧 tune wrapper。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/opus_gemm_tune.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/opus_gemm_tune.py</code></td>
-            <td data-label="函数 / 符号"><ul class="symbols"><li><code>run_opus_gemm()</code></li><li><code>run_opus_gemm_bench()</code></li></ul></td>
-            <td data-label="最终改动">调优和 benchmark runner 改用统一的 A16W16 launch，并把脚本中的 <code>kernelId/splitK</code> 映射为 <code>kid/split_k</code>；调优动作和 CSV 格式不变。</td>
-          </tr>
-          <tr data-file="csrc/gemm_a16w16/gemm_a16w16_tune.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/gemm_a16w16/gemm_a16w16_tune.py</code></td>
-            <td data-label="函数 / 符号"><ul class="symbols"><li><code>_opus_gemm_a16w16_launch</code></li><li><code>run_opus_gemm_bf16()</code></li></ul></td>
-            <td data-label="最终改动">汇总 A16W16 tuner 的 OPUS 分支直接调用 <code>opus_gemm_a16w16_launch()</code>，不再 import 或调用旧 tune wrapper。</td>
-          </tr>
-          <tr data-file="aiter/ops/deepgemm.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/deepgemm.py</code></td>
-            <td data-label="函数 / 符号"><code>opus_gemm_a16w16_tune()</code></td>
-            <td data-label="最终改动">legacy shim 自己发一次 deprecation warning，随后直接调用 <code>opus_gemm_a16w16_launch()</code>，避免两层兼容 wrapper 和重复 warning。</td>
-          </tr>
-          <tr data-file="csrc/ck_gemm_a8w8_blockscale/gemm_a8w8_blockscale_tune.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/ck_gemm_a8w8_blockscale/gemm_a8w8_blockscale_tune.py</code></td>
-            <td data-label="函数 / 符号"><code>run_gemm_a8w8_blockscale_opus()</code></td>
-            <td data-label="最终改动">A8W8 blockscale tuner 按架构、bpreshuffle 接口类型、kid 和输出类型查询注册信息，再调用 <code>opus_gemm_a8w8_blockscale_bpreshuffle_launch()</code>；删除 gfx942-only 入口硬编码。</td>
-          </tr>
-          <tr data-file="aiter/ops/gemm_op_a8w8.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/gemm_op_a8w8.py</code></td>
-            <td data-label="函数 / 符号"><code>gemm_a8w8_blockscale_bpreshuffle()</code></td>
-            <td data-label="最终改动">仅在 tuned row 的 <code>libtype == "opus"</code> 分支调用统一的 bpreshuffle launch。CK、CKTile、ASM、FlyDSL、Triton 和 Gluon 的原有路由不变；没有可用 OPUS kernel 时不会替代其他 backend。</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <section id="cpp">
-    <h2>2. C++ 接口与指定 kid 启动</h2>
-    <p class="group-note">Python 按接口传入对应参数和已确定的 kid。C++ 检查 device、dtype 与必选 scale，按当前 GPU 架构和输出类型查找该 kid 的 launcher；不再根据 shape 重新选核。</p>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>文件</th><th>修改函数 / 类型 / 宏</th><th>最终改动</th></tr>
-        </thead>
-        <tbody>
-          <tr data-file="csrc/opus_gemm/include/opus_gemm.h">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/opus_gemm.h</code></td>
-            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>opus_gemm_a16w16_launch()</code></li><li><code>opus_gemm_a8w8_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_bpreshuffle_launch()</code></li><li class="removed"><code>opus_gemm()</code></li><li class="removed"><code>opus_gemm_a16w16_tune()</code></li><li class="removed"><code>opus_gemm_a8w8_blockscale_bpreshuffle_tune()</code></li></ul></td>
-            <td data-label="最终改动">公共 C++ 声明收敛为四条 launch 接口。两个 blockscale 接口的 <code>x_scale</code>、<code>w_scale</code> 改为必选引用；删除 generic 和旧 tune 声明。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/opus_gemm.cu">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/opus_gemm.cu</code></td>
-            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>opus_gemm_a16w16_launch_impl()</code></li><li><code>opus_a8w8_kid_dispatch()</code></li><li><code>opus_a8w8_blockscale_kid_dispatch()</code></li><li><code>opus_a8w8_blockscale_bpreshuffle_kid_dispatch&lt;CDataType&gt;()</code></li><li><code>opus_check_a8_family_tensors()</code></li><li><code>opus_check_a8_scale_devices()</code></li><li><code>opus_gemm_a16w16_launch()</code></li><li><code>opus_gemm_a8w8_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_launch()</code></li><li><code>opus_gemm_a8w8_blockscale_bpreshuffle_launch()</code></li><li class="removed">generic <code>opus_gemm()</code></li><li class="removed">旧 A16/A8 tune 与 runtime shape policy</li></ul></td>
-            <td data-label="最终改动">四条 C++ entry 分别检查输入并进入对应 launcher 表。C++ 路由区分未编入当前架构、指定接口和输出类型没有 kernel、已有表中找不到 kid 三类错误；删除 generic 总入口、固定 kernel symbol 分支、C++ shape lookup、heuristic 和 framework fallback。</td>
-          </tr>
-          <tr data-file="csrc/include/rocm_ops.hpp">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/include/rocm_ops.hpp</code></td>
-            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>OPUS_GEMM_A16W16_LAUNCH_PYBIND</code></li><li><code>OPUS_GEMM_A8W8_LAUNCH_PYBIND</code></li><li><code>OPUS_GEMM_A8W8_BLOCKSCALE_LAUNCH_PYBIND</code></li><li><code>OPUS_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_LAUNCH_PYBIND</code></li><li class="removed"><code>OPUS_GEMM_PYBIND</code></li><li class="removed">旧 A16/A8 tune pybind macros</li></ul></td>
-            <td data-label="最终改动">四个 pybind macro 固定各接口的函数名、参数顺序和必选 scale，使 Python raw schema 与 C++ 声明一致；删除 generic 和旧 tune macro。</td>
-          </tr>
-          <tr data-file="csrc/pybind/opus_gemm_pybind.cu">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/pybind/opus_gemm_pybind.cu</code></td>
-            <td data-label="函数 / 类型 / 宏"><ul class="symbols"><li><code>PYBIND11_MODULE(...)</code></li><li><code>OPUS_GEMM_A16W16_LAUNCH_PYBIND</code></li><li><code>OPUS_GEMM_A8W8_LAUNCH_PYBIND</code></li><li><code>OPUS_GEMM_A8W8_BLOCKSCALE_LAUNCH_PYBIND</code></li><li><code>OPUS_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_LAUNCH_PYBIND</code></li></ul></td>
-            <td data-label="最终改动">每个已编 OPUS 架构模块都注册相同四个业务属性。某个接口当前没有 kernel 时仍保留 symbol，由运行时空表检查返回错误；generic 和旧 tune registration 已删除。</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <section id="codegen">
-    <h2>3. Kernel 注册、codegen 与 launcher 表</h2>
-    <p class="group-note">Kernel 注册信息说明每个 kid 属于哪个架构、接口类型和输出类型。Codegen 据此生成参数类型匹配的 launcher 表；C++ 运行时只查表，不再保存或执行 shape heuristic。</p>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>文件</th><th>修改函数 / 类型 / 位置</th><th>最终改动</th></tr>
-        </thead>
-        <tbody>
-          <tr data-file="csrc/opus_gemm/opus_gemm_common.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/opus_gemm_common.py</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li><code>OPUS_KERNEL_TAGS_BY_ARCH_FAMILY</code></li><li><code>OPUS_MANDATORY_A8_KIDS</code></li><li><code>heuristic_kids_for_arch()</code></li><li><code>_canonical_output_dtype()</code></li><li><code>get_kernel_instance()</code></li><li class="removed"><code>default_kernels_dict</code></li></ul></td>
-            <td data-label="最终改动">建立 GPU 架构 → 接口类型 → kernel tag 注册关系，并支持按输出类型查询指定 kid。mandatory A8 集合保证 gfx950 kid 1/2 和 gfx942 kid 11000 进入匹配架构的 subset build；空 tag 集合表示接口存在但当前没有 kernel。删除只服务 C++ shape lookup 的默认表。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/gen_instances.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/gen_instances.py</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li><code>A8W8_BPRESHUFFLE_TAGS</code></li><li><code>A8W8_BLOCKSCALE_HOST_EXTRA</code></li><li><code>_make_a8w8_bpreshuffle_host_decl()</code></li><li><code>opus_gemm_codegen.gen_a16w16_kid_dispatch()</code></li><li><code>opus_gemm_codegen.gen_a8w8_kid_dispatch()</code></li><li><code>opus_gemm_codegen.gen_instances()</code></li><li><code>_tune_df_kids()</code></li><li class="removed"><code>gen_lookup_dict()</code></li><li class="removed"><code>get_tune_dict()</code></li><li class="removed"><code>opus_gemm_lookup.h</code> / <code>*_tune_lookup.h</code> 生成</li></ul></td>
-            <td data-label="最终改动">生成 A16W16 和三种 A8W8 接口的 launcher 表，按参数类型、架构和输出类型分组；没有 kernel 的接口生成 <code>std::array&lt;Entry,0&gt;</code> 与 size 0。Subset compile 合并 CSV kid、sidecar kid、heuristic 默认 kid 和 mandatory A8 kid，不再把 CSV shape 生成 C++ runtime lookup。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/codegen/gen_instances_gfx942.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/codegen/gen_instances_gfx942.py</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li><code>gen_a8w8_blockscale_bpreshuffle_gfx942_instance()</code></li><li><code>_validate_a8w8_blockscale_bpreshuffle_gfx942()</code></li></ul></td>
-            <td data-label="最终改动">gfx942 kid 11000 launcher 统一接收 <code>XQ, WQ, x_scale, w_scale, Y</code>，两个 scale 为必选。Generated guard 检查 rank、batch、dtype、contiguous、shape、128 tile、scale storage 和 same-device；kernel 算法及 bpreshuffled WQ 内容合同不变。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/codegen/gen_instances_gfx950.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/codegen/gen_instances_gfx950.py</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li><code>gen_noscale_instance_gfx950()</code></li><li><code>gen_scale_instance()</code></li></ul></td>
-            <td data-label="最终改动">kid 2 no-scale launcher 检查 3D shape、FP8 输入、FP32 Y、contiguous 和 K-loop/prefetch 条件；kid 1 blockscale 另检查必选 FP32 scale、same-device、128 grouping 与 scale shape。错误输入在 generated launcher 中被拒绝。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/codegen/gen_instances_gfx1250.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/codegen/gen_instances_gfx1250.py</code></td>
-            <td data-label="函数 / 类型 / 位置">generated host launch / kid-dispatch 命名</td>
-            <td data-label="最终改动">生成的 host declaration 和 launcher 名称对齐统一 launch/kid-dispatch 接口，并可接入中央 A8 空表。没有新增 gfx1250 A8 kernel，也未改变现有 A16W16 kernel 算法。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/include/gfx942/opus_gemm_arch_gfx942.cuh">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx942/opus_gemm_arch_gfx942.cuh</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li><code>OpusA8W8KidEntry</code></li><li><code>find_kid()</code></li><li><code>opus_a8w8_blockscale_bpreshuffle_kid_dispatch_gfx942&lt;bf16_t/fp32_t&gt;()</code></li><li class="removed"><code>find_shape_kid()</code></li><li class="removed">runtime shape / heuristic entries</li></ul></td>
-            <td data-label="最终改动">按 Y dtype 在 gfx942 bpreshuffle launcher 表中查找指定的 kid 11000。删除 C++ shape lookup、heuristic 和用于选核的 4 GiB probe；generated launcher 内的物理 4 GiB 安全检查继续保留。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/include/gfx950/opus_gemm_arch_gfx950.cuh">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx950/opus_gemm_arch_gfx950.cuh</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li><code>OpusA8W8KidEntry</code></li><li><code>find_kid()</code></li><li><code>opus_a8w8_kid_dispatch_gfx950()</code></li><li><code>opus_a8w8_blockscale_kid_dispatch_gfx950()</code></li><li><code>opus_a8w8_blockscale_bpreshuffle_kid_dispatch_gfx950&lt;bf16_t/fp32_t&gt;()</code></li></ul></td>
-            <td data-label="最终改动">kid 2 和 kid 1 分别进入 no-scale 与 blockscale launcher 表；bpreshuffle 保留 BF16/FP32 size-0 表和明确错误。相同数字 kid 不能跨接口类型使用，C++ 不再按 shape 或 bias 选核。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/include/gfx1250/opus_gemm_arch_gfx1250.cuh">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx1250/opus_gemm_arch_gfx1250.cuh</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li><code>OpusA8W8KidEntry</code></li><li><code>find_kid()</code></li><li><code>opus_a8w8_blockscale_bpreshuffle_kid_dispatch_gfx1250&lt;bf16_t/fp32_t&gt;()</code></li></ul></td>
-            <td data-label="最终改动">接入 A8 dispatch header，并使 BF16/FP32 bpreshuffle size-0 表可正常编译和查询。公开 symbol 保持稳定，但不会复用 gfx942/gfx950 的 A8 kid。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/include/gfx950/opus_gemm_traits_a16w16_gfx950.cuh">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/include/gfx950/opus_gemm_traits_a16w16_gfx950.cuh</code></td>
-            <td data-label="函数 / 类型 / 位置">架构保护和 host-router 注释</td>
-            <td data-label="最终改动">仅把说明中的旧 <code>opus_gemm_a16w16_tune</code> / tune-dispatch 名称改为 <code>opus_gemm_a16w16_launch</code> / kid-dispatch；kernel 和 traits 执行逻辑没有变化。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/include/gfx942/opus_gemm_heuristic_dispatch_gfx942.cuh">
-            <td class="file-cell" data-label="文件"><span class="badge delete">删除</span><code>csrc/opus_gemm/include/gfx942/opus_gemm_heuristic_dispatch_gfx942.cuh</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li class="removed"><code>split_barrier_ok()</code></li><li class="removed"><code>bf16ws_band()</code></li><li class="removed"><code>dispatch_bf16&lt;CDataType&gt;()</code></li><li class="removed"><code>opus_a16w16_heuristic_dispatch_gfx942&lt;CDataType&gt;()</code></li></ul></td>
-            <td data-label="最终改动">整文件删除。gfx942 shape policy 和 split-K 解析由 Python heuristic/selector 负责，C++ 只接收已确定的 kid。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/include/gfx950/opus_gemm_heuristic_dispatch_gfx950.cuh">
-            <td class="file-cell" data-label="文件"><span class="badge delete">删除</span><code>csrc/opus_gemm/include/gfx950/opus_gemm_heuristic_dispatch_gfx950.cuh</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li class="removed"><code>opus_a16w16_heuristic_kid_gfx950()</code></li><li class="removed">旧 tune-dispatch 声明与 shape/bias 分支</li></ul></td>
-            <td data-label="最终改动">整文件删除。gfx950 的 shape/bias 选核由 Python <code>select_kid()</code> 完成，C++ 改查 generated launcher 表。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/include/gfx1250/opus_gemm_heuristic_dispatch_gfx1250.cuh">
-            <td class="file-cell" data-label="文件"><span class="badge delete">删除</span><code>csrc/opus_gemm/include/gfx1250/opus_gemm_heuristic_dispatch_gfx1250.cuh</code></td>
-            <td data-label="函数 / 类型 / 位置"><ul class="symbols"><li class="removed"><code>opus_a16w16_heuristic_kid_gfx1250()</code></li><li class="removed">C++ M/N divisibility 选核</li></ul></td>
-            <td data-label="最终改动">整文件删除。gfx1250 fallback kid 由 Python <code>select_kid()</code> 决定，C++ 只启动 selector 输出的 actual kid。</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <section id="tests">
-    <h2>4. 测试、benchmark 与文档</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>文件</th><th>修改函数 / 测试 / 位置</th><th>最终覆盖</th></tr>
-        </thead>
-        <tbody>
-          <tr data-file="op_tests/test_opus_interfaces.py">
-            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/test_opus_interfaces.py</code></td>
-            <td data-label="函数 / 测试 / 位置"><ul class="symbols"><li><code>test_cpp_pybind_signatures_and_removed_legacy_raw_symbols()</code></li><li><code>test_canonical_a16_python_cpp_and_pybind_signatures()</code></li><li><code>test_python_a8_canonical_and_legacy_signatures()</code></li><li><code>test_a8_python_wrappers_pass_only_resolved_exact_kids()</code></li><li><code>test_a8_registered_kid_cache_only_memoizes_success()</code></li><li><code>test_subset_compile_formula_arch_filter_and_mandatory_kids()</code></li><li><code>test_generated_dispatch_kid_sets_match_b0_golden()</code></li><li><code>test_b6_generated_a8_launchers_own_exact_physical_contracts()</code></li><li><code>test_gfx950_a8w8_no_scale_raw_numerical_golden()</code></li><li><code>test_gfx950_a8w8_plain_blockscale_raw_numerical_golden()</code></li><li><code>test_gfx942_a8w8_bpreshuffle_raw_numerical_golden()</code></li></ul></td>
-            <td data-label="最终覆盖">四条 Python/C++/pybind signature、旧 symbol 删除、compat 转发、A8 capability/cache、subset compile、generated kid 表、物理输入合同，以及 gfx950/gfx942 A8 数值和负例。</td>
-          </tr>
-          <tr data-file="op_tests/test_opus_dispatch.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>op_tests/test_opus_dispatch.py</code></td>
-            <td data-label="函数 / 测试 / 位置"><ul class="symbols"><li><code>test_cpp_runtime_shape_policy_is_removed_but_physical_4g_safety_remains()</code></li><li><code>test_heuristic_kid_must_be_in_force_compiled_set()</code></li><li><code>test_csv_miss_production_path_uses_canonical_raw_binding()</code></li></ul></td>
-            <td data-label="最终覆盖">C++ runtime shape lookup/heuristic 已删除、generated 物理安全检查仍保留、Python heuristic 输出可编译，以及生产路径使用统一的 A16 binding。</td>
-          </tr>
-          <tr data-file="op_tests/test_opus_workspace.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>op_tests/test_opus_workspace.py</code></td>
-            <td data-label="函数 / 测试 / 位置"><ul class="symbols"><li><code>test_a8_families_do_not_acquire_workspace_capability()</code></li><li>production fake/raw helper</li><li>generated kid-dispatch header assertions</li></ul></td>
-            <td data-label="最终覆盖">三种 A8W8 接口不使用 A16W16 workspace；测试 helper 和 generated header 断言全部使用新的 launch / kid-dispatch 名称。</td>
-          </tr>
-          <tr data-file="op_tests/test_opus_graph.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>op_tests/test_opus_graph.py</code></td>
-            <td data-label="函数 / 测试 / 位置"><ul class="symbols"><li><code>_make_gfx950_a8_case()</code></li><li><code>_launch_gfx950_a8_family()</code></li><li><code>test_gfx950_a8_graph_capture_replay()</code></li><li><code>test_gfx950_a8_two_streams()</code></li></ul></td>
-            <td data-label="最终覆盖">gfx950 no-scale kid 2 和 blockscale kid 1 的 graph capture/replay 与双 stream 数值；A16 graph 测试同步迁移到新的 launch 接口名称。</td>
-          </tr>
-          <tr data-file="op_tests/test_opus_gfx950_exhaustive.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>op_tests/test_opus_gfx950_exhaustive.py</code></td>
-            <td data-label="函数 / 测试 / 位置"><ul class="symbols"><li><code>test_every_gfx950_workspace_kid()</code></li><li><code>test_every_gfx950_non_workspace_kid()</code></li></ul></td>
-            <td data-label="最终覆盖">gfx950 全 kid 测试改用 <code>opus_gemm_a16w16_launch(..., kid=..., split_k=...)</code>；case 集、registry oracle 和误差标准不变。</td>
-          </tr>
-          <tr data-file="op_tests/bench_opus_task1_task2_interfaces.py">
-            <td class="file-cell" data-label="文件"><span class="badge add">新增</span><code>op_tests/bench_opus_task1_task2_interfaces.py</code></td>
-            <td data-label="函数 / 测试 / 位置"><ul class="symbols"><li><code>Runner</code></li><li><code>main()</code></li><li>ABBA measurement 与 graph/direct capture</li></ul></td>
-            <td data-label="最终覆盖">在相同输入、kid 和 split-K 下分别测量 public、高层、raw、direct C++/pybind 与 graph replay，定位接口重构的 Python、FFI、C++ dispatch 和 device 开销。</td>
-          </tr>
-          <tr data-file="op_tests/bench_opus_gfx950_workspace_ab.py">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>op_tests/bench_opus_gfx950_workspace_ab.py</code></td>
-            <td data-label="函数 / 测试 / 位置"><ul class="symbols"><li><code>_launch()</code></li><li><code>main()</code></li><li>CLI endpoint choices</li></ul></td>
-            <td data-label="最终覆盖">当前版本 endpoint 改为 A16W16 launch 名称；历史 checkout 的旧 endpoint 仅由 benchmark 私有 loader 使用，不回到生产 API。</td>
-          </tr>
-          <tr data-file="aiter/ops/opus/README.md">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>aiter/ops/opus/README.md</code></td>
-            <td data-label="函数 / 测试 / 位置">Python API、A8 capability、kid 解析、cache 与兼容接口章节</td>
-            <td data-label="最终覆盖">记录四条 Python signature、三架构 A8 capability、bpreshuffle kid 解析、只缓存成功 kernel 注册查询、WQ 内容要求和 deprecated 示例；删除 generic/tune 生产接口及 optional scale 说明。</td>
-          </tr>
-          <tr data-file="csrc/opus_gemm/README.md">
-            <td class="file-cell" data-label="文件"><span class="badge change">修改</span><code>csrc/opus_gemm/README.md</code></td>
-            <td data-label="函数 / 测试 / 位置">C++ ABI、launcher 表、subset compile、空表与 generated validation 章节</td>
-            <td data-label="最终覆盖">记录四条 C++ 接口、按架构/输出类型/kid 查表、mandatory A8 集合、size-0 table 和 no-kernel/unknown-kid 错误；删除 generic 运行时选核、shape lookup、heuristic 与旧 tune ABI 说明。</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
   <section id="flow">
-    <h2>5. 当前代码的实际调用流程</h2>
-    <div class="flow" role="img" aria-label="OPUS GEMM Task2 当前四类接口调用流程">
-      <div class="api-grid">
-        <div class="flow-node a16">
-          <strong>A16W16</strong>
-          <code>opus_gemm_a16w16_launch()</code>
+    <h2>2. 原本流程与当前流程</h2>
+    <div class="flow-compare" role="group" aria-label="OPUS GEMM runtime policy 简化前后流程对比">
+      <article class="flow-panel before">
+        <h3>Task2 改造前</h3>
+        <div class="flow-step">
+          <strong>1. Python wrapper 先查一套 tuned 配置</strong>
+          <code>gemm_op_a16w16.py</code> / <code>common.py::lookup_tuned()</code> 根据 shape 查 CSV；显式 kernelId 或命中 tuned row 时进入旧 tune API。
         </div>
-        <div class="flow-node a8">
-          <strong>A8W8 no-scale</strong>
-          <code>opus_gemm_a8w8_launch()</code>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step key">
+          <strong>2. Python miss 后进入 C++ 的另一套策略</strong>
+          <div class="branch-grid">
+            <div class="branch-card"><b>Python 命中</b>把 kid/split-K 传给旧 A16/A8 tune entry。</div>
+            <div class="branch-card"><b>Python 未命中</b><code>_opus_gemm_bf16_dispatch()</code> → generic C++ <code>opus_gemm()</code>。</div>
+          </div>
         </div>
-        <div class="flow-node a8">
-          <strong>A8W8 plain blockscale</strong>
-          <code>opus_gemm_a8w8_blockscale_launch()</code>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step key">
+          <strong>3. C++ runtime lookup</strong>
+          Generated shape/tune lookup 再按 M/N/K、dtype、bias 等条件查一次；C++ 同时保存一份 runtime policy。
         </div>
-        <div class="flow-node a8">
-          <strong>A8W8 blockscale bpreshuffle</strong>
-          <code>opus_gemm_a8w8_blockscale_bpreshuffle_launch()</code>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step key">
+          <strong>4. C++ per-arch heuristic</strong>
+          lookup miss 后进入 gfx942/gfx950/gfx1250 各自的 C++ heuristic，再决定实际 launcher 或 kid。
         </div>
-      </div>
-
-      <div class="arrow">↓</div>
-
-      <div class="route-grid">
-        <div class="flow-stage">
-          <strong>A16W16 Python 处理</strong>
-          selector 得到 <code>actual_kid</code> 和 <code>split_k</code><br>
-          按已确定的 kid 准备 workspace
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step">
+          <strong>5. dtype/layout 处理混在 generic 入口</strong>
+          A16 与多种 A8 路径共用或复用 generic/tune 参数，scale 可选，Python、pybind 和 <code>opus_gemm.cu</code> 的合同分散。
         </div>
-        <div class="flow-stage">
-          <strong>A8W8 Python 处理</strong>
-          检查 Tensor 和同一 device → 读取当前 GPU 架构 → 按接口类型、kid 和 <code>Y.dtype</code> 验证注册项<br>
-          bpreshuffle 的 <code>kid=None</code>：OPUS tuned row → 架构默认值
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step flow-result">
+          <strong>6. GPU 执行</strong>
+          C++ 最终选择 launcher 并启动 GPU kernel。选核与 kernel launch 都落在 C++ 路径中。
         </div>
-      </div>
+      </article>
 
-      <div class="arrow">↓</div>
-
-      <div class="route-grid">
-        <div class="flow-stage cpp">
-          <strong>A16W16 production binding</strong>
-          <code>_opus_gemm_a16w16_launch_ctypes_raw()</code><br>
-          → <code>opus_gemm_a16w16_launch_cabi()</code>
+      <article class="flow-panel current">
+        <h3>当前</h3>
+        <div class="flow-step key">
+          <strong>1. AITER/Torch 完成全部选核</strong>
+          <div class="branch-grid">
+            <div class="branch-card"><b>显式 kid</b>直接采用调用时提供的最终 kid。</div>
+            <div class="branch-card"><b>tuned 命中</b><code>tuned_gemm.py</code> 读取 CSV 中的 kid/split-K。</div>
+            <div class="branch-card"><b>tuned miss</b><code>gemm_op_a16w16.py</code> 运行当前 arch 的 Python heuristic。</div>
+            <div class="branch-card"><b>OPUS 不可用</b>由上层进入 PyTorch/其他 backend fallback。</div>
+          </div>
         </div>
-        <div class="flow-stage cpp">
-          <strong>A8W8 三类 pybind bindings</strong>
-          <code>_opus_gemm_a8w8_launch_raw()</code> / <code>_opus_gemm_a8w8_blockscale_launch_raw()</code> / <code>_opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw()</code>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step">
+          <strong>2. 最终 kid 进入当前 Python public</strong>
+          <code>aiter/ops/opus/__init__.py::opus_gemm(XQ, WQ, Y, kid=...)</code> 不查 tuned CSV，也不运行 heuristic。
         </div>
-      </div>
-
-      <div class="arrow">↓</div>
-
-      <div class="flow-stage cpp">
-        <strong>对应的 C++ 接口</strong>
-        检查 GPU、device、dtype、必选 scale 和该接口支持的输出类型<br>
-        读取当前 GPU 架构，不读取 shape lookup，也不运行 C++ heuristic
-      </div>
-
-      <div class="arrow">↓</div>
-
-      <div class="flow-stage">
-        <strong>按参数类型区分的 kid 表</strong>
-        按当前 GPU 架构 + 接口类型 + Y dtype + kid 查找函数指针<br>
-        表为空 → no registered kernel；非空表找不到 kid → unknown kid
-      </div>
-
-      <div class="arrow">↓</div>
-
-      <div class="flow-stage cpp">
-        <strong>Generated launcher → GPU kernel</strong>
-        最终检查 shape、stride、layout、tile、scale、prefetch 和 workspace 等物理条件，然后启动对应 kernel
-      </div>
-
-      <p class="flow-note"><code>opus_gemm_a16w16_tune()</code> 和 <code>opus_gemm_a8w8_blockscale_bpreshuffle_tune()</code> 只保留为 Python 兼容入口：发出 deprecation warning 后转发到对应 launch 接口；不存在旧 C++ tune 或 generic <code>opus_gemm()</code> 生产分支。</p>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step key">
+          <strong>3. Python 整理 dtype/layout</strong>
+          <code>kernels_list.get(kid)</code> 取得架构和 kernel 类型；dtype、layout、scale、bias 和 workspace 只做合同校验与参数准备，不重新选 kid。
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step">
+          <strong>4. 进入对应私有启动函数</strong>
+          <div class="branch-grid">
+            <div class="branch-card"><b>A16W16</b><code>gemm_op_a16w16.py::_launch_a16w16()</code></div>
+            <div class="branch-card"><b>A8W8 no-scale</b><code>gemm_op_a8w8.py::_launch_a8w8()</code></div>
+            <div class="branch-card"><b>A8W8 blockscale</b><code>_launch_a8w8_blockscale()</code></div>
+            <div class="branch-card"><b>A8W8 bpreshuffle</b><code>_launch_a8w8_blockscale_bpreshuffle()</code></div>
+            <div class="branch-card"><b>MXFP8 BMM</b><code>_launch_a8w8_mxscale_bmm()</code></div>
+          </div>
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step">
+          <strong>5. Torch 侧完成 framework 工作</strong>
+          上层准备 <code>Y</code>；A16/MXFP8 需要 Split-K workspace 时由 Torch Tensor 提供；Python 完成 shape、device 和调用参数组织。
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step key">
+          <strong>6. C++ 只做 kernel + kid dispatch</strong>
+          对应 raw binding 进入分开的 C++ launch API；<code>opus_gemm.cu</code> 只做启动所需安全检查，并按当前 arch、输出 dtype 和最终 kid 查询 launcher 表，不再执行 shape lookup 或 heuristic。
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-step flow-result">
+          <strong>7. GPU 执行</strong>
+          Generated launcher 最终检查物理 shape/stride/tile 条件后启动 kernel；Split-K 路径可归约到 <code>Y</code>。
+        </div>
+      </article>
     </div>
   </section>
+
+  <section id="files">
+    <h2>3. Task2 改造前与当前最终版本的文件差异</h2>
+    <h3>修改文件</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>文件</th><th>Task2 改造前</th><th>当前最终变化</th></tr></thead>
+        <tbody>
+          <tr class="group-row"><td colspan="3">Python 接口、选核与启动</td></tr>
+          <tr><td><code>aiter/ops/opus/__init__.py</code></td><td>导出 A16 shape/tune、A8 tune 等多个入口，dtype/layout 由调用方提前判断。</td><td>只导出 <code>opus_gemm()</code>；最终 kid 直查 <code>kernels_list</code> 后进入对应私有启动函数。</td></tr>
+          <tr><td><code>aiter/ops/opus/gemm_op_a16w16.py</code></td><td>Python 查一遍 tuned CSV；miss 后调用 generic C++，由 C++ lookup/heuristic 再选一次。</td><td>三架构 heuristic、候选 kid 校验、最终 kid 启动和既有 Torch workspace 路径收敛到本文件；C++ 不再选核。</td></tr>
+          <tr><td><code>aiter/ops/opus/gemm_op_a8w8.py</code></td><td>generic/tune 路径混合 no-scale、blockscale 和 bpreshuffle，scale/layout 合同分散。</td><td>三种原有 A8 改为独立私有启动函数，并在同一文件加入 MXFP8 BMM；每条路径固定 dtype/layout/scale 合同。</td></tr>
+          <tr><td><code>aiter/ops/opus/_arch.py</code></td><td>提供通用 arch 探测。</td><td>统一按显式 device 读取 arch/CU，供各私有启动函数校验最终 kid。</td></tr>
+          <tr><td><code>aiter/tuned_gemm.py</code></td><td>tuned miss 可落入 generic C++ 的 runtime lookup/heuristic。</td><td>在 AITER 上层完成 tuned → Python heuristic → framework fallback；得到 OPUS kid 后才调用统一 public。</td></tr>
+          <tr><td><code>aiter/ops/gemm_op_a8w8.py</code></td><td>OPUS bpreshuffle row 调用旧 tune 接口。</td><td>改为向统一 public 传 <code>Y</code>、kid、layout 和 scale；CK、ASM、CKTile、FlyDSL 等其他 libtype 分支不变。</td></tr>
+          <tr><td><code>aiter/ops/batched_gemm_op_a8w8.py</code></td><td>只有原有 batched GEMM 路径。</td><td>加入 MXFP8 BMM tuned row/padded-M 解析，并把最终全局 kid 传给统一 public。</td></tr>
+          <tr><td><code>aiter/ops/deepgemm.py</code></td><td>保留旧 OPUS A16 compatibility shim。</td><td>删除 OPUS shim，只保留 CK binding。</td></tr>
+
+          <tr class="group-row"><td colspan="3">C++ ABI 与 kid dispatch</td></tr>
+          <tr><td><code>csrc/opus_gemm/include/opus_gemm.h</code><br><code>csrc/opus_gemm/opus_gemm.cu</code></td><td>generic <code>opus_gemm()</code>、旧 tune entry、runtime shape lookup、C++ heuristic 和可选 scale 混在一起。</td><td>拆为 A16、A8 no-scale、A8 blockscale、A8 bpreshuffle 启动入口；只做必要检查并按 arch、输出 dtype 和最终 kid dispatch。</td></tr>
+          <tr><td><code>csrc/include/rocm_ops.hpp</code><br><code>csrc/pybind/opus_gemm_pybind.cu</code></td><td>注册 generic 与旧 A16/A8 tune binding。</td><td>改为参数合同明确的 A16/三种 A8 binding，并增加 MXFP8 BMM binding；这些底层函数不作为 Python public 导出。</td></tr>
+          <tr><td><code>csrc/opus_gemm/include/gfx942/opus_gemm_arch_gfx942.cuh</code><br><code>csrc/opus_gemm/include/gfx950/opus_gemm_arch_gfx950.cuh</code><br><code>csrc/opus_gemm/include/gfx1250/opus_gemm_arch_gfx1250.cuh</code></td><td>包含 runtime shape lookup、tuned miss 分支和 per-arch C++ heuristic；gfx950 也在 C++ 选核。</td><td>改为按 kernel 类型、输出 dtype 和最终 kid 查询 generated launcher 表，不再根据 shape/bias 选择另一个 kid。</td></tr>
+
+          <tr class="group-row"><td colspan="3"><code>kernels_list</code> 与 codegen</td></tr>
+          <tr><td><code>csrc/opus_gemm/opus_gemm_common.py</code></td><td>已有跨架构 kid 段，同时保存供 C++ runtime shape lookup 使用的默认/heuristic 数据。</td><td>保留原 kid 分段与 <code>kernels_list</code>，补充 arch、kernel 类型、输出 dtype、workspace 及 45 个 MXFP8 BMM kid 的查询信息。</td></tr>
+          <tr><td><code>csrc/opus_gemm/gen_instances.py</code><br><code>csrc/opus_gemm/codegen/common.py</code></td><td>把 tuned CSV shape 和默认 heuristic 烘焙为 C++ runtime lookup/tune headers。</td><td>删除 runtime shape lookup 生成，只生成按参数类型和 kid 排列的 launcher 表；继续保证 tuned/heuristic kid 被编译，并加入 BMM dispatch/reducer。</td></tr>
+          <tr><td><code>csrc/opus_gemm/codegen/gen_instances_gfx942.py</code><br><code>csrc/opus_gemm/codegen/gen_instances_gfx950.py</code><br><code>csrc/opus_gemm/codegen/gen_instances_gfx1250.py</code></td><td>生成旧 generic/tune host 入口，dtype/layout 检查不统一。</td><td>生成参数类型明确的 launcher 与物理条件检查；gfx950 同时增加八类 MXFP8 BMM 和 Split-K reduce TU。</td></tr>
+
+          <tr class="group-row"><td colspan="3">A8 / MXFP8 GPU pipeline</td></tr>
+          <tr><td><code>csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_scale_gfx950.cuh</code><br><code>csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh</code><br><code>csrc/opus_gemm/include/gfx950/splitk_reduce_gfx950.cuh</code><br><code>csrc/opus_gemm/include/opus_gemm_utils.cuh</code></td><td>只服务原有 A8 GEMM 和 A16 reduction。</td><td>补充 MXFP8 BMM 共用 layout、traits、参数类型和 direct workspace reduction。</td></tr>
+
+          <tr class="group-row"><td colspan="3">工具与 README</td></tr>
+          <tr><td><code>aiter/jit/optCompilerConfig.json</code></td><td><code>module_deepgemm_opus</code> 只编译原 OPUS GEMM 源码。</td><td>同一模块同时编译 <code>opus_gemm.cu</code> 和 <code>opus_bmm.cu</code>。</td></tr>
+          <tr><td><code>csrc/gemm_a16w16/gemm_a16w16_tune.py</code><br><code>csrc/ck_gemm_a8w8_blockscale/gemm_a8w8_blockscale_tune.py</code><br><code>csrc/opus_gemm/opus_gemm_tune.py</code></td><td>候选 kernel 调用各自旧 tune API。</td><td>创建 <code>Y</code> 后把候选 kid 和对应参数传给统一 public。</td></tr>
+          <tr><td><code>aiter/ops/opus/README.md</code><br><code>csrc/opus_gemm/README.md</code></td><td>说明多个公开 API 和旧 runtime 路由。</td><td>说明唯一 public、五种私有启动路径、<code>kernels_list</code> 和 MXFP8 BMM。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>删除文件</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>删除文件</th><th>Task2 改造前的内容</th><th>当前去向</th></tr></thead>
+        <tbody>
+          <tr><td><code>aiter/ops/opus/common.py</code></td><td>再次扫描 tuned CSV，并保存旧 A16 shape helper。</td><td>tuned row 由 <code>tuned_gemm.py</code> 解析；A16 校验与 heuristic 留在现有 A16 文件。</td></tr>
+          <tr><td><code>csrc/opus_gemm/include/gfx942/opus_gemm_heuristic_dispatch_gfx942.cuh</code><br><code>csrc/opus_gemm/include/gfx950/opus_gemm_heuristic_dispatch_gfx950.cuh</code><br><code>csrc/opus_gemm/include/gfx1250/opus_gemm_heuristic_dispatch_gfx1250.cuh</code></td><td>分别在 C++ 中根据 shape、bias 和输出类型选择 A16 launcher/kid。</td><td>三架构 heuristic 统一放入现有 <code>gemm_op_a16w16.py</code>；C++ 只消费 Python 给出的最终 kid。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>新增文件</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>新增文件</th><th>当前新增内容</th></tr></thead>
+        <tbody>
+          <tr class="group-row"><td colspan="2">MXFP8 BMM 配置与 C++ 入口</td></tr>
+          <tr><td><code>aiter/configs/model_configs/dsv4_batched_gemm_a8w8_blockscale_mxscale_tuned.csv</code></td><td>DSV4 gfx950 tuned rows，使用 8000--8653 范围内的全局 kid。</td></tr>
+          <tr><td><code>csrc/opus_gemm/include/opus_bmm.h</code><br><code>csrc/opus_gemm/opus_bmm.cu</code></td><td>MXFP8 BMM C++ 启动入口、gfx950 检查和最终 kid 分发。</td></tr>
+          <tr class="group-row"><td colspan="2">MXFP8 BMM GPU pipeline</td></tr>
+          <tr><td><code>csrc/opus_gemm/include/gfx950/opus_bmm_launchers_a8w8_mxscale_gfx950.cuh</code><br><code>csrc/opus_gemm/include/gfx950/opus_bmm_pipeline_a8w8_mxscale_gfx950.cuh</code><br><code>csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_flatmm_splitk_gfx950.cuh</code></td><td>PR #4320 的 BMM launcher、专用 pipeline 及 flatmm/fused Split-K 实现。</td></tr>
+          <tr class="group-row"><td colspan="2">MXFP8 BMM tuner</td></tr>
+          <tr><td><code>csrc/opus_gemm/opus_bmm_mxscale_tune.py</code></td><td>枚举 45 个全局 kid，准备 Torch workspace，并输出统一 kid 的 tuned row。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>

@@ -1,291 +1,249 @@
-# OPUS operators
+# OPUS GEMM Python interface
 
-OPUS exposes architecture-specific GEMM and MoE kernels. The GEMM surface is
-family-specific: one a16w16 launch and three A8W8 launches represent four
-different physical contracts.
+OPUS exposes one public GEMM function. The caller resolves the final kernel id
+before the call; OPUS does not select a kernel from the shape.
 
-## Current GEMM capability
+```python
+from aiter.ops.opus import opus_gemm
 
-| Canonical Python API | Current architecture/kid | Contract |
+opus_gemm(
+    XQ,
+    WQ,
+    Y,
+    *,
+    kid,
+    layout="plain",
+    x_scale=None,
+    w_scale=None,
+    bias=None,
+    split_k=0,
+    workspace=None,
+)
+```
+
+`kid` is mandatory. `Y` is also caller-owned and is returned unchanged after
+the launch. The disjoint architecture id bands and the merged `kernels_list`
+already existed in the pre-Task1 baseline. The public entry directly calls
+`kernels_list.get(kid)`; this refactor does not introduce or renumber those
+ids. The returned instance tag plus the dtype/layout arguments determine the
+private family adapter, rather than a second selector or a numeric-range guess.
+
+## Dispatch model
+
+```text
+caller-resolved final kid
+  -> existing kernels_list.get(kid)
+  -> instance arch/tag metadata
+  -> family-local dtype/layout/scale checks
+  -> private family adapter
+  -> exact-kid C++ family table
+```
+
+There is no tuned-CSV lookup, architecture heuristic, redirect, or framework
+fallback inside this exact public path.  The existing high-level A16 caller
+resolves those policies before entering it:
+
+```text
+explicit kid -> exact public launch
+otherwise: tuned CSV -> per-arch private heuristic -> PyTorch fallback
+                              |
+                              +-> final kid -> exact public launch
+```
+
+The three A16 heuristics are private functions in the existing
+`gemm_op_a16w16.py`; no selector or per-architecture Python modules are added.
+Invalid tuned `(kid, split-K)` pairs are discarded together.  Legacy gfx942
+requested-to-actual resolution also happens in the caller, so only the final
+integer id reaches `opus_gemm`.
+
+## Current families
+
+| Registry family | Current route | Python input rules |
 |---|---|---|
-| `opus_gemm_a16w16_launch` | gfx942, gfx950, gfx1250 | BF16 inputs, BF16/FP32 output, optional bias and per-call Torch workspace |
-| `opus_gemm_a8w8_launch` | gfx950 kid 2 | FP8 inputs, FP32 output, no scale |
-| `opus_gemm_a8w8_blockscale_launch` | gfx950 kid 1 | FP8 inputs, FP32 output, plain WQ and two FP32 block scales |
-| `opus_gemm_a8w8_blockscale_bpreshuffle_launch` | gfx942 kid 11000 | FP8 inputs, BF16 output, pre-shuffled WQ and two FP32 block scales |
+| `a16w16` | gfx942, gfx950, gfx1250 | BF16 `XQ/WQ`, BF16 or FP32 `Y`, plain WQ, optional bias/split-K/Torch workspace |
+| `a8w8` | gfx950 kid 2 | FP8 `XQ/WQ`, FP32 `Y`, plain WQ, no scales |
+| `a8w8_blockscale` | gfx950 kid 1 | FP8 `XQ/WQ`, FP32 `Y`, plain WQ, two FP32 scales |
+| `a8w8_blockscale_bpreshuffle` | gfx942 kid 11000 | FP8 `XQ/WQ`, BF16 `Y`, pre-shuffled WQ, two FP32 scales |
+| `a8w8_mxscale_bmm` | gfx950 global kids 8000--8653 (45 registered ids) | FP8 `[M,G,K]` / `[G,N,K]`, E8M0 scales, BF16 or FP32 `[M,G,N]`, optional split-K Torch workspace |
 
-The blockscale-bpreshuffle Python, pybind and C++ symbols also exist on gfx950
-and gfx1250. Their OPUS capability tables are currently empty, so calling that
-API reports that the current architecture has no registered kernel. This does
-not affect the high-level AITER router's CK, CKTile, ASM, FlyDSL, Triton or
-Gluon backends.
+Empty family tables on another architecture are valid capability states. A
+kid registered for another architecture is rejected before family launch.
 
-## a16w16 high-level API
+## Examples
+
+### A16W16
 
 ```python
 import torch
-from aiter.ops.opus import gemm_a16w16_opus
+from aiter.ops.opus import opus_gemm
 
-A = torch.randn(64, 512, device="cuda", dtype=torch.bfloat16)
-B = torch.randn(128, 512, device="cuda", dtype=torch.bfloat16)
+XQ = torch.randn((1, 64, 512), device="cuda", dtype=torch.bfloat16)
+WQ = torch.randn((1, 64, 512), device="cuda", dtype=torch.bfloat16)
+Y = torch.empty((1, 64, 64), device="cuda", dtype=torch.bfloat16)
 
-Y_bf16 = gemm_a16w16_opus(A, B)
-Y_fp32 = gemm_a16w16_opus(A, B, dtype=torch.float32)
+# The caller/tuner has already chosen gfx950 kid 200 and split_k 2.
+opus_gemm(XQ, WQ, Y, kid=200, split_k=2)
 ```
 
-The shape-driven API is:
+The A16 interface takes 3D `[batch,M,K]`, `[batch,N,K]`, and
+`[batch,M,N]` tensors. Inputs are K-contiguous with a dense batch stride; `Y`
+is contiguous. Current gfx1250 kernels require batch one. Exact instances can
+impose additional tile, output dtype, bias, or K-loop constraints.
+
+### gfx950 A8W8 without scales
 
 ```python
-gemm_a16w16_opus(
-    A,
-    B,
-    bias=None,
-    dtype=torch.bfloat16,
-    *,
-    kernelId=None,
-    splitK=None,
-    out=None,
-)
+Y = torch.empty((batch, M, N), device=XQ.device, dtype=torch.float32)
+opus_gemm(XQ, WQ, Y, kid=2)
 ```
 
-Its input rules are:
-
-- `A` is BF16 `[M,K]` or `[batch,M,K]`;
-- `B` is BF16 `[N,K]` for batch one, or a real `[batch,N,K]` allocation;
-- an expanded batch-stride-zero weight is rejected;
-- output is BF16 or FP32 and has shape `[M,N]` or `[batch,M,N]`;
-- `out`, when supplied, must have the exact contiguous output shape;
-- XQ/WQ launch tensors are K-contiguous and may use a padded leading row
-  stride where the launcher passes that stride explicitly;
-- current a16w16 launchers reject odd K, and individual instances may impose
-  stricter tile or prefetch requirements;
-- current gfx1250 a16w16 launchers require batch one.
-
-`kernelId` and `splitK` are compatibility names on this high-level API. An
-explicit request is strict and passes through the same selector legality rules
-as tuned and heuristic choices.
-
-## Canonical family launch APIs
-
-The canonical explicit interfaces use `kid` and `split_k` terminology:
+### gfx950 A8W8 blockscale
 
 ```python
-opus_gemm_a16w16_launch(
-    XQ, WQ, Y, bias=None, *, kid, split_k=0, workspace=None
-)
-
-opus_gemm_a8w8_launch(
-    XQ, WQ, Y, *, kid=2
-)
-
-opus_gemm_a8w8_blockscale_launch(
-    XQ, WQ, Y, x_scale, w_scale, *, kid=1
-)
-
-opus_gemm_a8w8_blockscale_bpreshuffle_launch(
-    XQ, WQ, x_scale, w_scale, Y, *, kid=None
+opus_gemm(
+    XQ,
+    WQ,
+    Y,
+    kid=1,
+    x_scale=x_scale,
+    w_scale=w_scale,
 )
 ```
 
-The a16w16 public explicit and shape-driven paths use a private ctypes C ABI
-binding in the same mixed module as the retained pybind raw endpoint. The C
-ABI forwards to the same canonical checked C++ launcher; it does not duplicate
-selection, dispatch, or workspace validation. It switches to the XQ HIP device
-and live PyTorch stream for the call, restores the previous device/stream, and
-converts C++ exceptions to Python `RuntimeError`. The pybind raw remains an
-internal compatibility and A/B endpoint.
+The group contract is 1x128x128. Scales are contiguous FP32 tensors on the
+input device. Their 3D shapes are `[batch,M,K/128]` and
+`[batch,N/128,K/128]`; batch-one 2D forms are also accepted by the generated
+launcher.
 
-All private raw bindings receive a resolved integer kid. In particular,
-`opus_gemm_a16w16_launch` does not bypass gfx942 requested-to-actual kid
-redirects, and the bpreshuffle wrapper resolves `kid=None` before entering C++.
+### gfx950 MXFP8 BMM
 
-The A8 family adapters cache only immutable metadata: the gfx architecture is
-keyed by the explicit `torch.device`, and successful exact
-`(arch,family,kid,Y.dtype)` capability checks are memoized. Failed capability
-checks are not cached. Tensor objects, data pointers and streams are never
-cached; Tensor type/same-device checks still run on every public call, and the
-C++/generated launcher remains the final physical-contract validator.
+```python
+Y = torch.empty((M, G, N), device=XQ.device, dtype=torch.bfloat16)
+opus_gemm(
+    XQ,                    # [M,G,K], K-contiguous
+    WQ,                    # [G,N,K], K-contiguous
+    Y,
+    kid=8311,              # exact global id; upstream PR #4320 id 311
+    layout="mxscale_bmm",
+    x_scale=x_scale,       # [M,G,K/128], one-byte E8M0
+    w_scale=w_scale,       # [G,N/128,K/128], one-byte E8M0
+    split_k=1,
+)
+```
 
-## Runtime selection policy
+The 45 PR #4320 kernels use global ids `8000 + upstream_kid`; the low digits
+remain recognizable while the ids share the canonical `kernels_list` without
+colliding with existing GEMM ids. `mxfp8_bmm` and `bmm_mxscale` are accepted
+layout aliases. The high-level tuned caller remains in the existing A8W8
+module as `aiter.batched_gemm_a8w8_mxscale`; it resolves the final id and then
+calls this same public entry.
 
-The a16w16 runtime policy lives only in Python:
+### gfx942 blockscale bpreshuffle
+
+```python
+from aiter.ops.shuffle import shuffle_weight
+
+WQ_shuffled = shuffle_weight(WQ, layout=(16, 16))
+opus_gemm(
+    XQ,
+    WQ_shuffled,
+    Y,
+    kid=11000,
+    layout="bpreshuffle",
+    x_scale=x_scale,
+    w_scale=w_scale,
+)
+```
+
+`layout="bpreshuffle"` is a declaration of WQ content, not something Tensor
+shape or strides can prove. Kid 11000 requires batch one, exact 128-wide N/K
+tiles, BF16 output, and its registered scale storage contracts.
+
+## A16 Torch workspace
+
+Workspace ownership is call-scoped and remains in Torch:
 
 ```text
-explicit kid
-  -> OPUS tuned CSV row
-  -> per-architecture Python heuristic
-  -> framework fallback
+validate exact kid and split_k
+  -> derive immutable workspace plan from the exact instance
+  -> reuse caller workspace or torch.empty for this call
+  -> existing pybind wrapper owns normal lazy JIT build
+  -> OPUS-local adapter reuses that module's C ABI on the live stream
 ```
 
-Every successful OPUS choice becomes one `LaunchConfig` containing requested
-and actual kid plus requested, allocation and launch `split_k`. Explicit,
-tuned and heuristic choices all call the same legality function. A stale tuned
-row is discarded atomically with its split value.
+There is no process-global Tensor, pointer registry, HIP allocator, or prewarm
+API. The bounded public-contract and A16 launch-plan caches store only registry
+metadata, integers, dtypes, option-presence flags and shapes; they never retain
+Tensor objects, data pointers, devices, streams or workspaces.
 
-gfx942 resolves legacy BF16-workspace redirects before allocation:
+Let `padded_M=ceil_div(M,B_M)*B_M` and
+`padded_N=ceil_div(N,B_N)*B_N`:
 
-| Requested kid | N outside `{64,128,256,384,512,1024,2048}` |
-|---:|---:|
-| 10210 | actual kid 10200 |
-| 10213 | actual kid 10203 |
-| 10216 | rejected |
+| Architecture/family | Workspace shape | Instance storage |
+|---|---|---|
+| gfx950 two-stage | `[allocation_split_k,batch,padded_M,padded_N]` | FP32 |
+| gfx942 two-stage | `[allocation_split_k,batch,padded_M,padded_N]` | exact BF16/FP32 dtype |
+| gfx1250 two-stage | `[allocation_split_k,padded_M,padded_N]` | BF16 |
+| gfx1250 fused | `[tiles_m,tiles_n,fuse_split_k-1,B_M,B_N]` | exact BF16/FP32 dtype |
 
-The blockscale-bpreshuffle wrapper uses a narrower Python policy:
+An explicit workspace must be on the XQ device, contiguous, 16-byte aligned,
+of the exact instance dtype, and large enough for the final split. A direct
+kid requires `workspace=None`.
 
-```text
-explicit kid
-  -> current-shape tuned row when libtype == "opus"
-  -> per-architecture Python default
-  -> no-registered-kernel error
-```
+gfx942 BF16-workspace kids `10210`, `10213`, and `10216` are exact ids. Their
+registered exact-N contract is `{64,128,256,384,512,1024,2048}`. A different N
+is rejected; the call is never redirected to an FP32-workspace kid.
 
-The current defaults are gfx942 `11000`, gfx950 `None`, and gfx1250 `None`.
-C++ does exact-kid table lookup only; it does not read shape rows or run a
-heuristic.
+## MXFP8 BMM Torch workspace
+
+MXFP8 BMM follows the same ownership rule: Python either uses the caller's
+contiguous FP32 Tensor or creates a call-scoped `torch.empty`; C++ receives a
+direct pointer and never retains it. Two-stage split-K uses
+`split_k * G * padded_M * padded_N` FP32 elements. The fused family stores its
+partials and aligned tile counters in one FP32 Tensor. `split_k == 1` and
+families that do not consume workspace reject a supplied Tensor.
+
+## Graphs and streams
+
+Automatic `torch.empty` during graph capture uses the graph-private pool.
+Concurrent eager calls own independent workspace Tensors. The private C ABI
+switches to the XQ device and live PyTorch stream for the call, restores the
+previous state, and carries C++ errors through a thread-local status bridge.
+The pybind raw remains available privately for the normal lazy JIT build and
+A/B measurement.  The mixed-module ctypes adapter lives entirely in
+`gemm_op_a16w16.py`; generic `aiter/jit/core.py` is unchanged from the
+Task1 baseline.
 
 ## Build-time subset compile
 
-Tuned CSV files still participate at build time. The generator extracts OPUS
-kids from `solidx`/`kernelId` and unions them with the compiled-kids sidecar,
-Python heuristic defaults and mandatory A8 kids. This set controls which
-instances are compiled; CSV shapes are not emitted as C++ runtime policy.
+Tuned CSV and the compiled-kids sidecar are build inputs only. Their valid
+non-BMM OPUS ids are unioned with:
 
-Generated dispatch is written to:
+- `DEFAULT_COMPILED_KIDS_BY_ARCH`, the exact-id compile floor containing every
+  A16 caller-side heuristic result;
+- mandatory A8 ids (`gfx950: {1,2}`, `gfx942: {11000}`).
 
-```text
-opus_gemm_a16w16_kid_dispatch.h
-opus_gemm_a8w8_kid_dispatch.h
-```
+This controls which launchers enter a subset `.so`.  The high-level A16 caller
+may read a tuned row at runtime, but the public/C++ path receives only its
+resolved id. Calling a known non-BMM registry kid that was omitted from a
+subset build produces an uncompiled-id error. A gfx950 build emits all 45
+MXFP8 BMM routes as one deduplicated family so every registered BMM id remains
+exact-routable.
 
-Tables are architecture-, family- and output-dtype-scoped and perform exact
-kid lookup.
+## Migration
 
-## Task1 Torch workspace contract
+The former shape-driven and family-specific Python APIs were removed. Migrate
+by allocating `Y`, resolving the final id in the caller, and calling the one
+entry above. The private family modules intentionally export an empty
+`__all__`.
 
-Workspace ownership is call-scoped and Python/Torch-owned:
+## Source map
 
-```text
-resolve actual kid and split_k
-  -> derive shape/dtype from the canonical instance
-  -> use caller Tensor or torch.empty for this call
-  -> generated launcher validates the final physical contract
-  -> launch
-```
-
-There is no OPUS Tensor cache or raw HIP allocation. Let
-`padded_M=ceil_div(M,B_M)*B_M` and
-`padded_N=ceil_div(N,B_N)*B_N`. Current layouts are:
-
-| Architecture/family | Workspace shape | Workspace dtype | Kids |
-|---|---|---|---:|
-| gfx950 two-stage | `[allocation_split_k, batch, padded_M, padded_N]` | FP32 | 48 |
-| gfx942 two-stage | `[allocation_split_k, batch, padded_M, padded_N]` | exact instance: 3 BF16, 5 FP32 | 8 |
-| gfx1250 two-stage | `[allocation_split_k, padded_M, padded_N]` | BF16 | 496 |
-| gfx1250 fused | `[tiles_m, tiles_n, fuse_split_k - 1, B_M, B_N]` | exact instance: 780 BF16, 598 FP32 | 1378 |
-
-gfx1250 fused is already registered and generated. Its tile-major layout and
-compile-time `fuse_split_k` are not interchangeable with the two-stage
-split-major layout or a runtime CSV split value.
-
-An explicit caller workspace must be on the XQ device, contiguous, aligned,
-of the exact instance dtype, and large enough after the launcher's final
-split clamp. A non-workspace kid requires `workspace=None`. Bias behavior is
-unchanged from Task1:
-
-- bias is contiguous `[N]` or `[batch,N]`;
-- gfx950/gfx942 accept bias only on bias-aware kids;
-- gfx1250 reduce accepts FP32 bias with BF16 Y as well as bias matching Y;
-- unsupported bias is never silently dropped.
-
-## gfx950 A8W8 contracts
-
-### No scale, kid 2
-
-```text
-XQ: FP8 [batch,M,K]
-WQ: FP8 [batch,N,K]
-Y:  FP32 [batch,M,N]
-```
-
-XQ/WQ are K-contiguous and Y is contiguous. The generated launcher verifies
-matching batch/M/N/K and preserves its existing requirements:
-`ceil_div(K,B_K) >= 2`, an even number of K-tile loops, and even K.
-
-### Plain-WQ blockscale, kid 1
-
-This family has no bias or `group_layout` argument. Both scales are mandatory,
-FP32, contiguous and on the XQ device. The group contract is 1x128x128:
-
-```text
-x_scale: [batch,M,K/128]
-w_scale: [batch,N/128,K/128]
-```
-
-For batch one, `[M,K/128]` and `[N/128,K/128]` are accepted. N and K must be
-divisible by 128. The launcher rejects fewer than two K tiles and an odd K-tile
-count before device launch so the pipeline cannot form a negative final tile
-or perform an out-of-range prefetch.
-
-## gfx942 blockscale-bpreshuffle contract
-
-Current kid 11000 accepts 2D tensors or explicit 3D tensors with batch one:
-
-```text
-XQ:      FP8  [M,K] or [1,M,K]
-WQ:      FP8  [N,K] or [1,N,K], already pre-shuffled
-Y:       BF16 [M,N] or [1,M,N]
-x_scale: FP32 [M,K/128], transposed physical scale storage
-w_scale: FP32 [N/128,K/128], row-major
-N % 128 == 0
-K % 128 == 0
-```
-
-All tensors are contiguous and on one device. Crucially, bpreshuffle is a WQ
-content semantic: shape, dtype and strides cannot prove that the bytes were
-actually shuffled. Callers must pass the result of the required weight
-transformation, currently `shuffle_weight(WQ, layout=(16, 16))`. Numerical
-tests compare that real shuffled input against an unshuffled reference weight.
-
-## Compatibility window
-
-Two old Python names remain for one migration window:
-
-- `opus_gemm_a16w16_tune` parses legacy positional arguments and
-  `kernelId`/`splitK`, emits one `DeprecationWarning`, then calls
-  `opus_gemm_a16w16_launch`;
-- `opus_gemm_a8w8_blockscale_bpreshuffle_tune` preserves the gfx942
-  `Y=None, kernelId=11000` behavior, emits one warning, then calls the
-  canonical bpreshuffle launch.
-
-There are no corresponding C++ or pybind compatibility entries.
-`opus_gemm_workspace_init()` is a deprecated Python no-op and is not required
-for graph capture or normal launch.
-
-## Graphs, streams and testing
-
-`torch.empty` during CUDA graph capture uses the graph-private pool, and each
-concurrent stream call owns its workspace Tensor. OPUS keeps no process-global
-scratch pointer.
-
-Focused tests:
-
-```bash
-pytest -q \
-  op_tests/test_opus_interfaces.py \
-  op_tests/test_opus_dispatch.py \
-  op_tests/test_opus_workspace.py \
-  op_tests/test_opus_graph.py \
-  op_tests/test_opus_a16w16_gemm.py
-```
-
-Architecture-gated skips define coverage but are not evidence that another
-GPU architecture passed.
-
-## File map
-
-| Path | Purpose |
+| Path | Role |
 |---|---|
-| `_selector_a16w16.py` | Python runtime policy, redirects and shared legality rules |
-| `heuristics/a16w16_gfx*.py` | Per-architecture Python heuristic implementations |
-| `gemm_op_a16w16.py` | High-level API, canonical launch and direct Task1 workspace allocation |
-| `gemm_op_a8w8.py` | Three canonical A8W8 family wrappers and gfx942 compatibility shim |
-| `../../../csrc/opus_gemm/` | Canonical registry, C++ family routers, codegen, traits and pipelines |
+| `__init__.py` | one public exact-kid router and logical-contract checks |
+| `_arch.py` | per-explicit-device architecture/CU scalar cache |
+| `gemm_op_a16w16.py` | private exact A16 resolver, scalar plan cache, Torch workspace and OPUS-local C ABI adapter |
+| `gemm_op_a8w8.py` | four private exact A8 family adapters, including MXFP8 BMM workspace planning |
+| `../batched_gemm_op_a8w8.py` | MXFP8 BMM tuned-row lookup and high-level caller |
+| `../../../csrc/opus_gemm/` | canonical registry, C++ family launchers, codegen, traits and pipelines |

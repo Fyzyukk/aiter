@@ -29,8 +29,7 @@ from dataclasses import dataclass
 import pytest
 import torch
 
-from aiter.ops.opus._selector_a16w16 import select_launch_config
-from aiter.ops.opus import gemm_op_a16w16 as gemm
+from aiter.ops.opus import gemm_op_a16w16 as gemm, opus_gemm
 from csrc.opus_gemm.opus_gemm_common import (
     get_kernel_instance,
     kernel_needs_external_workspace,
@@ -150,7 +149,7 @@ def _config(case: _Case, XQ: torch.Tensor, out_dtype: torch.dtype):
     instance = case.instance
     device = XQ.device
     props = torch.cuda.get_device_properties(device)
-    return select_launch_config(
+    return gemm._resolve_exact_a16w16_config(
         arch="gfx950",
         M=int(instance.B_M),
         N=int(instance.B_N),
@@ -160,9 +159,8 @@ def _config(case: _Case, XQ: torch.Tensor, out_dtype: torch.dtype):
         has_bias=False,
         input_dtype=torch.bfloat16,
         output_dtype=out_dtype,
-        explicit_kid=case.kid,
-        explicit_split_k=2 if case.needs_workspace else 0,
-        tuned_lookup=lambda **_kwargs: None,
+        kid=case.kid,
+        split_k=2 if case.needs_workspace else 0,
     )
 
 
@@ -203,7 +201,7 @@ def test_every_gfx950_workspace_kid(case: _Case):
         # is freshly produced; reuse cannot accidentally consume stale data.
         workspace.fill_(float("nan"))
         Y = torch.empty((1, M, N), device=XQ.device, dtype=out_dtype)
-        returned = gemm.opus_gemm_a16w16_launch(
+        returned = opus_gemm(
             XQ,
             WQ,
             Y,
@@ -235,7 +233,7 @@ def test_every_gfx950_workspace_kid(case: _Case):
     auto_y = original_empty((1, M, N), device=XQ.device, dtype=torch.bfloat16)
     gemm.torch.empty = tracked_empty
     try:
-        returned = gemm.opus_gemm_a16w16_launch(
+        returned = opus_gemm(
             XQ, WQ, auto_y, kid=case.kid, split_k=2
         )
     finally:
@@ -287,7 +285,7 @@ def test_every_gfx950_non_workspace_kid(case: _Case):
     gemm.torch.empty = unexpected_empty
     try:
         for out_dtype, Y in outputs.items():
-            returned = gemm.opus_gemm_a16w16_launch(
+            returned = opus_gemm(
                 XQ, WQ, Y, kid=case.kid, split_k=0
             )
             assert returned is Y

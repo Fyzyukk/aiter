@@ -1,12 +1,137 @@
 # OPUS split-K Torch 化续接检查点
 
-更新时间：`2026-08-11 13:22 UTC`
+更新时间：`2026-08-13 06:14 UTC`
 
 这是一份短上下文恢复文件。下一次继续工作时先读本文件；需要逐文件历史时再读
 `docs/task1_detail.md`；需要直接比较最初
 `ca68b4f...` C++ 隐式 workspace流程与当前 Torch 管理流程、查看完整45个代码文件端点清单时，
 读 `docs/opus_gemm_splitk_workspace_torch_current_flow_changes.md`。不要重新从对话推导 Step 1
 至 Step 6，也不要把中间 `WorkspacePlan` 版本当成该对比文档的原始基线。
+
+## 当前最新状态：PR #4320 MXFP8 BMM 已接入统一 A8W8 路径（2026-08-13 06:14 UTC）
+
+- 没有新增`aiter/ops/opus/bmm_op.py`。raw binding、exact-kid launcher和Torch workspace计划
+  位于现有`aiter/ops/opus/gemm_op_a8w8.py`；tuned调用方位于现有
+  `aiter/ops/batched_gemm_op_a8w8.py`；唯一public仍为`aiter.ops.opus.opus_gemm`；
+- 45个上游BMM id以`global_kid = 8000 + upstream_kid`加入统一`kernels_list`，总registry为
+  2084项。runtime直接查list并进入private `a8w8_mxscale_bmm` family，不fallback或redirect；
+- BMM split-K workspace由Torch FP32 Tensor持有。two-stage和fused launcher、reduce kernel都接收
+  direct pointer；BMM生产路径不存在workspace handle、内部allocator或隐藏Tensor cache；
+- fresh gfx950 JIT为`/tmp/aiter-pr4320-bmm-fresh2.r7Buc2`，包含140个A16 kid和45个BMM kid；
+  A16重点回归`126 passed, 17 skipped`，A16 exhaustive `140 passed`，BMM的45-kid guard、
+  auto/caller workspace和graph replay全部通过；
+- 接口性能artifact为`/tmp/aiter-pr4320-final-20260813/interfaces_*.log`。相对冻结Task2模块，
+  当前A16 direct/graph分别变化`-0.216%`/`-0.177%`；BMM 18个代表shape的tuned路径相对固定
+  kid 8000累计耗时下降`60.51%`（token-major）和`60.93%`（batch-major）；
+- `aiter/jit/core.py`内容hash仍为`43231ab3cd9ea24caaa6e8535b71455386dbe0f5`。
+
+## 最新接口纠正：直接使用基线已有registry（2026-08-13 04:52 UTC）
+
+- gfx950 `<10000`、gfx942 `10000..19999`、gfx1250 `>=20000`的kid编号段，以及合并后的
+  `kernels_list`，在原始基线`ca68b4f...`中已经存在；不能把它们写成Task2新增能力；
+- 唯一public `opus_gemm`现在直接执行`kernels_list.get(kid)`。后加的`get_kernel_route()`和
+  反向tag map已删除；A16/A8的dtype/layout规则留在现有family文件；
+- 没有新增生产Python文件，`aiter/jit/core.py`仍与`ca68b4f...`零diff；
+- CPU/接口/workspace为`98 passed, 4 skipped`，物理GPU 4 focused为
+  `124 passed, 17 skipped`，gfx950 exhaustive为`140 passed`；
+- 改前两轮与改后三轮逐case median对比：public eager
+  `1496.886513 -> 1497.065125 us`（`+0.011932%`，`48快/48慢`），graph
+  `1113.556335 -> 1114.603673 us`（`+0.094053%`）。判定无性能回退；artifact为
+  `/tmp/aiter-opus-thin-router.ILVqXb`。完整解释见性能计划第13节。
+
+## 当前最终边界：`core.py`零改动、无新增生产interface文件（2026-08-13 04:09 UTC）
+
+这是当前最高优先级状态。Task1仍然是“把OPUS A16W16的Split-K workspace交给Torch
+管理”；caller-resolved exact-kid只是Task1完成后的接口收敛，不是Task1的新定义。
+
+- `aiter/jit/core.py`不承载任何OPUS特例。当前文件与原始Task1基线`ca68b4f...`的blob均为
+  `43231ab3cd9ea24caaa6e8535b71455386dbe0f5`，
+  `git diff --quiet ca68b4f... -- aiter/jit/core.py`退出码为0；
+- 最终没有新增生产Python interface文件。实现只使用已有的
+  `aiter/ops/opus/__init__.py`、`_arch.py`、`gemm_op_a16w16.py`和
+  `gemm_op_a8w8.py`；早期新增的`_selector_a16w16.py`、`common.py`和
+  `heuristics/`下四个文件全部删除。基线等价的gfx942/gfx950/gfx1250 private heuristic已
+  收敛到现有`gemm_op_a16w16.py`，不形成新的public/interface文件；
+- A16上层调用保持`explicit -> tuned CSV -> per-arch heuristic -> PyTorch fallback`；tuned或
+  heuristic得到最终kid后才调用唯一public，public/C++ exact路径不重新选核；
+- mixed pybind/C ABI所需的最小CDLL装载、固定A16参数签名、Tensor descriptor转换和TLS错误
+  读取均局限在已有`gemm_op_a16w16.py`。缓存只保存CDLL/function/ABI helper，不保存Tensor、
+  data pointer、workspace或stream；
+- 首次调用继续走原有private pybind raw，由它完成正常lazy JIT build/rebuild和架构检查；随后
+  从同一个`module_deepgemm_opus.so`装载checked C ABI，后续eager调用走局部C ABI。
+
+已在物理GPU 4用空目录`/tmp/aiter-task1-corefree-fresh.jrkldN`验证完整fresh路径：
+
+- 从零生成并编译41个gfx950 subset kid，成功产出并加载
+  `module_deepgemm_opus.so`；
+- 第一次kid 200、split-K 2调用经pybind构建并通过数值校验，OPUS模块构建/首调约
+  `9.838 s`；
+- 首调后把Python中的pybind raw替换为“调用即失败”的哨兵，第二次调用仍成功并通过数值
+  校验，证明没有回到pybind而是进入局部C ABI；第二次同步wall time约`0.228 ms`；
+- C ABI loader cache为`CacheInfo(hits=1, misses=1, maxsize=1, currsize=1)`。
+
+复用full-kid JIT的最终回归仍为private C ABI `13 passed, 2 skipped`、focused
+`124 passed, 17 skipped`、gfx950 exhaustive `140 passed`。移出`core.py`后的96项性能防回退
+结果为raw eager `1288.246629 us`、public eager `1472.746886 us`、public graph
+`1114.347694 us`；相对移出前同口径分别为`-3.092815%`、`-4.555991%`、`+0.002226%`。
+完整边界、命令口径和性能解释见
+`docs/opus_gemm_next_performance_optimization_plan.md`第12节。
+
+## Caller-resolved exact-kid统一入口已完成（2026-08-13 03:11 UTC）
+
+这是上一阶段的接口检查点；最终文件边界以上一节为准。它取代下方“Task1 public Host性能
+最终闭环”作为接口结论；下方scalar-cache数据继续作为统一入口前的权威历史快照。
+
+- Python公开面只保留`opus_gemm(XQ,WQ,Y,*,kid,...)`，kid必传且Y由调用方持有；
+- public直接读取基线已有的`kernels_list[kid]`；dtype/layout/scale只用于进入和校验对应family，
+  不选核；
+- 已删除selector、common tuned lookup、三架构heuristic、旧family公开wrapper和compat shim；
+- A16 C ABI、C++ family raw、Torch-owned workspace、scalar launch-plan cache和generated checked
+  validator保留；新增public contract cache也只保存registry/dtype/layout/option标量，不保存Tensor；
+- focused在物理GPU 4为`124 passed, 17 skipped`；gfx950 full-140 exhaustive为`140 passed`；
+- 最终同场性能相对最初C++内部workspace：raw eager `-9.307176%`、public eager
+  `-3.237657%`、public graph `-10.557885%`；汇总三项均提升；
+- exact-kid route相对统一前family边界使public eager增加`3.752722%`，因此统一前scalar-cache
+  版本的public收益更大。完整每版本表和artifact SHA见
+  `docs/opus_gemm_next_performance_optimization_plan.md`第11节。
+
+最新性能artifact：
+
+```text
+/tmp/aiter-opus-exactkid-final3-original-source-20260813
+/tmp/aiter-opus-exactkid-final-public-20260813
+/tmp/aiter-opus-exactkid-adjacent-20260813
+```
+
+后续若继续优化，应以统一public为唯一生产口径，针对约`0.621 us/项`的route Host成本建立新的
+相邻ABBA；不得恢复Tensor/pointer/stream/workspace cache，也不得把私有family入口重新公开。
+
+## Task1 public Host性能最终闭环（2026-08-13 02:11 UTC）
+
+这是caller-resolved exact-kid统一前的历史性能检查点。完整实现、逐项性能和日志哈希见
+`docs/opus_gemm_next_performance_optimization_plan.md`第10节；该节取代其中第9.4/9.5节缓存
+实施前的“public eager仍有回退”结论。
+
+- 当前Python路径保留device只读信息缓存和等价layout直写，并新增
+  `@lru_cache(maxsize=256)`纯标量explicit launch-plan缓存；缓存只保存resolved kid、launch
+  split-K和workspace shape/dtype，不保存Tensor、地址、workspace、stream或allocation；
+- 每次调用仍检查live XQ/WQ/Y layout，逐次分配或接收workspace，并进入C++ checked
+  validator；没有恢复prepared launcher、per-stream workspace或Tensor cache；
+- 同源码cache-off/cache-on相邻ABBA表明缓存自身把public eager从
+  `1839.589044`降到`1487.834022 us`（`-19.121391%`），`96/96`项更快；graph仅变化
+  `-0.025667%`且方向混合，证明收益只来自eager Host路径；
+- 物理GPU 4、CPU 68上的最终`A1 -> B1 -> B2 -> A2`覆盖96项。相对最初internal-workspace
+  版本，public eager为`1597.634663 -> 1480.381021 us`（`-7.339202%`），graph replay为
+  `1245.734637 -> 1113.622186 us`（`-10.605184%`），两者均`96/96`项更快；
+- 最终代码在物理GPU 4--7的focused回归为`239 passed, 24 skipped, 0 failed`；gfx950
+  canonical 140-kid exhaustive为`140 passed, 0 failed`；
+- 权威artifact目录为`/tmp/aiter-task1-scalarcache-resume.OYrIey`、
+  `/tmp/aiter-task1-scalarcache-adjacent.ac8xj1`、
+  `/tmp/aiter-task1-scalarcache-regression-resume.D88m6W`和
+  `/tmp/aiter-task1-scalarcache-exhaustive-resume.6KfDGy`。
+
+Task1当前没有待补性能轮次或正确性shard。Phase 2A/2B没有启动；若继续优化，必须建立新的
+相邻版本目标和独立ABBA。工作树修改尚未提交，续接时先审阅diff，不要reset/checkout。
 
 ## workspace launch 性能优化第 2/3 项（实验已回退；2026-08-11 13:22 UTC）
 

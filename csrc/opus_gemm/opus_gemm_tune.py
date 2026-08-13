@@ -23,7 +23,7 @@ from opus_gemm_common import (
     GFX1250_PLAIN_KID_OF,
     GFX1250_SPLITK_FUSE_KID_OF,
     GFX942_BF16WS_EXACT_N,
-    HEURISTIC_DEFAULT_KIDS,
+    DEFAULT_COMPILED_KIDS,
     NON_SPLITK_KIDS,
     SPLITK_KIDS,
     _opus_sidecar_path,
@@ -46,9 +46,7 @@ from opus_gemm_common import (
 )
 
 from aiter import dtypes, logger
-from aiter.ops.opus.gemm_op_a16w16 import (
-    opus_gemm_a16w16_launch as _opus_gemm_a16w16_launch,
-)
+from aiter.ops.opus import opus_gemm as _opus_gemm
 from aiter.utility.base_tuner import INVALID_TIME, GemmCommonTuner
 from aiter.utility.mp_tuner import mp_tuner
 
@@ -838,11 +836,11 @@ def _ensure_kids_compiled(candidate_kids):
 
     Reads the subset-compile sidecar at ``_opus_sidecar_path()`` (lives in
     ``$JIT_BUILD/`` so it survives clear_build). If any kid in
-    ``candidate_kids`` (or in ``HEURISTIC_DEFAULT_KIDS``) is missing from
+    ``candidate_kids`` (or in ``DEFAULT_COMPILED_KIDS``) is missing from
     the sidecar, this function:
 
     1. Atomically expands the sidecar to the union of the existing
-       contents, the new candidates, and the heuristic defaults.
+       contents, the new candidates, and the default compile floor.
     2. Clears the aiter.jit.core in-process module caches and removes
        the on-disk .so so the next ``@compile_ops("module_deepgemm_opus")``
        call rebuilds from scratch (the codegen step re-reads the sidecar).
@@ -887,21 +885,21 @@ def _ensure_kids_compiled(candidate_kids):
         True if a rebuild was triggered (sidecar grew), False if every
         required kid was already compiled.
     """
-    from opus_gemm_common import heuristic_kids_for_arch
+    from opus_gemm_common import default_compiled_kids_for_arch
 
     from aiter.jit import core as _jit_core
     from aiter.jit.utils.file_baton import FileBaton
 
     candidate_kids = frozenset(int(k) for k in candidate_kids)
-    # Restrict the heuristic-default kid set to the running GPU's arch.
+    # Restrict the default compile floor to the running GPU's arch.
     try:
         from aiter.jit.utils.chip_info import get_gfx_runtime
 
         _run_arch = get_gfx_runtime().lower()
-        _heuristic = heuristic_kids_for_arch({_run_arch})
+        _defaults = default_compiled_kids_for_arch({_run_arch})
     except Exception:  # noqa: BLE001
-        _heuristic = HEURISTIC_DEFAULT_KIDS  # unknown -> multi-arch fallback
-    required = candidate_kids | _heuristic
+        _defaults = DEFAULT_COMPILED_KIDS  # unknown -> multi-arch fallback
+    required = candidate_kids | _defaults
 
     def _read_sidecar(path):
         if not os.path.exists(path):
@@ -1228,9 +1226,7 @@ def opus_gemm_ref(XQ, WQ, bias=None, out_dtype=None):
 def run_opus_gemm(XQ, WQ, Y, bias, kernelId, splitK):
     """Launch one eager kid and reject excessive numerical error."""
     _quiet_aiter_logger_once()
-    _opus_gemm_a16w16_launch(
-        XQ, WQ, Y, bias, kid=kernelId, split_k=splitK
-    )
+    _opus_gemm(XQ, WQ, Y, kid=kernelId, bias=bias, split_k=splitK)
     ref = opus_gemm_ref(XQ, WQ, bias, Y.dtype)
     max_delta = (Y.float() - ref.float()).abs().max().item()
     max_ref = ref.float().abs().max().item()
@@ -1273,9 +1269,7 @@ _bench_max_delta_checked = set()  # module-level per-subprocess cache
 def run_opus_gemm_bench(XQ, WQ, Y, bias, kernelId, splitK):
     """Benchmark one kid with a capture-safe, once-per-task accuracy check."""
     _quiet_aiter_logger_once()
-    _opus_gemm_a16w16_launch(
-        XQ, WQ, Y, bias, kid=kernelId, split_k=splitK
-    )
+    _opus_gemm(XQ, WQ, Y, kid=kernelId, bias=bias, split_k=splitK)
 
     capturing = torch.cuda.is_current_stream_capturing()
 
@@ -2117,8 +2111,8 @@ if __name__ == "__main__":
         "  (or --libtype all to tune all backends in one pass).\n"
         "  gradlib writes to aiter/configs/bf16_tuned_gemm.csv (or the\n"
         "  path passed via --tuned_file / GTUNE_TUNED) and stamps every\n"
-        "  opus row with libtype='opus' so the opus runtime dispatch\n"
-        "  picks it up via aiter.ops.opus.common.lookup_tuned().\n"
+        "  opus row with libtype='opus' so aiter.tuned_gemm passes its\n"
+        "  resolved solidx directly to aiter.ops.opus.opus_gemm().\n"
         f"  This script writes to {OPUS_DEBUG_TUNED_CSV} by default and\n"
         "  will not pollute the global aiter/configs/ tree.\n"
         "==============================================================\n"

@@ -322,6 +322,19 @@ namespace py = pybind11;
           py::arg("Y"),                                     \
           py::arg("kid"));
 
+#define OPUS_GEMM_A8W8_MXSCALE_BMM_LAUNCH_PYBIND          \
+    m.def("opus_gemm_a8w8_mxscale_bmm_launch",           \
+          &opus_gemm_a8w8_mxscale_bmm_launch,             \
+          "opus_gemm_a8w8_mxscale_bmm_launch",           \
+          py::arg("XQ"),                                  \
+          py::arg("WQ"),                                  \
+          py::arg("Y"),                                   \
+          py::arg("x_scale"),                             \
+          py::arg("w_scale"),                             \
+          py::arg("workspace"),                           \
+          py::arg("kid"),                                 \
+          py::arg("split_k"));
+
 #define OPUS_MOE_PYBIND                                                            \
     m.def("opus_moe_stage2_a8w4_decode_fwd",                                        \
           &opus_moe_stage2_a8w4_decode_fwd,                                         \

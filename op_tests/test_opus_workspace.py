@@ -24,7 +24,10 @@ from csrc.opus_gemm.opus_gemm_common import (
     kernels_list,
 )
 
-from aiter.ops.opus._selector_a16w16 import LaunchConfig, select_launch_config
+from aiter.ops.opus.gemm_op_a16w16 import (
+    LaunchConfig,
+    _resolve_exact_a16w16_config,
+)
 
 
 def _workspace_config(
@@ -37,10 +40,7 @@ def _workspace_config(
     return LaunchConfig(
         arch=arch,
         family="a16w16",
-        source="explicit",
-        requested_kid=kid,
         actual_kid=kid,
-        requested_split_k=allocation_split_k,
         allocation_split_k=allocation_split_k,
         launch_split_k=launch_split_k,
     )
@@ -267,7 +267,7 @@ def test_gfx1250_fused_codegen_validates_tile_major_exact_dtype_workspace(
 
 
 def test_gfx1250_bf16_workspace_kid_accepts_fp32_output():
-    config = select_launch_config(
+    config = _resolve_exact_a16w16_config(
         arch="gfx1250",
         M=16,
         N=32,
@@ -277,9 +277,8 @@ def test_gfx1250_bf16_workspace_kid_accepts_fp32_output():
         has_bias=False,
         input_dtype=torch.bfloat16,
         output_dtype=torch.float32,
-        explicit_kid=20000,
-        explicit_split_k=2,
-        tuned_lookup=lambda **_kwargs: None,
+        kid=20000,
+        split_k=2,
     )
     assert config.actual_kid == 20000
     assert config.allocation_split_k == 2
@@ -383,11 +382,11 @@ def test_gfx1250_fused_workspace_uses_tile_major_compile_time_layout(
     assert workspace.shape != (runtime_split_k, 32, 64)
 
 
-def test_gfx1250_fused_selector_uses_baked_split_k_not_runtime_value():
+def test_gfx1250_fused_exact_kid_uses_baked_split_k_not_runtime_value():
     kid = GFX1250_SPLITK_FUSE_KID_OF[
         (16, 32, 128, "tileN", 5, 1, "bf16_t")
     ]
-    config = select_launch_config(
+    config = _resolve_exact_a16w16_config(
         arch="gfx1250",
         M=17,
         N=64,
@@ -397,22 +396,19 @@ def test_gfx1250_fused_selector_uses_baked_split_k_not_runtime_value():
         has_bias=False,
         input_dtype=torch.bfloat16,
         output_dtype=torch.float32,
-        explicit_kid=kid,
-        explicit_split_k=2,
-        tuned_lookup=lambda **_kwargs: None,
+        kid=kid,
+        split_k=2,
     )
-    assert config.requested_split_k == 2
     assert config.allocation_split_k == 5
     assert config.launch_split_k == 5
-    assert config.effective_split_k == 5
 
 
-def test_gfx1250_fused_selector_rejects_unrepresentable_public_bias_contract():
+def test_gfx1250_fused_exact_kid_rejects_unrepresentable_public_bias_contract():
     kid = GFX1250_SPLITK_FUSE_KID_OF[
         (16, 32, 128, "tileN", 5, 1, "bf16_t")
     ]
     with pytest.raises(ValueError, match=r"narrower bf16 \[N\] bias contract"):
-        select_launch_config(
+        _resolve_exact_a16w16_config(
             arch="gfx1250",
             M=17,
             N=64,
@@ -422,9 +418,8 @@ def test_gfx1250_fused_selector_rejects_unrepresentable_public_bias_contract():
             has_bias=True,
             input_dtype=torch.bfloat16,
             output_dtype=torch.bfloat16,
-            explicit_kid=kid,
-            explicit_split_k=5,
-            tuned_lookup=lambda **_kwargs: None,
+            kid=kid,
+            split_k=5,
         )
 
 
@@ -502,34 +497,48 @@ def test_non_workspace_a16w16_kids_initialize_no_workspace(arch, kid):
     )
 
 
-def test_gfx942_redirect_workspace_reads_actual_not_requested_kid():
-    config = select_launch_config(
+def test_gfx942_exact_bf16_workspace_kid_is_not_redirected():
+    with pytest.raises(ValueError, match="exact kid 10210 requires N"):
+        _resolve_exact_a16w16_config(
+            arch="gfx942",
+            M=128,
+            N=768,
+            K=4096,
+            batch=1,
+            cu_num=304,
+            has_bias=False,
+            input_dtype=torch.bfloat16,
+            output_dtype=torch.bfloat16,
+            kid=10210,
+            split_k=3,
+        )
+
+    config = _resolve_exact_a16w16_config(
         arch="gfx942",
         M=128,
-        N=768,
+        N=384,
         K=4096,
         batch=1,
         cu_num=304,
         has_bias=False,
         input_dtype=torch.bfloat16,
         output_dtype=torch.bfloat16,
-        explicit_kid=10210,
-        explicit_split_k=3,
-        tuned_lookup=lambda **_kwargs: None,
+        kid=10210,
+        split_k=3,
     )
-    assert (config.requested_kid, config.actual_kid) == (10210, 10200)
+    assert config.actual_kid == 10210
 
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
     XQ = torch.empty((1, 128, 4096), dtype=torch.bfloat16)
-    Y = torch.empty((1, 128, 768), dtype=torch.bfloat16)
+    Y = torch.empty((1, 128, 384), dtype=torch.bfloat16)
     workspace = gemm._init_a16w16_workspace(
         config,
         XQ,
         Y,
     )
     assert workspace is not None
-    assert workspace.dtype == torch.float32
-    assert workspace.shape == (3, 1, 128, 768)
+    assert workspace.dtype == torch.bfloat16
+    assert workspace.shape == (3, 1, 128, 384)
 
 
 def test_gfx1250_workspace_init_rejects_batch_greater_than_one():
@@ -583,9 +592,9 @@ def test_prepared_step5_launch_path_allocates_and_passes_workspace():
 
 def test_production_path_allocates_and_passes_call_scoped_workspace(monkeypatch):
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
-    common = importlib.import_module("aiter.ops.opus.common")
+    opus = importlib.import_module("aiter.ops.opus")
     monkeypatch.setattr(gemm, "_device_arch_and_cu", lambda _device: ("gfx950", 256))
-    monkeypatch.setattr(common, "lookup_tuned", lambda **_kwargs: None)
+    gemm._cached_explicit_a16w16_plan.cache_clear()
 
     calls = []
 
@@ -596,11 +605,16 @@ def test_production_path_allocates_and_passes_call_scoped_workspace(monkeypatch)
 
     monkeypatch.setattr(gemm, "_opus_gemm_a16w16_launch_ctypes_raw", fake_raw)
 
-    output = gemm.gemm_a16w16_opus(
-        torch.empty((65, 512), dtype=torch.bfloat16),
-        torch.empty((33, 512), dtype=torch.bfloat16),
+    XQ = torch.empty((1, 65, 512), dtype=torch.bfloat16)
+    WQ = torch.empty((1, 33, 512), dtype=torch.bfloat16)
+    Y = torch.empty((1, 65, 33), dtype=torch.bfloat16)
+    output = opus.opus_gemm(
+        XQ,
+        WQ,
+        Y,
+        kid=200,
     )
-    assert output.shape == (65, 33)
+    assert output is Y
     assert len(calls) == 1
     XQ, WQ, Y, bias, workspace, kid, split_k = calls[0]
     assert (tuple(XQ.shape), tuple(WQ.shape), tuple(Y.shape)) == (
@@ -641,6 +655,7 @@ def test_split_k_limit_fails_before_torch_empty(monkeypatch):
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
     config = _workspace_config(allocation_split_k=3, launch_split_k=2)
     XQ = torch.empty((1, 64, 128), dtype=torch.bfloat16)
+    WQ = torch.empty((1, 64, 128), dtype=torch.bfloat16)
     Y = torch.empty((1, 64, 64), dtype=torch.bfloat16)
     allocations = 0
 
@@ -654,8 +669,19 @@ def test_split_k_limit_fails_before_torch_empty(monkeypatch):
         gemm._init_a16w16_workspace(config, XQ, Y)
     assert allocations == 0
 
+    raw_calls = []
+    monkeypatch.setattr(
+        gemm, "_device_arch_and_cu", lambda _device: ("gfx950", 256)
+    )
+    gemm._cached_explicit_a16w16_plan.cache_clear()
+    with pytest.raises(ValueError, match="exceeds the per-kid K-tile limit 2"):
+        gemm._explicit_a16w16_launch(
+            lambda *_args: raw_calls.append(_args), XQ, WQ, Y, None, 200, 3
+        )
+    assert raw_calls == []
 
-def test_non_workspace_kid_rejects_explicit_workspace():
+
+def test_non_workspace_kid_rejects_explicit_workspace(monkeypatch):
     gemm = importlib.import_module("aiter.ops.opus.gemm_op_a16w16")
     config = _workspace_config(kid=300, allocation_split_k=1, launch_split_k=0)
     XQ = torch.empty((1, 256, 128), dtype=torch.bfloat16)
@@ -665,6 +691,25 @@ def test_non_workspace_kid_rejects_explicit_workspace():
         gemm._init_a16w16_workspace(
             config, XQ, Y, torch.empty(1, dtype=torch.float32)
         )
+
+    WQ = torch.empty((1, 256, 128), dtype=torch.bfloat16)
+    raw_calls = []
+    monkeypatch.setattr(
+        gemm, "_device_arch_and_cu", lambda _device: ("gfx950", 256)
+    )
+    gemm._cached_explicit_a16w16_plan.cache_clear()
+    with pytest.raises(ValueError, match="does not use an external workspace"):
+        gemm._explicit_a16w16_launch(
+            lambda *_args: raw_calls.append(_args),
+            XQ,
+            WQ,
+            Y,
+            None,
+            300,
+            0,
+            workspace=torch.empty(1, dtype=torch.float32),
+        )
+    assert raw_calls == []
 
 
 def _runtime_arch(device: int | None = None) -> str | None:
@@ -691,7 +736,7 @@ def _make_raw_case(*, kid: int | None = None):
     if kid is not None:
         spec["kid"] = kid
     device = torch.device("cuda", torch.cuda.current_device())
-    config = select_launch_config(
+    config = _resolve_exact_a16w16_config(
         arch=arch,
         M=spec["M"],
         N=spec["N"],
@@ -701,9 +746,8 @@ def _make_raw_case(*, kid: int | None = None):
         has_bias=False,
         input_dtype=torch.bfloat16,
         output_dtype=torch.bfloat16,
-        explicit_kid=spec["kid"],
-        explicit_split_k=spec["split_k"],
-        tuned_lookup=lambda **_kwargs: None,
+        kid=spec["kid"],
+        split_k=spec["split_k"],
     )
     XQ = torch.randn(
         (1, spec["M"], spec["K"]), device=device, dtype=torch.bfloat16

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Isolated Task1/Task2 OPUS interface performance comparison.
+"""Isolated historical Task1, Task2 and current OPUS interface comparison.
 
 Run each endpoint in a fresh process with ``AITER_JIT_DIR`` pointing at the
 matching preserved JIT module.  The benchmark keeps tensors, actual kids and
@@ -11,8 +11,10 @@ split-K fixed and reports four increasingly narrow timing layers:
 * direct pybind with pre-converted ``aiter_tensor_t`` handles;
 * captured graph replay (device work only).
 
-Task1 uses the B0 ABI (``opus_gemm_a16w16_tune`` and generic ``opus_gemm``).
-Task2 uses the four canonical family entries.  No endpoint is rebuilt.
+Task1 uses the B0 ABI (``opus_gemm_a16w16_tune`` and generic C++
+``opus_gemm``). Task2 uses the four family entries. ``current`` adds the one
+Python ``opus_gemm(..., kid=...)`` router over the unchanged family ABI. No
+preserved endpoint is rebuilt.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from torch import Tensor
 
 from aiter import dtypes
 from aiter.jit.core import compile_ops
+from aiter.ops.opus import opus_gemm as current_opus_gemm
 from aiter.ops.opus import gemm_op_a16w16 as a16
 from aiter.ops.opus import gemm_op_a8w8 as a8
 from aiter.utility.dtypes import torch_to_aiter_pybind
@@ -55,7 +58,9 @@ A8_K = 256
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--endpoint", choices=("task1", "task2"), required=True)
+    parser.add_argument(
+        "--endpoint", choices=("task1", "task2", "current"), required=True
+    )
     parser.add_argument("--pass-id", required=True)
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--rounds", type=int, default=9)
@@ -180,7 +185,7 @@ def _task1_explicit(
     batch, M, K = XQ.shape
     N = Y.shape[2]
     arch, cu_num = a16._device_arch_and_cu(XQ.device)
-    config = a16.select_launch_config(
+    config = a16._resolve_exact_a16w16_config(
         arch=arch,
         M=M,
         N=N,
@@ -190,8 +195,8 @@ def _task1_explicit(
         has_bias=False,
         input_dtype=XQ.dtype,
         output_dtype=Y.dtype,
-        explicit_kid=A16_KID,
-        explicit_split_k=A16_SPLIT_K,
+        kid=A16_KID,
+        split_k=A16_SPLIT_K,
     )
     if config.actual_kid != A16_KID:
         raise RuntimeError(f"Task1 explicit kid resolved to {config.actual_kid}")
@@ -303,30 +308,46 @@ class Runner:
                 torch.cuda.synchronize()
                 torch.testing.assert_close(Y.float(), golden, rtol=rtol, atol=atol)
 
-            def high_level() -> Tensor:
-                return a16.gemm_a16w16_opus(
-                    XQ,
-                    WQ,
-                    dtype=dtype,
-                    kernelId=A16_KID,
-                    splitK=A16_SPLIT_K,
-                    out=Y,
-                )
-
             if self.args.endpoint == "task1":
+
+                def high_level() -> Tensor:
+                    return _task1_explicit(raw, XQ, WQ, Y, workspace)
 
                 def explicit() -> Tensor:
                     return _task1_explicit(raw, XQ, WQ, Y, workspace)
 
             else:
 
-                def explicit() -> Tensor:
-                    return a16.opus_gemm_a16w16_launch(
+                def high_level() -> Tensor:
+                    if self.args.endpoint == "current":
+                        return current_opus_gemm(
+                            XQ,
+                            WQ,
+                            Y,
+                            kid=A16_KID,
+                            split_k=A16_SPLIT_K,
+                            workspace=workspace,
+                        )
+                    return a16._explicit_a16w16_launch(
+                        raw,
                         XQ,
                         WQ,
                         Y,
-                        kid=A16_KID,
-                        split_k=A16_SPLIT_K,
+                        None,
+                        A16_KID,
+                        A16_SPLIT_K,
+                        workspace=workspace,
+                    )
+
+                def explicit() -> Tensor:
+                    return a16._explicit_a16w16_launch(
+                        raw,
+                        XQ,
+                        WQ,
+                        Y,
+                        None,
+                        A16_KID,
+                        A16_SPLIT_K,
                         workspace=workspace,
                     )
 
@@ -460,7 +481,9 @@ class Runner:
         else:
 
             def public() -> Tensor:
-                return a8.opus_gemm_a8w8_launch(XQ, WQ, Y, kid=2)
+                if self.args.endpoint == "current":
+                    return current_opus_gemm(XQ, WQ, Y, kid=2)
+                return a8._launch_a8w8(XQ, WQ, Y, kid=2)
 
             def raw_call() -> object:
                 return a8._opus_gemm_a8w8_launch_raw(XQ, WQ, Y, 2)
@@ -553,7 +576,16 @@ class Runner:
         else:
 
             def public() -> Tensor:
-                return a8.opus_gemm_a8w8_blockscale_launch(
+                if self.args.endpoint == "current":
+                    return current_opus_gemm(
+                        XQ,
+                        WQ,
+                        Y,
+                        kid=1,
+                        x_scale=x_scale,
+                        w_scale=w_scale,
+                    )
+                return a8._launch_a8w8_blockscale(
                     XQ, WQ, Y, x_scale, w_scale, kid=1
                 )
 

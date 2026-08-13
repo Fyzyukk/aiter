@@ -15,18 +15,67 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import pathlib
 import statistics
+import sys
 import time
 
+_ROOT = pathlib.Path(
+    os.environ.get(
+        "OPUS_BENCH_SOURCE_ROOT",
+        pathlib.Path(__file__).resolve().parents[1],
+    )
+).resolve()
+sys.path.insert(0, str(_ROOT))
+
 import torch
+from torch import Tensor
 
 import aiter
+from aiter.jit.core import compile_ops
+import aiter.ops.opus as opus_package
 from aiter.ops.opus import gemm_op_a16w16 as gemm
 from csrc.opus_gemm.opus_gemm_common import kernels_list
 
+opus_gemm = getattr(opus_package, "opus_gemm", None)
+
 
 WORKSPACE_KIDS = tuple(range(200, 224)) + tuple(range(1200, 1224))
+
+
+# Historical bindings are declared locally so the current production package
+# does not have to re-export the removed C++-owned workspace API. They resolve
+# only when ``--endpoint baseline`` points AITER_JIT_DIR at the preserved .so.
+if hasattr(gemm, "_opus_gemm_a16w16_tune_raw"):
+    _baseline_a16_raw = gemm._opus_gemm_a16w16_tune_raw
+else:
+
+    @compile_ops(
+        "module_deepgemm_opus",
+        fc_name="opus_gemm_a16w16_tune",
+        develop=True,
+    )
+    def _baseline_a16_raw(
+        XQ: Tensor,
+        WQ: Tensor,
+        Y: Tensor,
+        bias: Tensor | None,
+        kernelId: int,
+        splitK: int,
+    ) -> Tensor: ...
+
+
+if hasattr(gemm, "opus_gemm_workspace_init"):
+    _baseline_workspace_init = gemm.opus_gemm_workspace_init
+else:
+
+    @compile_ops(
+        "module_deepgemm_opus",
+        fc_name="opus_gemm_workspace_init",
+        develop=True,
+    )
+    def _baseline_workspace_init() -> None: ...
 
 
 def _parse_args() -> argparse.Namespace:
@@ -35,8 +84,10 @@ def _parse_args() -> argparse.Namespace:
         "--endpoint",
         choices=(
             "baseline",
+            "baseline-public",
             "current",
             "ctypes",
+            "family",
             "public-pybind",
             "public",
         ),
@@ -51,12 +102,30 @@ def _parse_args() -> argparse.Namespace:
 
 def _launch(endpoint, xq, wq, y, workspace, kid):
     if endpoint == "baseline":
-        gemm._opus_gemm_a16w16_tune_raw(xq, wq, y, None, kid, 2)
+        _baseline_a16_raw(xq, wq, y, None, kid, 2)
+    elif endpoint == "baseline-public":
+        launch = getattr(gemm, "opus_gemm_a16w16_tune", None)
+        if launch is None:
+            raise RuntimeError(
+                "baseline-public requires the original source tree"
+            )
+        launch(xq, wq, y, bias=None, kernelId=kid, splitK=2)
     elif endpoint == "current":
         gemm._opus_gemm_a16w16_launch_raw(xq, wq, y, None, workspace, kid, 2)
     elif endpoint == "ctypes":
         gemm._opus_gemm_a16w16_launch_ctypes_raw(
             xq, wq, y, None, workspace, kid, 2
+        )
+    elif endpoint == "family":
+        # Exact behavior of the former public A16 family wrapper, retained as
+        # an adjacent control after the public surface became one opus_gemm.
+        gemm._launch_a16w16(
+            xq,
+            wq,
+            y,
+            kid=kid,
+            split_k=2,
+            workspace=workspace,
         )
     elif endpoint == "public-pybind":
         gemm._explicit_a16w16_launch(
@@ -70,7 +139,9 @@ def _launch(endpoint, xq, wq, y, workspace, kid):
             workspace=workspace,
         )
     else:
-        gemm.opus_gemm_a16w16_launch(
+        if opus_gemm is None:
+            raise RuntimeError("the selected source tree has no unified opus_gemm")
+        opus_gemm(
             xq,
             wq,
             y,
@@ -137,12 +208,12 @@ def main() -> None:
 
     rows = []
     graph_stream = torch.cuda.Stream()
-    if args.endpoint == "baseline":
+    if args.endpoint in {"baseline", "baseline-public"}:
         # The old endpoint owns a stream-keyed internal workspace.  Register
         # the exact stream eagerly; each case below is also prewarmed on this
         # stream before capture so any required growth happens outside capture.
         with torch.cuda.stream(graph_stream):
-            gemm.opus_gemm_workspace_init()
+            _baseline_workspace_init()
         graph_stream.synchronize()
 
     with torch.inference_mode():
@@ -155,7 +226,7 @@ def main() -> None:
             golden = torch.bmm(xq.float(), wq.float().transpose(1, 2))
             workspace = (
                 None
-                if args.endpoint == "baseline"
+                if args.endpoint in {"baseline", "baseline-public"}
                 else torch.empty((2, 1, m, n), device="cuda", dtype=torch.float32)
             )
 

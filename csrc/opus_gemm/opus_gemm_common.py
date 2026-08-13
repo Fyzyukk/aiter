@@ -87,6 +87,20 @@ class OpusGemmInstance:
     cluster_wg_m: int = 4
     cluster_wg_n: int = 4
 
+    # gfx950 a8w8 MXFP8 BMM compile-time axes.  BMM instances live in the
+    # canonical global kid registry, but their generated symbols share the
+    # ``opus_bmm`` root and a uniform exact-kid launcher signature.
+    direct_only: bool = False
+    prefetch_scale: bool = False
+    fused_reduce: bool = False
+    preload_sf: bool = False
+    skip_scale_wait: bool = False
+    pack_scale_on_demand: bool = False
+    k1024_only: bool = False
+    k1024_lb1: bool = False
+    preload_sf_lds: bool = False
+    name_root: str = "opus_gemm"
+
     # gfx1250 fused single-kernel split-K. SplitK and the N-direction cluster
     # peer count are compile-time kernel properties. The partial storage dtype
     # deliberately uses the shared splitk_workspace_dtype field above so every
@@ -99,7 +113,7 @@ class OpusGemmInstance:
     @property
     def name(self) -> str:
         parts = [
-            "opus_gemm",
+            self.name_root,
             "x".join(map(str, [self.BLOCK_SIZE, self.B_M, self.B_N, self.B_K])),
             "x".join(map(str, [self.T_M, self.T_N])),
             "x".join(map(str, [self.W_M, self.W_N, self.W_K])),
@@ -109,7 +123,52 @@ class OpusGemmInstance:
             parts.insert(1, self.arch_prefix)
         # tag inserts shift right by one slot when arch_prefix is set
         tag_at = 1 + (1 if self.arch_prefix else 0)
-        if self.kernel_tag == "a16w16_flatmm":
+        if self.kernel_tag == "a8w8_mxscale_bmm_flatmm_splitk":
+            parts.insert(tag_at, "a8w8_mxscale_flatmm_splitk")
+            parts.append(f"wgpcu{self.WG_PER_CU}")
+            if self.direct_only:
+                parts.append("selfload")
+            if self.prefetch_scale:
+                parts.append("scaleprefetch")
+            if self.preload_sf:
+                parts.append("sfpreload")
+        elif self.kernel_tag == "a8w8_mxscale_bmm_minterleave":
+            parts.insert(tag_at, "a8w8_mxscale_flatmm_minterleave")
+            parts.append(f"wgpcu{self.WG_PER_CU}")
+            if self.skip_scale_wait:
+                parts.append("skip_scale_wait")
+        elif self.kernel_tag == "a8w8_mxscale_bmm_fused":
+            parts.insert(tag_at, "a8w8_mxscale_flatmm_fused")
+            parts.append(f"wgpcu{self.WG_PER_CU}")
+        elif self.kernel_tag == "a8w8_mxscale_bmm_pipeline":
+            parts.insert(tag_at, "a8w8_mxscale_pipeline")
+            if self.k1024_only:
+                parts.append("k1024")
+            elif self.k1024_lb1:
+                parts.append("k1024lb1")
+            elif self.preload_sf_lds:
+                parts.append("preload_sf")
+        elif self.kernel_tag == "a8w8_mxscale_bmm_mouter":
+            parts.insert(tag_at, "a8w8_mxscale_flatmm_mouter")
+            parts.append(f"wgpcu{self.WG_PER_CU}")
+            if self.skip_scale_wait:
+                parts.append("ssw")
+        elif self.kernel_tag == "a8w8_mxscale_bmm_mouter_tunable":
+            parts.insert(tag_at, "a8w8_mxscale_flatmm_mouter_tunable")
+            parts.append(f"wgpcu{self.WG_PER_CU}")
+            if self.skip_scale_wait:
+                parts.append("ssw")
+        elif self.kernel_tag == "a8w8_mxscale_bmm_wave8n2":
+            parts.insert(tag_at, "a8w8_mxscale_flatmm_wave8n2")
+            parts.append(f"wgpcu{self.WG_PER_CU}")
+        elif self.kernel_tag == "a8w8_mxscale_bmm_wave4m2_selfload":
+            parts.insert(tag_at, "a8w8_mxscale_flatmm_wave4m2_selfload")
+            parts.append(f"wgpcu{self.WG_PER_CU}")
+            if self.skip_scale_wait:
+                parts.append("ssw")
+            if self.pack_scale_on_demand:
+                parts.append("psod")
+        elif self.kernel_tag == "a16w16_flatmm":
             parts.insert(tag_at, "flatmm")
             parts.append(f"wgpcu{self.WG_PER_CU}")
         elif self.kernel_tag == "a16w16_flatmm_splitk":
@@ -166,6 +225,36 @@ class OpusGemmInstance:
         ):
             parts.append(f"cA{self.cachectl_a}cB{self.cachectl_b}")
         return "_".join(parts)
+
+    @property
+    def m_align(self) -> int:
+        """M multiple enforced by the generated launcher (1 means tail-safe)."""
+        mult = _BMM_M_ALIGN_TILES.get(self.kernel_tag)
+        if mult is not None:
+            return self.B_M * mult if mult else 1
+        return 1 if self.has_oob else self.B_M
+
+
+_BMM_M_ALIGN_TILES = {
+    "a8w8_mxscale_bmm_flatmm_splitk": 0,
+    "a8w8_mxscale_bmm_pipeline": 0,
+    "a8w8_mxscale_bmm_fused": 0,
+    "a8w8_mxscale_bmm_minterleave": 2,
+    "a8w8_mxscale_bmm_wave4m2_selfload": 2,
+    "a8w8_mxscale_bmm_wave8n2": 1,
+    "a8w8_mxscale_bmm_mouter": 1,
+    "a8w8_mxscale_bmm_mouter_tunable": 1,
+}
+
+# PR #4320 originally used a private, colliding BMM id namespace.  The current
+# exact-kid router uses one canonical registry, so gfx950 BMM ids occupy the
+# previously empty 8000 band.  The low digits intentionally preserve the
+# upstream id for tuning/debug correlation.
+BMM_MXSCALE_KID_OFFSET = 8000
+
+
+def bmm_mxscale_global_kid(upstream_kid: int) -> int:
+    return BMM_MXSCALE_KID_OFFSET + int(upstream_kid)
 
 
 def _a16w16(bs, bm, bn, bk, tn, wm, wn, wk, has_oob=True, cachectl_a=0, cachectl_b=17):
@@ -263,6 +352,181 @@ def _a16w16_flatmm(bm, bn, bk, wg_per_cu):
 a8w8_scale_kernels_list = {
     1: OpusGemmInstance(512, 256, 256, 128, 4, 2, 16, 16, 128, 16, 16, 4, 1, 128, 128, "a8w8_scale", ["fp32_t"]),
 }
+
+
+def _a8w8_mxscale_bmm_flatmm_splitk(
+    bm, bn, bk, wg_per_cu, direct_only=False, prefetch_scale=False, preload_sf=False
+):
+    t_m, t_n = (1, 2) if bm == 16 else (2, 1)
+    inst = OpusGemmInstance(
+        256, bm, bn, bk, t_m, t_n, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, "a8w8_mxscale_bmm_flatmm_splitk", ["fp32_t"],
+        wg_per_cu, splitk_workspace_dtype="fp32_t",
+    )
+    inst.name_root = "opus_bmm"
+    inst.direct_only = direct_only
+    inst.prefetch_scale = prefetch_scale
+    inst.preload_sf = preload_sf
+    return inst
+
+
+_BMM_MXSCALE_SPLITK_TILES = {
+    316: (16,  32, 256, 2, False, False),
+    317: (16,  32, 256, 2, False, True),
+    318: (16,  32, 128, 2, False, False),
+    319: (16,  32, 256, 4, False, False),
+    314: (16,  32, 512, 2, False, False),
+    313: (16,  64, 256, 2, False, False),
+    312: (16, 128, 256, 1, False, False),
+    311: (16,  32, 512, 2, False, True),
+    321: (32,  32, 256, 2, False, True),
+    323: (32,  32, 128, 2, False, True),
+    320: (64,  32, 256, 2, False, False),
+    322: (64,  32, 256, 1, False, False),
+    640: (32,  64, 256, 2, False, False),
+    642: (32,  64, 256, 1, False, False),
+    646: (32,  64, 256, 2, True,  False),
+    650: (64,  64, 128, 2, False, False),
+    653: (64,  64, 128, 2, False, True),
+    128: (128, 128, 128, 1, False, False),
+    137: (128, 128, 128, 1, False, True),
+    138: (64,  128, 256, 1, False, False),
+    139: (128, 64,  256, 1, False, False),
+    256: (32, 256, 128, 1, False, False),
+    64:  (64, 128, 128, 2, False, False),
+    0:   (32, 128, 128, 2, False, False),
+    32:  (32, 128, 128, 2, False, False),
+}
+_bmm_flatmm_local = {
+    kid: _a8w8_mxscale_bmm_flatmm_splitk(bm, bn, bk, wg, direct, prefetch)
+    for kid, (bm, bn, bk, wg, direct, prefetch) in _BMM_MXSCALE_SPLITK_TILES.items()
+}
+_BMM_MXSCALE_SPLITK_PRELOAD_TILES = {
+    324: (64, 32, 256, 2),
+    325: (128, 128, 128, 1),
+    326: (128, 64, 256, 1),
+    327: (64, 128, 256, 1),
+}
+_bmm_flatmm_local.update({
+    kid: _a8w8_mxscale_bmm_flatmm_splitk(bm, bn, bk, wg, preload_sf=True)
+    for kid, (bm, bn, bk, wg) in _BMM_MXSCALE_SPLITK_PRELOAD_TILES.items()
+})
+
+
+def _a8w8_mxscale_bmm_minterleave(bm, bn, bk, wg_per_cu, skip_scale_wait=False):
+    t_m, t_n = (1, 2) if bm == 16 else (2, 1)
+    inst = OpusGemmInstance(
+        256, bm, bn, bk, t_m, t_n, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, "a8w8_mxscale_bmm_minterleave", ["fp32_t"], wg_per_cu,
+    )
+    inst.name_root = "opus_bmm"
+    inst.skip_scale_wait = skip_scale_wait
+    return inst
+
+
+_bmm_minterleave_local = {
+    162: _a8w8_mxscale_bmm_minterleave(128, 128, 128, 1, False),
+    163: _a8w8_mxscale_bmm_minterleave(128, 128, 128, 1, True),
+}
+
+
+def _a8w8_mxscale_bmm_spec(tag, bm, bn, bk, wg_per_cu, **flags):
+    t_m, t_n = (1, 2) if bm == 16 else (2, 1)
+    inst = OpusGemmInstance(
+        256, bm, bn, bk, t_m, t_n, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, tag, ["fp32_t"], wg_per_cu,
+        splitk_workspace_dtype=("fp32_t" if tag == "a8w8_mxscale_bmm_fused" else None),
+    )
+    inst.name_root = "opus_bmm"
+    for key, value in flags.items():
+        setattr(inst, key, value)
+    return inst
+
+
+_bmm_fused_local = {
+    100: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_fused", 32, 128, 128, 2),
+}
+
+
+def _a8w8_mxscale_bmm_pipeline(**flags):
+    inst = OpusGemmInstance(
+        512, 256, 256, 128, 2, 1, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, "a8w8_mxscale_bmm_pipeline", ["fp32_t"], 1,
+    )
+    inst.name_root = "opus_bmm"
+    for key, value in flags.items():
+        setattr(inst, key, value)
+    return inst
+
+
+_bmm_pipeline_local = {
+    149: _a8w8_mxscale_bmm_pipeline(B_M=128),
+    150: _a8w8_mxscale_bmm_pipeline(),
+    151: _a8w8_mxscale_bmm_pipeline(k1024_only=True),
+    152: _a8w8_mxscale_bmm_pipeline(k1024_lb1=True),
+    158: _a8w8_mxscale_bmm_pipeline(preload_sf_lds=True),
+}
+_bmm_mouter_local = {
+    131: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_mouter", 128, 128, 128, 1),
+    144: _a8w8_mxscale_bmm_spec(
+        "a8w8_mxscale_bmm_mouter", 128, 128, 128, 1, skip_scale_wait=True
+    ),
+}
+_bmm_mouter_tunable_local = {
+    160: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_mouter_tunable", 128, 128, 128, 1),
+    161: _a8w8_mxscale_bmm_spec(
+        "a8w8_mxscale_bmm_mouter_tunable", 128, 128, 128, 1,
+        skip_scale_wait=True,
+    ),
+}
+_bmm_wave8n2_local = {
+    132: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_wave8n2", 128, 128, 128, 1),
+}
+_BMM_WAVE4M2_TILES = {
+    134: (False, False),
+    142: (True, False),
+    148: (True, True),
+}
+_bmm_wave4m2_local = {
+    kid: _a8w8_mxscale_bmm_spec(
+        "a8w8_mxscale_bmm_wave4m2_selfload", 128, 128, 128, 1,
+        skip_scale_wait=skip, pack_scale_on_demand=pack,
+    )
+    for kid, (skip, pack) in _BMM_WAVE4M2_TILES.items()
+}
+
+
+def _globalize_bmm_kids(kernels):
+    return {bmm_mxscale_global_kid(kid): inst for kid, inst in kernels.items()}
+
+
+a8w8_mxscale_bmm_flatmm_splitk_kernels_list = _globalize_bmm_kids(_bmm_flatmm_local)
+a8w8_mxscale_bmm_fused_kernels_list = _globalize_bmm_kids(_bmm_fused_local)
+a8w8_mxscale_bmm_minterleave_kernels_list = _globalize_bmm_kids(_bmm_minterleave_local)
+a8w8_mxscale_bmm_mouter_kernels_list = _globalize_bmm_kids(_bmm_mouter_local)
+a8w8_mxscale_bmm_mouter_tunable_kernels_list = _globalize_bmm_kids(
+    _bmm_mouter_tunable_local
+)
+a8w8_mxscale_bmm_pipeline_kernels_list = _globalize_bmm_kids(_bmm_pipeline_local)
+a8w8_mxscale_bmm_wave8n2_kernels_list = _globalize_bmm_kids(_bmm_wave8n2_local)
+a8w8_mxscale_bmm_wave4m2_selfload_kernels_list = _globalize_bmm_kids(
+    _bmm_wave4m2_local
+)
+a8w8_mxscale_bmm_kernel_lists = (
+    a8w8_mxscale_bmm_flatmm_splitk_kernels_list,
+    a8w8_mxscale_bmm_fused_kernels_list,
+    a8w8_mxscale_bmm_minterleave_kernels_list,
+    a8w8_mxscale_bmm_mouter_kernels_list,
+    a8w8_mxscale_bmm_mouter_tunable_kernels_list,
+    a8w8_mxscale_bmm_pipeline_kernels_list,
+    a8w8_mxscale_bmm_wave8n2_kernels_list,
+    a8w8_mxscale_bmm_wave4m2_selfload_kernels_list,
+)
+BMM_MXSCALE_KIDS = frozenset(
+    kid for family in a8w8_mxscale_bmm_kernel_lists for kid in family
+)
+assert len(BMM_MXSCALE_KIDS) == sum(map(len, a8w8_mxscale_bmm_kernel_lists))
+
 
 a8w8_kernels_list = {
     2: OpusGemmInstance(512, 256, 256, 128, 2, 4, 16, 16, 128, 16, 16, 4, 0, 0, 0, "a8w8", ["fp32_t"]),
@@ -1154,10 +1418,19 @@ assert sum(
     for kernels in gfx1250_splitk_fuse_kernels_list.values()
 ) == 598
 
+# Flatten the eight BMM launcher tags into the same canonical exact-kid
+# registry used by every other OPUS family.
+a8w8_mxscale_bmm_kernels_list = {
+    kid: instance
+    for family in a8w8_mxscale_bmm_kernel_lists
+    for kid, instance in family.items()
+}
+
 # combined list (used by production gen_instances / dispatch)
 kernels_list = {
     **a8w8_scale_kernels_list,
     **a8w8_kernels_list,
+    **a8w8_mxscale_bmm_kernels_list,
     **a16w16_kernels_list,
     **a16w16_kernels_list_nooob,
     **a16w16_kernels_list_cpol,
@@ -1194,6 +1467,18 @@ SPLITK_KIDS = (
     | frozenset(gfx1250_kernels_list.keys())
     | frozenset(gfx1250_clusterlaunch_kernels_list.keys())
     | frozenset(gfx1250_splitk_fuse_kernels_list.keys())
+)
+
+BMM_MXSCALE_WORKSPACE_TAGS = frozenset(
+    {
+        "a8w8_mxscale_bmm_flatmm_splitk",
+        "a8w8_mxscale_bmm_fused",
+    }
+)
+BMM_MXSCALE_WORKSPACE_KIDS = frozenset(
+    kid
+    for kid, instance in a8w8_mxscale_bmm_kernels_list.items()
+    if instance.kernel_tag in BMM_MXSCALE_WORKSPACE_TAGS and not instance.direct_only
 )
 
 _SUPPORTED_SPLITK_WORKSPACE_DTYPES = frozenset({"bf16_t", "fp32_t"})
@@ -1254,9 +1539,10 @@ BIAS_AWARE_KIDS = (
     | SPLITK_KIDS
 )
 
-# Python heuristic-default kids. These remain force-compiled even though C++
-# no longer performs runtime shape selection.
-HEURISTIC_DEFAULT_KIDS_GFX950 = frozenset(
+# Exact-id kernels kept in every default build.  The high-level A16 caller-side
+# heuristics below the tuned lookup are constrained to these ids; the unified
+# public/C++ launch path still receives one already-resolved exact kid.
+DEFAULT_COMPILED_KIDS_GFX950 = frozenset(
     {
         # splitk fallback (small M / non-aligned big M)
         200,
@@ -1271,9 +1557,9 @@ HEURISTIC_DEFAULT_KIDS_GFX950 = frozenset(
     }
 )
 
-HEURISTIC_DEFAULT_KIDS_GFX942 = frozenset(
+DEFAULT_COMPILED_KIDS_GFX942 = frozenset(
     {
-        # gfx942 Python heuristic fallbacks.
+        # Representative exact-id launchers kept in default gfx942 builds.
         10000,  # gfx942 split-barrier    512x128x128x64 16x16x16 (large problem)
         10001,  # gfx942 p1               256x64x64x64
         10003,  # gfx942 p1_bk128         256x64x64x128
@@ -1292,11 +1578,11 @@ HEURISTIC_DEFAULT_KIDS_GFX942 = frozenset(
     }
 )
 
-# Only kids the gfx1250 Python heuristic can return are force-compiled as its
-# always-available defaults. Every other plain kid and all clusterlaunch kids
-# are compiled on demand by the tuner (candidate selection + sidecar
-# expansion), so default builds stay small.
-HEURISTIC_DEFAULT_KIDS_GFX1250 = frozenset(
+# Keep six representative gfx1250 exact-id launchers in default builds. Every
+# other plain kid and all clusterlaunch kids are compiled on demand by the
+# tuner (candidate selection + sidecar expansion), so default builds stay
+# small.
+DEFAULT_COMPILED_KIDS_GFX1250 = frozenset(
     GFX1250_PLAIN_KID_OF[_t]
     for _t in (
         (16, 32, 128),
@@ -1308,27 +1594,27 @@ HEURISTIC_DEFAULT_KIDS_GFX1250 = frozenset(
     )
 )
 
-HEURISTIC_DEFAULT_KIDS = (
-    HEURISTIC_DEFAULT_KIDS_GFX950
-    | HEURISTIC_DEFAULT_KIDS_GFX942
-    | HEURISTIC_DEFAULT_KIDS_GFX1250
+DEFAULT_COMPILED_KIDS = (
+    DEFAULT_COMPILED_KIDS_GFX950
+    | DEFAULT_COMPILED_KIDS_GFX942
+    | DEFAULT_COMPILED_KIDS_GFX1250
 )
 
-HEURISTIC_DEFAULT_KIDS_BY_ARCH = {
-    "gfx950": HEURISTIC_DEFAULT_KIDS_GFX950,
-    "gfx942": HEURISTIC_DEFAULT_KIDS_GFX942,
-    "gfx1250": HEURISTIC_DEFAULT_KIDS_GFX1250,
+DEFAULT_COMPILED_KIDS_BY_ARCH = {
+    "gfx950": DEFAULT_COMPILED_KIDS_GFX950,
+    "gfx942": DEFAULT_COMPILED_KIDS_GFX942,
+    "gfx1250": DEFAULT_COMPILED_KIDS_GFX1250,
 }
 
 
-def heuristic_kids_for_arch(arches):
-    """Return heuristic default kids for the requested architectures."""
+def default_compiled_kids_for_arch(arches):
+    """Return the default exact-id compile floor for requested arches."""
     if arches is None:
-        return HEURISTIC_DEFAULT_KIDS
+        return DEFAULT_COMPILED_KIDS
     arches = {a.lower() for a in arches}
     out = frozenset()
     for arch in arches:
-        out = out | HEURISTIC_DEFAULT_KIDS_BY_ARCH.get(arch, frozenset())
+        out = out | DEFAULT_COMPILED_KIDS_BY_ARCH.get(arch, frozenset())
     return out
 
 
@@ -1347,6 +1633,18 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
         ),
         "a8w8": frozenset({"a8w8"}),
         "a8w8_blockscale": frozenset({"a8w8_scale"}),
+        "a8w8_mxscale_bmm": frozenset(
+            {
+                "a8w8_mxscale_bmm_flatmm_splitk",
+                "a8w8_mxscale_bmm_fused",
+                "a8w8_mxscale_bmm_minterleave",
+                "a8w8_mxscale_bmm_mouter",
+                "a8w8_mxscale_bmm_mouter_tunable",
+                "a8w8_mxscale_bmm_pipeline",
+                "a8w8_mxscale_bmm_wave8n2",
+                "a8w8_mxscale_bmm_wave4m2_selfload",
+            }
+        ),
         "a8w8_blockscale_bpreshuffle": frozenset(),
     },
     "gfx942": {
@@ -1367,6 +1665,7 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
         ),
         "a8w8": frozenset(),
         "a8w8_blockscale": frozenset(),
+        "a8w8_mxscale_bmm": frozenset(),
         "a8w8_blockscale_bpreshuffle": frozenset(
             {"a8w8_blockscale_bpreshuffle_singlebuf"}
         ),
@@ -1381,6 +1680,7 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
         ),
         "a8w8": frozenset(),
         "a8w8_blockscale": frozenset(),
+        "a8w8_mxscale_bmm": frozenset(),
         "a8w8_blockscale_bpreshuffle": frozenset(),
     },
 }
@@ -1445,7 +1745,11 @@ def get_kernel_instance(
             and kid in SPLITK_KIDS
             and dtype in {"bf16_t", "fp32_t"}
         )
-        if not workspace_a16_output:
+        runtime_typed_bmm_output = (
+            family == "a8w8_mxscale_bmm"
+            and dtype in {"bf16_t", "fp32_t"}
+        )
+        if not (workspace_a16_output or runtime_typed_bmm_output):
             return None
     return instance
 
