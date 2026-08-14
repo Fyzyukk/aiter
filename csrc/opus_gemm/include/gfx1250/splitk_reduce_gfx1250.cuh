@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// gfx1250 split-K reduce kernel: tile-agnostic; sums an fp32 workspace across
-// the split-K axis, folds an optional per-N bias once, casts fp32 -> D_OUT,
-// and writes C. The body mirrors gfx950/splitk_reduce_gfx950.cuh (same
-// ws_handle ABI), but the kernel is given a DISTINCT name
+// gfx1250 split-K reduce kernel: tile-agnostic; reads a per-kid bf16/fp32
+// workspace across the split-K axis, re-accumulates in fp32, folds an optional
+// per-N bias once, casts fp32 -> D_OUT, and writes C. The body mirrors
+// gfx950/splitk_reduce_gfx950.cuh (same
+// direct-pointer ABI), but the kernel is given a DISTINCT name
 // (splitk_reduce_kernel_gfx1250) so the explicit instantiations do NOT collide
-// with gfx950's identically-signatured splitk_reduce_kernel<ws_handle*> in a
+// with gfx950's identically-signatured splitk_reduce_kernel<const void*> in a
 // multi-arch build (same mangled name + same ABI would be a duplicate symbol).
 //
-// The reduce path uses no WMMA -- on wave32 BLOCK=64 is simply 2 waves of
-// vectorized fp32 loads / adds / casts, identical to the gfx950 body.
+// The reduce path uses no WMMA. fp32-workspace launchers use VEC=16/BLOCK=64;
+// bf16-workspace launchers use VEC=8/BLOCK=128, matching the #4246 path.
 //
-// Grid: (ceil(N, VEC * BLOCK), batch * M, 1); all launchers use VEC=16, BLOCK=64.
+// Grid: (ceil(N, VEC * BLOCK), batch * M, 1).
 #pragma once
 
 #include "../opus_gemm_utils.cuh"
-#include "opus_gemm_traits_a16w16_gfx1250.cuh"  // opus_splitk_ws_handle
 #include <cstdint>
 
 template<int VEC_ = 16, int BLOCK_ = 64, typename D_OUT = __bf16,
          bool HAS_BIAS_ = false, typename D_BIAS_ = D_OUT,
-         bool HAS_OOB_ = true>
+         bool HAS_OOB_ = true, typename D_WS_ = float>
 __global__ void splitk_reduce_kernel_gfx1250(
-    const opus_splitk_ws_handle* __restrict__ ws_handle,
+    const void* __restrict__ ws_ptr,
     D_OUT*       __restrict__ c_out,
     int split_k, int M, int N, int batch,
     int padded_M, int padded_N,
@@ -32,8 +32,9 @@ __global__ void splitk_reduce_kernel_gfx1250(
 {
 #ifdef __HIP_DEVICE_COMPILE__
 #if defined(__gfx1250__)
-    const float* __restrict__ workspace =
-        reinterpret_cast<const float*>(ws_handle->ptr);
+    using D_WS = D_WS_;
+    const D_WS* __restrict__ workspace =
+        reinterpret_cast<const D_WS*>(ws_ptr);
     constexpr int VEC   = VEC_;
     constexpr int BLOCK = BLOCK_;
     constexpr bool HAS_BIAS = HAS_BIAS_;
@@ -45,8 +46,12 @@ __global__ void splitk_reduce_kernel_gfx1250(
                   "D_OUT must divide a 128-bit store boundary cleanly (2B / 4B)");
     static_assert(VEC % STEP == 0,
                   "VEC must be a multiple of STEP so the fast path tiles into whole dwordx4 stores");
+    static_assert(VEC == 8 || VEC == 16,
+                  "splitk_reduce tail decomposition supports VEC=8 or VEC=16");
     static_assert(!HAS_BIAS || sizeof(D_BIAS) == 2 || sizeof(D_BIAS) == 4,
                   "splitk_reduce HAS_BIAS path supports only 2B or 4B D_BIAS (bf16 / fp32)");
+    static_assert(sizeof(D_WS) == 2 || sizeof(D_WS) == 4,
+                  "splitk_reduce D_WS supports only bf16 or fp32 storage");
 
     const int bm_id  = int(opus::block_id_y());
     const int nblk   = int(opus::block_id_x());
@@ -76,7 +81,7 @@ __global__ void splitk_reduce_kernel_gfx1250(
     const long split_stride = (long)batch * padded_M * padded_N;
 
     auto g_ws = opus::make_gmem(workspace,
-                                (unsigned int)(split_stride * split_k * sizeof(float)));
+                                (unsigned int)(split_stride * split_k * sizeof(D_WS)));
 
     opus::vector_t<float, VEC> acc;
     #pragma unroll
@@ -88,7 +93,8 @@ __global__ void splitk_reduce_kernel_gfx1250(
         for (int g = 0; g < VEC / 4; ++g) {
             auto v4 = g_ws.template load<4>(ws_idx + g * 4);
             #pragma unroll
-            for (int j = 0; j < 4; ++j) acc[g * 4 + j] += v4[j];
+            for (int j = 0; j < 4; ++j)
+                acc[g * 4 + j] += static_cast<float>(v4[j]);
         }
     }
 
@@ -111,25 +117,33 @@ __global__ void splitk_reduce_kernel_gfx1250(
 #define OPUS_REDUCE_ST2(OFF) g_c.template store<2>(slice(out, number<OFF>{}, number<OFF+2>{}), c_idx + (OFF))
 #define OPUS_REDUCE_ST1(OFF) g_c.template store<1>(out[OFF], c_idx + (OFF))
 
+    auto store_full = [&]() {
+        opus::static_for<VEC / STEP>([&](auto g_c_idx) {
+            constexpr int g = decltype(g_c_idx)::value;
+            g_c.template store<STEP>(
+                slice(out, number<g * STEP>{}, number<(g + 1) * STEP>{}),
+                c_idx + g * STEP);
+        });
+    };
+
     if constexpr (!HAS_OOB) {
-        if (n_base + VEC <= N) {
-            opus::static_for<VEC / STEP>([&](auto g_c_idx) {
-                constexpr int g = decltype(g_c_idx)::value;
-                g_c.template store<STEP>(
-                    slice(out, number<g * STEP>{}, number<(g + 1) * STEP>{}), c_idx + g * STEP);
-            });
-        }
+        if (n_base + VEC <= N) store_full();
     } else {
         if (n_base + VEC <= N) {
-            opus::static_for<VEC / STEP>([&](auto g_c_idx) {
-                constexpr int g = decltype(g_c_idx)::value;
-                g_c.template store<STEP>(
-                    slice(out, number<g * STEP>{}, number<(g + 1) * STEP>{}), c_idx + g * STEP);
-            });
+            store_full();
         } else if (n_base < N) {
-            static_assert(VEC == 16, "reduce tail switch assumes VEC=16");
             const int valid = N - n_base;
-            if constexpr (sizeof(D_OUT) == 2) {
+            if constexpr (VEC == 8) {
+                switch (valid) {
+                    case 1: OPUS_REDUCE_ST1(0); break;
+                    case 2: OPUS_REDUCE_ST2(0); break;
+                    case 3: OPUS_REDUCE_ST2(0); OPUS_REDUCE_ST1(2); break;
+                    case 4: OPUS_REDUCE_ST4(0); break;
+                    case 5: OPUS_REDUCE_ST4(0); OPUS_REDUCE_ST1(4); break;
+                    case 6: OPUS_REDUCE_ST4(0); OPUS_REDUCE_ST2(4); break;
+                    case 7: OPUS_REDUCE_ST4(0); OPUS_REDUCE_ST2(4); OPUS_REDUCE_ST1(6); break;
+                }
+            } else if constexpr (sizeof(D_OUT) == 2) {
                 switch (valid) {
                     case  1: OPUS_REDUCE_ST1( 0); break;
                     case  2: OPUS_REDUCE_ST2( 0); break;
@@ -173,7 +187,7 @@ __global__ void splitk_reduce_kernel_gfx1250(
 #undef OPUS_REDUCE_ST2
 #undef OPUS_REDUCE_ST1
 #else
-    (void)ws_handle; (void)c_out; (void)split_k; (void)M; (void)N; (void)batch;
+    (void)ws_ptr; (void)c_out; (void)split_k; (void)M; (void)N; (void)batch;
     (void)padded_M; (void)padded_N; (void)bias; (void)bias_stride_batch;
 #endif  // __gfx1250__
 #endif  // __HIP_DEVICE_COMPILE__

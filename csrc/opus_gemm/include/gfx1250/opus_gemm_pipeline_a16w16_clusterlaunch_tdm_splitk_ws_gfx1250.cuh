@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// gfx1250 bf16 TDM a16w16 GEMM, 4-wave split-K via fp32 workspace + separate
-// reduce kernel -- CLUSTER-LAUNCH variant.  C[M,N] = A[M,K] @ B[N,K]^T (+ bias).
+// gfx1250 bf16 TDM a16w16 GEMM, 4-wave split-K via per-kid bf16/fp32 workspace
+// + separate reduce kernel -- CLUSTER-LAUNCH variant.
+// C[M,N] = A[M,K] @ B[N,K]^T (+ bias).
 //
 // CLUSTER (kClusterWgM x kClusterWgN x 1) = a CWGM x CWGN grid of workgroups that
 // co-reside and share TDM loads via CLUSTER_LOAD_ASYNC multicast (MI400 SPG
@@ -74,6 +75,7 @@ void gemm_a16w16_clusterlaunch_tdm_splitk_ws_kernel_gfx1250(opus_gemm_cluster_td
     using T = remove_cvref_t<UserTraits>;
     using DataA = typename T::DataA;
     using DataB = typename T::DataB;
+    using DataWS = typename T::DataWS;
     using DataAcc = typename T::DataAcc;
     DECLARE_NAMED_BARRIERS();   // __nbar_1..__nbar_15 (we use 1..2*kNumSlots <= 6)
 
@@ -448,16 +450,16 @@ void gemm_a16w16_clusterlaunch_tdm_splitk_ws_kernel_gfx1250(opus_gemm_cluster_td
     if (wave_split == 0) run(opus::true_type{});
     else                 run(opus::false_type{});
 
-    // ---- Plain store the fp32 partial into ws[split_idx][padded_m][padded_n]. ----
+    // ---- Store the partial into ws[split_idx][padded_m][padded_n]. ----
     // bias is folded once by the reduce kernel (not here).
-    constexpr int kCVec = T::kCVec;   // 4 (fp32 dwordx4)
-    DataAcc* ws_ptr = reinterpret_cast<DataAcc*>(kargs.ws_handle->ptr);
+    constexpr int kCVec = T::kCVec;
+    DataWS* ws_ptr = reinterpret_cast<DataWS*>(kargs.ptr_ws);
     const size_t ws_split = (size_t)split_idx * (size_t)kargs.stride_ws_batch;
     const size_t ws_base  = ws_split + (size_t)tile_row * (size_t)kargs.stride_ws + (size_t)tile_col;
     const unsigned int ws_bytes =
         (unsigned int)(((size_t)kargs.stride_ws_batch
-                        - ((size_t)tile_row * kargs.stride_ws + tile_col)) * sizeof(DataAcc));
-    auto g_ws = make_gmem<DataAcc>(ws_ptr + ws_base, ws_bytes);
+                        - ((size_t)tile_row * kargs.stride_ws + tile_col)) * sizeof(DataWS));
+    auto g_ws = make_gmem<DataWS>(ws_ptr + ws_base, ws_bytes);
     auto u_gc = partition_layout_c<kCVec>(mma, opus::make_tuple((int)kargs.stride_ws, 1_I),
                     opus::make_tuple(wave_m, lane_id % mma.grpn_c, wave_n, lane_id / mma.grpn_c));
     // Consumer epilogue: rendezvous with the producers (all 4 waves) BEFORE the
@@ -470,7 +472,8 @@ void gemm_a16w16_clusterlaunch_tdm_splitk_ws_kernel_gfx1250(opus_gemm_cluster_td
     const int padded_n = kargs.stride_ws;
     const int padded_m = (kargs.stride_ws != 0) ? (int)(kargs.stride_ws_batch / kargs.stride_ws) : 0;
     if (tile_row < padded_m && tile_col < padded_n) {
-        store<kCVec>(g_ws, reg_c, u_gc, 0);
+        auto reg_c_ws = opus::cast<DataWS>(reg_c);
+        store<kCVec>(g_ws, reg_c_ws, u_gc, 0);
     }
 
     // Consumer epilogue: rendezvous with the producers (matches the producer's
