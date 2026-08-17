@@ -21,6 +21,7 @@ from opus_gemm_common import (
     BIAS_AWARE_KIDS,
     GFX1250_CLUSTERLAUNCH_KID_OF,
     GFX1250_PLAIN_KID_OF,
+    GFX1250_SPLITK_FUSE_ENABLED,
     GFX1250_SPLITK_FUSE_KID_OF,
     GFX942_BF16WS_EXACT_N,
     DEFAULT_COMPILED_KIDS,
@@ -165,7 +166,7 @@ def gfx1250_splitK_window(M, N, K, cu_num, k_inst, base_candidates):
 
 GFX1250_FUSE_TOP_SPLITK = 3
 GFX1250_FUSE_MAX_SPLITK = max(
-    key[4] for key in GFX1250_SPLITK_FUSE_KID_OF
+    (key[4] for key in GFX1250_SPLITK_FUSE_KID_OF), default=0
 )
 
 
@@ -237,7 +238,7 @@ def _gfx1250_fuse_kids_for_tile(M, N, K, cu_num, bm, bn, bk):
 
 
 def _gfx1250_fuse_candidates(M, N, K, cu_num, top_tiles=GFX1250_TOP_TILES):
-    """Select top fused tiles without expanding all 1378 kids per shape."""
+    """Select fused exact kids when that experimental family is registered."""
     fuse_tiles = sorted(
         {(key[0], key[1], key[2]) for key in GFX1250_SPLITK_FUSE_KID_OF}
     )
@@ -352,7 +353,11 @@ def _gfx1250_select_candidates(
 
     # Fused exact kids: bounded by tile, occupancy-fit compile-time SplitK,
     # baseline/max feasible N-cluster, and both workspace dtypes.
-    if include_fused and os.environ.get("OPUS_TUNE_NO_FUSE") != "1":
+    if (
+        GFX1250_SPLITK_FUSE_ENABLED
+        and include_fused
+        and os.environ.get("OPUS_TUNE_NO_FUSE") != "1"
+    ):
         sel |= _gfx1250_fuse_candidates(M, N, K, cu_num)
     return frozenset(sel)
 
