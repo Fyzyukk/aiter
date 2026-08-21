@@ -11,6 +11,10 @@ from .aiter_types import aiter_dtypes, aiter_tensor_t
 defaultDtypes = {
     "gfx942": {"fp8": torch.float8_e4m3fnuz},
     "gfx950": {"fp8": torch.float8_e4m3fn},
+    "gfx1100": {"fp8": torch.float8_e4m3fn},
+    "gfx1101": {"fp8": torch.float8_e4m3fn},
+    "gfx1102": {"fp8": torch.float8_e4m3fn},
+    "gfx1151": {"fp8": torch.float8_e4m3fn},
     "gfx1200": {"fp8": torch.float8_e4m3fn},
     "gfx1201": {"fp8": torch.float8_e4m3fn},
     "gfx1250": {"fp8": torch.float8_e4m3fn},
@@ -80,9 +84,7 @@ def torch_to_aiter_pybind(tensor: torch.Tensor):
     )
 
 
-def torch_to_aiter(
-    tensor: torch.Tensor, out: aiter_tensor_t | None = None
-) -> aiter_tensor_t:
+def torch_to_aiter(tensor: torch.Tensor) -> aiter_tensor_t:
     """This is for ctypes binding.
     torch.Tensor -> aiter_tensor_t, zero-copy, points to the same GPU memory.
 
@@ -101,7 +103,7 @@ def torch_to_aiter(
     # -1 is the C-side "not on a GPU" sentinel.
     index = tensor.device.index
 
-    at = aiter_tensor_t() if out is None else out
+    at = aiter_tensor_t()
     at.ptr = tensor.data_ptr()
     at.numel_ = tensor.numel()
     at.ndim = ndim
