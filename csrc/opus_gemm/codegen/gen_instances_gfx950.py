@@ -17,6 +17,7 @@ from codegen.common import (
 # ---------------- gfx950 arch-override maps ----------------
 
 PIPELINE_HEADER_MAP = {
+    "a8w8_mxscale_gemm_bpreshuffle": "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_bmm_pipeline_a8w8_mxscale_gfx950.cuh",
     "a8w8_mxscale": "gfx950/opus_bmm_pipeline_a8w8_mxscale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_pipeline_a8w8_noscale_gfx950.cuh",
@@ -45,6 +46,7 @@ PIPELINE_HEADER_MAP_4G_SAFE = {
 }
 
 TRAITS_HEADER_MAP = {
+    "a8w8_mxscale_gemm_bpreshuffle": "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh",
     "a8w8_mxscale": "gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_traits_a8w8_noscale_gfx950.cuh",
@@ -64,6 +66,7 @@ TRAITS_HEADER_MAP = {
 }
 
 KERNEL_FUNC_MAP = {
+    "a8w8_mxscale_gemm_bpreshuffle": "gemm_a8w8_mxfp8_scale_kernel",
     "a8w8_scale": "gemm_a8w8_scale_kernel",
     "a8w8_mxscale": "gemm_a8w8_scale_kernel",
     "a8w8": "gemm_a8w8_noscale_kernel",
@@ -90,6 +93,7 @@ KERNEL_FUNC_MAP_4G_SAFE = {
 }
 
 TRAITS_NAME_MAP = {
+    "a8w8_mxscale_gemm_bpreshuffle": "opus_gemm_mxscale_bpreshuffle_4wave_traits_gfx950",
     "a8w8_scale": "opus_gemm_a8w8_scale_traits_gfx950",
     "a8w8_mxscale": "opus_gemm_a8w8_scale_traits_gfx950",
     "a8w8": "opus_gemm_a8w8_noscale_traits_gfx950",
@@ -109,6 +113,7 @@ TRAITS_NAME_MAP = {
 }
 
 KARGS_NAME_MAP = {
+    "a8w8_mxscale_gemm_bpreshuffle": "opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
     "a8w8_scale": "opus_gemm_scale_kargs_gfx950",
     "a8w8_mxscale": "opus_gemm_scale_kargs_gfx950",
     "a8w8": "opus_gemm_noscale_kargs_gfx950",
@@ -2818,7 +2823,141 @@ def gen_bmm_mxscale_fused_instance(
     )
 
 
+def gen_mxscale_bpreshuffle_instance(
+    cg,
+    k,
+    pipeline_header,
+    traits_header,
+    kernel_func,
+    traits_name,
+    kargs_name,
+    instance_impl_preamble,
+    make_a8w8_bpreshuffle_host_decl,
+    **_unused,
+):
+    """Emit the optional gfx950 compact-E8M0 bpreshuffle implementation."""
+    assert (k.BLOCK_SIZE, k.B_M, k.B_N, k.B_K) == (256, 256, 256, 128)
+    assert (k.T_M, k.T_N) == (2, 2) and k.output_tiles_per_wg == 1
+    split = f"""#ifdef OPUS_FUSED_HOST_TU
+#include "{traits_header}"
+template<typename Traits>
+__global__ void gemm_a8w8_mxfp8_scale_kernel({kargs_name} kargs);
+#else
+#include "{pipeline_header}"
+#endif"""
+    traits_alias = f"""template <typename D_C>
+using {k.name}_Traits = {traits_name}<
+    std::is_same_v<D_C, bf16_t>>;"""
+    kernel_launch = f"""{kernel_func}<{k.name}_Traits<D_C>><<<
+        grid, dim3({k.BLOCK_SIZE}), 0, aiter::getCurrentHIPStream()>>>(args);"""
+    cg._kid_pipeline_header[k.name] = pipeline_header
+    assert (k.GROUP_M, k.GROUP_N, k.GROUP_K) == (1, 128, 128)
+    assert k.scale_dtype == "e8m0"
+    assert k.max_tensor_bytes is not None and not k.has_oob
+    preamble = instance_impl_preamble(
+        "\n#include <cstdint>\n#include <initializer_list>\n#include <type_traits>"
+    )
+    source = f"""{preamble}
+{split}
+{traits_alias}
+
+#if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
+template <typename D_C>
+void {k.name}(
+    aiter_tensor_t &XQ, aiter_tensor_t &WQ,
+    aiter_tensor_t &x_scale, aiter_tensor_t &w_scale, aiter_tensor_t &Y)
+{{
+    static_assert(std::is_same_v<D_C, bf16_t>);
+    constexpr const char* entry =
+        "opus_gemm_a8w8_blockscale_bpreshuffle_launch";
+    AITER_CHECK((XQ.dim() == 2 || XQ.dim() == 3) &&
+                WQ.dim() == XQ.dim() && Y.dim() == XQ.dim(),
+                entry, ": XQ/WQ/Y must have matching rank 2 or 3");
+    AITER_CHECK(XQ.dim() == 2 ||
+                (XQ.size(0) == 1 && WQ.size(0) == 1 && Y.size(0) == 1),
+                entry, ": only batch=1 is supported");
+    AITER_CHECK(XQ.is_contiguous() && WQ.is_contiguous() && Y.is_contiguous(),
+                entry, ": XQ/WQ/Y must be contiguous");
+    AITER_CHECK(XQ.dtype() == AITER_DTYPE_fp8 && WQ.dtype() == AITER_DTYPE_fp8,
+                entry, ": XQ/WQ must be FP8");
+    AITER_CHECK(Y.dtype() == AITER_DTYPE_bf16,
+                entry, ": output dtype must be bf16");
+
+    const int64_t m = XQ.size(-2), n = WQ.size(-2), k = XQ.size(-1);
+    AITER_CHECK(m > 0 && n > 0 && k > 0 &&
+                m % {k.m_align} == 0 && n % {k.B_N} == 0 && k % {k.B_K} == 0,
+                entry, ": requires positive M/N multiples of 256 and K multiple of 128");
+    AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
+                entry, ": XQ/WQ/Y shapes do not match");
+    // Bound before narrowing dimensions or multiplying the signed int kargs.
+    constexpr int64_t byte_limit = {k.max_tensor_bytes};
+    AITER_CHECK(m <= byte_limit / k && n <= byte_limit / k &&
+                m <= (byte_limit / sizeof(D_C)) / n,
+                entry, ": tensor byte extent exceeds signed 32-bit addressing");
+
+    const auto is_e8m0 = [](const aiter_tensor_t& t) {{
+        return t.dtype() == AITER_DTYPE_fp8_e8m0 || t.dtype() == AITER_DTYPE_u8;
+    }};
+    AITER_CHECK(is_e8m0(x_scale) && is_e8m0(w_scale),
+                entry, ": scales must contain one-byte E8M0 values");
+    AITER_CHECK(x_scale.dim() == 2 && x_scale.size(0) == m && x_scale.size(1) == k / {k.GROUP_K},
+                entry, ": x_scale must be logical [M,K/128]");
+    AITER_CHECK(x_scale.stride(0) == 1 && x_scale.stride(1) == m,
+                entry, ": x_scale must have dense column-major storage");
+    AITER_CHECK(w_scale.dim() == 2 && w_scale.size(0) == n / {k.GROUP_N} &&
+                w_scale.size(1) == k / {k.GROUP_K} && w_scale.is_contiguous(),
+                entry, ": w_scale must be row-major [N/128,K/128]");
+    const uintptr_t output = reinterpret_cast<uintptr_t>(Y.data_ptr());
+    const uint64_t output_bytes = uint64_t(m) * n * sizeof(D_C);
+    for (const auto* input : {{&XQ, &WQ, &x_scale, &w_scale}}) {{
+        const uintptr_t begin = reinterpret_cast<uintptr_t>(input->data_ptr());
+        const uint64_t bytes = input->numel() * input->element_size();
+        const bool overlap = output >= begin
+            ? output - begin < bytes : begin - output < output_bytes;
+        AITER_CHECK(!overlap, entry, ": Y must not overlap input storage");
+    }}
+    AITER_CHECK(reinterpret_cast<uintptr_t>(XQ.data_ptr()) % 16 == 0 &&
+                reinterpret_cast<uintptr_t>(WQ.data_ptr()) % 16 == 0 && output % 16 == 0,
+                entry, ": XQ/WQ/Y must be 16-byte aligned");
+
+    {kargs_name} args{{}};
+    args.ptr_a = XQ.data_ptr(); args.ptr_b = WQ.data_ptr(); args.ptr_c = Y.data_ptr();
+    args.m = m; args.n = n; args.k = k; args.batch = 1;
+    args.stride_a = k; args.stride_b = k; args.stride_c = n;
+    args.stride_a_batch = m * k; args.stride_b_batch = n * k; args.stride_c_batch = m * n;
+    args.ptr_sfa = x_scale.data_ptr(); args.ptr_sfb = w_scale.data_ptr();
+    args.stride_sfa = m; args.stride_sfb = k / {k.GROUP_K};
+    args.stride_sfa_batch = m * (k / {k.GROUP_K});
+    args.stride_sfb_batch = (n / {k.GROUP_N}) * (k / {k.GROUP_K});
+    const int tiles_m = m / {k.B_M};
+    const dim3 grid(((tiles_m + {k.output_tiles_per_wg - 1}) / {k.output_tiles_per_wg}) * (n / {k.B_N}));
+    {kernel_launch}
+}}
+#endif
+"""
+    Path(os.path.join(cg.impl_path, f"{k.name}.cuh")).write_text(source)
+    for c_dtype in k.output_dtypes:
+        cg._host_instantiations.append(
+            {
+                "kid_name": k.name,
+                "dtype": c_dtype,
+                "host_decl": make_a8w8_bpreshuffle_host_decl(k.name, c_dtype, ""),
+            }
+        )
+        cg._device_instantiations.append(
+            {
+                "kid_name": k.name,
+                "dtype": c_dtype,
+                "device_decl": (
+                    f"template __global__ void {kernel_func}<\n"
+                    f"    {k.name}_Traits<{c_dtype}>>({kargs_name});\n"
+                ),
+            }
+        )
+
+
 # ---------- Self-register at import time ----------
+register_emit("gfx950", "a8w8_mxscale_gemm_bpreshuffle", gen_mxscale_bpreshuffle_instance)
 register_emit("gfx950", "a16w16_persistent", gen_persistent_instance)
 register_emit("gfx950", "a8w8_scale", gen_scale_instance)
 register_emit("gfx950", "a8w8_mxscale", gen_scale_instance)

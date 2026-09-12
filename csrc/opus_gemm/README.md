@@ -102,6 +102,20 @@ preserving family-local tuning/debug correlation. Historical child-dictionary
 collisions are resolved by the final merge; runtime routing always follows the
 resulting `kernels_list[kid]` instance and never a numeric interval.
 
+The gfx950 `a8w8_mxscale_gemm_bpreshuffle` tag is registered under the existing
+`a8w8_blockscale_bpreshuffle` family so its standalone Python tuner can call
+the normal `opus_gemm(..., layout="bpreshuffle")` route. Kid 9000 is deliberately
+absent from the default compile floor: the tuner reuses
+`opus_gemm_tune._ensure_kids_compiled({9000})`, which extends the existing
+`module_deepgemm_opus` sidecar/build with `--extra_kids 9000`. No separate
+public API, PyBind module, launcher, or dispatch table is introduced.
+
+Kid 9000 uses patched clang23 hard-pin attributes. While extending the existing
+OPUS module, the standalone tuner temporarily sets `HIP_CLANG_PATH` to
+`/root/toolchains/rocm-llvm23-46fcb339-build/bin`; set `OPUS_HIP_CLANG_PATH` to
+override that compiler location. The previous environment is restored after
+the subset build finishes.
+
 The gfx942 BF16-workspace A16 exact kids (`10210`, `10213`, `10216`) are the
 one workspace-output exception: their current exact-N reducer requires BF16
 `Y`. The canonical Python registry rejects FP32 `Y` before launch, matching the

@@ -131,6 +131,11 @@ class OpusGemmInstance:
     # Optional logical-M limit imposed by this exact kernel's launch geometry.
     max_m: int | None = None
 
+    # Compact-scale bpreshuffle kernels process adjacent M tiles per workgroup.
+    output_tiles_per_wg: int = 1
+    scale_dtype: str | None = None
+    max_tensor_bytes: int | None = None
+
     @property
     def name(self) -> str:
         parts = [
@@ -144,7 +149,10 @@ class OpusGemmInstance:
             parts.insert(1, self.arch_prefix)
         # tag inserts shift right by one slot when arch_prefix is set
         tag_at = 1 + (1 if self.arch_prefix else 0)
-        if self.kernel_tag == "a8w8_mxscale_bmm_flatmm_splitk":
+        if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle":
+            parts.insert(tag_at, self.kernel_tag)
+            parts.append(f"tiles{self.output_tiles_per_wg}")
+        elif self.kernel_tag == "a8w8_mxscale_bmm_flatmm_splitk":
             parts.insert(tag_at, "a8w8_mxscale_flatmm_splitk")
             parts.append(f"wgpcu{self.WG_PER_CU}")
             if self.direct_only:
@@ -1689,11 +1697,31 @@ a8w8_mxscale_bmm_kernels_list = {
     for kid, instance in family.items()
 }
 
+
+def _a8w8_mxscale_gemm_bpreshuffle():
+    return OpusGemmInstance(
+        256, 256, 256, 128, 2, 2, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
+        WG_PER_CU=1, has_oob=False, arch_prefix="gfx950", direct_only=True,
+        output_tiles_per_wg=1, scale_dtype="e8m0",
+        max_tensor_bytes=2**31 - 1,
+    )
+
+
+# Optional gfx950 compact-E8M0 bpreshuffle candidates. They live in the
+# canonical registry so the standalone tuner can use the existing opus_gemm
+# route, but are not part of the default subset-compile floor.
+a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
+    9000: _a8w8_mxscale_gemm_bpreshuffle(),
+}
+
+
 # combined list (used by production gen_instances / dispatch)
 kernels_list = {
     **a8w8_scale_kernels_list,
     **a8w8_kernels_list,
     **a8w8_mxscale_bmm_kernels_list,
+    **a8w8_mxscale_gemm_bpreshuffle_kernels_list,
     **a16w16_kernels_list,
     **a16w16_kernels_list_nooob,
     **a16w16_kernels_list_cpol,
@@ -1912,7 +1940,7 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
                 "a8w8_mxscale_bmm_wave4m2_selfload",
             }
         ),
-        "a8w8_blockscale_bpreshuffle": frozenset(),
+        "a8w8_blockscale_bpreshuffle": frozenset({"a8w8_mxscale_gemm_bpreshuffle"}),
     },
     "gfx942": {
         "a16w16": frozenset(
