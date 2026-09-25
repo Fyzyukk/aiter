@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="12" time="0.355" timestamp="2026-09-25T08:31:09.619523+00:00" hostname="2af3954f34aa"><testcase classname="op_tests.test_opus_a8w8_interface" name="test_general_a8w8_restores_required_scales_and_blockscale_dtypes" time="0.001" /><testcase classname="op_tests.test_opus_a8w8_interface" name="test_general_scaled_a8w8_keeps_legacy_backend_route" time="0.000" /><testcase classname="op_tests.test_opus_a8w8_interface" name="test_a8w8_opus_families_use_explicit_exact_kids[noscale]" time="0.001" /><testcase classname="op_tests.test_opus_a8w8_interface" name="test_a8w8_opus_families_use_explicit_exact_kids[blockscale]" time="0.000" /><testcase classname="op_tests.test_opus_a8w8_interface" name="test_a8w8_opus_families_use_explicit_exact_kids[blockscale-bpreshuffle]" time="0.000" /><testcase classname="op_tests.test_opus_a8w8_interface" name="test_bpreshuffle_uses_opus_for_tuned_row" time="0.023" /><testcase classname="op_tests.test_opus_a8w8_interface" name="test_mxscale_launch_plan_cache_is_bounded" time="0.001" /><testcase classname="op_tests.test_opus_a8w8_interface" name="test_mxscale_invalid_tuned_kid_warns_and_uses_heuristic" time="0.006" /><testcase classname="reports.opus_9030_targets87_20260925.test_integration" name="test_native_scales_reach_registered_launcher[9030]" time="0.003"><failure message="assert (tensor([[125],\n        [153],\n        [184],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0]], dtype=torch.uint8) is tensor([[125],\n        [153],\n        [184],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0]], dtype=torch.uint8))">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f25717492e0&gt;
+kid = 9030
+
+    @pytest.mark.parametrize("kid", range(9030, 9034))
+    def test_native_scales_reach_registered_launcher(monkeypatch, kid):
+        calls = []
+        monkeypatch.setattr(implementation, "_opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw",
+                            lambda *args: calls.append(args))
+        x = torch.empty((64, 128), dtype=torch.float8_e4m3fn)
+        w = torch.empty((256, 128), dtype=x.dtype)
+        out = torch.empty((64, 256), dtype=torch.bfloat16)
+        sa = torch.empty((1, 64), dtype=torch.uint8).T
+        sb = torch.empty((2, 1), dtype=torch.uint8)
+        assert opus_gemm(x, w, out, kid=kid, layout="bpreshuffle", x_scale=sa, w_scale=sb) is out
+        assert len(calls) == 1
+        args = calls[0]
+        assert args[-1] == kid
+&gt;       assert args[2] is sa and args[3] is sb
+E       assert (tensor([[125],\n        [153],\n        [184],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0]], dtype=torch.uint8) is tensor([[125],\n        [153],\n        [184],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0]], dtype=torch.uint8))
+
+reports/opus_9030_targets87_20260925/test_integration.py:22: AssertionError</failure></testcase><testcase classname="reports.opus_9030_targets87_20260925.test_integration" name="test_native_scales_reach_registered_launcher[9031]" time="0.001"><failure message="assert (tensor([[231],\n        [154],\n        [184],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  4],\n        [ 34],\n        [ 95],\n        [229],\n        [  3],\n        [  0],\n        [  0]], dtype=torch.uint8) is tensor([[231],\n        [154],\n        [184],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  4],\n        [ 34],\n        [ 95],\n        [229],\n        [  3],\n        [  0],\n        [  0]], dtype=torch.uint8))">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f1d526feed0&gt;
+kid = 9031
+
+    @pytest.mark.parametrize("kid", range(9030, 9034))
+    def test_native_scales_reach_registered_launcher(monkeypatch, kid):
+        calls = []
+        monkeypatch.setattr(implementation, "_opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw",
+                            lambda *args: calls.append(args))
+        x = torch.empty((64, 128), dtype=torch.float8_e4m3fn)
+        w = torch.empty((256, 128), dtype=x.dtype)
+        out = torch.empty((64, 256), dtype=torch.bfloat16)
+        sa = torch.empty((1, 64), dtype=torch.uint8).T
+        sb = torch.empty((2, 1), dtype=torch.uint8)
+        assert opus_gemm(x, w, out, kid=kid, layout="bpreshuffle", x_scale=sa, w_scale=sb) is out
+        assert len(calls) == 1
+        args = calls[0]
+        assert args[-1] == kid
+&gt;       assert args[2] is sa and args[3] is sb
+E       assert (tensor([[231],\n        [154],\n        [184],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  4],\n        [ 34],\n        [ 95],\n        [229],\n        [  3],\n        [  0],\n        [  0]], dtype=torch.uint8) is tensor([[231],\n        [154],\n        [184],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  4],\n        [ 34],\n        [ 95],\n        [229],\n        [  3],\n        [  0],\n        [  0]], dtype=torch.uint8))
+
+reports/opus_9030_targets87_20260925/test_integration.py:22: AssertionError</failure></testcase><testcase classname="reports.opus_9030_targets87_20260925.test_integration" name="test_native_scales_reach_registered_launcher[9032]" time="0.001"><failure message="assert (tensor([[173],\n        [245],\n        [191],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0]], dtype=torch.uint8) is tensor([[173],\n        [245],\n        [191],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0]], dtype=torch.uint8))">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f1d526ff200&gt;
+kid = 9032
+
+    @pytest.mark.parametrize("kid", range(9030, 9034))
+    def test_native_scales_reach_registered_launcher(monkeypatch, kid):
+        calls = []
+        monkeypatch.setattr(implementation, "_opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw",
+                            lambda *args: calls.append(args))
+        x = torch.empty((64, 128), dtype=torch.float8_e4m3fn)
+        w = torch.empty((256, 128), dtype=x.dtype)
+        out = torch.empty((64, 256), dtype=torch.bfloat16)
+        sa = torch.empty((1, 64), dtype=torch.uint8).T
+        sb = torch.empty((2, 1), dtype=torch.uint8)
+        assert opus_gemm(x, w, out, kid=kid, layout="bpreshuffle", x_scale=sa, w_scale=sb) is out
+        assert len(calls) == 1
+        args = calls[0]
+        assert args[-1] == kid
+&gt;       assert args[2] is sa and args[3] is sb
+E       assert (tensor([[173],\n        [245],\n        [191],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0]], dtype=torch.uint8) is tensor([[173],\n        [245],\n        [191],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0],\n        [  0]], dtype=torch.uint8))
+
+reports/opus_9030_targets87_20260925/test_integration.py:22: AssertionError</failure></testcase><testcase classname="reports.opus_9030_targets87_20260925.test_integration" name="test_native_scales_reach_registered_launcher[9033]" time="0.002"><failure message="assert (tensor([[119],\n        [242],\n        [191],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  4],\n        [ 34],\n        [ 95],\n        [229],\n        [  3],\n        [  0],\n        [  0]], dtype=torch.uint8) is tensor([[119],\n        [242],\n        [191],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  4],\n        [ 34],\n        [ 95],\n        [229],\n        [  3],\n        [  0],\n        [  0]], dtype=torch.uint8))">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f1d526fde50&gt;
+kid = 9033
+
+    @pytest.mark.parametrize("kid", range(9030, 9034))
+    def test_native_scales_reach_registered_launcher(monkeypatch, kid):
+        calls = []
+        monkeypatch.setattr(implementation, "_opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw",
+                            lambda *args: calls.append(args))
+        x = torch.empty((64, 128), dtype=torch.float8_e4m3fn)
+        w = torch.empty((256, 128), dtype=x.dtype)
+        out = torch.empty((64, 256), dtype=torch.bfloat16)
+        sa = torch.empty((1, 64), dtype=torch.uint8).T
+        sb = torch.empty((2, 1), dtype=torch.uint8)
+        assert opus_gemm(x, w, out, kid=kid, layout="bpreshuffle", x_scale=sa, w_scale=sb) is out
+        assert len(calls) == 1
+        args = calls[0]
+        assert args[-1] == kid
+&gt;       assert args[2] is sa and args[3] is sb
+E       assert (tensor([[119],\n        [242],\n        [191],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  4],\n        [ 34],\n        [ 95],\n        [229],\n        [  3],\n        [  0],\n        [  0]], dtype=torch.uint8) is tensor([[119],\n        [242],\n        [191],\n        [ 68],\n        [  0],\n        [  0],\n        [  0],\n        [  0]...   [  4],\n        [ 34],\n        [ 95],\n        [229],\n        [  3],\n        [  0],\n        [  0]], dtype=torch.uint8))
+
+reports/opus_9030_targets87_20260925/test_integration.py:22: AssertionError</failure></testcase></testsuite></testsuites>

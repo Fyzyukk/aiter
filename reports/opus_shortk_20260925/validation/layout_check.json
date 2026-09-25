@@ -1,0 +1,58 @@
+{
+  "status": "passed",
+  "cpu_only": true,
+  "fixed_k": [
+    384,
+    768,
+    1024
+  ],
+  "compile_command": [
+    "/root/toolchains/llvm-amdgpu-pin-op-dst-49c41889-build/bin/clang++",
+    "-x",
+    "hip",
+    "--offload-host-only",
+    "--offload-arch=gfx950",
+    "--hip-path=/opt/rocm",
+    "-nogpulib",
+    "-std=c++20",
+    "-O2",
+    "-DOPUS_ENABLE_RUNTIME_QUERY=0",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_shortk_20260925/validation/host_include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_shortk_20260925/validation/layout_check.cpp",
+    "-o",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_shortk_20260925/validation/layout_check"
+  ],
+  "source_sha256": {
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh": "86a63b43f3f15114bada7a3c30528a615339ad4abb90c8dd1649f4bbb9dab15f",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_shortk_gfx950.cuh": "33a8db075e6bf1b6d25a46247ec6e90c17d270ff26275eec9b542e75ecbf01e2",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_shortk_gfx950.cuh": "e037d193bd1bf36e25764714763ac8001235531ad630f720fa5d650105dedcee",
+    "csrc/include/opus/opus.hpp": "cb671fc4c694ca62d526bf2ff64933f3a63cb38b396d2118c2aa895b704dd7b0",
+    "csrc/include/opus/dtypes.hpp": "8a40bd239520d390e6a708dfaaf65099166d4395487d6fc7bac240131c75e7c5",
+    "reports/opus_shortk_20260925/validation/layout_check.cpp": "d37c540701a8b83f0e16702e605047a65e2bbc9948e1558ac5481e4abf68b57f",
+    "reports/opus_shortk_20260925/validation/scale_schedule_check.inc": "26cd1b2e4f52a85c1900388f6857a10e35b31f66416ef694bd6989239c5b0ef9",
+    "reports/opus_shortk_20260925/validation/check_layout.py": "bea1858a87392b664a6c2408da70f7703f46b565bf8b7fa9d2730d51c7b20e24"
+  },
+  "generated_sha256": {
+    "host_layout_helpers.inc": "e6606bcdcda27dabcbdbaa45d44826ab2c25983a98ce039634c1aecf7c1ddf38",
+    "host_scale_load.inc": "c0e9ffef76ad635702e5ad94b62da32b5a0c40f53d2ef309250c822c6d06e6a3",
+    "host_scale_read.inc": "7bc4dd8ee149d03847372df1bd35c08fd384af88647667dcb9ac84889ad82046",
+    "host_schedule.inc": "6cc1443db472b6751e7a7c3e87bf0001169b9de6583f7f0bf5beea0f16cbc236"
+  },
+  "host_adaptation": {
+    "layouts": "Only host/device qualifiers changed in copies of layout helpers and adaptor definitions.",
+    "scales": "Exact production lambdas; thread_id_x becomes an enumerated CPU thread; load/store become bounds-checked CPU memory operations.",
+    "schedule": "Exact production prologue, static_for dispatch, and final compute; operations instrumented and barrier intrinsic redirected."
+  },
+  "runtime_library_linkage": "No HIP/HSA dynamic library dependencies or undefined HIP/HSA symbols.",
+  "limits": [
+    "No GPU discovery, device calls, GPU execution, timing, or runtime numerical-correctness testing.",
+    "Schedule instrumentation checks logical operand lifetimes, exact tile counts, and barriers; it does not simulate hardware latency or prove ISA hazard behavior.",
+    "Buffer-bound tests validate coordinate contracts; hardware OOB zero-fill and store discard semantics are assumed."
+  ],
+  "stdout": "K=384 matrix_producer_bytes=172032 matrix_consumer_bytes=540672 output_coordinates=245760 M64_bounded_vectors=368640 LDS_bytes=118854\nK=768 matrix_producer_bytes=344064 matrix_consumer_bytes=1081344 output_coordinates=245760 M64_bounded_vectors=368640 LDS_bytes=119436\nK=1024 matrix_producer_bytes=458752 matrix_consumer_bytes=1441792 output_coordinates=245760 M64_bounded_vectors=368640 LDS_bytes=119824\nK=384 scale_cases=72 scale_values_checked=552960 exact_panel_bytes=582\nK=768 scale_cases=72 scale_values_checked=1105920 exact_panel_bytes=1164\nK=1024 scale_cases=72 scale_values_checked=1474560 exact_panel_bytes=1552\nK=384 fixed_groups=3 matrix_prefetches=3 MFMA_calls_per_wave=72 barriers=4 scale_panel_loads=1\nK=768 fixed_groups=6 matrix_prefetches=6 MFMA_calls_per_wave=144 barriers=7 scale_panel_loads=1\nK=1024 fixed_groups=8 matrix_prefetches=8 MFMA_calls_per_wave=192 barriers=9 scale_panel_loads=1\nPASS: CPU-only coordinates, exact scales, M64 tails, and fixed-K schedule.\n",
+  "stderr": "",
+  "returncode": 0
+}

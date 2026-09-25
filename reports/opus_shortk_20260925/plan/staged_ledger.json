@@ -1,0 +1,3069 @@
+{
+  "schema_version": 1,
+  "created_date": "2026-09-25",
+  "status": "pending_no_gpu",
+  "gpu_used": false,
+  "new_kernel_performance_measured": false,
+  "baseline": {
+    "source": "reports/opus_local_gap_current_20260925/RESULTS.md",
+    "supported_shapes": 295,
+    "opus_wins": 209,
+    "opus_losses": 86,
+    "original_target_count": 87,
+    "original_target_current_losses": 86,
+    "original_target_near_tie_current_wins": 1,
+    "near_tie_shape": [
+      4096,
+      2048,
+      7168
+    ],
+    "near_tie_opus_slower_pct": "-0.033131981217870976",
+    "previous_208_87_report_does_not_replace_current_baseline": true,
+    "preexisting_address_range_exclusions": 10
+  },
+  "totals": {
+    "cohorts": 7,
+    "targets": 87,
+    "first_cohort": 25,
+    "after_first_cohort": 62,
+    "new_validated_shapes": 0,
+    "performance_accepted_shapes": 0,
+    "pending_shapes": 87,
+    "note": "Implementation and CPU layout/compile progress are recorded separately. new_validated_shapes and performance_accepted_shapes count GPU acceptance only and remain zero; no new GPU timing or numerical result exists.",
+    "implemented_target_shapes": 25,
+    "cpu_layout_passed_target_shapes": 25,
+    "offline_compiled_target_shapes": 25
+  },
+  "frozen_comparisons": {
+    "manifest": "source_manifest.json",
+    "all_targets": "frozen_targets87_current.csv",
+    "short_k_targets": "frozen_short_k_targets_25.csv",
+    "augmented_87": "targets87_ledger.csv",
+    "first25": "first25_candidates.csv",
+    "original_field_names": [
+      "M",
+      "N",
+      "K",
+      "gpu",
+      "gpu_uuid",
+      "measurement_phase",
+      "rounds",
+      "opus",
+      "opus_us",
+      "reference",
+      "reference_us",
+      "reference_over_opus",
+      "opus_slower_pct",
+      "opus_wins",
+      "exact_tie",
+      "selected",
+      "selected_us",
+      "selected_backend",
+      "opus_faster_rounds",
+      "round_status_consistent",
+      "previous_ledger_opus_wins",
+      "status_vs_previous_ledger",
+      "full_sweep_opus_wins",
+      "ck_best",
+      "ck_us",
+      "cktile_best",
+      "cktile_us",
+      "asm_best",
+      "asm_us",
+      "opus_9000_us",
+      "opus_9010_us",
+      "opus_9011_us",
+      "opus_9012_us",
+      "opus_9020_us",
+      "delta_us",
+      "opus_time_reduction_to_tie_pct",
+      "k128_steps",
+      "m_mod_256",
+      "ck_geometry",
+      "ck_waves",
+      "ck_grid_ctas",
+      "ck_padded_m_arithmetic_pct",
+      "legal_9000",
+      "grid_ctas_9000",
+      "padded_m_arithmetic_pct_9000",
+      "legal_9010",
+      "grid_ctas_9010",
+      "padded_m_arithmetic_pct_9010",
+      "legal_9011",
+      "grid_ctas_9011",
+      "padded_m_arithmetic_pct_9011",
+      "legal_9012",
+      "grid_ctas_9012",
+      "padded_m_arithmetic_pct_9012",
+      "legal_9020",
+      "grid_ctas_9020",
+      "padded_m_arithmetic_pct_9020",
+      "legal_9030",
+      "grid_ctas_9030",
+      "padded_m_arithmetic_pct_9030",
+      "legal_9031",
+      "grid_ctas_9031",
+      "padded_m_arithmetic_pct_9031",
+      "legal_9032",
+      "grid_ctas_9032",
+      "padded_m_arithmetic_pct_9032",
+      "legal_9033",
+      "grid_ctas_9033",
+      "padded_m_arithmetic_pct_9033",
+      "timing_source"
+    ],
+    "original_values_preserved": true,
+    "timing_blanks_are_missing_not_zero": true,
+    "retained_opus_ids": [
+      9000,
+      9010,
+      9011,
+      9012,
+      9020,
+      9030,
+      9031,
+      9032,
+      9033
+    ],
+    "cktile_ck_asm_fields_retained": true,
+    "incomplete_903x_timings_not_promoted_to_baseline": true
+  },
+  "expected_candidates": [
+    {
+      "kernel_id": 9040,
+      "fixed_K": 384,
+      "k128_steps": 3,
+      "tile": [
+        192,
+        256,
+        128
+      ],
+      "waves": 8,
+      "general_validity": "M > 0, N > 0, M%64 == 0, N%256 == 0, K equals fixed_K; original dtype/layout/alignment and <= 2^31-1 per-tensor byte-range checks still apply",
+      "first_acceptance_scope": {
+        "N": 7168,
+        "M": [
+          1024,
+          1088,
+          1152,
+          1216,
+          1280,
+          1344,
+          1408,
+          1472,
+          1536,
+          1600,
+          1664,
+          1728
+        ],
+        "count": 12
+      },
+      "registration_does_not_imply_performance_coverage": true,
+      "status": "pending_no_gpu",
+      "correctness": "unmeasured",
+      "performance": "unmeasured",
+      "candidate_median_us": null,
+      "promoted_to_default": false,
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "kernel_id": 9041,
+      "fixed_K": 768,
+      "k128_steps": 6,
+      "tile": [
+        192,
+        256,
+        128
+      ],
+      "waves": 8,
+      "general_validity": "M > 0, N > 0, M%64 == 0, N%256 == 0, K equals fixed_K; original dtype/layout/alignment and <= 2^31-1 per-tensor byte-range checks still apply",
+      "first_acceptance_scope": {
+        "N": 7168,
+        "M": [
+          1024,
+          1088,
+          1152,
+          1216,
+          1280,
+          1344,
+          1408,
+          1472,
+          1536,
+          1600,
+          1664,
+          1728
+        ],
+        "count": 12
+      },
+      "registration_does_not_imply_performance_coverage": true,
+      "status": "pending_no_gpu",
+      "correctness": "unmeasured",
+      "performance": "unmeasured",
+      "candidate_median_us": null,
+      "promoted_to_default": false,
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "kernel_id": 9042,
+      "fixed_K": 1024,
+      "k128_steps": 8,
+      "tile": [
+        192,
+        256,
+        128
+      ],
+      "waves": 8,
+      "general_validity": "M > 0, N > 0, M%64 == 0, N%256 == 0, K equals fixed_K; original dtype/layout/alignment and <= 2^31-1 per-tensor byte-range checks still apply",
+      "first_acceptance_scope": {
+        "N": 7168,
+        "M": [
+          1024
+        ],
+        "count": 1
+      },
+      "registration_does_not_imply_performance_coverage": true,
+      "status": "pending_no_gpu",
+      "correctness": "unmeasured",
+      "performance": "unmeasured",
+      "candidate_median_us": null,
+      "promoted_to_default": false,
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    }
+  ],
+  "cohorts": [
+    {
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "feature": "N=7168; K in {384,768,1024}",
+      "title_zh": "固定短 K：3/6/8 个 K128 步",
+      "target_count": 25,
+      "baseline_loss_count": 25,
+      "baseline_near_tie_win_count": 0,
+      "candidate_ids": [
+        9040,
+        9041,
+        9042
+      ],
+      "status": "pending_no_gpu",
+      "measured_new_candidates": 0,
+      "focus_zh": "依次处理 K384、K768、K1024；隔离固定步数调度、按需 scale 准备与收尾，保持 192x256、8 waves。",
+      "hypothesis_zh": "短 K 的固定开销占比可能较高；尚无新测量证明瓶颈或收益。",
+      "shape_groups": [
+        {
+          "N": 7168,
+          "K": 384,
+          "M": [
+            1024,
+            1088,
+            1152,
+            1216,
+            1280,
+            1344,
+            1408,
+            1472,
+            1536,
+            1600,
+            1664,
+            1728
+          ],
+          "count": 12
+        },
+        {
+          "N": 7168,
+          "K": 768,
+          "M": [
+            1024,
+            1088,
+            1152,
+            1216,
+            1280,
+            1344,
+            1408,
+            1472,
+            1536,
+            1600,
+            1664,
+            1728
+          ],
+          "count": 12
+        },
+        {
+          "N": 7168,
+          "K": 1024,
+          "M": [
+            1024
+          ],
+          "count": 1
+        }
+      ],
+      "frozen_opus_slower_pct_min": 3.3927310380084785,
+      "frozen_opus_slower_pct_max": 23.487400973145856,
+      "frozen_fastest_opus_counts": {
+        "opus_9000": 7,
+        "opus_9010": 1,
+        "opus_9011": 1,
+        "opus_9020": 16
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "feature": "N=16384; K=1536",
+      "title_zh": "扩展短 K、宽 N：12 步",
+      "target_count": 8,
+      "baseline_loss_count": 8,
+      "baseline_near_tie_win_count": 0,
+      "candidate_ids": [],
+      "status": "pending_no_gpu",
+      "measured_new_candidates": 0,
+      "focus_zh": "单独评估 12 步流水和 N 扩大后的复用；不直接推广 3/6/8 步配置。",
+      "hypothesis_zh": "K 步数和 N 同时变化，应独立判断启动成本与数据复用的取舍。",
+      "shape_groups": [
+        {
+          "N": 16384,
+          "K": 1536,
+          "M": [
+            1088,
+            1152,
+            1216,
+            1280,
+            1344,
+            1408,
+            1472,
+            1536
+          ],
+          "count": 8
+        }
+      ],
+      "frozen_opus_slower_pct_min": 3.393272267128533,
+      "frozen_opus_slower_pct_max": 15.643228371824858,
+      "frozen_fastest_opus_counts": {
+        "opus_9000": 2,
+        "opus_9020": 6
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "feature": "N=7168; K=3072",
+      "title_zh": "中 K：24 步",
+      "target_count": 12,
+      "baseline_loss_count": 12,
+      "baseline_near_tie_win_count": 0,
+      "candidate_ids": [],
+      "status": "pending_no_gpu",
+      "measured_new_candidates": 0,
+      "focus_zh": "固定 N 后检查稳态流水、等待与寄存器活跃范围；形成独立配置。",
+      "hypothesis_zh": "24 步的预取与稳态开销可能不同于首批短 K。",
+      "shape_groups": [
+        {
+          "N": 7168,
+          "K": 3072,
+          "M": [
+            1024,
+            1088,
+            1152,
+            1216,
+            1280,
+            1344,
+            1408,
+            1472,
+            1536,
+            1600,
+            1664,
+            1728
+          ],
+          "count": 12
+        }
+      ],
+      "frozen_opus_slower_pct_min": 4.25142219831478,
+      "frozen_opus_slower_pct_max": 16.317300917752874,
+      "frozen_fastest_opus_counts": {
+        "opus_9000": 2,
+        "opus_9010": 2,
+        "opus_9011": 1,
+        "opus_9020": 7
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "feature": "N in {6144,7168}; K=7168",
+      "title_zh": "中长 K、宽 N：56 步",
+      "target_count": 26,
+      "baseline_loss_count": 26,
+      "baseline_near_tie_win_count": 0,
+      "candidate_ids": [],
+      "status": "pending_no_gpu",
+      "measured_new_candidates": 0,
+      "focus_zh": "分别核对 N6144 和 N7168 子组，研究加载/计算重叠及 M 尾块；保留 M6144 单独回归项。",
+      "hypothesis_zh": "S64 panel 已覆盖 56 步，不能把减少 scale refill 当作本组收益来源。",
+      "shape_groups": [
+        {
+          "N": 6144,
+          "K": 7168,
+          "M": [
+            1088,
+            1152,
+            1216,
+            1280,
+            1344,
+            1408,
+            1472,
+            1536,
+            1600,
+            1664,
+            1728,
+            1792,
+            1856,
+            1920,
+            6144
+          ],
+          "count": 15
+        },
+        {
+          "N": 7168,
+          "K": 7168,
+          "M": [
+            1088,
+            1152,
+            1216,
+            1280,
+            1344,
+            1408,
+            1472,
+            1536,
+            1600,
+            1664,
+            1728
+          ],
+          "count": 11
+        }
+      ],
+      "frozen_opus_slower_pct_min": 0.12685899880147122,
+      "frozen_opus_slower_pct_max": 11.868575586153952,
+      "frozen_fastest_opus_counts": {
+        "opus_9000": 5,
+        "opus_9010": 3,
+        "opus_9011": 3,
+        "opus_9020": 15
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "feature": "N=7168; K=16384",
+      "title_zh": "长 K：128 步、scale panel 边界",
+      "target_count": 10,
+      "baseline_loss_count": 10,
+      "baseline_near_tie_win_count": 0,
+      "candidate_ids": [],
+      "status": "pending_no_gpu",
+      "measured_new_candidates": 0,
+      "focus_zh": "隔离比较 S64 refill 与 S128 panel 的主循环和 LDS 成本。",
+      "hypothesis_zh": "减少一次 refill 可能有益，也可能被 LDS 与准备成本抵消；9033 历史局部结果不是全组验收。",
+      "shape_groups": [
+        {
+          "N": 7168,
+          "K": 16384,
+          "M": [
+            1088,
+            1216,
+            1280,
+            1344,
+            1408,
+            1472,
+            1536,
+            1600,
+            1664,
+            1728
+          ],
+          "count": 10
+        }
+      ],
+      "frozen_opus_slower_pct_min": 3.441777974837912,
+      "frozen_opus_slower_pct_max": 9.852062061038591,
+      "frozen_fastest_opus_counts": {
+        "opus_9000": 2,
+        "opus_9011": 1,
+        "opus_9020": 7
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "stage_order": 6,
+      "cohort": "narrow_n768",
+      "feature": "N=768; K=7168",
+      "title_zh": "窄 N768、大 M",
+      "target_count": 3,
+      "baseline_loss_count": 3,
+      "baseline_near_tie_win_count": 0,
+      "candidate_ids": [],
+      "status": "pending_no_gpu",
+      "measured_new_candidates": 0,
+      "focus_zh": "检查 N tile、工作组数量与复用的取舍，保留现有小 tile 候选。",
+      "hypothesis_zh": "窄 N 的网格组织不同于宽 N；同几何 CKTile 获胜不证明某个 OPUS tile 必然最优。",
+      "shape_groups": [
+        {
+          "N": 768,
+          "K": 7168,
+          "M": [
+            10240,
+            12288,
+            14336
+          ],
+          "count": 3
+        }
+      ],
+      "frozen_opus_slower_pct_min": 1.99507256839615,
+      "frozen_opus_slower_pct_max": 7.833915684138115,
+      "frozen_fastest_opus_counts": {
+        "opus_9000": 2,
+        "opus_9010": 1
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "stage_order": 7,
+      "cohort": "narrow_n2048",
+      "feature": "N=2048; K=7168",
+      "title_zh": "窄 N2048、大 M（含近平局）",
+      "target_count": 3,
+      "baseline_loss_count": 2,
+      "baseline_near_tie_win_count": 1,
+      "candidate_ids": [],
+      "status": "pending_no_gpu",
+      "measured_new_candidates": 0,
+      "focus_zh": "单独检查 N2048 工作量与 M 变化；(4096,2048,7168) 保持原目标成员。",
+      "hypothesis_zh": "当前 0.033% 的领先不代表稳定完成；需与新批次波动共同判断。",
+      "shape_groups": [
+        {
+          "N": 2048,
+          "K": 7168,
+          "M": [
+            4096,
+            10240,
+            12288
+          ],
+          "count": 3
+        }
+      ],
+      "frozen_opus_slower_pct_min": -0.033131981217870976,
+      "frozen_opus_slower_pct_max": 6.442243019903926,
+      "frozen_fastest_opus_counts": {
+        "opus_9000": 2,
+        "opus_9010": 1
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    }
+  ],
+  "acceptance": {
+    "current_execution": "This ledger uses only CPU file reads/writes. First25 implementation, CPU layout validation, and offline gfx950/host compilation passed according to the linked evidence. No GPU execution, benchmark, automatic GPU launcher, or automatic retry occurred; GPU numerical and performance acceptance remain pending.",
+    "protection": [
+      "Do not modify kernel 9000 pipeline, traits, registration behavior, call path, or any shared helper in a way that changes 9000.",
+      "Keep every prior legal candidate and frozen selection. Do not promote 9040/9041/9042 or overwrite tuning/default choices before validation.",
+      "Use single launch, splitK=0, FP8 A/B with preshuffled B, native E8M0 scales, FP32 accumulation, BF16 output, and the existing tensor-byte bound."
+    ],
+    "correctness": [
+      "Validate every exact shape of the active cohort before timing; first stage means all 25 original short-K targets.",
+      "Use the unchanged independent FP32 reference and tune.compare_outputs contract: error == 0 for every element; interval 1e-4 + 5e-5 * sum(abs(A_i*B_i)), endpoints rounded to BF16. Do not relax tolerance.",
+      "Use native E8M0 input replay, NaN-prefilled output, finite/full-write checks and output guard regions, including M%192 tails. Preserve scale grouping/layout and all 3/6/8 K128 contributions.",
+      "Check exact-K dispatch rejection outside each candidate K, M64/N256 legality, tensor-byte limits, and unsupported shapes. A broader advertised legal domain needs its own checks; first 25 results alone do not validate all legal M/N combinations."
+    ],
+    "performance": [
+      "After GPU use is permitted, use at least five complete matched rounds per shape on one idle physical GPU per shape with candidate order rotated; retain raw timings, source/binary hashes, GPU identity, correctness results, and exclusions.",
+      "Retain every legal OPUS 9000/9010/9011/9012/9020/9030/9031/9032/9033 comparator plus the applicable new fixed-K candidate. Retain CK/CKTile/ASM comparison paths and record unsupported or numerically rejected entries explicitly; frozen absence is not zero time.",
+      "Use the existing profiler convention (5 warmups, 51 iterations, rotating inputs): common preshuffle/scale preparation/reference and CPU launch overhead excluded; backend-internal transforms included.",
+      "Compare complete same-batch medians. Never mix historical and new timings to select the winner, pick the best isolated round, or treat incomplete 903x history as acceptance.",
+      "Record improvement over the same-batch old OPUS best separately from success versus the fastest same-batch valid external backend. Only the latter can close a performance target.",
+      "Require a strict median win and consistent round evidence to mark a target accepted; close margins (within the existing +/-3% review band), inconsistent rounds, or a tie remain pending additional evidence. A historical 0.033% lead is not stable completion."
+    ],
+    "progression": [
+      "For first cohort, work K384 (12 targets), then K768 (12), then K1024 (1), keeping the geometry fixed while isolating the K-schedule feature.",
+      "Later cohorts are a proposed sequence, not measured progress. Do not mark a cohort solved until every member passes correctness and performance acceptance, or invent a pass for an untested shape.",
+      "Preserve separate pending/failed/pass records for each shape. Stage-one completion would leave 62 original targets (61 current losses and one near-tie current win).",
+      "Before claiming all remaining targets solved, revalidate the original 87 as an unchanged exhaustive set and the full supported 295 selection set, retaining prior wins; the 10 pre-existing address-range exclusions stay outside this ledger."
+    ]
+  },
+  "targets": [
+    {
+      "M": 1024,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "10.679999999999996",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1024,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1024,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_32_split0",
+      "frozen_selected_us": "14.902040816326528",
+      "proposed_selected": "cktile_32_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1024,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1024,
+      "N": 7168,
+      "K": 1024,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9042,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "17.17797959183674",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1024,
+          "N": 7168,
+          "K": 1024
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1024,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "37.7854418604651",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1024,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1088,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "78.52497872340426",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1088,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1088,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "10.702928571428563",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1088,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1088,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_12_split0",
+      "frozen_selected_us": "15.120833333333328",
+      "proposed_selected": "cktile_12_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1088,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1088,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "37.60668181818181",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1088,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1088,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "80.80652083333335",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1088,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1088,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "173.96646000000004",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1088,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1088,
+      "N": 16384,
+      "K": 1536,
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "43.914068181818195",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1088,
+          "N": 16384,
+          "K": 1536
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1152,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "78.34370212765957",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1152,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1152,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "10.98365909090909",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1152,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1152,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "15.197500000000005",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1152,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1152,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "37.58609523809522",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1152,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1152,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "81.26077083333335",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1152,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1152,
+      "N": 16384,
+      "K": 1536,
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "44.48036956521741",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1152,
+          "N": 16384,
+          "K": 1536
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1216,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "80.73120408163267",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1216,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1216,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "11.27638636363636",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1216,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1216,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "15.320759999999993",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1216,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1216,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "38.54108333333334",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1216,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1216,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "83.28308000000001",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1216,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1216,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "178.97320408163273",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1216,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1216,
+      "N": 16384,
+      "K": 1536,
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "44.93257142857144",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1216,
+          "N": 16384,
+          "K": 1536
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1280,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "80.26406250000004",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1280,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1280,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "11.70293617021276",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1280,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1280,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "15.816326530612255",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1280,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1280,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "38.30172093023255",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1280,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1280,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "84.55909999999999",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1280,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1280,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "181.51935999999998",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1280,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1280,
+      "N": 16384,
+      "K": 1536,
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "46.26726530612243",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1280,
+          "N": 16384,
+          "K": 1536
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1344,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "81.44975510204083",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1344,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1344,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "11.835744680851063",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1344,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1344,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_30_split0",
+      "frozen_selected_us": "16.068354166666662",
+      "proposed_selected": "cktile_30_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1344,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1344,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "39.778562499999985",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1344,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1344,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "83.7765625",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1344,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1344,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "180.4809400000001",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1344,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1344,
+      "N": 16384,
+      "K": 1536,
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "47.53704166666669",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1344,
+          "N": 16384,
+          "K": 1536
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1408,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "82.79018000000002",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1408,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1408,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "12.159978723404258",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1408,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1408,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_12_split0",
+      "frozen_selected_us": "16.561666666666664",
+      "proposed_selected": "cktile_12_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1408,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1408,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "39.914560975609774",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1408,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1408,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "86.89836",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1408,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1408,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "186.3349795918367",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1408,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1408,
+      "N": 16384,
+      "K": 1536,
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "49.45441860465118",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1408,
+          "N": 16384,
+          "K": 1536
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1472,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "83.27900000000001",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1472,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1472,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "12.444466666666663",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1472,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1472,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_31_split0",
+      "frozen_selected_us": "17.350183673469385",
+      "proposed_selected": "cktile_31_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1472,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1472,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "40.72025531914894",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1472,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1472,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "87.26794",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1472,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1472,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "185.04102040816323",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1472,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1472,
+      "N": 16384,
+      "K": 1536,
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "49.87865116279067",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1472,
+          "N": 16384,
+          "K": 1536
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1536,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "82.927",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1536,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1536,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "12.811304347826091",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1536,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1536,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_30_split0",
+      "frozen_selected_us": "17.166708333333325",
+      "proposed_selected": "cktile_30_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1536,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1536,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "41.73577551020408",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1536,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1536,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "88.87436000000001",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1536,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1536,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "189.09064",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1536,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1536,
+      "N": 16384,
+      "K": 1536,
+      "stage_order": 2,
+      "cohort": "k1536_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "51.0350227272727",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1536,
+          "N": 16384,
+          "K": 1536
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1600,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "86.38800000000003",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1600,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1600,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_30_split0",
+      "frozen_selected_us": "12.988063829787228",
+      "proposed_selected": "cktile_30_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1600,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1600,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_30_split0",
+      "frozen_selected_us": "17.875854166666674",
+      "proposed_selected": "cktile_30_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1600,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1600,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "43.291833333333315",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1600,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1600,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "91.59516000000002",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1600,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1600,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "193.6146800000001",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1600,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1664,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "85.85904000000001",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1664,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1664,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "13.310244444444445",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1664,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1664,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_31_split0",
+      "frozen_selected_us": "18.254380000000005",
+      "proposed_selected": "cktile_31_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1664,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1664,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "44.1091",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1664,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1664,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "92.87605999999998",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1664,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1664,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "195.84435999999994",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1664,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1728,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "85.97262000000005",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1728,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1728,
+      "N": 7168,
+      "K": 384,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9040,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_12_split0",
+      "frozen_selected_us": "13.612488888888898",
+      "proposed_selected": "cktile_12_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1728,
+          "N": 7168,
+          "K": 384
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1728,
+      "N": 7168,
+      "K": 768,
+      "stage_order": 1,
+      "cohort": "short_k_3_6_8_steps",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": 9041,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "18.935179999999995",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1728,
+          "N": 7168,
+          "K": 768
+        }
+      },
+      "implementation_status": "implemented",
+      "cpu_layout_status": "passed",
+      "offline_compile_status": "passed"
+    },
+    {
+      "M": 1728,
+      "N": 7168,
+      "K": 3072,
+      "stage_order": 3,
+      "cohort": "k3072_n7168",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "43.70127272727273",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1728,
+          "N": 7168,
+          "K": 3072
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1728,
+      "N": 7168,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "92.10478000000006",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1728,
+          "N": 7168,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1728,
+      "N": 7168,
+      "K": 16384,
+      "stage_order": 5,
+      "cohort": "k16384_scale_panel",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "193.6963200000001",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1728,
+          "N": 7168,
+          "K": 16384
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1792,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "89.17426000000003",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1792,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1856,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "89.8016",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1856,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 1920,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "89.65426",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 1920,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 4096,
+      "N": 2048,
+      "K": 7168,
+      "stage_order": 7,
+      "cohort": "narrow_n2048",
+      "status": "pending_no_gpu",
+      "baseline_class": "near_tie_current_win",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "opus_9010",
+      "frozen_selected_us": "85.30637999999993",
+      "proposed_selected": "opus_9010",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 4096,
+          "N": 2048,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 6144,
+      "N": 6144,
+      "K": 7168,
+      "stage_order": 4,
+      "cohort": "k7168_wide_n",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "262.94595999999996",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 6144,
+          "N": 6144,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 10240,
+      "N": 768,
+      "K": 7168,
+      "stage_order": 6,
+      "cohort": "narrow_n768",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "87.0677551020408",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 10240,
+          "N": 768,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 10240,
+      "N": 2048,
+      "K": 7168,
+      "stage_order": 7,
+      "cohort": "narrow_n2048",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_28_split0",
+      "frozen_selected_us": "175.58546000000013",
+      "proposed_selected": "cktile_28_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 10240,
+          "N": 2048,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 12288,
+      "N": 768,
+      "K": 7168,
+      "stage_order": 6,
+      "cohort": "narrow_n768",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_11_split0",
+      "frozen_selected_us": "91.98945999999992",
+      "proposed_selected": "cktile_11_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 12288,
+          "N": 768,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 12288,
+      "N": 2048,
+      "K": 7168,
+      "stage_order": 7,
+      "cohort": "narrow_n2048",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_29_split0",
+      "frozen_selected_us": "186.70671999999996",
+      "proposed_selected": "cktile_29_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 12288,
+          "N": 2048,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    },
+    {
+      "M": 14336,
+      "N": 768,
+      "K": 7168,
+      "stage_order": 6,
+      "cohort": "narrow_n768",
+      "status": "pending_no_gpu",
+      "baseline_class": "current_loss",
+      "expected_candidate": null,
+      "candidate_us": null,
+      "correctness_status": "pending_gpu_validation",
+      "performance_status": "pending_gpu_validation",
+      "frozen_selected": "cktile_27_split0",
+      "frozen_selected_us": "95.33588",
+      "proposed_selected": "cktile_27_split0",
+      "selection_status": "retain_frozen_selection_pending_validation",
+      "full_frozen_comparison": {
+        "csv": "targets87_ledger.csv",
+        "key": {
+          "M": 14336,
+          "N": 768,
+          "K": 7168
+        }
+      },
+      "implementation_status": "pending",
+      "cpu_layout_status": "pending",
+      "offline_compile_status": "pending"
+    }
+  ],
+  "cpu_evidence": {
+    "implementation_summary": "../README.md",
+    "layout_summary": "../validation/README.md",
+    "layout_report": "../validation/layout_check.json",
+    "layout_status": "passed",
+    "layout_sha256": "cbbdd171741b762a31a5513697062a5f6cea07db7b9566d9a5c39e5bf764175c",
+    "compile_report": "../offline_compile.json",
+    "compile_status": "passed",
+    "compile_sha256": "df8487d761c4b5d182cb65f3fe87f207e788066df1f1f870d019cb3d58d75ca8",
+    "compile_checks": [
+      "9040",
+      "9041",
+      "9042",
+      "generated_host"
+    ],
+    "scope": "First25 candidates only; CPU coordinate/logical-schedule validation and offline gfx950 ISA/host compilation do not establish GPU numerical correctness or performance.",
+    "no_backward_branch_scratch_or_spill_in_three_offline_isa": true,
+    "gpu_executed": false
+  }
+}

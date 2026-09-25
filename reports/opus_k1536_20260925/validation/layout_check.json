@@ -1,0 +1,90 @@
+{
+  "status": "passed",
+  "cpu_only": true,
+  "fixed_k": 1536,
+  "loop_unroll": [
+    12,
+    2
+  ],
+  "n_values": [
+    256,
+    512,
+    6144,
+    7168,
+    8192,
+    16384
+  ],
+  "valid_m_rows_per_tile": [
+    64,
+    128,
+    192
+  ],
+  "m_tile_origins": [
+    0,
+    192
+  ],
+  "n_tile_origins": [
+    "first",
+    "last"
+  ],
+  "compile_command": [
+    "/root/toolchains/llvm-amdgpu-pin-op-dst-49c41889-build/bin/clang++",
+    "-x",
+    "hip",
+    "--offload-host-only",
+    "--offload-arch=gfx950",
+    "--hip-path=/opt/rocm",
+    "-nogpulib",
+    "-std=c++20",
+    "-O2",
+    "-DOPUS_ENABLE_RUNTIME_QUERY=0",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_k1536_20260925/validation/host_include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_k1536_20260925/validation/layout_check.cpp",
+    "-o",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_k1536_20260925/validation/layout_check"
+  ],
+  "source_sha256": {
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh": "86a63b43f3f15114bada7a3c30528a615339ad4abb90c8dd1649f4bbb9dab15f",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_k1536_gfx950.cuh": "14635adeb04f790b08724107cec05c4630acd301a91c2f9e882dc7ac348c9955",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_k1536_gfx950.cuh": "b40c0a307b4cbbc16d9c97a76ef4524dd25ea1115fa8ab861eb3e94ed36f3574",
+    "csrc/include/opus/opus.hpp": "cb671fc4c694ca62d526bf2ff64933f3a63cb38b396d2118c2aa895b704dd7b0",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh": "bb2a9426049e83b7febfc11cd1c7b7c61bd34976ceac5eab8288a62c272cc4ce",
+    "csrc/include/opus/dtypes.hpp": "8a40bd239520d390e6a708dfaaf65099166d4395487d6fc7bac240131c75e7c5",
+    "reports/opus_k1536_20260925/validation/layout_check.cpp": "2ce2b2c007954df4b7c6fec7b8a4064eca7c45fd6174c869bdfbe3fb72a34bbf",
+    "reports/opus_k1536_20260925/validation/scale_schedule_check.inc": "2ff7033fbc110fe7b3087a32dd46dad8d94fd6899091c6905e3e1d16e5cec665",
+    "reports/opus_k1536_20260925/validation/cpu_memory.inc": "b824054a8f613a435b6d079b284fab131327efb056e2e37baa3de1cc971ee7b6",
+    "reports/opus_k1536_20260925/validation/check_layout.py": "9074f8027371a6ec2f811d1ed301a6b64833af2b04e913e962f37c29249d8735"
+  },
+  "generated_sha256": {
+    "host_layout_helpers.inc": "e6606bcdcda27dabcbdbaa45d44826ab2c25983a98ce039634c1aecf7c1ddf38",
+    "host_schedule.inc": "102d3caf29af07652d28b10f47b17641bc37a5f509ef296d187df1df930425a7",
+    "host_matrix_layouts.inc": "52b6e4a33aa07bcb8b31e8003b08dc9b5872ff6a143f150a3c5cfa4b28673a76",
+    "host_matrix_prefetch.inc": "a313a158230ab12c463336a3119664041e2835ceb2888cdccfcf41daf1bd8a44",
+    "host_scale_load.inc": "c0e9ffef76ad635702e5ad94b62da32b5a0c40f53d2ef309250c822c6d06e6a3",
+    "host_scale_read.inc": "cee66139e322ddc50d5e2a9bdcdf0021da9e3df688c2dc6a5526b414077ab999",
+    "host_matrix_read.inc": "6a1aec9cd94de4c0fcd6b0aeba5a5c108c8d82150088e9bf376e121ff4a1aa31",
+    "host_compute.inc": "6a1eab5df91c0088dfdd8382118445856d43adf8353f3c8b2191292a54166889",
+    "host_output_layout.inc": "5f53e9783ffff9d11423eb16e98c636b0e602e9b625c53f07ffceee9cdabd069",
+    "host_include/opus/opus.hpp": "4141dac337e0314b33f3d2cb6354a0d5db23872d5b0bfe5ee5507ecd7b81c4ce",
+    "host_include/opus/dtypes.hpp": "8a40bd239520d390e6a708dfaaf65099166d4395487d6fc7bac240131c75e7c5"
+  },
+  "host_adaptation": {
+    "layouts": "Only host/device qualifiers changed in copies of layout helpers and adaptor definitions; production matrix-layout declarations and output partition declarations execute unchanged.",
+    "matrices": "Exact production prefetch and LDS-reader lambdas; async_load/load use bounded CPU coordinate storage. Async writes model Wave64 lane*16 LDS placement and check both slots.",
+    "scales": "Exact production lambdas; thread_id_x becomes an enumerated CPU thread; load/store become bounds-checked CPU memory operations.",
+    "schedule": "Exact production prologue, advance lambda, both LoopUnroll branches, and final compute; operations instrumented and barrier intrinsic redirected. Full event traces must match between specializations.",
+    "compute": "Exact production compute lambda; BaseMMA is replaced with a CPU oracle checking A/B group and indices, packed scale selection, accumulator indexing, and logical LDS readiness."
+  },
+  "runtime_library_linkage": "No HIP/HSA dynamic library dependencies or undefined HIP/HSA symbols.",
+  "limits": [
+    "No GPU discovery, device calls, GPU execution, timing, or runtime numerical-correctness testing.",
+    "Schedule instrumentation checks logical operand lifetimes, exact tile counts, and barriers; it does not simulate hardware latency or prove ISA hazard behavior.",
+    "Buffer-bound tests validate coordinate contracts; hardware OOB zero-fill, store discard, and async Wave64 lane placement semantics are assumed."
+  ],
+  "stdout": "K=1536 LoopUnroll=12 matrix_producer_bytes=688128 matrix_consumer_bytes=2162688 bounded_A_values=3538944 bounded_B_values=18874368 output_coordinates=294912 bounded_output_vectors=884736 LDS_bytes=120600\nK=1536 LoopUnroll=2 matrix_producer_bytes=688128 matrix_consumer_bytes=2162688 bounded_A_values=3538944 bounded_B_values=18874368 output_coordinates=294912 bounded_output_vectors=884736 LDS_bytes=120600\nK=1536 LoopUnroll=12 scale_cases=144 scale_values_checked=4423680 exact_panel_bytes=2328\nK=1536 LoopUnroll=2 scale_cases=144 scale_values_checked=4423680 exact_panel_bytes=2328\nK=1536 LoopUnroll=12 fixed_groups=12 matrix_prefetches=12 MFMA_calls_per_wave=288 barriers=13 scale_panel_loads=1 runtime_prefetches=0 runtime_scale_reads=0\nK=1536 LoopUnroll=2 fixed_groups=12 matrix_prefetches=12 MFMA_calls_per_wave=288 barriers=13 scale_panel_loads=1 runtime_prefetches=10 runtime_scale_reads=10\nidentical_schedule_events=483\nPASS: CPU-only K1536 production layouts/lambdas, exact scales, M64/M128/M192 tails, N through 16384, first/last N tiles, and both identical fixed-K schedules.\n",
+  "stderr": "",
+  "returncode": 0
+}

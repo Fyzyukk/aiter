@@ -1,0 +1,170 @@
+--- user_supplied/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_128x128_gfx950.cuh
++++ adapted/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_128x128_gfx950.cuh
+@@ -1,12 +1,11 @@
+ // SPDX-License-Identifier: Apache-2.0
+-// 128x128: S2 admits two resident WGs; grids of at most 256 WGs use S3.
+-// Large long-K grids shorten the S2 lookahead to K+1; other S2 grids use K+2.
+-// One A/B register buffer, packed scales, and no manual AGPR pinning.
++// 128x128: the registered S3/K+2 configuration uses one A/B register buffer,
++// packed scales, an XOR-swizzled A layout, and compiler register allocation.
+ // Imported layout helpers retain their Apache-2.0 provenance in ../../licenses/.
+ #pragma once
+ 
+ #include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh"
+-#include "traits.hpp"
++#include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_128x128_gfx950.cuh"
+ 
+ #if !defined(__HIP_DEVICE_COMPILE__)
+ template<class Traits>
+--- user_supplied/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_64x128_gfx950.cuh
++++ adapted/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_64x128_gfx950.cuh
+@@ -1,12 +1,11 @@
+ // SPDX-License-Identifier: Apache-2.0
+-// 64x128: compact S2/K+2 for dense one-panel grids, S3 for other shapes.
+-// S2 retires each stage's LDS readers before reusing that stage for K+2.
+-// S3 keeps the measured small-grid bulk and interleaved schedules.
++// 64x128: the registered S3/K+2 configuration retains the small-grid bulk
++// and interleaved schedules with packed scales and compiler register allocation.
+ // Imported layout helpers retain their Apache-2.0 provenance in ../../licenses/.
+ #pragma once
+ 
+ #include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh"
+-#include "traits.hpp"
++#include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_64x128_gfx950.cuh"
+ 
+ 
+ #if !defined(__HIP_DEVICE_COMPILE__)
+--- user_supplied/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_64x64_gfx950.cuh
++++ adapted/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_64x64_gfx950.cuh
+@@ -2,15 +2,17 @@
+ // 64x64 pipeline: four LDS stages, K+3 prefetch and one A/B register buffer.
+ #pragma once
+ 
+-#include "kernel_ops.hpp"
+-#include "traits.hpp"
+-
+-#if defined(__HIP_DEVICE_COMPILE__) && defined(__gfx950__)
++#include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh"
++#include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_64x64_gfx950.cuh"
++
++#if !defined(__HIP_DEVICE_COMPILE__)
++template<class Traits>
++__global__ void gemm_a8w8_mxfp8_bpreshuffle_64x64_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
++#elif defined(__gfx950__)
+ template<class Traits>
+ __global__ __launch_bounds__(Traits::BLOCK_SIZE, Traits::MIN_WGS_PER_CU)
+ void gemm_a8w8_mxfp8_bpreshuffle_64x64_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
+     using namespace opus;
+-    using namespace mxfp8_64x64;
+ 
+     using T = opus::remove_cvref_t<Traits>;
+     using D_A = opus::fp8_t;
+@@ -23,6 +25,7 @@
+ 
+     static_assert(T::B_M == 64 && T::B_N == 64);
+     static_assert(T::NUM_STAGES == 4 && T::REG_BUFFERS == 1 && T::SCALE_PANEL == 64);
++    static_assert(T::SPLIT_K == 1, "The registered bpreshuffle ABI writes BF16 directly");
+ 
+     // Tile and thread coordinates.
+     const int wave_id = __builtin_amdgcn_readfirstlane(thread_id_x() / T::WARP_SIZE);
+--- user_supplied/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_128x128_gfx950.cuh
++++ adapted/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_128x128_gfx950.cuh
+@@ -49,13 +49,14 @@
+     // Each K128 group has 128 A row scales and one shared B scale.
+     static constexpr int SCALE_PANEL = 64;
+     static constexpr int SFA_BYTES = B_M * SCALE_PANEL;
+-    static constexpr int SFB_BYTES = SCALE_PANEL;
++    // The pipeline broadcasts each B exponent into one packed uint32 word.
++    static constexpr int SFB_BYTES = SCALE_PANEL * sizeof(opus::u32_t);
+     static constexpr int SFA_VALUES_PER_PASS = BLOCK_SIZE * VEC_SCALE_A;
+     static constexpr int SFA_PASSES =
+         (SFA_BYTES + SFA_VALUES_PER_PASS - 1) / SFA_VALUES_PER_PASS;
+     static constexpr int LDS_BYTES = MATRIX_LDS_BYTES + SFA_BYTES + SFB_BYTES;
+ 
+-    // One operand buffer per thread. A, B and C use disjoint pinned ranges.
++    // Fragment geometry; the current pipeline uses compiler register allocation.
+     static constexpr int REG_BUFFERS = 1;
+     static constexpr int A_CHUNKS_PER_FRAGMENT = W_M * W_K / (WARP_SIZE * VEC_A);
+     static constexpr int B_CHUNKS_PER_FRAGMENT = W_N * W_K / (WARP_SIZE * VEC_B);
+@@ -81,6 +82,6 @@
+     static_assert(A_REGS == 32 && B_REGS == 32 && C_REGS == 64);
+     static_assert(PINNED_AGPRS == 128);
+     static_assert(VMEM_INSTRUCTIONS_PER_TILE == 8 && VMEM_STEADY_WAIT == 8);
+-    static_assert(SFA_PASSES == 2 && LDS_BYTES == 109632);
++    static_assert(SFA_PASSES == 2 && LDS_BYTES == 109824);
+     static_assert(LDS_BYTES <= 160 * 1024);
+ };
+--- user_supplied/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_64x128_gfx950.cuh
++++ adapted/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_64x128_gfx950.cuh
+@@ -49,13 +49,14 @@
+     // Each K128 group has 64 A row scales and one shared B scale.
+     static constexpr int SCALE_PANEL = 64;
+     static constexpr int SFA_BYTES = B_M * SCALE_PANEL;
+-    static constexpr int SFB_BYTES = SCALE_PANEL;
++    // The pipeline broadcasts each B exponent into one packed uint32 word.
++    static constexpr int SFB_BYTES = SCALE_PANEL * sizeof(opus::u32_t);
+     static constexpr int SFA_VALUES_PER_PASS = BLOCK_SIZE * VEC_SCALE_A;
+     static constexpr int SFA_PASSES =
+         (SFA_BYTES + SFA_VALUES_PER_PASS - 1) / SFA_VALUES_PER_PASS;
+     static constexpr int LDS_BYTES = MATRIX_LDS_BYTES + SFA_BYTES + SFB_BYTES;
+ 
+-    // One operand buffer per thread. A, B and C use disjoint pinned ranges.
++    // Fragment geometry; the current pipeline uses compiler register allocation.
+     static constexpr int REG_BUFFERS = 1;
+     static constexpr int A_CHUNKS_PER_FRAGMENT = W_M * W_K / (WARP_SIZE * VEC_A);
+     static constexpr int B_CHUNKS_PER_FRAGMENT = W_N * W_K / (WARP_SIZE * VEC_B);
+@@ -81,6 +82,6 @@
+     static_assert(A_REGS == 16 && B_REGS == 32 && C_REGS == 32);
+     static_assert(PINNED_AGPRS == 80);
+     static_assert(VMEM_INSTRUCTIONS_PER_TILE == 6 && VMEM_STEADY_WAIT == 6);
+-    static_assert(SFA_PASSES == 1 && LDS_BYTES == 80192);
++    static_assert(SFA_PASSES == 1 && LDS_BYTES == 80384);
+     static_assert(LDS_BYTES <= 160 * 1024);
+ };
+--- user_supplied/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_64x64_gfx950.cuh
++++ adapted/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_64x64_gfx950.cuh
+@@ -10,6 +10,8 @@
+     static constexpr int WARP_SIZE = 64;
+     static constexpr int NUM_WAVES = BLOCK_SIZE / WARP_SIZE;
+     static constexpr int MIN_WGS_PER_CU = 1;
++    // Existing single-launch, direct BF16 output ABI (tuner splitK=0).
++    static constexpr int SPLIT_K = 1;
+ 
+     static constexpr int B_M = 64;
+     static constexpr int B_N = 64;
+@@ -38,6 +40,8 @@
+     static constexpr int HALF_B_N = B_N;
+     static constexpr int smem_linear_wave = WARP_SIZE * VEC_A;
+     static constexpr int smem_padding = 32;
++    static constexpr int LDS_WAVE_BYTES = smem_linear_wave;
++    static constexpr int LDS_PADDING_BYTES = smem_padding;
+     static constexpr int smem_m_rep = B_M * B_K / smem_linear_wave;
+     static constexpr int smem_n_rep = B_N * B_K / smem_linear_wave;
+     static constexpr int A_STAGE = smem_m_rep * (smem_linear_wave + smem_padding);
+@@ -48,14 +52,16 @@
+ 
+     // Scale panel: 64 A row scales and one shared B scale for each K128 group.
+     static constexpr int SCALE_PANEL = 64;
++    static constexpr int SFA_ROWS_PER_REPEAT = T_M * W_M;
++    static constexpr int SFA_PRODUCERS_PER_GROUP = SFA_ROWS_PER_REPEAT / VEC_SCALE_A;
+     static constexpr int SFA_BYTES = B_M * SCALE_PANEL;
+-    static constexpr int SFB_BYTES = SCALE_PANEL;
++    static constexpr int SFB_BYTES = SCALE_PANEL * sizeof(opus::u32_t);
+     static constexpr int SFA_VALUES_PER_PASS = BLOCK_SIZE * VEC_SCALE_A;
+     static constexpr int SFA_PASSES =
+         (SFA_BYTES + SFA_VALUES_PER_PASS - 1) / SFA_VALUES_PER_PASS;
+     static constexpr int LDS_BYTES = MATRIX_LDS_BYTES + SFA_BYTES + SFB_BYTES;
+ 
+-    // One operand buffer per thread. A, B and C use disjoint AGPR ranges.
++    // Fragment geometry; the current pipeline uses compiler register allocation.
+     static constexpr int REG_BUFFERS = 1;
+     static constexpr int A_CHUNKS_PER_FRAGMENT = W_M * W_K / (WARP_SIZE * VEC_A);
+     static constexpr int B_CHUNKS_PER_FRAGMENT = W_N * W_K / (WARP_SIZE * VEC_B);
+@@ -84,6 +90,6 @@
+     static_assert(A_REGS == 16 && B_REGS == 16 && C_REGS == 16);
+     static_assert(PINNED_AGPRS == 48);
+     static_assert(VMEM_INSTRUCTIONS_PER_TILE == 4 && VMEM_STEADY_WAIT == 8);
+-    static_assert(LDS_BYTES == 71744);
++    static_assert(LDS_BYTES == 71936);
+     static_assert(LDS_ALLOC_BYTES * 2 <= 160 * 1024);
+ };
