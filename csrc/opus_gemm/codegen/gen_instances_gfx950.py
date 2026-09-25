@@ -2836,10 +2836,27 @@ def gen_mxscale_bpreshuffle_instance(
     **_unused,
 ):
     """Emit the optional gfx950 compact-E8M0 bpreshuffle implementation."""
-    assert (k.BLOCK_SIZE, k.B_K) == (256, 128)
-    assert (k.B_M, k.B_N) in ((256, 256), (128, 128), (64, 128), (64, 64))
-    assert (k.T_M, k.T_N) == (2, 2) and k.output_tiles_per_wg == 1
-    if k.pad_m:
+    wide = (k.B_M, k.B_N) == (192, 256)
+    fixedk = k.fixed_k is not None
+    assert k.B_K == 128 and k.output_tiles_per_wg == 1
+    if fixedk:
+        assert wide and k.BLOCK_SIZE == 512
+        assert k.fixed_k in (384, 768, 1024, 1536)
+        assert k.scale_panel == k.fixed_k // k.B_K
+    if k.fixed_k == 1536:
+        assert k.k_loop_unroll in (12, 2)
+    else:
+        assert k.k_loop_unroll is None
+    if wide:
+        assert k.BLOCK_SIZE in (256, 512)
+        assert (k.T_M, k.T_N) == (k.BLOCK_SIZE // 128, 2)
+        assert k.pad_m and k.has_oob
+        assert fixedk or k.scale_panel in (64, 128)
+    else:
+        assert k.BLOCK_SIZE == 256
+        assert (k.B_M, k.B_N) in ((256, 256), (128, 128), (64, 128), (64, 64))
+        assert (k.T_M, k.T_N) == (2, 2)
+    if k.pad_m and not wide:
         assert (k.B_M, k.B_N) == (256, 256) and k.has_oob
         pipeline_header = (
             "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_padded_m_gfx950.cuh"
@@ -2859,6 +2876,26 @@ def gen_mxscale_bpreshuffle_instance(
             f"{k.B_M}x{k.B_N}_gfx950.cuh"
         )
         traits_name = f"opus_gemm_mxscale_bpreshuffle_{k.B_M}x{k.B_N}_traits_gfx950"
+        if wide:
+            traits_name += f"<{k.BLOCK_SIZE // 64}, {k.scale_panel}>"
+    if k.fixed_k in (384, 768, 1024):
+        pipeline_header = (
+            "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_shortk_gfx950.cuh"
+        )
+        traits_header = (
+            "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_shortk_gfx950.cuh"
+        )
+        traits_name = f"opus_gemm_mxscale_bpreshuffle_shortk_traits_gfx950<{k.fixed_k}>"
+        kernel_func = "gemm_a8w8_mxfp8_bpreshuffle_shortk_kernel"
+    elif k.fixed_k == 1536:
+        pipeline_header = (
+            "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_k1536_gfx950.cuh"
+        )
+        traits_header = (
+            "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_k1536_gfx950.cuh"
+        )
+        traits_name = f"opus_gemm_mxscale_bpreshuffle_k1536_traits_gfx950<{k.k_loop_unroll}>"
+        kernel_func = "gemm_a8w8_mxfp8_bpreshuffle_k1536_kernel"
     n_align = max(k.B_N, k.GROUP_N)
     split = f"""#ifdef OPUS_FUSED_HOST_TU
 #include "{traits_header}"
@@ -2881,6 +2918,11 @@ __global__ void {kernel_func}({kargs_name} kargs);
     assert k.max_tensor_bytes is not None and k.has_oob == k.pad_m
     preamble = instance_impl_preamble(
         "\n#include <cstdint>\n#include <initializer_list>\n#include <type_traits>"
+    )
+    fixed_k_check = (
+        f'    AITER_CHECK(k == {k.fixed_k}, entry, ": requires K == {k.fixed_k}");\n'
+        if fixedk
+        else ""
     )
     source = f"""{preamble}
 {split}
@@ -2912,7 +2954,7 @@ void {k.name}(
     AITER_CHECK(m > 0 && n > 0 && k > 0 &&
                 m % {k.m_align} == 0 && n % {n_align} == 0 && k % {k.B_K} == 0,
                 entry, ": requires positive M multiple of {k.m_align}, N multiple of {n_align} and K multiple of 128");
-    AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
+{fixed_k_check}    AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
                 entry, ": XQ/WQ/Y shapes do not match");
     // Bound before narrowing dimensions or multiplying the signed int kargs.
     constexpr int64_t byte_limit = {k.max_tensor_bytes};

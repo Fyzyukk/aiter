@@ -138,6 +138,12 @@ class OpusGemmInstance:
     scale_dtype: str | None = None
     max_tensor_bytes: int | None = None
     pad_m: bool = False
+    # Number of K/128 scale groups staged by the 192x256 bpreshuffle family.
+    scale_panel: int = 64
+    # Exact runtime K accepted by a fixed short-K bpreshuffle specialization.
+    fixed_k: int | None = None
+    # Explicit K-loop schedule only for the independent K=1536 candidates.
+    k_loop_unroll: int | None = None
 
     @property
     def name(self) -> str:
@@ -155,6 +161,12 @@ class OpusGemmInstance:
         if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle":
             parts.insert(tag_at, self.kernel_tag)
             parts.append(f"tiles{self.output_tiles_per_wg}")
+            if (self.B_M, self.B_N) == (192, 256):
+                parts.append(f"sfpanel{self.scale_panel}")
+            if self.fixed_k is not None:
+                parts.append(f"fixedk{self.fixed_k}")
+            if self.k_loop_unroll is not None:
+                parts.append(f"kunroll{self.k_loop_unroll}")
         elif self.kernel_tag == "a8w8_mxscale_bmm_flatmm_splitk":
             parts.insert(tag_at, "a8w8_mxscale_flatmm_splitk")
             parts.append(f"wgpcu{self.WG_PER_CU}")
@@ -1738,6 +1750,31 @@ def _a8w8_mxscale_gemm_bpreshuffle(b_m=256, b_n=256, *, pad_m=False):
     )
 
 
+def _a8w8_mxscale_gemm_bpreshuffle_wide(waves, scale_panel):
+    return OpusGemmInstance(
+        waves * 64, 192, 256, 128, waves // 2, 2, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
+        WG_PER_CU=1, has_oob=True, arch_prefix="gfx950", direct_only=True,
+        output_tiles_per_wg=1, scale_dtype="e8m0",
+        max_tensor_bytes=2**31 - 1, pad_m=True, scale_panel=scale_panel,
+    )
+
+
+def _a8w8_mxscale_gemm_bpreshuffle_shortk(fixed_k):
+    assert fixed_k in (384, 768, 1024)
+    instance = _a8w8_mxscale_gemm_bpreshuffle_wide(8, fixed_k // 128)
+    instance.fixed_k = fixed_k
+    return instance
+
+
+def _a8w8_mxscale_gemm_bpreshuffle_k1536(loop_unroll):
+    assert loop_unroll in (12, 2)
+    instance = _a8w8_mxscale_gemm_bpreshuffle_wide(8, 12)
+    instance.fixed_k = 1536
+    instance.k_loop_unroll = loop_unroll
+    return instance
+
+
 # Optional gfx950 compact-E8M0 bpreshuffle candidates. They live in the
 # canonical registry for the existing opus_gemm route, but are not part
 # of the default subset-compile floor.
@@ -1748,7 +1785,37 @@ a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
     9011: _a8w8_mxscale_gemm_bpreshuffle(64, 128),
     9012: _a8w8_mxscale_gemm_bpreshuffle(64, 64),
     9020: _a8w8_mxscale_gemm_bpreshuffle(pad_m=True),
+    9030: _a8w8_mxscale_gemm_bpreshuffle_wide(4, 64),
+    9031: _a8w8_mxscale_gemm_bpreshuffle_wide(8, 64),
+    9032: _a8w8_mxscale_gemm_bpreshuffle_wide(4, 128),
+    9033: _a8w8_mxscale_gemm_bpreshuffle_wide(8, 128),
+    # Independent fixed-K candidates; existing pipelines and IDs stay unchanged.
+    9040: _a8w8_mxscale_gemm_bpreshuffle_shortk(384),
+    9041: _a8w8_mxscale_gemm_bpreshuffle_shortk(768),
+    9042: _a8w8_mxscale_gemm_bpreshuffle_shortk(1024),
+    9050: _a8w8_mxscale_gemm_bpreshuffle_k1536(12),
+    9051: _a8w8_mxscale_gemm_bpreshuffle_k1536(2),
 }
+
+
+def a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
+    """Scalar-only shape contract shared by native-E8M0 candidate filtering.
+
+    The generated exact-kid launcher repeats these checks before launching.
+    In particular, fixed-K kernels must never be offered for another K.
+    """
+    if (
+        instance.kernel_tag != "a8w8_mxscale_gemm_bpreshuffle"
+        or min(m, n, k) <= 0
+        or m % instance.m_align
+        or n % instance.B_N
+        or n % instance.GROUP_N
+        or k % instance.B_K
+        or (instance.fixed_k is not None and k != instance.fixed_k)
+    ):
+        return False
+    # This family has FP8 A/B and BF16 output, with signed-int byte extents.
+    return max(m * k, n * k, 2 * m * n) <= instance.max_tensor_bytes
 
 
 # combined list (used by production gen_instances / dispatch)
