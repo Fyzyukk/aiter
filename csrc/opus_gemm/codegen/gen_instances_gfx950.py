@@ -2836,24 +2836,49 @@ def gen_mxscale_bpreshuffle_instance(
     **_unused,
 ):
     """Emit the optional gfx950 compact-E8M0 bpreshuffle implementation."""
-    assert (k.BLOCK_SIZE, k.B_M, k.B_N, k.B_K) == (256, 256, 256, 128)
+    assert (k.BLOCK_SIZE, k.B_K) == (256, 128)
+    assert (k.B_M, k.B_N) in ((256, 256), (128, 128), (64, 128), (64, 64))
     assert (k.T_M, k.T_N) == (2, 2) and k.output_tiles_per_wg == 1
+    if k.pad_m:
+        assert (k.B_M, k.B_N) == (256, 256) and k.has_oob
+        pipeline_header = (
+            "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_padded_m_gfx950.cuh"
+        )
+        traits_header = (
+            "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_padded_m_gfx950.cuh"
+        )
+        traits_name = "opus_gemm_mxscale_bpreshuffle_padded_m_traits_gfx950"
+    if (k.B_M, k.B_N) != (256, 256):
+        pipeline_header = (
+            "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
+            f"{k.B_M}x{k.B_N}_gfx950.cuh"
+        )
+        kernel_func = f"gemm_a8w8_mxfp8_bpreshuffle_{k.B_M}x{k.B_N}_kernel"
+        traits_header = (
+            "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_"
+            f"{k.B_M}x{k.B_N}_gfx950.cuh"
+        )
+        traits_name = f"opus_gemm_mxscale_bpreshuffle_{k.B_M}x{k.B_N}_traits_gfx950"
+    n_align = max(k.B_N, k.GROUP_N)
     split = f"""#ifdef OPUS_FUSED_HOST_TU
 #include "{traits_header}"
 template<typename Traits>
-__global__ void gemm_a8w8_mxfp8_scale_kernel({kargs_name} kargs);
+__global__ void {kernel_func}({kargs_name} kargs);
 #else
 #include "{pipeline_header}"
 #endif"""
-    traits_alias = f"""template <typename D_C>
-using {k.name}_Traits = {traits_name}<
-    std::is_same_v<D_C, bf16_t>>;"""
-    kernel_launch = f"""{kernel_func}<{k.name}_Traits<D_C>><<<
+    assert k.output_dtypes == ["bf16_t"]
+    traits_alias = f"using {k.name}_Traits = {traits_name};"
+    kernel_launch = f"""{kernel_func}<{k.name}_Traits><<<
         grid, dim3({k.BLOCK_SIZE}), 0, aiter::getCurrentHIPStream()>>>(args);"""
+    device_decl = (
+        f"template __global__ void {kernel_func}<\n"
+        f"    {k.name}_Traits>({kargs_name});\n"
+    )
     cg._kid_pipeline_header[k.name] = pipeline_header
     assert (k.GROUP_M, k.GROUP_N, k.GROUP_K) == (1, 128, 128)
     assert k.scale_dtype == "e8m0"
-    assert k.max_tensor_bytes is not None and not k.has_oob
+    assert k.max_tensor_bytes is not None and k.has_oob == k.pad_m
     preamble = instance_impl_preamble(
         "\n#include <cstdint>\n#include <initializer_list>\n#include <type_traits>"
     )
@@ -2885,8 +2910,8 @@ void {k.name}(
 
     const int64_t m = XQ.size(-2), n = WQ.size(-2), k = XQ.size(-1);
     AITER_CHECK(m > 0 && n > 0 && k > 0 &&
-                m % {k.m_align} == 0 && n % {k.B_N} == 0 && k % {k.B_K} == 0,
-                entry, ": requires positive M/N multiples of 256 and K multiple of 128");
+                m % {k.m_align} == 0 && n % {n_align} == 0 && k % {k.B_K} == 0,
+                entry, ": requires positive M multiple of {k.m_align}, N multiple of {n_align} and K multiple of 128");
     AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
                 entry, ": XQ/WQ/Y shapes do not match");
     // Bound before narrowing dimensions or multiplying the signed int kargs.
@@ -2929,8 +2954,10 @@ void {k.name}(
     args.stride_sfa = m; args.stride_sfb = k / {k.GROUP_K};
     args.stride_sfa_batch = m * (k / {k.GROUP_K});
     args.stride_sfb_batch = (n / {k.GROUP_N}) * (k / {k.GROUP_K});
-    const int tiles_m = m / {k.B_M};
-    const dim3 grid(((tiles_m + {k.output_tiles_per_wg - 1}) / {k.output_tiles_per_wg}) * (n / {k.B_N}));
+    const int tiles_m = {f"(m + {k.B_M - 1})" if k.pad_m else "m"} / {k.B_M};
+    // The imported pipeline uses block_id_x for N and block_id_y for M,
+    // including its 2x2 tile swizzle when both dimensions are multiples of 512.
+    const dim3 grid(n / {k.B_N}, tiles_m);
     {kernel_launch}
 }}
 #endif
@@ -2948,16 +2975,15 @@ void {k.name}(
             {
                 "kid_name": k.name,
                 "dtype": c_dtype,
-                "device_decl": (
-                    f"template __global__ void {kernel_func}<\n"
-                    f"    {k.name}_Traits<{c_dtype}>>({kargs_name});\n"
-                ),
+                "device_decl": device_decl,
             }
         )
 
 
 # ---------- Self-register at import time ----------
-register_emit("gfx950", "a8w8_mxscale_gemm_bpreshuffle", gen_mxscale_bpreshuffle_instance)
+register_emit(
+    "gfx950", "a8w8_mxscale_gemm_bpreshuffle", gen_mxscale_bpreshuffle_instance
+)
 register_emit("gfx950", "a16w16_persistent", gen_persistent_instance)
 register_emit("gfx950", "a8w8_scale", gen_scale_instance)
 register_emit("gfx950", "a8w8_mxscale", gen_scale_instance)

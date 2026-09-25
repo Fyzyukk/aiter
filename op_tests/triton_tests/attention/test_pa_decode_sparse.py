@@ -9,6 +9,7 @@ import triton
 
 from aiter.ops.triton.attention.pa_decode_sparse import pa_decode_sparse
 from aiter.ops.triton.utils._triton import arch_info
+from aiter.ops.triton.utils.types import get_fp8_e4m3_dtype
 from aiter.test_common import checkAllclose
 
 
@@ -248,7 +249,7 @@ def _reduce_partials_torch(
     return out
 
 
-@pytest.mark.parametrize("T", [1, 64, 256, 2048])
+@pytest.mark.parametrize("T", [1, 64, 256, 2437])
 @pytest.mark.parametrize("H", [16, 32, 64, 128])
 @pytest.mark.parametrize("D", [512])
 @pytest.mark.parametrize("kv_len", [136, 388, 1024])
@@ -311,18 +312,14 @@ def test_pa_decode_sparse_vs_reference(
     )
 
 
-# ---------------------------------------------------------------------------
-# FP8 KV cache quantization helpers
-# ---------------------------------------------------------------------------
-
 _FP8_GROUP_SIZE = 64
-_FP8_DTYPE = torch.float8_e4m3fnuz
+_FP8_DTYPE = get_fp8_e4m3_dtype()
 
 
 def _quantize_kv_fp8(unified_kv, group_size=_FP8_GROUP_SIZE):
     """Quantize bf16/fp16 unified_kv to (fp8, scales) with 1xGROUP_SIZE block scaling.
 
-    Returns (kv_fp8, kv_scales) where kv_fp8 is float8_e4m3fnuz and
+    Returns (kv_fp8, kv_scales) where kv_fp8 is _FP8_DTYPE and
     kv_scales is [total_pages, D // group_size] fp32.
     """
     total_pages, D = unified_kv.shape
@@ -477,6 +474,7 @@ def two_loop_reference(
     T = main_indptr.numel() - 1
     mi, mp = main_idx.long(), main_indptr.long()
     ei, ep = extra_idx.long(), extra_indptr.long()
+    ei = torch.where(ei < 0, -1 - main_pages, ei)  # -1 again after the shift below
     rows, lens = [], []
     for tok in range(T):
         row = torch.cat(
@@ -492,7 +490,7 @@ def two_loop_reference(
     )
 
 
-@pytest.mark.parametrize("T", [1, 32, 128])
+@pytest.mark.parametrize("T", [1, 32, 128, 2437])
 @pytest.mark.parametrize("H", [16])
 @pytest.mark.parametrize("D", [512])
 @pytest.mark.parametrize("main_len", [128])
@@ -539,6 +537,7 @@ def test_pa_decode_sparse_two_loop(T, H, D, main_len, extra_len, dtype, strided_
     extra_idx = torch.randint(
         0, extra_pool, (T, extra_len), device=device, dtype=torch.int32
     ).reshape(-1)
+    extra_idx[::5] = -1  # -1 sentinels, skipped by the kernel
     extra_indptr = torch.arange(
         0, T * extra_len + 1, extra_len, dtype=torch.int32, device=device
     )

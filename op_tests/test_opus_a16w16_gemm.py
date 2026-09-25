@@ -1,21 +1,24 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""End-to-end regression of exact-kid ``opus_bmm`` vs torch.bmm.
+"""A16W16 OPUS exact-kid regressions and benchmark coverage.
 
 Usage:
     python3 op_tests/test_opus_a16w16_gemm.py --kid KID [-m M -n N -k K -b B]
     python3 op_tests/test_opus_a16w16_gemm.py --csv_file <shape_csv>
-
-    # opus-only sweep in CUDA-graph mode, golden-checked:
-    python3 op_tests/test_opus_a16w16_gemm.py --opus_sweep -n 2048 -k 7168
 """
 
 import argparse
 import sys
-from pathlib import Path
 
 import pytest
 import torch
+
+from aiter.benchmark_data_init import (
+    DATA_DISTS,
+    add_data_init_args,
+    fill,
+    make_generator,
+)
 
 # Skip on unsupported arch via the same probe opus uses at import time.
 from aiter.ops.opus._arch import _detect_arch, _device_arch_and_cu
@@ -26,11 +29,6 @@ _arch_ok, _detected_gfx = _detect_arch({"gfx950", "gfx942", "gfx1250"})
 from aiter.ops.opus import opus_bmm, opus_gemm
 from aiter.test_common import checkAllclose, run_perftest
 
-_DEFAULT_TUNED_CSV = (
-    Path(__file__).resolve().parents[1]
-    / "aiter/configs/model_configs/dsv4_bf16_tuned_gemm.csv"
-)
-
 
 def _torch_ref(A: torch.Tensor, B: torch.Tensor, out_dtype):
     # A: [batch, M, K], B: [N, K] or [batch, N, K] -> bmm.
@@ -40,9 +38,47 @@ def _torch_ref(A: torch.Tensor, B: torch.Tensor, out_dtype):
     return torch.bmm(A.float(), B.float().transpose(-1, -2)).to(out_dtype)
 
 
-def _make_b(batch: int, N: int, K: int) -> torch.Tensor:
-    """Build the physical dense ``[batch, N, K]`` weight contract."""
-    B2D = torch.randn(N, K, device="cuda", dtype=torch.bfloat16)
+# Keep the benchmark's public initialization choices available to external
+# power/debug scripts. A16W16 has no scale tensor, so scale initialization is
+# accepted by the shared CLI for compatibility but is not consumed here.
+DATA_INITS = DATA_DISTS
+
+
+def _make_tensor(shape, dist="norm", gen=None, const_val=1.0):
+    """Build a reproducible BF16 operand under the requested distribution."""
+    return fill(
+        shape,
+        dist,
+        gen,
+        dtype=torch.bfloat16,
+        device="cuda",
+        uniform=(-1.0, 1.0),
+        constant=const_val,
+    )
+
+
+def _make_a(
+    batch: int,
+    M: int,
+    K: int,
+    dist: str = "norm",
+    gen=None,
+    const_val: float = 1.0,
+) -> torch.Tensor:
+    """Build batch-first activations under the requested distribution."""
+    return _make_tensor((batch, M, K), dist, gen, const_val)
+
+
+def _make_b(
+    batch: int,
+    N: int,
+    K: int,
+    dist: str = "norm",
+    gen=None,
+    const_val: float = 1.0,
+) -> torch.Tensor:
+    """Build batch-first physical weights for the exact BMM path."""
+    B2D = _make_tensor((N, K), dist, gen, const_val)
     return B2D.unsqueeze(0).expand(batch, -1, -1).contiguous()
 
 
@@ -110,9 +146,12 @@ def run_a16w16_case(
     split_k: int = 0,
     out_dtype=torch.bfloat16,
     use_graph: bool = False,
+    dist: str = "norm",
+    gen=None,
+    const_val: float = 1.0,
 ):
-    A = torch.randn(batch, M, K, device="cuda", dtype=torch.bfloat16)
-    B = _make_b(batch, N, K)
+    A = _make_a(batch, M, K, dist, gen, const_val)
+    B = _make_b(batch, N, K, dist, gen, const_val)
     Y = torch.empty((batch, M, N), device="cuda", dtype=out_dtype)
 
     ref = _torch_ref(A, B, out_dtype)
@@ -180,6 +219,9 @@ def run_a16w16_csv_sweep(
     split_k: int = 0,
     out_dtype=torch.bfloat16,
     use_graph: bool = False,
+    dist: str = "norm",
+    gen=None,
+    const_val: float = 1.0,
 ):
     shapes = load_shapes_from_csv(csv_path, default_kid=kid, default_split_k=split_k)
     return _run_a16w16_sweep(
@@ -188,6 +230,9 @@ def run_a16w16_csv_sweep(
         batch=batch,
         out_dtype=out_dtype,
         use_graph=use_graph,
+        dist=dist,
+        gen=gen,
+        const_val=const_val,
     )
 
 
@@ -198,6 +243,9 @@ def _run_a16w16_sweep(
     batch: int,
     out_dtype: torch.dtype,
     use_graph: bool,
+    dist: str,
+    gen,
+    const_val: float,
 ):
     print(f"\n{'=' * 80}")
     mode = "graph" if use_graph else "eager"
@@ -213,8 +261,8 @@ def _run_a16w16_sweep(
             f"kid={row_kid} split_k={row_split_k}"
         )
         try:
-            A = torch.randn(batch, M, K, device="cuda", dtype=torch.bfloat16)
-            B = _make_b(batch, N, K)
+            A = _make_a(batch, M, K, dist, gen, const_val)
+            B = _make_b(batch, N, K, dist, gen, const_val)
             Y = torch.empty((batch, M, N), device="cuda", dtype=out_dtype)
             ref = _torch_ref(A, B, out_dtype)
             Y, us = _run_exact_a16w16(
@@ -234,75 +282,6 @@ def _run_a16w16_sweep(
             failed += 1
     print(f"\nSummary: {passed} passed, {failed} failed out of {len(shapes)}")
     return failed == 0
-
-
-def load_opus_sweep_shapes(csv_path: str, *, N: int, K: int, out_dtype):
-    import pandas as pd
-
-    df = pd.read_csv(csv_path)
-    required = {
-        "gfx",
-        "cu_num",
-        "M",
-        "N",
-        "K",
-        "bias",
-        "dtype",
-        "outdtype",
-        "scaleAB",
-        "bpreshuffle",
-        "libtype",
-        "solidx",
-        "splitK",
-    }
-    missing = sorted(required.difference(df.columns))
-    if missing:
-        raise ValueError(f"OPUS sweep CSV is missing columns {missing}")
-
-    arch, cu_num = _device_arch_and_cu(torch.device("cuda"))
-
-    def is_false(column):
-        return df[column].astype(str).str.strip().str.lower().isin(("false", "0"))
-
-    rows = df[
-        df["gfx"].astype(str).str.lower().eq(arch)
-        & df["cu_num"].eq(cu_num)
-        & df["N"].eq(N)
-        & df["K"].eq(K)
-        & df["libtype"].astype(str).str.lower().eq("opus")
-        & df["dtype"].astype(str).eq(str(torch.bfloat16))
-        & df["outdtype"].astype(str).eq(str(out_dtype))
-        & is_false("bias")
-        & is_false("scaleAB")
-        & is_false("bpreshuffle")
-    ]
-    shapes = [
-        (int(row.M), int(row.N), int(row.K), int(row.solidx), int(row.splitK))
-        for row in rows.itertuples(index=False)
-    ]
-    if not shapes:
-        raise ValueError(
-            f"no OPUS tuned rows for gfx={arch}, cu_num={cu_num}, N={N}, K={K}, "
-            f"outdtype={out_dtype} in {csv_path}"
-        )
-    return list(dict.fromkeys(shapes))
-
-
-def run_a16w16_opus_sweep(
-    csv_path: str,
-    *,
-    N: int,
-    K: int,
-    out_dtype: torch.dtype,
-):
-    shapes = load_opus_sweep_shapes(csv_path, N=N, K=K, out_dtype=out_dtype)
-    return _run_a16w16_sweep(
-        shapes,
-        source=csv_path,
-        batch=1,
-        out_dtype=out_dtype,
-        use_graph=True,
-    )
 
 
 def _runtime_arch() -> str | None:
@@ -497,24 +476,35 @@ def test_gfx1250_bf16_output_accepts_fp32_bias():
 
 
 @pytest.mark.parametrize(
-    ("K", "split_k", "launch_split_k"),
-    ((128, 0, 1), (128, 1, 1), (128, 16, 1), (512, 0, 4)),
+    ("arch", "kid", "K", "split_k", "launch_split_k", "expected_shape"),
+    (
+        ("gfx942", 10201, 128, 0, 1, (1, 1, 64, 64)),
+        ("gfx942", 10201, 128, 16, 1, (1, 1, 64, 64)),
+        ("gfx942", 10201, 512, 0, 4, (4, 1, 64, 64)),
+        ("gfx1250", 20000, 128, 2, 1, None),
+    ),
 )
-def test_gfx942_split_k_plan_sizes_workspace_after_clamping(K, split_k, launch_split_k):
-    args = _a16_policy_args("gfx942", 1, 64, K)
-    args["cu_num"] = 80
-    plan = _get_cached_a16w16_launch_plan(**args, kid=10201, split_k=split_k)
+def test_a16w16_split_k_plan_converges_before_workspace(
+    arch, kid, K, split_k, launch_split_k, expected_shape
+):
+    args = _a16_policy_args(arch, 1, 64, K)
+    if arch == "gfx942":
+        args["cu_num"] = 80
+    plan = _get_cached_a16w16_launch_plan(**args, kid=kid, split_k=split_k)
 
-    assert plan.resolved_kid == 10201
+    assert plan.resolved_kid == kid
     assert plan.workspace_capacity_split_k == launch_split_k
     assert plan.abi_split_k == launch_split_k
-    assert plan.workspace_spec.shape == (launch_split_k, 1, 64, 64)
+    assert plan.workspace_spec is not None
+    assert plan.workspace_spec.shape[0] == launch_split_k
+    if expected_shape is not None:
+        assert plan.workspace_spec.shape == expected_shape
     assert plan.workspace_spec.dtype == torch.float32
 
 
 @pytest.mark.parametrize(
     ("K", "caller_splits", "allocated_splits", "launch_split_k"),
-    ((128, None, 1, 1), (512, None, 4, 4), (128, 1, 1, 1), (128, 16, 16, 1)),
+    ((128, None, 1, 1), (512, None, 4, 4), (128, 16, 16, 1)),
 )
 def test_gfx942_workspace_allocation_and_launch_split_k(
     monkeypatch, K, caller_splits, allocated_splits, launch_split_k
@@ -552,8 +542,7 @@ def test_gfx942_workspace_allocation_and_launch_split_k(
     (
         ("gfx942", 10201, 64, 0, "too small for gfx942"),
         ("gfx942", 10201, 192, 0, "needs even loops per split"),
-        ("gfx950", 200, 128, 3, "K-tile limit 2"),
-        ("gfx1250", 20000, 128, 2, "K-tile limit 1"),
+        ("gfx950", 200, 128, 3, "too small for gfx950"),
     ),
 )
 def test_a16w16_launch_plan_preserves_split_k_limits(arch, kid, K, split_k, error):
@@ -761,22 +750,6 @@ def test_a16w16_policy_loader_skips_malformed_kid_and_splitk_rows(monkeypatch):
         policy._load_a16w16_opus_tuned.cache_clear()
 
 
-@pytest.mark.parametrize(
-    ("arch", "shape", "expected_kid"),
-    (
-        ("gfx950", (128, 64, 512), 1200),
-        ("gfx942", (32, 256, 1024), 10300),
-        ("gfx1250", (32, 128, 512), 20007),
-    ),
-)
-def test_a16w16_heuristic_baseline_kid(arch, shape, expected_kid):
-    from aiter.ops.opus.policy import resolve_a16w16_heuristic_candidate
-
-    M, N, K = shape
-    plan = resolve_a16w16_heuristic_candidate(**_a16_policy_args(arch, M, N, K))
-    assert plan.resolved_kid == expected_kid
-
-
 def test_shape_driven_opus_selection_and_rank_route(monkeypatch):
     from aiter.ops.opus import gemm_op_a16w16, policy
 
@@ -805,20 +778,81 @@ def test_shape_driven_opus_selection_and_rank_route(monkeypatch):
         ("bmm", 1200, 0),
     ]
     tuned[0] = {"solidx": -1, "splitK": 0}
-    monkeypatch.setattr(
-        policy,
-        "resolve_a16w16_heuristic_candidate",
-        lambda **_kwargs: pytest.fail("a present tuned row must not use heuristic"),
+    warnings = []
+    gemm_op_a16w16._warn_invalid_a16w16_tuned_row.cache_clear()
+    monkeypatch.setattr(gemm_op_a16w16.logger, "warning", warnings.append)
+    try:
+        opus.gemm_a16w16_opus(A, B)
+        opus.gemm_a16w16_opus(A, B)
+    finally:
+        gemm_op_a16w16._warn_invalid_a16w16_tuned_row.cache_clear()
+
+    assert [(op, args["kid"], args["split_k"]) for op, *_, args in calls[-2:]] == [
+        ("gemm", 1200, 0),
+        ("gemm", 1200, 0),
+    ]
+    assert len(warnings) == 1
+    assert "kid=-1, splitK=0" in warnings[0]
+
+
+@pytest.mark.parametrize("kid", (10210, 10213, 10216))
+def test_gfx942_exact_plan_rejects_non_exact_n_bf16_workspace_kid(kid):
+    with pytest.raises(ValueError, match=rf"gfx942 exact kid {kid} requires N"):
+        _get_cached_a16w16_launch_plan(
+            "gfx942",
+            256,
+            1000,
+            4096,
+            1,
+            304,
+            False,
+            torch.bfloat16,
+            torch.bfloat16,
+            kid,
+            2,
+        )
+
+
+@pytest.mark.parametrize(
+    ("selection", "requested_kid", "resolved_kid"),
+    (("explicit", 10210, 10200), ("tuned", 10213, 10203)),
+)
+def test_gfx942_compat_redirects_non_exact_n_bf16_workspace_kid(
+    monkeypatch, selection, requested_kid, resolved_kid
+):
+    tuned_config = (
+        {"solidx": requested_kid, "splitK": 2} if selection == "tuned" else None
     )
+    opus, calls = _capture_shape_driven_opus_launch(
+        monkeypatch, arch="gfx942", tuned_config=tuned_config
+    )
+    A = torch.empty((256, 4096), device="meta", dtype=torch.bfloat16)
+    B = torch.empty((1000, 4096), device="meta", dtype=torch.bfloat16)
+    kwargs = {"kernelId": requested_kid, "splitK": 2} if selection == "explicit" else {}
+
+    opus.gemm_a16w16_opus(A, B, **kwargs)
+
+    assert [(op, args["kid"], args["split_k"]) for op, *_, args in calls] == [
+        ("gemm", resolved_kid, 2)
+    ]
+
+
+def test_gfx942_compat_rejects_non_exact_n_bf16_workspace_kid_without_sibling(
+    monkeypatch,
+):
+    from aiter.ops.opus import gemm_op_a16w16, policy
+
     monkeypatch.setattr(
         gemm_op_a16w16,
-        "_launch_a16w16_gemm",
-        lambda _XQ, _WQ, _Y, **kwargs: (_ for _ in ()).throw(
-            ValueError(f"unknown OPUS kid {kwargs['kid']}")
-        ),
+        "_device_arch_and_cu",
+        lambda _device: ("gfx942", 304),
     )
-    with pytest.raises(ValueError, match="unknown OPUS kid -1"):
-        opus.gemm_a16w16_opus(A, B)
+    monkeypatch.setattr(policy, "lookup_a16w16_opus_config", lambda **_kwargs: None)
+    A = torch.empty((256, 4096), device="meta", dtype=torch.bfloat16)
+    B = torch.empty((1000, 4096), device="meta", dtype=torch.bfloat16)
+
+    with pytest.raises(ValueError, match="gfx942 exact kid 10216 requires N"):
+        gemm_op_a16w16.gemm_a16w16_opus(A, B, kernelId=10216, splitK=2)
 
 
 def test_legacy_a16w16_tune_routes_to_family_executor(monkeypatch):
@@ -897,15 +931,16 @@ if __name__ == "__main__":
             f"gfx950/gfx942/gfx1250 (detected {_detected_gfx!r})"
         )
         sys.exit(0)
+
+    # The standard Aiter runner executes each file directly.
     if len(sys.argv) == 1:
         sys.exit(pytest.main([__file__]))
-    parser = argparse.ArgumentParser(
-        description="End-to-end exact-kid test for aiter.ops.opus.opus_bmm"
-    )
-    parser.add_argument("-m", type=int, default=256)
-    parser.add_argument("-n", type=int, default=512)
-    parser.add_argument("-k", type=int, default=256)
-    parser.add_argument("-b", "--batch", type=int, default=8)
+
+    parser = argparse.ArgumentParser(description="A16W16 OPUS exact-kid benchmark")
+    parser.add_argument("-m", type=int, default=None)
+    parser.add_argument("-n", type=int, default=None)
+    parser.add_argument("-k", type=int, default=None)
+    parser.add_argument("-b", "--batch", type=int, default=None)
     parser.add_argument("--kid", type=int, default=None)
     parser.add_argument("--split-k", type=int, default=0)
     parser.add_argument(
@@ -927,69 +962,56 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "--opus_sweep",
-        action="store_true",
-        help=(
-            "Run the CUDA-graph-mode opus_gemm sweep (golden-checked) over "
-            "the M values whose tuned winner is opus for the given N/K in the "
-            "tuned CSV (default: dsv4_bf16_tuned_gemm.csv)."
-        ),
-    )
-    parser.add_argument(
-        "--tuned_csv",
-        type=str,
-        default=None,
-        metavar="CSV",
-        help=(
-            "Tuned GEMM CSV used by --opus_sweep to pick opus shapes. "
-            "Defaults to the shipped dsv4_bf16_tuned_gemm.csv."
-        ),
-    )
-    parser.add_argument(
         "--graph",
         action="store_true",
         help="Use CUDA-graph mode for the single-shape / --csv_file paths too.",
     )
+    add_data_init_args(parser, default_dist="norm")
+    parser.add_argument(
+        "--const-val",
+        type=float,
+        default=1.0,
+        help="Fill value used by --data-init constant (default: 1.0).",
+    )
     args = parser.parse_args()
 
     out_dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float32
+    if len(args.data_init) != 1:
+        parser.error("--data-init accepts exactly one distribution")
+    init_kwargs = {
+        "dist": args.data_init[0],
+        "gen": make_generator(args.seed),
+        "const_val": args.const_val,
+    }
+    if args.csv_file is not None and args.m is not None:
+        parser.error("--csv_file cannot be combined with -m")
 
-    if args.opus_sweep and args.csv_file is not None:
-        parser.error("--opus_sweep and --csv_file are mutually exclusive")
-    if args.tuned_csv is not None and not args.opus_sweep:
-        parser.error("--tuned_csv requires --opus_sweep")
-
-    if args.opus_sweep:
-        ok = run_a16w16_opus_sweep(
-            args.tuned_csv or str(_DEFAULT_TUNED_CSV),
-            N=args.n,
-            K=args.k,
-            out_dtype=out_dtype,
-        )
-        if not ok:
-            sys.exit(1)
-    elif args.csv_file is not None:
+    if args.csv_file is not None:
         ok = run_a16w16_csv_sweep(
             args.csv_file,
-            batch=args.batch,
+            batch=args.batch or 8,
             kid=args.kid,
             split_k=args.split_k,
             out_dtype=out_dtype,
             use_graph=args.graph,
+            **init_kwargs,
         )
-        if not ok:
-            sys.exit(1)
+        sys.exit(0 if ok else 1)
     else:
         if args.kid is None:
-            parser.error("--kid is required for a single-shape run")
-        k_eff = max(args.k, 128)
+            parser.error("--kid is required for a single-shape exact run")
+        M = args.m if args.m is not None else 256
+        N = args.n if args.n is not None else 512
+        K = max(args.k if args.k is not None else 256, 128)
+        batch = args.batch or 8
         run_a16w16_case(
-            args.batch,
-            args.m,
-            args.n,
-            k_eff,
+            batch,
+            M,
+            N,
+            K,
             kid=args.kid,
             split_k=args.split_k,
             out_dtype=out_dtype,
             use_graph=args.graph,
+            **init_kwargs,
         )

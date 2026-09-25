@@ -64,6 +64,24 @@ def _runtime_arch() -> str | None:
     return str(properties.gcnArchName).split(":", 1)[0].lower()
 
 
+def _representative_kids(kids) -> tuple[int, ...]:
+    ordered = sorted(kids)
+    representatives = (ordered[0], ordered[len(ordered) // 2], ordered[-1])
+    return tuple(dict.fromkeys(representatives))
+
+
+def _gfx1250_workspace_representatives() -> tuple[int, ...]:
+    by_tag = {}
+    for kid in sorted(SPLITK_KIDS):
+        instance = get_kernel_instance(GFX1250, "a16w16", kid)
+        if instance is not None:
+            by_tag.setdefault(instance.kernel_tag, kid)
+    return tuple(by_tag.values())
+
+
+_CO_ROUTE_KIDS = _representative_kids(GFX1250_4WAVE_CO_KIDS)
+
+
 @pytest.fixture(scope="module")
 def _gfx1250_device() -> torch.device:
     arch = _runtime_arch()
@@ -133,10 +151,10 @@ def test_co_manifest_uses_supported_architecture_keys():
 
 
 def test_gfx1250_co_registry_and_launch_contract():
-    assert len(gfx1250_4wave_co_kernels_list) == 219
+    assert len(gfx1250_4wave_co_kernels_list) == 221
     assert GFX1250_4WAVE_CO_KIDS == frozenset(gfx1250_4wave_co_kernels_list)
     assert min(GFX1250_4WAVE_CO_KIDS) == 21016
-    assert max(GFX1250_4WAVE_CO_KIDS) == 21315
+    assert max(GFX1250_4WAVE_CO_KIDS) == 21317
     assert GFX1250_4WAVE_CO_KIDS <= NON_SPLITK_KIDS
     assert GFX1250_4WAVE_CO_KIDS <= DEFAULT_COMPILED_KIDS_BY_ARCH[GFX1250]
     assert GFX1250_4WAVE_CO_KIDS.isdisjoint(SPLITK_KIDS)
@@ -144,6 +162,7 @@ def test_gfx1250_co_registry_and_launch_contract():
     assert {
         "a16w16_4wave_co",
         "a16w16_4wave_wl_co",
+        "a16w16_4wave_wlr_co",
     } <= OPUS_KERNEL_TAGS_BY_ARCH_FAMILY[GFX1250]["a16w16"]
 
     kid = min(GFX1250_4WAVE_CO_KIDS)
@@ -168,10 +187,16 @@ def test_gfx1250_co_registry_and_launch_contract():
         _co_plan(kid, has_bias=True)
 
 
-@pytest.mark.parametrize("entry", ("opus_bmm", "gemm_a16w16_opus"))
-@pytest.mark.parametrize("split_k", (0, 1))
+# Registry/artifact checks own exhaustive identity coverage. The route itself is
+# kid-independent, so cover both entries/split modes with representative ids.
 @pytest.mark.parametrize(
-    "kid", sorted(GFX1250_4WAVE_CO_KIDS), ids=lambda kid: f"kid-{kid}"
+    ("kid", "split_k", "entry"),
+    (
+        (_CO_ROUTE_KIDS[0], 0, "opus_bmm"),
+        (_CO_ROUTE_KIDS[1], 1, "opus_bmm"),
+        (_CO_ROUTE_KIDS[2], 0, "gemm_a16w16_opus"),
+        (_CO_ROUTE_KIDS[0], 1, "gemm_a16w16_opus"),
+    ),
 )
 def test_gfx1250_co_bmm_reaches_exact_launch(kid, split_k, entry, monkeypatch):
     calls = []
@@ -200,11 +225,7 @@ def test_gfx1250_co_bmm_reaches_exact_launch(kid, split_k, entry, monkeypatch):
 
 @pytest.mark.parametrize(
     "kid",
-    sorted(
-        kid
-        for kid in SPLITK_KIDS
-        if get_kernel_instance(GFX1250, "a16w16", kid) is not None
-    ),
+    _gfx1250_workspace_representatives(),
 )
 def test_gfx1250_workspace_kids_reject_bmm(kid):
     with pytest.raises(ValueError, match="workspace kids require batch=1"):
@@ -215,7 +236,7 @@ def test_gfx1250_co_assets_and_host_only_codegen(tmp_path, monkeypatch):
     symbols_by_kid = {
         kid: instance.name for kid, instance in gfx1250_4wave_co_kernels_list.items()
     }
-    assert len(set(symbols_by_kid.values())) == 219
+    assert len(set(symbols_by_kid.values())) == 221
 
     for instance in gfx1250_4wave_co_kernels_list.values():
         image = Path(co_image_path(CO_KERNELS_JSON, instance))
@@ -225,7 +246,7 @@ def test_gfx1250_co_assets_and_host_only_codegen(tmp_path, monkeypatch):
 
     image_dir = Path(CO_KERNELS_JSON).parent / GFX1250
     build_info = json.loads((image_dir / "build_info.json").read_text())
-    assert len(build_info["kernels"]) == 219
+    assert len(build_info["kernels"]) == 221
     assert {entry["kernarg_segment_size"] for entry in build_info["kernels"]} == {64}
     assert {
         entry["kid"]: entry["symbol"] for entry in build_info["kernels"]
@@ -352,3 +373,7 @@ def test_gfx1250_tuner_selects_co_without_split_k(monkeypatch):
     instance = gfx1250_4wave_co_kernels_list[min(GFX1250_4WAVE_CO_KIDS)]
     assert candidate_splitK(64, 128, 4096, 1, 256, instance) == [0]
     assert not kid_rejects_shape(instance, 65, 129, 4097)
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__]))

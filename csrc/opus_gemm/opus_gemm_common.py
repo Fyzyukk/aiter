@@ -6,7 +6,9 @@ import os
 import sys
 from dataclasses import dataclass, field
 
-_A16W16_CO_TAGS = frozenset({"a16w16_4wave_co", "a16w16_4wave_wl_co"})
+_A16W16_CO_TAGS = frozenset(
+    {"a16w16_4wave_co", "a16w16_4wave_wl_co", "a16w16_4wave_wlr_co"}
+)
 
 # Legacy cache policy = traits default for split-barrier & persistent a16w16 (see
 # opus_gemm_traits_a16w16_gfx950.cuh).
@@ -131,10 +133,11 @@ class OpusGemmInstance:
     # Optional logical-M limit imposed by this exact kernel's launch geometry.
     max_m: int | None = None
 
-    # Compact-scale bpreshuffle kernels process adjacent M tiles per workgroup.
+    # Compact E8M0 bpreshuffle kernel launch metadata.
     output_tiles_per_wg: int = 1
     scale_dtype: str | None = None
     max_tensor_bytes: int | None = None
+    pad_m: bool = False
 
     @property
     def name(self) -> str:
@@ -242,13 +245,14 @@ class OpusGemmInstance:
             # can distinguish two pre-built images in this stable name.
             parts.insert(
                 tag_at,
-                (
-                    "4wave_wl_co"
-                    if self.kernel_tag == "a16w16_4wave_wl_co"
-                    else "4wave_co"
-                ),
+                {
+                    "a16w16_4wave_wl_co": "4wave_wl_co",
+                    "a16w16_4wave_wlr_co": "4wave_wlr_co",
+                }.get(self.kernel_tag, "4wave_co"),
             )
-            if self.kernel_tag == "a16w16_4wave_wl_co":
+            # Wave layout only shows up for the families that can vary it, so the
+            # 4wave_co names already on disk are untouched.
+            if self.kernel_tag in ("a16w16_4wave_wl_co", "a16w16_4wave_wlr_co"):
                 parts.append(f"w{self.co_wave_layout[0]}x{self.co_wave_layout[1]}")
             parts.append(f"c{self.cluster_wg_m}x{self.cluster_wg_n}")
             parts.append(f"p{self.num_slots}")
@@ -275,6 +279,8 @@ class OpusGemmInstance:
     @property
     def m_align(self) -> int:
         """M multiple enforced by the generated launcher (1 means tail-safe)."""
+        if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle" and self.pad_m:
+            return 64
         mult = _BMM_M_ALIGN_TILES.get(self.kernel_tag)
         if mult is not None:
             return self.B_M * mult if mult else 1
@@ -300,6 +306,29 @@ def a16w16_flatmm_prefetch_k_iter(instance: OpusGemmInstance) -> int:
     smem_sub = smem_linear // load_group_k
     slots = load_group_m // smem_sub
     padding = 16 // sizeof_da if instance.W_M >= 32 else 2 * 16 // sizeof_da
+    per_group_load = slots * (smem_linear + padding) * sizeof_da
+    per_iter = (num_m + num_n) * num_k * per_group_load
+    lds_total = 163840
+    return max(
+        1,
+        (lds_total // max(instance.WG_PER_CU, 1)) // max(per_iter, 1),
+    )
+
+
+def a8w8_mxscale_flatmm_prefetch_k_iter(instance: OpusGemmInstance) -> int:
+    """Mirror gfx950 MXFP8 flatmm ``Traits::prefetch_k_iter``."""
+    sizeof_da = 1  # FP8
+    is_tile_n = instance.B_M == 16
+    load_group_m = 16 if is_tile_n else 32
+    load_group_n = 16 if is_tile_n else 32
+    load_group_k = instance.W_K
+    num_m = instance.B_M // load_group_m
+    num_n = instance.B_N // load_group_n
+    num_k = instance.B_K // load_group_k
+    smem_linear = 64 * 16 // sizeof_da  # WARP_SIZE=64
+    smem_sub = smem_linear // load_group_k
+    slots = load_group_m // smem_sub
+    padding = 2 * 16 // sizeof_da
     per_group_load = slots * (smem_linear + padding) * sizeof_da
     per_iter = (num_m + num_n) * num_k * per_group_load
     lds_total = 163840
@@ -1315,8 +1344,8 @@ GFX1250_BASE_KIDS = frozenset(gfx1250_kernels_list.keys())
 # A/B TDM loads via CLUSTER_LOAD_ASYNC multicast (named-barrier producer/consumer
 # handshake, same as the plain base). The host launcher rounds the grid up to the
 # cluster dims; surplus workgroups take the pipeline's uniform tile_oob exit.
-# Logical workspace strides remain based on the unrounded tile counts. Distinct kid
-# band (20500+) so it never collides with the no-cluster base kids (20000..20087).
+# Logical workspace strides use the unrounded tile counts. Clusterlaunch kids
+# occupy [20100, 21000), separate from plain kids in [20000, 20100).
 def _a16w16_clusterlaunch_tdm_splitk_ws_gfx1250(
     bm, bn, bk, layout, cwm, cwn, num_slots=3, wg_per_cu=2
 ):
@@ -1386,7 +1415,7 @@ def _gfx1250_valid_cluster_dims():
     return dims
 
 
-# Deterministic kid numbering: 20500 + running index over (tile outer, then
+# Deterministic kid numbering: 20100 + running index over (tile outer, then
 # cluster dim (cwn outer, cwm inner)). Kid numbers are provisional -- a global
 # renumber is pending. The kExpN stability guard has been removed, so ALL 26
 # no-spill tiles are expanded (incl. B_N=256 tileM -> kExpN=16). The multicast
@@ -1698,21 +1727,27 @@ a8w8_mxscale_bmm_kernels_list = {
 }
 
 
-def _a8w8_mxscale_gemm_bpreshuffle():
+def _a8w8_mxscale_gemm_bpreshuffle(b_m=256, b_n=256, *, pad_m=False):
     return OpusGemmInstance(
-        256, 256, 256, 128, 2, 2, 16, 16, 128, 16, 16, 4,
+        256, b_m, b_n, 128, 2, 2, 16, 16, 128, 16, 16, 4,
         1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
-        WG_PER_CU=1, has_oob=False, arch_prefix="gfx950", direct_only=True,
+        WG_PER_CU=1, has_oob=pad_m, arch_prefix="gfx950", direct_only=True,
         output_tiles_per_wg=1, scale_dtype="e8m0",
-        max_tensor_bytes=2**31 - 1,
+        max_tensor_bytes=2**31 - 1, pad_m=pad_m,
+        name_tag="padm" if pad_m else "",
     )
 
 
 # Optional gfx950 compact-E8M0 bpreshuffle candidates. They live in the
-# canonical registry so the standalone tuner can use the existing opus_gemm
-# route, but are not part of the default subset-compile floor.
+# canonical registry for the existing opus_gemm route, but are not part
+# of the default subset-compile floor.
 a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
     9000: _a8w8_mxscale_gemm_bpreshuffle(),
+    # Keep historical 9001..9003 retired; each new tile has its own pipeline.
+    9010: _a8w8_mxscale_gemm_bpreshuffle(128, 128),
+    9011: _a8w8_mxscale_gemm_bpreshuffle(64, 128),
+    9012: _a8w8_mxscale_gemm_bpreshuffle(64, 64),
+    9020: _a8w8_mxscale_gemm_bpreshuffle(pad_m=True),
 }
 
 
@@ -1871,9 +1906,8 @@ DEFAULT_COMPILED_KIDS_GFX942 = frozenset(
     }
 )
 
-# Keep six representative workspace launchers plus every available CO host
-# launcher in default gfx1250 builds. Other plain/clusterlaunch device kernels
-# are compiled on demand by the tuner (candidate selection + sidecar expansion).
+# Keep representative plain/clusterlaunch workspace kids and all CO host kids
+# in default gfx1250 builds; the tuner compiles other device kids on demand.
 DEFAULT_COMPILED_KIDS_GFX1250 = (
     frozenset(
         GFX1250_PLAIN_KID_OF[_t]
@@ -1886,6 +1920,7 @@ DEFAULT_COMPILED_KIDS_GFX1250 = (
             (32, 128, 128),
         )
     )
+    | frozenset({GFX1250_CLUSTERLAUNCH_KID_OF[(16, 32, 128, 2, 1)]})
     | GFX1250_4WAVE_CO_KIDS
 )
 
@@ -1973,6 +2008,7 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
                 "a16w16_clusterlaunch_tdm_splitk_ws",
                 "a16w16_4wave_co",
                 "a16w16_4wave_wl_co",
+                "a16w16_4wave_wlr_co",
             }
         ),
         "a8w8": frozenset(),

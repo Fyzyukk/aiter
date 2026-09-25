@@ -31,12 +31,11 @@ The Python layer retains two distinct A16 shape-driven flows. The generic
 on a miss or invalid OPUS row, keeps its original skinny, gfx1250 Triton, or
 PyTorch fallback. It does not run an OPUS heuristic. The OPUS-only
 `gemm_a16w16_opus` compatibility entry instead uses an explicit id when
-provided, otherwise attempts a present OPUS tuned row as-is and runs the
-migrated per-architecture OPUS heuristic only when no tuned row exists. Every
-successful OPUS selection is reduced to one final integer kid before the local
-A16 exact launcher and this C++ layer are entered. The compatibility entry does
-not re-enter the package-level `opus_gemm`/`opus_bmm` family router. Reusable
-candidate/heuristic policy helpers live in `aiter/ops/opus/policy.py`.
+provided, otherwise tries a tuned row and falls back to its heuristic for a
+missing or invalid row. All selections pass through legacy compatibility
+resolution before the local exact launcher; the strict `opus_gemm`/`opus_bmm`
+APIs never redirect. Reusable policy helpers live in
+`aiter/ops/opus/policy.py`.
 
 ## Family entries
 
@@ -101,20 +100,6 @@ The MXFP8 BMM ids are
 preserving family-local tuning/debug correlation. Historical child-dictionary
 collisions are resolved by the final merge; runtime routing always follows the
 resulting `kernels_list[kid]` instance and never a numeric interval.
-
-The gfx950 `a8w8_mxscale_gemm_bpreshuffle` tag is registered under the existing
-`a8w8_blockscale_bpreshuffle` family so its standalone Python tuner can call
-the normal `opus_gemm(..., layout="bpreshuffle")` route. Kid 9000 is deliberately
-absent from the default compile floor: the tuner reuses
-`opus_gemm_tune._ensure_kids_compiled({9000})`, which extends the existing
-`module_deepgemm_opus` sidecar/build with `--extra_kids 9000`. No separate
-public API, PyBind module, launcher, or dispatch table is introduced.
-
-Kid 9000 uses patched clang23 hard-pin attributes. While extending the existing
-OPUS module, the standalone tuner temporarily sets `HIP_CLANG_PATH` to
-`/root/toolchains/rocm-llvm23-46fcb339-build/bin`; set `OPUS_HIP_CLANG_PATH` to
-override that compiler location. The previous environment is restored after
-the subset build finishes.
 
 The gfx942 BF16-workspace A16 exact kids (`10210`, `10213`, `10216`) are the
 one workspace-output exception: their current exact-N reducer requires BF16
