@@ -1,5 +1,14 @@
 # 新机器调优入口：合并版 MXFP8 B-preshuffle
 
+此目录保留为补充实验工具。用户要求的原入口已恢复为
+[`csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py`](../../csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py)，
+当前输入是从原始 DSV4 基线提取的
+[`dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv`](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)，
+包含 gfx950/256 CU、`M >= 1024` 的全部 305 个唯一 shape。
+当前推荐命令见 [HANDOFF_MXFP8.md](../../HANDOFF_MXFP8.md)。
+该入口使用正式 ID 9060–9064；下面的 21000/21310/21311/21220/21221
+仍仅指本目录独立库的历史 ID，295 项是本实验工具的子集。
+
 本入口对应本分支当前的 main / small / narrow 正式头文件。目标是比较
 **新 7 候选池、旧 16 候选池、CK/CKTile/ASM**，每个 shape 的全部候选在同一张
 新机器 GPU 上重新检查数值并计时。旧机器 CSV 只作历史参考。

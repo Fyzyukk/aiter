@@ -20,15 +20,44 @@ structure as 9000/9020, with separate pipeline and Traits headers:
 Each family has one computation flow and runtime K. The small family is
 instantiated with `Traits<128>` or `Traits<160>`; the narrow family with
 `Traits<128>` or `Traits<64>`. The main family uses one fixed Traits type.
-These are the implementations behind five existing private measurement IDs;
-global registration and the 9000/9020 implementation remain unchanged.
+The five instances are registered as 9060 (main), 9061/9062 (small), and
+9063/9064 (narrow). The 9000/9020 implementations remain unchanged.
 Source relocation, symbol renaming, and main template conversion preserve all
 five kernels' device instructions and normalized resource descriptors.
-The full merged-pool tuning and final installation remain pending; see the
+The full merged-pool GPU tuning remains pending; see the
 [source map and compilation evidence](../../reports/opus_native_style_20260927/README.md).
-For a fresh-machine source build and same-GPU comparison of the merged pool,
-old sixteen-candidate pool, and CK/CKTile/ASM, use the
-[portable retuning entry](../../reports/opus_remote_tune_20260927/README.md).
+
+## Original MXFP8 tuning entry
+
+Use the restored [`opus_gemm_mxscale_bpreshuffle_tune.py`](opus_gemm_mxscale_bpreshuffle_tune.py)
+with the [M >= 1024 untuned CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)
+extracted from the original model baseline. From the checkout root:
+
+```bash
+ROCR_VISIBLE_DEVICES=0 \
+OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv \
+  -o /tmp/dsv4_m_ge1024_tuned.csv -o2 /tmp/dsv4_m_ge1024_profile.csv \
+  --opus-kids 9000,9020,9060,9061,9062,9063,9064 \
+  --libtype all --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
+```
+
+The original CSV remains unchanged and contains 1042 rows across architectures,
+including 745 gfx950/256 CU shapes. The new untuned CSV contains all 305 of those
+shapes with M >= 1024 and only the `gfx,cu_num,M,N,K` columns. It includes the ten
+shapes omitted from the historical 295-shape subset. To tune all 745 shapes,
+pass the original baseline CSV to `-i`; input timings and choices are ignored.
+`-o` saves the fastest valid candidate per shape and `-o2` saves the candidate
+profile. OPUS candidates are compiled before the sweep; external backends use
+their existing JIT paths. `--shape_grouped` measures each shape's candidates
+on the same GPU. Omit `--opus-kids` to include all registered OPUS candidates,
+including the retained 9010/9011/9012 controls.
+
+Use a ROCm/PyTorch environment with native `torch.float8_e8m0fnu`, initialize
+the CK submodule, and point `OPUS_HIP_CLANG_PATH` to a clang `bin/` supporting
+`clang::amdgpu_pin_agpr`. The known compiler source is `yuyzhang512/llvm-project`
+at `49c41889681640665400cb01c9fbb4c0a024cde4`.
 
 ## Exact-id architecture
 

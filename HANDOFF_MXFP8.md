@@ -1,35 +1,60 @@
 # MXFP8 B-preshuffle 优化交接
 
-## 当前新机器入口：2026-09-27 合并版调优
+## 当前入口：原专用 tuner + M >= 1024 untuned CSV
 
-使用 [reports/opus_remote_tune_20260927/README.md](reports/opus_remote_tune_20260927/README.md)。
-新入口自动发现所选物理 GPU 的 UUID/PCI，在新的运行目录重建 JIT 和独立库；
-ASM wrapper 本机重建，设备 `.co` 使用本分支 `hsa/` 中的版本。
-对比 **新7候选池（9000/9020 + main/small/narrow五个实例）、
-旧16候选池、完整CK/CKTile/ASM候选**；每个shape在新机器同卡同批重新计时。
+运行文件恢复为
+[`csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py`](csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py)。
+原始输入和历史基线是
+[`aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv`](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv)，
+本次未修改其内容。原表共 1042 条数据，其中 gfx950/256 CU 共 745 个唯一 shape。
+按当前要求，已将其中 `M >= 1024` 的全部 **305 个唯一 shape** 提取到
+[`aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv`](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)。
+新文件只含 `gfx,cu_num,M,N,K` 五列，保留旧 295 项子集之外的全部 10 项。
+本次只提取并核对 CSV，未运行 GPU 调优。
 
-在仓库根目录执行，将编译器路径换成新机器实际路径；八卡时两处
-`--gpus 0` 都换成 `--gpus 0,1,2,3,4,5,6,7`：
+在仓库根目录执行，将编译器路径换成目标机器的实际路径：
 
 ```bash
-python reports/opus_remote_tune_20260927/prepare.py \
-  --output-dir reports/opus_remote_run --gpus 0 \
-  --opus-clang-path /absolute/path/to/llvm-pin-build/bin
-python -u reports/opus_remote_run/build.py
-python -u reports/opus_remote_run/launch.py \
-  --batch full295_r3 --gpus 0 --rounds 3 --external-mode full
-python reports/opus_remote_run/analyze.py --batch full295_r3
+ROCR_VISIBLE_DEVICES=0 \
+OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv \
+  -o /tmp/dsv4_m_ge1024_tuned.csv \
+  -o2 /tmp/dsv4_m_ge1024_profile.csv \
+  --opus-kids 9000,9020,9060,9061,9062,9063,9064 \
+  --libtype all --splitK --shape_grouped --mp 1 \
+  --warmup 5 --iters 51 --all
 ```
 
-完整shape文件：[shapes295.csv](reports/opus_remote_tune_20260927/shapes295.csv)；
-历史基线：[old16_vs_external_295.csv](reports/opus_remote_tune_20260927/baseline/old16_vs_external_295.csv)。
-历史结果为OPUS291/295，不能当作新7池结果，也不能直接与新机微秒数拼接。
-新机结论使用新batch的 `analysis/` CSV。完整环境、62项试测命令、
-11组N/K与输出说明均见上述README。
+这是原 tuner 的单命令入口，OPUS JIT 在正式扫描前自动补编候选，CK/CKTile/ASM
+沿用原后端的 JIT 路径。八卡时使用物理 0–7 卡，将环境变量改为 `ROCR_VISIBLE_DEVICES=0,1,2,3,4,5,6,7`，
+并将参数改为 `--mp 8`。
+`--shape_grouped` 将每个 shape 的候选放在同一张卡比较。
 
-本次迁移上传源文件、构建/测量入口和文本基线；工具链、旧JIT、`.so`、
-临时归档和本机旧实验输出不作为新机依赖。以下为历史阶段记录；
-其中2026-09-25的prepare/fixed-K命令及旧自动等待队列已被本节入口替代。
+新五项使用正式 ID，避免旧独立库 ID 与其它架构的全局 ID 区间冲突：
+
+| Family | 正式 ID | 历史独立库 ID | Tile M×N×K |
+|---|---:|---:|---|
+| main | 9060 | 21000 | 192×256×128 |
+| small | 9061 | 21310 | 128×128×128 |
+| small | 9062 | 21311 | 160×128×128 |
+| narrow | 9063 | 21220 | 64×128×128 |
+| narrow | 9064 | 21221 | 64×64×128 |
+
+上面的命令只在 OPUS 侧选择 9000/9020 + 新五项，并与 CK/CKTile/ASM 比较。
+旧 9010/9011/9012 注册仍在；省略 `--opus-kids` 时原 tuner 枚举全部已注册项。
+不支持某个 shape 的 OPUS 候选按原规则跳过；原始 shape 仍由有效的外部候选参与比较。
+
+`-i` 读取新 untuned CSV 的 shape；`-o` 保存新的逐 shape 最优选择，`-o2` 保存
+各候选记录。原始基线的历史微秒数不会参与本轮选型。若需要扫描完整 745 项，
+将 `-i` 换回原始基线 CSV；tuner 会忽略其中已有的 `libtype/kernelId/us`。
+
+环境需要 gfx950 ROCm/PyTorch（原生 `torch.float8_e8m0fnu`）、已初始化的 CK submodule，
+以及支持 `clang::amdgpu_pin_agpr` 的定制 clang；已验证工具链源为
+`yuyzhang512/llvm-project` 提交 `49c41889681640665400cb01c9fbb4c0a024cde4`。
+
+以下为历史阶段记录。此前新增的 `reports/opus_remote_tune_20260927/` 仅保留为
+独立实验工具；它的 prepare/build/launch 和 295 项子集不是当前推荐入口。
 
 ## 2026-09-27 最新：合并 kernel 统一为 9000/9020 的源码样式
 

@@ -2837,29 +2837,56 @@ def gen_mxscale_bpreshuffle_instance(
 ):
     """Emit the optional gfx950 compact-E8M0 bpreshuffle implementation."""
     assert k.B_K == 128 and k.output_tiles_per_wg == 1
-    assert k.BLOCK_SIZE == 256
-    assert (k.B_M, k.B_N) in ((256, 256), (128, 128), (64, 128), (64, 64))
-    assert (k.T_M, k.T_N) == (2, 2)
-    if k.pad_m:
-        assert (k.B_M, k.B_N) == (256, 256) and k.has_oob
-        pipeline_header = (
-            "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_padded_m_gfx950.cuh"
-        )
-        traits_header = (
-            "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_padded_m_gfx950.cuh"
-        )
-        traits_name = "opus_gemm_mxscale_bpreshuffle_padded_m_traits_gfx950"
-    if (k.B_M, k.B_N) != (256, 256):
+    merged = k.name_tag in {"main", "small", "narrow"}
+    if merged:
+        family = k.name_tag
+        assert k.max_k == 16384 and k.m_align == 64
+        assert k.pad_m == (family != "narrow")
+        if family == "main":
+            assert (k.B_M, k.B_N, k.BLOCK_SIZE, k.T_M, k.T_N) == (192, 256, 512, 4, 2)
+            traits_suffix = ""
+        else:
+            assert k.BLOCK_SIZE == 256 and (k.T_M, k.T_N) == (2, 2)
+            if family == "small":
+                assert k.B_M in (128, 160) and k.B_N == 128
+                traits_suffix = f"<{k.B_M}>"
+            else:
+                assert k.B_M == 64 and k.B_N in (64, 128)
+                traits_suffix = f"<{k.B_N}>"
         pipeline_header = (
             "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
-            f"{k.B_M}x{k.B_N}_gfx950.cuh"
+            f"{family}_gfx950.cuh"
         )
-        kernel_func = f"gemm_a8w8_mxfp8_bpreshuffle_{k.B_M}x{k.B_N}_kernel"
+        kernel_func = f"gemm_a8w8_mxfp8_bpreshuffle_{family}_kernel"
         traits_header = (
             "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_"
-            f"{k.B_M}x{k.B_N}_gfx950.cuh"
+            f"{family}_gfx950.cuh"
         )
-        traits_name = f"opus_gemm_mxscale_bpreshuffle_{k.B_M}x{k.B_N}_traits_gfx950"
+        traits_name = f"opus_gemm_mxscale_bpreshuffle_{family}_traits_gfx950{traits_suffix}"
+    else:
+        assert k.BLOCK_SIZE == 256
+        assert (k.B_M, k.B_N) in ((256, 256), (128, 128), (64, 128), (64, 64))
+        assert (k.T_M, k.T_N) == (2, 2)
+        if k.pad_m:
+            assert (k.B_M, k.B_N) == (256, 256) and k.has_oob
+            pipeline_header = (
+                "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_padded_m_gfx950.cuh"
+            )
+            traits_header = (
+                "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_padded_m_gfx950.cuh"
+            )
+            traits_name = "opus_gemm_mxscale_bpreshuffle_padded_m_traits_gfx950"
+        if (k.B_M, k.B_N) != (256, 256):
+            pipeline_header = (
+                "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
+                f"{k.B_M}x{k.B_N}_gfx950.cuh"
+            )
+            kernel_func = f"gemm_a8w8_mxfp8_bpreshuffle_{k.B_M}x{k.B_N}_kernel"
+            traits_header = (
+                "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_"
+                f"{k.B_M}x{k.B_N}_gfx950.cuh"
+            )
+            traits_name = f"opus_gemm_mxscale_bpreshuffle_{k.B_M}x{k.B_N}_traits_gfx950"
     n_align = max(k.B_N, k.GROUP_N)
     split = f"""#ifdef OPUS_FUSED_HOST_TU
 #include "{traits_header}"
@@ -2882,6 +2909,15 @@ __global__ void {kernel_func}({kargs_name} kargs);
     assert k.max_tensor_bytes is not None and k.has_oob == k.pad_m
     preamble = instance_impl_preamble(
         "\n#include <cstdint>\n#include <initializer_list>\n#include <type_traits>"
+    )
+    max_k_check = (
+        f'    AITER_CHECK(k <= {k.max_k}, entry, ": requires K <= {k.max_k}");\n'
+        if k.max_k is not None else ""
+    )
+    scale_alignment_check = (
+        '    AITER_CHECK(reinterpret_cast<uintptr_t>(x_scale.data_ptr()) % 16 == 0,\n'
+        '                entry, ": x_scale must be 16-byte aligned");\n\n'
+        if merged else ""
     )
     source = f"""{preamble}
 {split}
@@ -2913,7 +2949,7 @@ void {k.name}(
     AITER_CHECK(m > 0 && n > 0 && k > 0 &&
                 m % {k.m_align} == 0 && n % {n_align} == 0 && k % {k.B_K} == 0,
                 entry, ": requires positive M multiple of {k.m_align}, N multiple of {n_align} and K multiple of 128");
-    AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
+{max_k_check}    AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
                 entry, ": XQ/WQ/Y shapes do not match");
     // Bound before narrowing dimensions or multiplying the signed int kargs.
     constexpr int64_t byte_limit = {k.max_tensor_bytes};
@@ -2946,7 +2982,7 @@ void {k.name}(
                 reinterpret_cast<uintptr_t>(WQ.data_ptr()) % 16 == 0 && output % 16 == 0,
                 entry, ": XQ/WQ/Y must be 16-byte aligned");
 
-    {kargs_name} args{{}};
+{scale_alignment_check}    {kargs_name} args{{}};
     args.ptr_a = XQ.data_ptr(); args.ptr_b = WQ.data_ptr(); args.ptr_c = Y.data_ptr();
     args.m = m; args.n = n; args.k = k; args.batch = 1;
     args.stride_a = k; args.stride_b = k; args.stride_c = n;

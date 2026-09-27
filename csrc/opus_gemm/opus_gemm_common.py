@@ -138,6 +138,7 @@ class OpusGemmInstance:
     scale_dtype: str | None = None
     max_tensor_bytes: int | None = None
     pad_m: bool = False
+    max_k: int | None = None
 
     @property
     def name(self) -> str:
@@ -155,6 +156,8 @@ class OpusGemmInstance:
         if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle":
             parts.insert(tag_at, self.kernel_tag)
             parts.append(f"tiles{self.output_tiles_per_wg}")
+            if self.name_tag in {"main", "small", "narrow"}:
+                parts.append(self.name_tag)
         elif self.kernel_tag == "a8w8_mxscale_bmm_flatmm_splitk":
             parts.insert(tag_at, "a8w8_mxscale_flatmm_splitk")
             parts.append(f"wgpcu{self.WG_PER_CU}")
@@ -1738,6 +1741,25 @@ def _a8w8_mxscale_gemm_bpreshuffle(b_m=256, b_n=256, *, pad_m=False):
     )
 
 
+def _a8w8_mxscale_gemm_bpreshuffle_merged(family, b_m, b_n):
+    geometries = {
+        "main": {(192, 256)},
+        "small": {(128, 128), (160, 128)},
+        "narrow": {(64, 128), (64, 64)},
+    }
+    assert (b_m, b_n) in geometries[family]
+    waves = 8 if family == "main" else 4
+    pad_m = family != "narrow"
+    return OpusGemmInstance(
+        waves * 64, b_m, b_n, 128, waves // 2, 2, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
+        WG_PER_CU=1, has_oob=pad_m, arch_prefix="gfx950", direct_only=True,
+        output_tiles_per_wg=1, scale_dtype="e8m0",
+        max_tensor_bytes=2**31 - 1, pad_m=pad_m, max_k=16384,
+        name_tag=family,
+    )
+
+
 # Optional gfx950 compact-E8M0 bpreshuffle candidates. They live in the
 # canonical registry for the existing opus_gemm route, but are not part
 # of the default subset-compile floor.
@@ -1748,6 +1770,13 @@ a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
     9011: _a8w8_mxscale_gemm_bpreshuffle(64, 128),
     9012: _a8w8_mxscale_gemm_bpreshuffle(64, 64),
     9020: _a8w8_mxscale_gemm_bpreshuffle(pad_m=True),
+    # Native IDs for the merged private 21000/21310/21311/21220/21221 kernels.
+    # The 21000 range belongs to gfx1250 CO instances in the global registry.
+    9060: _a8w8_mxscale_gemm_bpreshuffle_merged("main", 192, 256),
+    9061: _a8w8_mxscale_gemm_bpreshuffle_merged("small", 128, 128),
+    9062: _a8w8_mxscale_gemm_bpreshuffle_merged("small", 160, 128),
+    9063: _a8w8_mxscale_gemm_bpreshuffle_merged("narrow", 64, 128),
+    9064: _a8w8_mxscale_gemm_bpreshuffle_merged("narrow", 64, 64),
 }
 
 
@@ -1763,6 +1792,7 @@ def a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
         or n % instance.B_N
         or n % instance.GROUP_N
         or k % instance.B_K
+        or (instance.max_k is not None and k > instance.max_k)
     ):
         return False
     # This family has FP8 A/B and BF16 output, with signed-int byte extents.
