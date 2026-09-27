@@ -6,6 +6,30 @@ family launch ABIs. They are shared private implementation boundaries for the
 Python `opus_gemm(..., kid=...)` and `opus_bmm(..., kid=...)` entries; the
 public operation split does not duplicate C++ launchers or kernels.
 
+## MXFP8 B-preshuffle shared pipeline headers
+
+The merged gfx950 candidates use the same `template<class Traits>` kernel
+structure as 9000/9020, with separate pipeline and Traits headers:
+
+| Family | Tile M×N×K | Pipeline | Traits |
+|---|---|---|---|
+| main | 192×256×128 | [main pipeline](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_main_gfx950.cuh) | [main traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_main_gfx950.cuh) |
+| small | 128×128×128, 160×128×128 | [small pipeline](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_gfx950.cuh) | [small traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh) |
+| narrow | 64×128×128, 64×64×128 | [narrow pipeline](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_narrow_gfx950.cuh) | [narrow traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_narrow_gfx950.cuh) |
+
+Each family has one computation flow and runtime K. The small family is
+instantiated with `Traits<128>` or `Traits<160>`; the narrow family with
+`Traits<128>` or `Traits<64>`. The main family uses one fixed Traits type.
+These are the implementations behind five existing private measurement IDs;
+global registration and the 9000/9020 implementation remain unchanged.
+Source relocation, symbol renaming, and main template conversion preserve all
+five kernels' device instructions and normalized resource descriptors.
+The full merged-pool tuning and final installation remain pending; see the
+[source map and compilation evidence](../../reports/opus_native_style_20260927/README.md).
+For a fresh-machine source build and same-GPU comparison of the merged pool,
+old sixteen-candidate pool, and CK/CKTile/ASM, use the
+[portable retuning entry](../../reports/opus_remote_tune_20260927/README.md).
+
 ## Exact-id architecture
 
 Kernel identity is `(arch, logical family, kid, Y dtype)`. Python resolves a

@@ -1,4 +1,167 @@
-# MXFP8 B-preshuffle 优化交接（2026-09-25）
+# MXFP8 B-preshuffle 优化交接
+
+## 当前新机器入口：2026-09-27 合并版调优
+
+使用 [reports/opus_remote_tune_20260927/README.md](reports/opus_remote_tune_20260927/README.md)。
+新入口自动发现所选物理 GPU 的 UUID/PCI，在新的运行目录重建 JIT 和独立库；
+ASM wrapper 本机重建，设备 `.co` 使用本分支 `hsa/` 中的版本。
+对比 **新7候选池（9000/9020 + main/small/narrow五个实例）、
+旧16候选池、完整CK/CKTile/ASM候选**；每个shape在新机器同卡同批重新计时。
+
+在仓库根目录执行，将编译器路径换成新机器实际路径；八卡时两处
+`--gpus 0` 都换成 `--gpus 0,1,2,3,4,5,6,7`：
+
+```bash
+python reports/opus_remote_tune_20260927/prepare.py \
+  --output-dir reports/opus_remote_run --gpus 0 \
+  --opus-clang-path /absolute/path/to/llvm-pin-build/bin
+python -u reports/opus_remote_run/build.py
+python -u reports/opus_remote_run/launch.py \
+  --batch full295_r3 --gpus 0 --rounds 3 --external-mode full
+python reports/opus_remote_run/analyze.py --batch full295_r3
+```
+
+完整shape文件：[shapes295.csv](reports/opus_remote_tune_20260927/shapes295.csv)；
+历史基线：[old16_vs_external_295.csv](reports/opus_remote_tune_20260927/baseline/old16_vs_external_295.csv)。
+历史结果为OPUS291/295，不能当作新7池结果，也不能直接与新机微秒数拼接。
+新机结论使用新batch的 `analysis/` CSV。完整环境、62项试测命令、
+11组N/K与输出说明均见上述README。
+
+本次迁移上传源文件、构建/测量入口和文本基线；工具链、旧JIT、`.so`、
+临时归档和本机旧实验输出不作为新机依赖。以下为历史阶段记录；
+其中2026-09-25的prepare/fixed-K命令及旧自动等待队列已被本节入口替代。
+
+## 2026-09-27 最新：合并 kernel 统一为 9000/9020 的源码样式
+
+按用户最新要求，三个新 family 已整理成 `include/gfx950/` 下的正式
+`opus_gemm_{pipeline,traits}_a8w8_mxscale_bpreshuffle_{main,small,narrow}_gfx950.cuh`。
+入口统一为 `template<class Traits>`；small 用 M128/160 两个 Traits 实例，
+narrow 用 N128/64 两个实例，main 也由固定入口改为 Traits 模板。
+计算流程、runtime K、私有 ID 和原启动约束保持。来源为 main_v1/21000、
+small_v4/21310+21311、tiny_v3/21220+21221；加原9000/9020，最终目标仍最多7候选。
+
+三库五个kernel已CPU编译通过，与来源版本逐ID比较，指令字节和归一化资源描述
+全部一致；94个既有文件（9000/9020、helpers、注册、codegen及来源文件）哈希未变。
+新薄测量adapter和验证证据在
+[opus_native_style_20260927](reports/opus_native_style_20260927/README.md)。
+未运行GPU，也未把私有ID加入全局注册。
+
+**合并调优尚未完成。** 当前可用完整基线仍是下方16候选、OPUS291/295。
+第三批 `pilot62_v34_r3` 于08:32 UTC启动后中断：恢复检查时相关进程已不存在，
+八份summary均0数据行，JSON的running/launching为残留状态。须以新batch重启测量，
+完成合并版295项比较，再最终选型、替换和删除。原自动续跑/安装工具仍绑定旧版本
+路径和符号，使用新正式头前需更新其来源映射。
+
+## 2026-09-27 最新完成：8 卡全量重新 tune，仅保留实际中选 kernel
+
+按最新要求，从头完成完整 295 项、8 卡、三轮的全后端扫描（CK/CKTile/ASM 全枚举），耗时22.20分钟；没有复用旧计时或1%子集阈值。8个worker均passed。**OPUS291胜、CKTile4胜；实际中选16个OPUS（原5+11通用）**。相对有效外部几何平均耗时降低12.9453%，相对同批原5降低4.2688%；4575条合法OPUS候选均通过目标数值检查。
+
+保留原5：9000、9010、9011、9012、9020。保留通用：13163、20000、20010、20011、20020、20100、20124、20125、20126、20128、20131。移除未选通用9661、9663、20120、20121、20122、20123、20127、20129、20130，并删除旧9030–9051的9个注册和对应生成分支/5个无依赖头。9000及共享helpers未改，原5的生成代码逐字节一致。
+
+中选通用已迁入 `csrc/opus_gemm/mxfp8_bpreshuffle_retained/`，独立C ABI构建，9库仅11个device kernel，机器码与实测版本完全相同。共清理50个纯MXFP8实验目录的380个实现/生成器/二进制文件，并替换旧测量JIT为原5子集、删除788个旧生成缓存。历史CSV/JSON/日志/文档和更早混合快照保留；下方旧实验源码链接可能因本次按要求删除而失效。
+
+入口：[本次完成报告](reports/opus_retune_prune_20260927/README.md)、[16候选模板清单](reports/opus_retune_prune_20260927/SELECTED_CANDIDATES.md)、[现存候选配置](reports/opus_retune_prune_20260927/selected_experiments.json)、[295整体选择](reports/opus_retune_prune_20260927/full295_r3/results/overall_selection.csv)、[删除清单](reports/opus_retune_prune_20260927/deleted_experiment_files.json)。
+
+4个外部负项仍是N7168/K384、M1536/1600/1664/1728，慢1.569%/3.237%/1.442%/0.376%，均0/3轮胜。不额外追加测试，不修改默认dispatch CSV；本次无后台GPU工作，未提交/推送。下文原8候选结论属于前一轮历史。
+
+## 2026-09-27 本轮完成：原5保留，其余实验收敛为8个通用候选
+
+用户要求保留 **9000、9010、9011、9012、9020**，将其余实验合并成真正的runtime-K候选，不要求恰好4个。已恢复昨天记录、完成295项重新tune，并继续做了短K循环、融合输出和cache策略优化。9000及影响它的共享helpers、生产注册和默认dispatch均未改；本轮只做kernel、目标shape数值检查及性能比较。
+
+**最终结果：8个通用候选+原5，共291/295项快于同卡重测的有效外部finalist。** 原5选中200项，8个通用选中95项。相同shape等权几何平均耗时：相对原5降低4.147%，相对外部降低12.973%；相对旧25实验+原5增加0.114637%，最坏增加3.951%。固定K对照没有进入精简集合。20个通用候选的精确子集搜索证明：逐shape相对完整通用池最多1%损失、且保留其全部外部胜项时，最少需要8个；实际几何损失0.008106%、最坏0.956643%。
+
+最终数据来自完整v6的178行与后续v7的117行，均为三轮；每个shape整行选择其最新完整worker，包含新旧候选、外部参考、来源和轮次。所有shape保持v6的物理GPU4–7分配，**两批全部passed，数值检查0拒绝**。两个队列均complete、benchmark/analysis退出码均0，本轮没有后台GPU工作。较早v5的119项五轮也全部通过，但不混入最终计时。
+
+| 通用ID | 实现 | runtime K | 最终选择次数 |
+|---|---|---|---:|
+| 20000 | 192×256、8 wave、N-first | 128–16384，步长128 | 12 |
+| 20100 | 同主体，窄N/大M使用group-M4 | 128–16384，步长128 | 31 |
+| 20128 | 20000融合最终MFMA/BF16输出，vec8/cache2 | 128–16384，步长128 | 21 |
+| 20010 | 128×128、4 wave | 128–1536，步长128 | 7 |
+| 20011 | 160×128、4 wave | 128–1536，步长128 | 14 |
+| 20020 | 192×224、8 wave、融合输出 | 128–1536，步长128 | 2 |
+| 20125 | 192×256统一U2/drain、非融合vec8输出 | 128–1536，步长128 | 6 |
+| 20131 | 192×256统一U2/drain、fused vec4、group-M4/cache2 | 128–1536，步长128 | 2 |
+
+原5的使用次数：9000×129、9010×10、9011×23、9012×7、9020×31。各通用ID对应单个runtime-K入口，不按K实例化。
+
+**有效与无效改动：** 20100的通用网格策略和20010/20011小tile保留主要贡献；20125在部分大M短K有用。20128相对20000在同源295项中200项更快、几何平均快0.165%，属于小幅互补收益。20131相对20127在117合法项上几何平均快2.305%，但只58项严格更快，不能全局替换；它在(1472,7168,384)为12.280889µs，快于同场外部12.379533µs，3/3轮胜，解决一个原通用池外部负项。同shape去掉20131的最快通用为20128，12.691872µs。
+
+20129/20130统一小tile循环后，实际VGPR分配升至264/320；虽无spill，117项全部比20010/20011慢，几何平均慢55.76%/49.47%，已剔除。20120–20123无最终贡献；20124/20126等局部小收益在精简约束下可移除。所有失败实验、源代码和中间结果保留。
+
+**剩余4个外部负项**都为N7168/K384，且本批各0/3轮胜：M1536慢2.888%、M1600慢2.882%、M1664慢2.110%、M1728慢0.905%。另有8项相对旧25+原5慢超过3%，最坏为(1152,7168,384)的3.951%；完整列表在最终报告。未把这些差距当作已解决，也未反复测到获胜。
+
+最终交付入口：
+
+- [完整中文结果与剩余慢项](reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/RESULTS.md)
+- [8候选配置及原5声明](reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/selected_experiments.json)
+- [295项选择、GPU与轮次来源](reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/choices295.csv)
+- [候选用量及移除影响](reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/candidate_usage.csv)
+- [同场优化配对结果](reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/candidate_effects.csv)
+- [精确子集与0%/1%/2%取舍](reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/report.md)
+- [测量与来源审计](reports/opus_generalize_20260926/refine117_20260927_v7_r3/runtime_analysis/summary.json)
+- [最终独立选型复核](reports/opus_generalize_20260926/v7_final_selection_review.json)、[原始数据与结果复核](reports/opus_generalize_20260926/v7_results_review.json)：最小集合、同卡来源、固定K隔离及原5保护均通过。
+
+配置是实测候选池，库目录相对配置文件解析；registered_opus_ids只声明原5成员，旧loader不消费该字段，不是已计时验证的生产dispatch。外部对照只从历史全后端扫描取有效finalist身份，全部耗时在当前worker重新测量；本轮没有重扫全部CK/CKTile/ASM。
+
+阶段记录均保留：v3完整295三轮；v4短117三轮；v5短117+长2共119五轮；v6再做完整295三轮；v7最后117三轮。v6/v7使用同一物理GPU分配，v7以v6为base，禁止跨批次为各候选取最小值。源码、生成器、metadata、构建二进制和保护文件在各次计时期间冻结；无额外边界、接口或单元测试。本轮未提交或推送。
+
+## 2026-09-26 最新恢复：减少实际候选，runtime-K 通用化
+
+用户在完整295项调优后明确要求：把大量实验候选做成少量通用 kernel，**不是合并源文件**。最新工作入口为 [opus_generalize_20260926](reports/opus_generalize_20260926/README.md)。已编译4个实际runtime-K kernel：20000（192×256长短K）、20010（128×128短K）、20011（160×128短K）、20020（192×224融合输出）。仍冻结9000，只做kernel及目标shape数值/性能比较。
+
+最新 `generalize99_v1_r3` 在99项目标测试中断：0–3因外部占用失败，4–7各仅完成1项；恢复时旧进程均已不存在。旧记录原样保留，不把其残留 `running` 当作当前任务。已准备 [resume_launch.py](reports/opus_generalize_20260926/resume_launch.py)，把99项重新分片到物理GPU4–7；复用历史有效外部候选身份，所有对照耗时在实际新卡重测，源卡与实际卡分别记录。新的完整通用化测量尚未完成，不能引用下文293/295作为通用候选池结果。
+
+恢复时GPU0–3满载、4–7原本空闲；启动前复查发现后四卡也新增外部任务。08:38 UTC已启动独立等待队列PID11966，自动等待GPU4–7连续空闲后运行99项并汇总；当时状态为waiting，尚无新GPU结果。实时状态见 [queue_state.json](reports/opus_generalize_20260926/queue_resume99_v1_r3/queue_state.json)。不使用前四卡，不终止他人任务，不删除占用检测。
+
+## 2026-09-26 最新完成：完整295项重新调优
+
+**任务已完成：295/295全量三轮调优，加58项同GPU五轮确认；最终OPUS293胜、CKTile2胜、CK/ASM均0胜。** `full295_r3`与`close295_r5`两批各8个worker全部passed，已无后台GPU工作。最终237项采用三轮、58项采用五轮，每个shape取较新完整批次整行，不跨批次选最小耗时。
+
+**9000、共享helpers、注册和默认配置完全未改。** 本次最终127项仍选中9000。`experiment`表示独立编译的OPUS实验实现，算法仍为OPUS。最终选型共30个ID：原注册9000×127、9020×29、9011×23、9010×10、9012×7，共196项；25个实验ID覆盖99项（其中97项整体胜出）。相对最快有效外部几何平均耗时下降13.01294%，相对同批旧OPUS下降4.34455%。
+
+入口：
+
+- [最终报告](reports/opus_cover87_20260926/display295_v1/README.md)
+- [295项逐shape最佳OPUS选择](reports/opus_cover87_20260926/display295_v1/usage/opus_choices.csv)
+- [30个候选的使用次数](reports/opus_cover87_20260926/display295_v1/usage/opus_candidate_usage.csv)
+- [295项整体最快实现](reports/opus_cover87_20260926/display295_v1/overall_winners.csv)
+- [汇总与来源](reports/opus_cover87_20260926/coverage295_v1/summary.json)
+- [精选25实验ID配置](reports/opus_cover87_20260926/selected_experiments295.json)；全扫描实际输入为[25库109实验ID](reports/opus_cover87_20260926/experiments295.json)，另行保留全部合法注册OPUS。
+
+剩余两项（均五轮）：`(1600,7168,384)` OPUS14540 12.784568us vs CKTile11 12.760023us，慢0.192362%、0/5轮胜；`(1536,7168,768)` OPUS12641 17.179160us vs CKTile30 17.168143us，慢0.064172%、2/5轮胜。本轮原87项为85胜/2负，其余208项全胜；历史v11的87/87只代表之前目标批次，不能替代本次全量结果。没有把噪声反复复测到获胜，也没有额外边界/接口/单元测试。
+
+最后一次kernel改进为OPUS15940（192×224、cache0、融合最终MFMA/BF16 LDS输出）。完整295调优后，15940仍在`(1536,7168,384)`选中；相关源码在`reports/opus_resume_20260926/shortk_n224_exp/`。新候选全部独立实验实现；生产注册未改。
+
+全部OPUS全扫描候选记录（注册2626、实验5650）及五轮确认候选均通过原目标数值检查。58项确认中56项中位数领先，37项每轮都领先。精确295成员复用旧`shapes.csv`，另10项原寻址排除未纳入。旧阶段记录、失败实验和所有候选源/二进制哈希继续保留。
+
+后续若继续优化，优先上述两项；沿用已编译JIT及目标shape检查，不改9000。不得使用旧`selected_experiments.json`替代新全量候选配置，也不得用旧87快照替代295结果。
+
+## 2026-09-26 v10历史阶段：原87项优化
+
+**9000保持冻结。** 用户再次明确不得修改9000；本轮没有修改9000本体、共享helpers、生产注册或默认调度。新实现均位于 `reports/opus_resume_20260926/` 的独立实验目录。14640只是隔离的9000派生副本，无收益，已从后续候选配置移除。
+
+按每个shape最新完整五轮批次，原87项 **86胜 / 1未胜**。相对最快有效CK/CKTile/ASM候选，几何平均耗时下降 **4.63%**；相对同批旧正式OPUS下降 **13.00%**。后续54项全部中位数领先。56项五轮均领先，另30项中位数领先但未每轮胜出，不能把全部中位数胜项称为稳定大幅领先。
+
+唯一未胜项 `(1536,7168,384)`：本批最佳OPUS15040 **12.665778us**，cktile_11_split0 **12.660383us**，差 **0.0426%**，接近持平但保留为未胜。所有测量已经结束，最后批次为 `targeted1_v10_r5`，status=passed；没有后台GPU工作待收尾。
+
+入口：[完整结果](reports/opus_cover87_20260926/RESULTS.md)、[87项选型](reports/opus_cover87_20260926/coverage87/best_opus_selection.csv)、[逐shape比较](reports/opus_cover87_20260926/coverage87/comparison.csv)、[汇总与来源](reports/opus_cover87_20260926/coverage87/summary.json)、[精选候选配置](reports/opus_cover87_20260926/selected_experiments.json)。每个shape整行使用最新完整批次；不跨批选最小耗时。
+
+已完成顺序：`finalists87_r5` → `targeted35_v3_r5` → `targeted27_v4_r5` → `targeted3_v5_r5` → `targeted2_v6_r5` → `targeted2_v7_r5` → `targeted1_v8_r5` → `targeted1_v9_r5` → `targeted1_v10_r5`。全扫描来源为 `full87_r3`：完整枚举CK/CKTile/ASM，数值不合格候选剔除；后续只同卡重测有效外部最快者5%内对手。原87成员和295项历史基线保留。
+
+本轮只进行kernel优化、编译、目标shape随测数值检查和性能比较，没有新增边界、接口、单元测试或295项全量回归。下文33项结果和额外验证流程为历史记录。
+
+## 2026-09-26 前一阶段：33 项 kernel 实验
+
+本轮按用户最新要求，只优化 kernel、测目标 shape、比较效果；停止扩展边界/接口测试和全后端扫描。完成四轮 kernel 实验，均在原 **25 个短 K + 8 个 K1536** 目标上同卡同批测五轮，随目标计时检查原 FP32 误差界。
+
+**有效突破是 8-wave BF16 LDS 输出重排**：先按 pitch=264 将累加结果转为 BF16 放入复用的 LDS，再连续 `load/store<8>` 写回。最终候选 **9640/9641/9642/9651** 对应 K384/768/1024/1536；本轮 **33/33 超过同批旧最快 OPUS，18/33 超过同批 CKTile 对照**。相对原固定 K kernel，各组几何平均耗时下降 **31.29% / 24.10% / 23.42% / 23.83%**；相对旧最快 OPUS 下降 **10.98% / 13.07% / 15.32% / 10.75%**。CKTile 的多数胜负差距较小，18/33 是本批五轮中位数结果。
+
+最新结果和复跑入口见 **[RESULTS.md](reports/opus_resume_20260926/RESULTS.md)**；最终逐 shape 比较在 [epilogue_r5](reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/variants_by_shape.csv)。新 kernel 为独立实验实现，位于 [shortk_epilogue_exp](reports/opus_resume_20260926/shortk_epilogue_exp/) 和 [k1536_epilogue_exp](reports/opus_resume_20260926/k1536_epilogue_exp/)，保留同库原版控制组；生产注册、9000 和默认选型均未修改。
+
+本轮 CKTile 对照是同批重测的 27/28/29 和原 shape 的最快 CKTile，不是重新穷举所有后端。未重测完整 87/295 项，不能将 18 项直接相加得到新的全量胜负。下文的 **209/86 完整基线**及原 87 项成员继续保留；旧“33 项未完成”指当时中断的全后端 sweep，新完成的是上述目标 kernel 比较。下一步应沿用已经证明有效的输出重排方向，勿把无收益的 scale/XOR 微调当作主线。
+
+## 2026-09-25 迁移交接记录
 
 本分支：`Fyzyukk/aiter:aiter-opus-mxfp8-bpreshuffle`。实验源码提交为 `b7df6147`。本次交接把当前实验源码、最新完整基线、未完成实验记录及复跑工具提交到同一分支，供换服务器继续优化。本次没有启动 GPU 测试，也没有等待原机空闲。
 
@@ -163,3 +326,17 @@ python -u reports/opus_remote_run/benchmark.py \
 本分支保存 2026-09-25 的文本报告、原始 CSV/JSON、验证源码及此前 9030 实验记录；更早的完整本地实验目录不在本次交接范围。文件清单和 SHA256 见 [manifest.json](reports/opus_remote_handoff_20260925/manifest.json)。`reports/.gitattributes` 保留证据原始字节，避免 CSV 换行归一化破坏历史哈希。
 
 旧 JSON 内的绝对路径与二进制哈希描述原机，不要求新编译产物匹配旧哈希。未上传 JIT 缓存、编译二进制及完整工具链；新生成的运行入口以新哈希记录本次执行。
+
+
+## Historical snapshot: 2026-09-27 single-flow queue before interruption
+
+Latest scope: leave 9000/9020 and shared helpers unchanged; consolidate every other
+retained candidate, including 9010/9011/9012, into one main loop and output flow per
+geometry. Work and live status: `reports/opus_merge_flow_20260927/RUNNING.md`.
+Two 62-shape/3-round pilots passed numerical checks. Five new geometries in three
+families are implemented; small v3/v4 and tiny v3 await numerical/performance data.
+At that earlier handoff, eight cards had outside activity and a queue was waiting.
+Recovery subsequently confirmed that those processes no longer exist and all
+eight pilot v34 summary files contain zero data rows. The JSON queue states are
+historical remnants. Use the new-machine entry at the top of this document;
+full295 selection and final cleanup remain pending.
