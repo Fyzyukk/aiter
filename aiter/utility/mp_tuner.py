@@ -216,7 +216,7 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
     # (ref!=None | ref_func!=None) & fast_mode=0: return best result, postprocess
     data = None
     data_key = None
-    cached_ref = ref
+    cached_ref = None
     cached_ref_key = None
 
     def make_data_key(cur_gen_data, cur_gen_args):
@@ -234,7 +234,7 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
         return (id(cur_gen_data), normalize(cur_gen_args))
 
     def ensure_data(cur_gen_data, cur_gen_args):
-        nonlocal data, data_key, cached_ref_key
+        nonlocal data, data_key, cached_ref, cached_ref_key
         cur_data_key = make_data_key(cur_gen_data, cur_gen_args)
         if cur_data_key != data_key:
             data = (
@@ -243,6 +243,7 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
                 else input_data
             )
             data_key = cur_data_key
+            cached_ref = None
             cached_ref_key = None
         return data
 
@@ -293,20 +294,20 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
 
             if ref_noused is not None:
                 ref = ref_noused
-            else:
-                ref = cached_ref
-                _cur_key = (id(ref_func), ref_args, data_key)
-                if (
-                    ref is None
-                    and not fast_mode
-                    or (ref_func is not None and fast_mode)
-                ) and _cur_key != cached_ref_key:
+            elif ref_func is not None:
+                # A shape group may mix generators and reference contracts.
+                # Snapshot arguments (including kwargs) so every change invalidates
+                # the computed reference, while explicit task refs stay separate.
+                _cur_key = (make_data_key(ref_func, (ref_args, ref_kwargs)), data_key)
+                if _cur_key != cached_ref_key:
                     ref_data_keys_i, *rest_i = ref_args
                     updated = tuple(data[k] for k in ref_data_keys_i) + tuple(rest_i)
-                    ref = ref_func(*updated, **ref_kwargs)
+                    cached_ref = ref_func(*updated, **ref_kwargs)
                     torch.cuda.synchronize()
-                    cached_ref = ref
                     cached_ref_key = _cur_key
+                ref = cached_ref
+            else:
+                ref = None
 
             # Extract rtol, atol from rest if available, otherwise use defaults.
             # Optional rest[2]: custom compare callable (e.g. cosine diff for a8w4).

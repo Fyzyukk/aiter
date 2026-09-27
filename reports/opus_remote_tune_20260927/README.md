@@ -6,6 +6,9 @@
 [`dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv`](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)，
 包含 gfx950/256 CU、`M >= 1024` 的全部 305 个唯一 shape。
 当前推荐命令见 [HANDOFF_MXFP8.md](../../HANDOFF_MXFP8.md)。
+当前 tuner 的 CK/CKTile/ASM 输入沿用原 blockscale tuner 的随机 FP32 scale，
+OPUS 独立生成原生 E8M0 scale，各自计算参考结果；不使用下文历史实验工具的
+E8M0 解码共享输入方式。
 该入口使用正式 ID 9060–9064；下面的 21000/21310/21311/21220/21221
 仍仅指本目录独立库的历史 ID，295 项是本实验工具的子集。
 

@@ -2,10 +2,9 @@
 # Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
 """Tune gfx950 MXFP8 B-preshuffle GEMM across OPUS and common backends.
 
-This is deliberately kept as a gfx950/MXFP8 adapter instead of changing the
-generic blockscale tuner.  Every backend receives operands derived from the
-same native E8M0 dataset: OPUS consumes the compact E8M0 tensors directly,
-while CK, CKTile and ASM consume exact FP32 decodes prepared outside timing.
+This gfx950 adapter keeps each backend's scale input format: OPUS receives
+random native E8M0 scales, while CK, CKTile and ASM reuse the original
+blockscale tuner's random FP32 scales. Each dataset has its own reference.
 """
 
 import argparse
@@ -58,18 +57,19 @@ _TAG = "a8w8_mxscale_gemm_bpreshuffle"
 _DEFAULT_HIP_CLANG_PATH = "/root/toolchains/llvm-amdgpu-pin-op-dst-49c41889-build/bin"
 _BENCH_KEYS = ("x", "w", "out", "x_scale", "w_scale")
 _REF_KEYS = ("x", "w_reference", "x_scale", "w_scale")
+_CK_REF_KEYS = ("x", "weight", "x_scale", "w_scale")
 _CK_BENCH_KEYS = (
     "x",
     "weight_shuffle",
-    "x_scale_t_fp32",
-    "w_scale_fp32",
+    "x_scale_t",
+    "w_scale",
     "out",
 )
 _CK_ROWMAJOR_BENCH_KEYS = (
     "x",
     "weight_shuffle",
-    "x_scale_fp32",
-    "w_scale_fp32",
+    "x_scale",
+    "w_scale",
     "out",
 )
 _ASM_BENCH_KEYS = (*_CK_BENCH_KEYS, "zero_bias")
@@ -166,26 +166,25 @@ def candidate_kids_for_shape(gfx, m, n, k, outdtype="bf16"):
 
 
 def generate_data(m, n, k, seed=0, *, device):
-    """Build one native-E8M0 dataset shared by every selected backend.
-
-    ``x_scale``/``w_scale`` retain the compact tensors required by OPUS.  The
-    ``*_fp32`` entries are exact decodes of those tensors for the existing
-    CK/CKTile/ASM blockscale interfaces.  All conversion and B preshuffling is
-    therefore outside the timed call.
-    """
+    """Build OPUS inputs with random FP8 operands and native E8M0 scales."""
     if min(m, n, k) <= 0 or n % 16 or k % _SCALE_GROUP_K:
         raise ValueError(
             f"MXFP8 B-preshuffle data requires positive shapes, N divisible by "
             f"16 and K divisible by {_SCALE_GROUP_K}; got {(m, n, k)}"
         )
-    # Keep the original standalone tuner's deterministic dataset.  ``seed`` is
-    # accepted because the generic tuner includes it in every task signature.
-    generator = torch.Generator(device=device).manual_seed(0)
-    x = torch.randn((m, k), device=device, generator=generator).to(torch.float8_e4m3fn)
-    weight = torch.randn((n, k), device=device, generator=generator).to(x.dtype)
+    # Match the original tuner's operand distribution; scales use OPUS's
+    # native format instead of the generic tuner's independently random FP32.
+    generator = torch.Generator(device=device).manual_seed(seed)
+    x = (
+        torch.rand((m, k), dtype=torch.float16, device=device, generator=generator)
+        / 10
+    ).to(torch.float8_e4m3fn)
+    weight = (
+        torch.rand((n, k), dtype=torch.float16, device=device, generator=generator)
+        / 10
+    ).to(x.dtype)
     kg = k // _SCALE_GROUP_K
-    # Native E8M0 exponent bytes: nonuniform finite powers of two, not rounded
-    # FP32 scales paired with an unrelated prequantized activation.
+    # Generate finite powers of two directly in the native exponent storage.
     x_scale = (
         torch.randint(
             123, 130, (kg, m), device=device, dtype=torch.uint8, generator=generator
@@ -201,25 +200,14 @@ def generate_data(m, n, k, seed=0, *, device):
         dtype=torch.uint8,
         generator=generator,
     ).view(torch.float8_e8m0fnu)
-    x_scale_fp32 = x_scale.float().contiguous()
-    w_scale_fp32 = w_scale.float().contiguous()
-    x_scale_t_fp32 = x_scale_fp32.transpose(0, 1).contiguous().view(*x_scale_fp32.shape)
     weight_shuffle = shuffle_weight(weight, layout=(16, 16))
     return {
         "x": x,
-        # Existing OPUS names are retained for direct tuner/replay callers.
         "w": weight_shuffle,
         "w_reference": weight,
         "out": torch.empty((m, n), device=device, dtype=torch.bfloat16),
         "x_scale": x_scale,
         "w_scale": w_scale,
-        # Generic blockscale backend names, all derived from the same values.
-        "weight": weight,
-        "weight_shuffle": weight_shuffle,
-        "x_scale_fp32": x_scale_fp32,
-        "x_scale_t_fp32": x_scale_t_fp32,
-        "w_scale_fp32": w_scale_fp32,
-        "zero_bias": torch.zeros((1, n), dtype=torch.float32, device=device),
     }
 
 
@@ -300,7 +288,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         self.opus_kids = None
         super().__init__(
             "opus_mxscale_bpreshuffle",
-            # Input/output/scale dtypes are fixed by this specialized tuner.
+            # Input/output dtypes are fixed; scale dtype follows the backend.
             # Keep them as validated internal defaults, not serialized shape
             # keys, so -o matches the production tuned-config CSV schema.
             keys=["gfx", "cu_num", "M", "N", "K"],
@@ -316,8 +304,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             ],
             description=(
                 "Tune gfx950 FP8 B-preshuffle GEMM across CK, CKTile, ASM and "
-                "OPUS using native E8M0 A 1x128 / B 128x128 scales and BF16 "
-                "output. Measures backend GPU time, including internal transforms."
+                "OPUS with BF16 output. CK/CKTile/ASM use random FP32 scales; "
+                "OPUS uses random native E8M0 scales. Measures backend GPU "
+                "time, including internal transforms."
             ),
         )
 
@@ -343,7 +332,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             elif action.dest == "run_config":
                 action.help = (
                     "replay saved exact backend/kernel choices from TUNED_CSV "
-                    "(or -o when omitted), with native E8M0 inputs; measures backend GPU time"
+                    "(or -o when omitted), with each backend's scale format; measures backend GPU time"
                 )
             elif action.dest == "splitK":
                 action.help = (
@@ -382,7 +371,6 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             "cu_num": self.get_cu_num(),
             "dtype": str(torch.float8_e4m3fn),
             "outdtype": str(torch.bfloat16),
-            "scale_dtype": "e8m0",
         }
         if saved:
             missing = {
@@ -423,19 +411,17 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             raise ValueError("MXFP8 bpreshuffle tune requires FP8 E4M3FN inputs")
         if not df["outdtype"].map(canonical_output_dtype).eq("bf16_t").all():
             raise ValueError("MXFP8 bpreshuffle tune requires BF16 output")
-        if (
-            not df["scale_dtype"]
-            .isin(["e8m0", "float8_e8m0fnu", str(torch.float8_e8m0fnu)])
-            .all()
-        ):
-            raise ValueError("MXFP8 bpreshuffle tune requires E8M0 scales")
         if saved and (df["libtype"].isna() | df["libtype"].astype(str).eq("")).any():
             raise ValueError("Saved MXFP8 rows require a non-empty libtype")
-        df["dtype"], df["outdtype"], df["scale_dtype"] = (
+        df["dtype"], df["outdtype"] = (
             str(torch.float8_e4m3fn),
             str(torch.bfloat16),
-            "e8m0",
         )
+        # Scale dtype is selected by the backend, never by a legacy CSV column.
+        if saved:
+            df["scale_dtype"] = df["libtype"].eq("opus").map(
+                {True: "e8m0", False: "fp32"}
+            )
         return df
 
     def get_tuned_gemm_list(self, tuned_gemm_file, columns=None):
@@ -513,16 +499,29 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         )
 
     @staticmethod
-    def _make_task(info, m, n, k, seed, func, arg_keys, extra_args, run_kwargs):
+    def _make_task(
+        info,
+        m,
+        n,
+        k,
+        seed,
+        func,
+        arg_keys,
+        extra_args,
+        run_kwargs,
+        *,
+        gen_data=generate_data,
+        ref_keys=_REF_KEYS,
+    ):
         return (
             info,
-            generate_data,
+            gen_data,
             (m, n, k, seed),
             func,
             (arg_keys, *extra_args),
             dict(run_kwargs),
             run_torch,
-            (_REF_KEYS,),
+            (ref_keys,),
             {"with_bounds": True},
             None,
             1e-2,
@@ -534,17 +533,12 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
 
     @classmethod
     def _adapt_generic_tasks(cls, tasks, info_keys, seed):
-        """Retarget generic tasks to the shared native-E8M0 dataset."""
+        """Keep the original FP32-scale inputs and validate their own reference."""
         _gfx, _cu_num, m, n, k = info_keys
-        key_map = {
-            "x_scale": "x_scale_fp32",
-            "x_scale_t": "x_scale_t_fp32",
-            "w_scale": "w_scale_fp32",
-        }
         adapted = []
         for task in tasks:
-            info, _gen_data, _gen_args, func, args, kwargs, *_rest = task
-            arg_keys = tuple(key_map.get(key, key) for key in args[0])
+            info, gen_data, _gen_args, func, args, kwargs, *_rest = task
+            arg_keys = tuple(args[0])
             if info[4] == "cktile":
                 arg_keys = cktile_bench_keys(info[1])
             adapted.append(
@@ -558,6 +552,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                     arg_keys,
                     args[1:],
                     kwargs,
+                    gen_data=gen_data,
+                    ref_keys=_CK_REF_KEYS,
                 )
             )
         return adapted
@@ -721,8 +717,12 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             _ensure_kids_compiled(set(opus_rows.kernelId))
         for row in rows.itertuples(index=False):
             kid = row.kernelId
-            data = generate_data(row.M, row.N, row.K, 0, device="cuda")
-            ref = run_torch(*(data[key] for key in _REF_KEYS), with_bounds=True)
+            if row.libtype == "opus":
+                gen_data, ref_keys = generate_data, _REF_KEYS
+            else:
+                gen_data, ref_keys = generic_tune.generate_data, _CK_REF_KEYS
+            data = gen_data(row.M, row.N, row.K, 0, device="cuda")
+            ref = run_torch(*(data[key] for key in ref_keys), with_bounds=True)
             data["out"].fill_(float("nan"))
             if row.libtype == "opus":
                 bench, bench_args = run_bench, (

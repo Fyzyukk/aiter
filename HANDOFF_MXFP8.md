@@ -12,6 +12,12 @@
 新文件只含 `gfx,cu_num,M,N,K` 五列，保留旧 295 项子集之外的全部 10 项。
 本次只提取并核对 CSV，未运行 GPU 调优。
 
+输入按后端生成：CK/CKTile/ASM 直接复用原 blockscale tuner 的
+`generate_data`，A/B 为 `rand(FP16) / 10` 后转 FP8，scale 独立随机生成 FP32；
+OPUS 使用相同的 A/B 生成方式，scale 独立生成原生 E8M0 指数字节。
+外部后端不使用 E8M0 解码的 scale。调优和回放均使用各自数据计算参考结果，
+保留现有误差判定；同 shape 切换输入生成器时刷新数据和参考缓存。
+
 在仓库根目录执行，将编译器路径换成目标机器的实际路径：
 
 ```bash

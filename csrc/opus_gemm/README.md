@@ -54,6 +54,13 @@ their existing JIT paths. `--shape_grouped` measures each shape's candidates
 on the same GPU. Omit `--opus-kids` to include all registered OPUS candidates,
 including the retained 9010/9011/9012 controls.
 
+CK/CKTile/ASM reuse the original blockscale tuner's input generator: FP16
+uniform random operands divided by 10 and cast to FP8, plus independently
+random FP32 scales. OPUS uses the same operand generation with independently
+random native E8M0 scales. External backends do not decode OPUS scales.
+Tuning and replay compute a reference for each dataset and retain the existing
+error checks; switching datasets in a shape group invalidates the reference cache.
+
 Use a ROCm/PyTorch environment with native `torch.float8_e8m0fnu`, initialize
 the CK submodule, and point `OPUS_HIP_CLANG_PATH` to a clang `bin/` supporting
 `clang::amdgpu_pin_agpr`. The known compiler source is `yuyzhang512/llvm-project`
