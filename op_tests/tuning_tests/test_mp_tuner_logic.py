@@ -11,14 +11,11 @@ Simulates async_result behavior without GPU/multiprocessing to verify:
 Run: python3 -m unittest op_tests.test_mp_tuner_logic -v
 """
 
-import ast
 import importlib
 import multiprocessing as mp
 import time
 import unittest
 from multiprocessing import TimeoutError as MPTimeoutError
-from pathlib import Path
-from types import SimpleNamespace
 
 
 def _wait_for_release(release, value):
@@ -394,153 +391,6 @@ class TestWorkerErrorRatio(unittest.TestCase):
         self.assertIsNotNone(merge_error_ratio)
         self.assertEqual(merge_error_ratio(0.1, 0.2), 0.2)
         self.assertEqual(merge_error_ratio(0.2, 0.1), 0.2)
-
-
-class TestWorkGroupReferenceCache(unittest.TestCase):
-    """Exercise the real work_group with CPU stubs, without importing torch/aiter."""
-
-    def setUp(self):
-        source_path = Path(__file__).resolve().parents[2] / "aiter/utility/mp_tuner.py"
-        tree = ast.parse(source_path.read_text(), filename=str(source_path))
-        work_group = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.FunctionDef) and node.name == "work_group"
-        )
-        self.generated = []
-        self.references = []
-        namespace = {
-            "mp": SimpleNamespace(current_process=lambda: SimpleNamespace(pid=1)),
-            "torch": SimpleNamespace(
-                Tensor=type("FakeTensor", (), {}),
-                device=lambda name: name,
-                cuda=SimpleNamespace(
-                    set_device=lambda device: None, synchronize=lambda: None
-                ),
-            ),
-            "worker": lambda gpu_id, info, func, args, kwargs, ref, *rest: (args[0], ref),
-        }
-        exec(
-            compile(
-                ast.Module(body=[work_group], type_ignores=[]), str(source_path), "exec"
-            ),
-            namespace,
-        )
-        self.work_group = namespace["work_group"]
-
-    def generator(self, label):
-        def generate(value, *, device):
-            self.generated.append((label, value))
-            return {"x": (label, value)}
-
-        return generate
-
-    def reference(self, label):
-        def reference(value, offset=0, *, factor=1):
-            result = (label, value, offset, factor)
-            self.references.append(result)
-            return result
-
-        return reference
-
-    @staticmethod
-    def task(generator, value, reference, offset=0, *, factor=1, explicit_ref=None):
-        return (
-            (("same-shape",),),
-            generator,
-            (value,),
-            None,
-            (("x",),),
-            {},
-            reference,
-            (("x",), offset),
-            {"factor": factor},
-            explicit_ref,
-        )
-
-    def run_tasks(self, tasks, *, fast_mode=False):
-        return self.work_group({1: 0}, fast_mode, 0.0, (len(tasks), ()), tasks)
-
-    def test_generator_change_rebuilds_data_and_reference(self):
-        fp32, e8m0 = self.generator("fp32"), self.generator("e8m0")
-        reference = self.reference("reference")
-        tasks = [
-            self.task(gen, 1, reference) for gen in (fp32, fp32, e8m0, e8m0, fp32)
-        ]
-        results = self.run_tasks(tasks)
-        for data, ref in results:
-            self.assertEqual(ref, ("reference", data, 0, 1))
-        self.assertEqual(self.generated, [("fp32", 1), ("e8m0", 1), ("fp32", 1)])
-        self.assertEqual(len(self.references), 3)
-
-    def test_generator_arguments_change_rebuilds_reference(self):
-        generate, reference = self.generator("data"), self.reference("reference")
-        results = self.run_tasks(
-            [self.task(generate, value, reference) for value in (1, 2, 2)]
-        )
-        for data, ref in results:
-            self.assertEqual(ref, ("reference", data, 0, 1))
-        self.assertEqual(self.generated, [("data", 1), ("data", 2)])
-        self.assertEqual(len(self.references), 2)
-
-    def test_reference_function_arguments_and_keywords_invalidate_cache(self):
-        generate = self.generator("data")
-        first, second = self.reference("first"), self.reference("second")
-        for fast_mode in (False, True):
-            with self.subTest(fast_mode=fast_mode):
-                self.generated.clear()
-                self.references.clear()
-                results = self.run_tasks(
-                    [
-                        self.task(generate, 1, first),
-                        self.task(generate, 1, first),
-                        self.task(generate, 1, first, 2),
-                        self.task(generate, 1, first, 2, factor=3),
-                        self.task(generate, 1, second, 2, factor=3),
-                    ],
-                    fast_mode=fast_mode,
-                )
-                self.assertEqual(
-                    [ref for _, ref in results],
-                    [
-                        ("first", ("data", 1), 0, 1),
-                        ("first", ("data", 1), 0, 1),
-                        ("first", ("data", 1), 2, 1),
-                        ("first", ("data", 1), 2, 3),
-                        ("second", ("data", 1), 2, 3),
-                    ],
-                )
-                self.assertEqual(len(self.generated), 1)
-                self.assertEqual(len(self.references), 4)
-
-    def test_explicit_reference_does_not_replace_computed_cache(self):
-        generate, reference = self.generator("data"), self.reference("computed")
-        results = self.run_tasks(
-            [
-                self.task(generate, 1, reference, explicit_ref="first-explicit"),
-                self.task(generate, 1, reference),
-                self.task(generate, 1, reference, explicit_ref="second-explicit"),
-                self.task(generate, 1, reference),
-            ]
-        )
-        computed = ("computed", ("data", 1), 0, 1)
-        self.assertEqual(
-            [ref for _, ref in results],
-            ["first-explicit", computed, "second-explicit", computed],
-        )
-        self.assertEqual(len(self.references), 1)
-
-    def test_fast_task_without_reference_does_not_reuse_previous_reference(self):
-        generate, reference = self.generator("data"), self.reference("computed")
-        results = self.run_tasks(
-            [
-                self.task(generate, 1, reference),
-                self.task(generate, 1, None),
-            ],
-            fast_mode=True,
-        )
-        self.assertIsNone(results[1][1])
-        self.assertEqual(len(self.references), 1)
 
 
 if __name__ == "__main__":

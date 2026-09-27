@@ -632,7 +632,42 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 requested_kids.update(kids)
         if requested_kids:
             _ensure_kids_compiled(requested_kids)
-        return super().tune(untunedf, tunedf, args)
+
+        tasks, tasks_data = [], []
+        run_kwargs = {"num_warmup": args.warmup, "num_iters": args.iters}
+        gfx, cu_num = self.get_gfx(), self.get_cu_num()
+        for row in untunedf.itertuples(index=False):
+            info = (gfx, cu_num, row.M, row.N, row.K)
+            start = len(tasks)
+            if args.libtype in ("ck", "both", "all"):
+                tasks.extend(self.get_gemm_a8w8_blockscale_tune_task(
+                    info, args.splitK, 0, True, run_kwargs
+                ))
+            if args.libtype in ("cktile", "both", "all"):
+                tasks.extend(self.get_gemm_a8w8_blockscale_cktile_tune_task(
+                    info, args.splitK, 0, True, args.blockPerCu, run_kwargs
+                ))
+            if args.libtype in ("asm", "all"):
+                tasks.extend(self.get_gemm_a8w8_blockscale_asm_tune_task(
+                    info, args.splitK, 0, True, run_kwargs
+                ))
+            if args.libtype in ("opus", "all"):
+                tasks.extend(self.get_gemm_a8w8_blockscale_opus_tune_task(
+                    info, 0, True, run_kwargs
+                ))
+            if len(tasks) != start:
+                tasks_data.append((len(tasks) - start, ()))
+        if not tasks:
+            return []
+
+        # In the unchanged mp_tuner, fast_mode=True refreshes the reference
+        # when the generator changes. Every task here supplies ref_func and
+        # compare_outputs, so correctness checks still run for every candidate.
+        return generic_tune.mp_tuner(
+            tasks, tasks_data, args.mp, True,
+            args.shape_grouped or args.mp == 1, args.errRatio,
+            timeout=args.timeout, verbose=args.verbose,
+        )
 
     def getKernelName(self, kernel_id, libType="opus", preshuffleB=True):
         if libType == "opus":

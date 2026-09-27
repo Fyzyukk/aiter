@@ -59,7 +59,8 @@ uniform random operands divided by 10 and cast to FP8, plus independently
 random FP32 scales. OPUS uses the same operand generation with independently
 random native E8M0 scales. External backends do not decode OPUS scales.
 Tuning and replay compute a reference for each dataset and retain the existing
-error checks; switching datasets in a shape group invalidates the reference cache.
+error checks. The adapter selects the existing reference-recomputation path in
+the shared tuner; `aiter/utility/mp_tuner.py` remains unchanged.
 
 Use a ROCm/PyTorch environment with native `torch.float8_e8m0fnu`, initialize
 the CK submodule, and point `OPUS_HIP_CLANG_PATH` to a clang `bin/` supporting
