@@ -1,5 +1,516 @@
 # MXFP8 B-preshuffle 优化交接
 
+## 2026-09-28：9021/9022/9023/9024/9030 全面整理与复用
+
+五个候选的 pipeline/traits 已按用户要求整理：能直接复用的 helper 直接复用，
+不同的布局采用 9000 的 shape/dim/unfold 结构。9021/9022 的 RA 复用 9000；
+9023/9024 的 GA 在原 lane XOR 后复用 9000；9030 的 RA 复用 9020。
+9021/9022/9030 的原始字节 Scale A reader 统一复用 9020 的参数化 helper。
+所有候选保留各自独立的 kernel body 和 traits，未修改本轮冻结的 9000/9020。
+
+五个 gmem 基址均保留 batch stride 和 tile row/col；matrix/scale layout 前置，
+四个 scale offset 与矩阵 offset 集中声明，SFA/SFB 分为两个 panel helper。
+traits 只放几何、存储、派生常量和断言；寄存器、C layout/offset、K tile/M-N repeat
+及下半段 helper 命名统一，说明注释用单行。9021/9022 的 A/C pin、9023/9024 的
+XOR A 与预打包 scale、9030 的 byte SFB/64-bit C/tile-local bounds 均保持。
+
+9023/9024 的 scale layout 表达组内位置，K group/panel 推进放到动态 offset；
+避免将完整的 group 字节地址跨主循环缓存。初版 VGPR 曾增至 233/151，未采用；
+最终 VGPR 为 138/112（整理前 144/114）。9021/9022/9030 最终 VGPR 为
+200/244/205（整理前 200/240/207）。五个最终 device TU 均通过 CPU 编译，
+ABI/LDS 保持，private segment 与 VGPR/SGPR spill 均为 0。
+9021/9022 部分 paired LDS writes 被拆成 single writes，不能称为机器码完全相同。
+本轮没有 GPU 数值或性能验证，也没有重新 tune；此前 305-shape 实测不代表本次整理后的实测结果。
+
+本次提交准备同时保留当前 8 个候选的注册、独立头文件命名、旧文件删除及必要报告。
+相对与上游的共同基线 `b3d0cf4e`，最终非 reports 净变更 78 个文件，其中 50 个属于
+保留实验包；共享 generic tuner 没有净改动。当前上游已前进，本轮没有合并上游。
+
+- [五个候选的整理、源码和 CPU 证据](reports/opus_9021_9030_style_20260928/RESULTS.md)
+- [分支整体 OPUS tune 集成文件清单](reports/opus_9021_9030_style_20260928/INTEGRATION_FILES.md)
+- [最终 host 地址/guard 检查](reports/opus_9021_9030_style_20260928/host_layout_final/validation.json)
+
+## 当前代码约定（2026-09-28，用户确认）
+
+后续 layout helper 按 9000 的风格显式接收 `lane_id` 和所需的
+`wave_id_m` / `wave_id_n`，通过 shape/dim/unfold 表达线程分工，
+不要为了简化参数合成 `thread_id` 再拆解。配置常量、派生常量及对应
+`static_assert` 集中在 traits；pipeline 直接引用 `T::VEC_SCALE_A` 等常量。
+tile 的 `row` / `col` 起点放在 `g_*` 基址，layout 只表达 tile 内偏移。
+全局视图按 9000 保留 `batch_id = block_id_z()` 及每个指针对应的
+`batch_id * stride_*_batch`，即使现有入口只允许 batch=1，也不省略这一项。
+9020 的 A/B/C 寄存器用默认 `typename decltype(mma)::vtype_*` 声明，
+累加器显式 `clear(v_c)`；按实际流水线需要决定份数，不为外观照搬多份 tile。
+
+9020 的 `gsfa` / `ssfa` 已采用上述接口，shape 为 `(2,4,16,3,4,16)`，
+自由维仍是三次 M pass 与 16 字节向量。`rsfa` 保留原有 lane/wave_m 接口。
+随后已将 SFA 的 row、SFB 的 col 移入各自 gmem 基址，SFB 三个 layout
+统一为 shape/dim/unfold 和 lane/wave 接口；RA、swizzle、输出及预取固定
+常量迁入 traits，C layout 前置到 MMA 初始化后。M 尾判断、Scale A 后打包、
+Scale B 两字节打包及流水线顺序保持。
+CPU 地址核对覆盖全部 512 个线程的 14848 项有效地址，数量和顺序一致。
+完整 kernel 编译通过：VGPR204、LDS143360、private/spill0；SGPR53→52，
+指令字节7812→7808，内存指令计数与 ABI 一致。本次没有运行 GPU 或重新 tune。
+详见[风格整理及验证](reports/opus_9020_style_consistency_20260928/RESULTS.md)。
+
+9020 的 B gmem 构造随后统一为 9000 的 typed-pointer 加 tile 偏移写法，
+删除 `b_address/b_lo/b_hi` 及源码中的两次指针 `readfirstlane`。
+当前编译器仍生成标量描述符，没有 descriptor waterfall；内存指令计数一致，
+VGPR204、LDS143360、private/spill0，SGPR52→51，指令字节7808→7812。
+入口限制 `N*K <= INT32_MAX` 且 `stride_b=K`，支持范围内的乘法保持等价。
+A/C 的 M 尾资源长度保留。仅做 CPU 编译及 ISA 核对，未运行 GPU 或重新 tune；
+详见[B gmem 整理记录](reports/opus_9020_gmem_style_20260928/RESULTS.md)。
+
+随后按用户要求，9020 的 A/B/C/SFA/SFB 五个 gmem 基址全部补齐 batch 偏移，
+保留原有 A/C 资源长度。layout、traits、入口和其他候选未改；现有 grid.z=1，
+五个新增项实际均为零。一次 CPU 编译通过，内存指令计数与 ABI 一致，
+没有 descriptor waterfall；VGPR204、LDS143360、private/spill0，SGPR51→54，
+指令字节7812→7896。未运行 GPU 或 tune，不以地址等价宣称性能相同。
+详见[五个 gmem 的 batch 偏移整理记录](reports/opus_9020_batch_gmem_style_20260928/RESULTS.md)。
+
+9020 随后将手工 fragment 别名、array 容器与 a_chunks/b_chunks 指针改为默认
+MMA 类型的一份 v_a/v_b/v_c。逐片加载、MFMA 和最终 BF16 转换通过静态
+slice/set_slice 访问相同元素，保留 swap_ab、scale selector 和原调度。
+9020 本来没有 pin AGPR；一次 CPU 编译后仍为 AGPR0、private/spill0，
+VGPR204→203、SGPR54、LDS143360、指令字节7896。内存/MFMA/wait/barrier
+计数与 ABI 一致，但机器码不同；未运行 GPU，不据此宣称性能提升。
+详见[默认 MMA 寄存器类型整理记录](reports/opus_9020_mma_vtypes_20260928/RESULTS.md)。
+
+9020 下半段随后按 9000 风格整理：C 命名为 p_coord_c/u_gc/gc_offsets，
+c_offset 集中表达输出合作读取时的 LDS 行列地址；四个 gsfa/gsfb/ssfa/ssfb
+offset 与 A/B offset 一起声明，并用于实际读写。SFA/SFB 分成两个 panel
+helper，仍在原位置按序仅调用一次(0)，没有新增 refill。寄存器读片、K tile、
+M/N repeat 和输出 helper 命名统一，cached offsets 用 layout_to_offsets 提取。
+原地址、scale 打包与 MFMA/LDS 交错保持；显式 wait/barrier 顺序和参数一致。
+一次 CPU 编译后完整 metadata 一致：AGPR0、VGPR203、SGPR54、LDS143360、
+private/spill0、指令字节7896；内存/MFMA/wait/barrier 数量相同但机器码不同。
+未运行 GPU 或 tune，详见[下半段 offset 和 helper 整理记录](reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md)。
+
+此前已完成当前 9020 的 Scale A 前/后打包六轮对照，生产仍保留 LDS
+原始字节、读后打包方式，详见
+[对照结果](reports/opus_9020_sfa_pack_ab_20260928/RESULTS.md)。
+
+## 2026-09-28 最新：9020 RA按9000的shape/dim形式展开
+
+仅将9020的`make_layout_ra_scale`改为显式`ra_block_shape`、`ra_block_dim`，
+通过`unfold_x_stride`和`unfold_p_coord`构造布局。八wave坐标映射保留，
+源码展开核对仍为shape(3,8,8,2,4,16)、stride(8448,1056,128,64,16,1)，
+自由维仍为repeat/chunk/byte；函数之外的pipeline正文未改。
+本轮为等价表达整理，只做源码核对，没有重复编译或运行GPU。
+
+- [源码核对](reports/opus_9020_ra_shape_dim_20260928/source_check.json)
+- [本轮差异](reports/opus_9020_ra_shape_dim_20260928/change.diff)
+
+## 2026-09-28：9020恢复非XOR A加载，Scale A改为常规layout
+
+按用户要求，仅修改9020 pipeline。A的u_ga/u_sa直接复用9000已有helper，
+恢复`async_load<16>(g_a, ..., u_ga, u_sa, ...)`；八wave reader用纯
+shape/stride/coord表达原来的协作LDS映射。32字节LDS段间padding恢复使用，
+A_STAGE仍为25344，无需改变traits或扩大LDS分配。
+
+Scale A的global/LDS复制共用`make_layout_sfa_panel`，仅group stride不同。
+每个K128 group由4线程在3次64行pass中搬运192行，覆盖原[group][192行]字节panel；
+读端仍按三个M repeat读取并打包。全部layout均不再手工改写cached offsets。
+这次SFA的线程搬运分工实际改变，保留原存储格式、边界判断及0x7f尾行填充。
+5个g_*和12个u_*仍前置；B/SFB、MFMA、主循环和输出代码保持。
+
+9020确实支持M尾块，例如M1472最后一个192行tile只有128行有效；
+已有g_a有效范围以及SFA/C尾行判断保留。LDS的32字节padding不等同于M尾行处理，
+没有新增PAD_M分支、输入补齐或额外候选。
+
+**一次实际device TU CPU编译通过，VGPR208→204，SGPR52、LDS143360、private0、spill0，
+名称、registry、生成TU/impl和96字节ABI保持；机器码7880→7656 bytes。**
+另一次host-only检查编译及一次CPU运行通过：A覆盖18个M尾/K tile/stage场景，
+SFA覆盖9个M尾/有效K group场景，搬运唯一覆盖、LDS padding、尾行填充及读端标签均正确。
+host检查使用实际Opus布局和当前traits，不调用HIP runtime API。
+无GPU数值/性能测试或重新tune；不能由寄存器减少推断实测更快。其余36个受保护生产文件未改。
+
+- [实际device TU编译与资源](reports/opus_9020_restore_a_layout_20260928/validation.json)
+- [CPU布局覆盖检查](reports/opus_9020_restore_a_layout_20260928/host_layout/validation.json)
+- [源码范围核对](reports/opus_9020_restore_a_layout_20260928/source_check.json)
+- [本轮差异](reports/opus_9020_restore_a_layout_20260928/change.diff)
+
+## 2026-09-28：9020恢复完整的前置global view和layout声明
+
+按用户要求，只整理9020 pipeline：在文件前部定义9个候选专用layout factory，
+kernel内先集中声明g_a/g_b/g_c/g_sfa/g_sfb，再列出A/B/SFA/SFB共12个u_*布局，
+随后才定义LDS、寄存器和加载helper。所有新layout均为实际Opus cached layout并被使用。
+B的原64-bit地址及readfirstlane前置后构造g_b；A XOR映射和scale映射移入各自factory。
+A三次预取、六个fragment地址、SFA边界/填充、SFB两个byte打包及MFMA selector保留。
+SFB LDS读写继续使用scalar-offset overload。Prologue至输出段源码逐字节不变。
+
+两次9020实际device TU CPU编译均成功，第二次恢复了上述scalar-offset调用形式。
+最终完整metadata与基线一致：VGPR208、SGPR52、LDS143360、private0、spill0；
+公开名称、registry、生成TU/impl及ABI不变。最终机器码7816→7880 bytes，
+因此**并非ISA逐字节一致，也没有新的GPU数值/性能验证**。
+其余36个受保护生产文件未改，保留当前用户对traits的编辑；没有重新tune。
+
+- [最终CPU编译对照](reports/opus_9020_frontmatter_20260928/attempt2/validation.json)
+- [源码范围核对](reports/opus_9020_frontmatter_20260928/source_check.json)
+- [本轮差异](reports/opus_9020_frontmatter_20260928/change.diff)
+
+## 2026-09-28：将A的LDS地址计算放回pipeline
+
+按用户纠正，9020/9030的traits只保留常量和静态断言。
+9020当前pipeline在`load_a`中直接计算XOR A布局地址，traits内旧`a_lds_offset`
+没有调用，已删除；9020 pipeline未改。9030仍使用该映射，已将完整公式移到
+pipeline的地址helper区、`sb_offset`之后，作为无捕获局部lambda，唯一调用同步改名。
+公式仅为常量引用加`T::`，stage偏移仍保留在调用点。
+
+**仅对9030实际device TU进行一次CPU编译，7884字节机器指令和完整metadata
+（含全部名称及ABI字段）完全一致；registry、公开名称、生成TU/impl及host/device符号不变。**
+两份traits各43个常量及全部断言保留，其余34个受保护源码未改。
+无GPU执行或重新tune；下方保留历史位置说明。
+
+- [CPU编译与机器码对照](reports/opus_9030_lds_helper_20260928/validation.json)
+- [源码范围核对](reports/opus_9030_lds_helper_20260928/source_check.json)
+- [本轮差异](reports/opus_9030_lds_helper_20260928/change.diff)
+
+## 2026-09-28：9020/9030 traits按9000的声明结构整理
+
+两个traits均按9000的顺序分组：线程/wave → B/T/W → HALF及几何断言 →
+E/VEC/GROUP → runtime-K扩展参数 → LDS → scale存储及容量断言。
+每个常量独立一行，八wave专用`a_lds_offset`完整放在末尾。
+逐项源码核对确认两份各43个常量的名称和初始化表达式、全部断言均保留，
+地址映射函数正文逐字节不变；其它35个受保护源码未改。
+本轮仅整理声明与空行，采用源码对照，没有重复编译或运行GPU。
+
+- [源码核对](reports/opus_traits_9000_style_20260928/source_check.json)
+- [本轮差异](reports/opus_traits_9000_style_20260928/change.diff)
+
+## 2026-09-28：9020/9030 traits展开为各自完整定义
+
+按用户纠正，9020的traits不能只列一个继承通用模板的入口。
+已将9020及同样结构的9030展开为非模板、无继承的完整struct，保留原类型名。
+各自文件包含全部几何参数、LDS/scale大小、向量配置、`a_lds_offset`正文及静态断言。
+9020仍为packed B-scale：SFB512、B_SCALE_PACKS=1、LDS143360；
+9030仍为byte B-scale：SFB256、B_SCALE_PACKS=2、LDS143104。
+
+旧`opus_gemm_mxscale_bpreshuffle_192x256_traits_gfx950<Waves, ScalePanel>`
+来自此前实验族，保留供retained源码使用；当前9020/9030不再包含或继承它。
+基础traits头仅继续提供公共宏和kargs等定义。
+
+**两个实际device TU各进行一次CPU编译，机器指令7816/7884 bytes逐字节一致，
+完整metadata（包括名称）、registry、公开名称、生成TU/impl及host实现均一致。**
+只有这两个生产traits文件改变，其余35个受保护源码哈希不变，包含全部pipeline及9000/9010。
+无GPU、重新tune、提交或推送。
+
+- [CPU编译与机器码对照](reports/opus_9020_9030_traits_20260928/validation.json)
+- [实际源码差异](reports/opus_9020_9030_traits_20260928/change.diff)
+- [源码范围核对](reports/opus_9020_9030_traits_20260928/source_check.json)
+
+## 2026-09-28：消除9010 spill，保留两个独立候选
+
+只改9010 padded-M pipeline的`load_sfa_panel`：将已有的
+`sfa_panel_raw[pass] = {};`移到`first_k_group < scale_k_groups`判断之前。
+无效K pass不会被publish，提前定义其临时值可以切断旧scale数据跨主循环的活跃区间；
+有效K/M数据的加载和发布不变。M边界、输出row guard、MFMA次序、wait/barrier均保留。
+
+**生产实际device TU编译后：VGPR spill 14→0，private segment 44→0 bytes，
+scratch load/store静态指令17→0；SGPR spill仍为0，LDS仍为152064 bytes。**
+机器指令24312→23872 bytes；SGPR 76→80，metadata VGPR总数512→497、AGPR256→241。
+旧scratch指令位于主循环入口/出口及尾声衔接处，热主循环内本来就没有scratch读写。
+
+共5次CPU device TU编译（基线、三个局部实验、最终生产）；最终产物与成功实验逐字节一致。
+另外两个实验未整合：改scale受检offset仍有spill；删除输出row guard仍有spill，且大N下
+无效行的32-bit字节offset可能回绕，不能只依赖buffer bound，故完整保留原guard。
+36个其它受保护源码哈希不变，9010生成的impl/device TU、公开名称、shape契约及96-byte ABI不变。
+无GPU执行或重新tune，尚无新的GPU数值/性能结果；未提交或推送。
+
+- [编译资源、源码语义核对与保护哈希](reports/opus_9010_spill_20260928/summary.json)
+- [实际代码差异](reports/opus_9010_spill_20260928/change.diff)
+- [原spill位置诊断](reports/opus_9010_spill_20260928/diagnosis/summary.md)
+
+## 2026-09-28：9000无padding，9010独立承担padded-M流程
+
+按用户纠正，将此前混在9000中的五处`T::PAD_M`分支完全分离。
+9000 pipeline只保留无padding流程，traits删除`PAD_M=false`。
+9010 pipeline由wrapper改为完整独立主体，函数为
+`gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel`，codegen使用该函数。
+A/C有效范围、受检矩阵预取、A-scale尾行零填充、Prologue边界加载、输出行检查均在9010内。
+9010仍继承同一几何traits，并从9000头文件复用layout/AGPR helpers；不调用9000 kernel。
+当前共**8个pipeline入口、8个独立计算模板、8个候选**。
+
+保留本轮开始前用户对9000的注释、格式及traits末尾静态断言的删除；
+9000共享helper区逐字节不变，其余六个候选和registry未改。
+基线复用核对确认：除用户已删除的`sizeof(kargs)==96`静态断言外，
+本轮开始前9000 pipeline/traits的C++ token与已验证版本一致。
+
+**只对9000和9010的实际device TU各进行一次CPU编译，两项均通过；
+机器指令逐字节一致，完整资源metadata除符号名称外一致，96-byte ABI不变。
+公开名称、registry、host launcher检查一致。**
+无GPU执行或重新tune，无提交或推送；下方历史记录保留当时的共享结构说明。
+
+- [9000/9010编译与机器码对照](reports/opus_9000_9010_separate_20260928/validation.json)
+- [本轮源码差异](reports/opus_9000_9010_separate_20260928/refactor.diff)
+- [当前pipeline和traits文件表](csrc/opus_gemm/README.md#mxfp8-b-preshuffle-pipeline-and-traits-headers)
+
+## 2026-09-28：所有候选pipeline内部按9000组织，并整理逐候选优化步骤
+
+9020、9021、9022、9023、9024、9030六个独立pipeline已统一内部组织：
+types/coordinates → global views → layouts → LDS → MMA/registers → helpers →
+Prologue → Main loop → Epilogue → Output writeback。
+实际移动了声明/布局/LDS视图，补齐并使用统一类型和坐标名，抽取地址/operand/output helpers；
+9021/9022的advance正文内联进原runtime for，9020/9030的advance_tile定义移到Prologue之前。
+9010直接继承9000的完整执行流程，wrapper补充说明；9000原计算主体和共享helper未改。
+
+原stage数、wait/barrier、AGPR pin、scale布局、尾部处理和输出策略保留。
+首轮6项均编译成功，但声明求值位置变化影响了readfirstlane与K/128的指令生成；
+定位后恢复wave坐标和runtime-K的原求值位置，保留新的组织结构。
+**第二轮6/6机器指令逐字节一致，完整资源metadata及公开名称/registry/host launcher全部一致。**
+两轮共12次CPU device TU编译；无GPU执行、重新tune、提交或推送。
+所有traits、注册和codegen保持不变，之前305项调优仍是最近一次性能测量。
+
+- [最终六项机器码与资源对照](reports/opus_pipeline_structure_20260928/attempt2/validation.json)
+- [逐候选优化步骤总结](reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md)
+- [当前源码架构和候选文件](csrc/opus_gemm/README.md#mxfp8-b-preshuffle-pipeline-and-traits-headers)
+
+## 2026-09-28：9021–9024拆成四套独立pipeline和traits
+
+按用户要求将两组共享入口拆开，每个候选拥有自己的pipeline计算主体和固定geometry traits，
+文件/type/device kernel继续使用9000风格的前缀与以下独立后缀：
+
+| ID | 后缀 | NUM_STAGES | LDS bytes |
+|---|---|---:|---:|
+| 9021 | `4wave_128x128` | 3 | 105504 |
+| 9022 | `4wave_160x128` | 2 | 81184 |
+| 9023 | `4wave_64x128` | 3 | 80384 |
+| 9024 | `4wave_64x64` | 4 | 71936 |
+
+四个旧共享头文件已移除，替换为八个独立头文件；traits不再使用TileM/TileN模板参数。
+codegen同步生成四套独立类型与函数。现在共8个pipeline入口、7个计算模板、8个候选，
+其中9010继续复用9000的计算模板。其余候选、公共helper、registry和shape支持不变。
+
+**本轮只编译9021–9024的4个实际device TU，各一次，全部通过；
+四个候选的机器指令逐字节一致，完整资源metadata除名称字段外一致，
+公开kernelName、registry和host launcher检查全部一致。**
+计算与调度保留原样；无GPU执行、重新tune、提交或推送。前轮报告保留历史文件名。
+
+- [当前独立pipeline和traits文件表](csrc/opus_gemm/README.md#mxfp8-b-preshuffle-pipeline-and-traits-headers)
+- [本轮四项CPU编译和对照](reports/opus_split_9021_9024_20260928/validation.json)
+
+## 2026-09-28：当前8个候选按9000的pipeline/traits结构统一组织
+
+所有生产入口保留在 `csrc/opus_gemm/include/gfx950/`，按wave数、tile几何和必要变体命名。
+9000原文件和共享helper不动；其余五组pipeline/traits使用同一后缀：
+
+| 当前ID | 文件和内部类型的后缀 | 实例化方式 |
+|---|---|---|
+| 9010 | `4wave_256x256_padded_m` | PAD_M traits，复用9000 kernel |
+| 9020 | `8wave_192x256` | 固定192×256、8-wave |
+| 9021/9022 | `4wave_m128_160_n128` | 同一模板，TileM=128/160 |
+| 9023/9024 | `4wave_m64_n64_128` | 同一模板，TileN=128/64 |
+| 9030 | `8wave_192x256_large_output` | 独立大输出地址pipeline |
+
+内部device函数统一为 `gemm_a8w8_mxfp8_scale_<suffix>_kernel`；
+9000/9010继续使用 `gemm_a8w8_mxfp8_scale_kernel`。现在共6个pipeline入口、5个计算模板、8个实例。
+9020的packed B-scale storage wrapper移入自身traits，pipeline直接使用传入Traits；
+9030改为直接继承原192×256几何base，保留原scale布局和143104-byte LDS，
+9020仍为143360-byte LDS。两者互不继承。generic192×256 base仍保留供retained源码使用。
+
+codegen同步映射新文件/type/device符号；候选ID、公开kernelName、shape支持、96-byte ABI、
+所有计算和流水线调度保持不变。旧五组头文件已由新路径替代。
+本轮验证采用CPU生成与编译8个实际device TU，并对照上一轮完整305项测量保存的JIT；
+**8/8编译通过，机器指令逐字节一致，除名称字段外的完整资源metadata一致；
+8/8公开名称、registry和host launcher检查一致。**
+没有新增GPU调优或新的性能结论，没有提交或推送。历史报告和冻结二进制保留原名称。
+
+- [当前8个候选的完整源码链接与命名规则](csrc/opus_gemm/README.md#mxfp8-b-preshuffle-pipeline-and-traits-headers)
+- [本轮编译、机器码与资源对照](reports/opus_layout_9000_20260928/validation.json)
+- [重组前源码快照](reports/opus_layout_9000_20260928/before_sources)
+
+## 2026-09-28：优化后的9020及9030已完成完整305项全后端重调优
+
+用户要求完整重tune、包含新增10项，并列每个OPUS候选的文件和优化目标。
+本轮 **305/305得到有效最优，退出码0**，profile29,180条，tuned305条；
+原tuner成功扫描计时653.8101秒，GPU0–7、warmup5、iters51、all backends及合法splitK。
+所有1,955条OPUS候选/shape记录数值通过，支持枚举完全匹配当前8个ID。
+整体中选：**OPUS299、CK2、CKTile4、ASM0**。
+OPUS各ID中选：9000×130、9010×29、9020×44、9021×12、9022×51、9023×16、9024×7、9030×10。
+
+新增的是10个shape，不是10个kernel；**10/10全部中选9030**。
+其中5项有有效外部候选，OPUS耗时降低18.250%–19.660%；另5项没有有效外部可比较。
+所有300个可比shape中，OPUS快294、慢6，等权几何平均耗时降低12.398%。
+
+**本轮旧9020慢16项为11快/5慢，不能沿用先前局部三轮的16/16结论。**
+本轮仍慢的6项：`1536,7168,768`（9020，+1.460%）、`10240,768,7168`（9020，+0.721%）、
+`1536,16384,1536`（9020，+0.589%）、`1536,768,7168`（9024，+0.390%）、
+`1536,7168,3072`（9020，+0.241%）、`1664,7168,768`（9020，+0.066%）。
+以上均比较本轮有效最优，不混用历史微秒数；本轮只有一次全量扫描，没有继续优化或复测。
+
+首次启动在测量前发现完整JIT的device TU缺少uintptr_t；已将9020中4处类型替换为
+OPUS已有u64_t，地址算法不变。首次失败日志已归档，随后完整重启并完成。
+最终JIT main机器指令与前次局部实测完全相同（7816bytes、VGPR208/SGPR52/LDS143360、无spill）；
+原输入/基线、其它kernel、注册/codegen和共享tuner保持不变。未提交或推送。
+
+- [完整结果和6项慢shape明细](reports/opus_full305_after9020_20260928/RESULTS.md)
+- [8个候选文件/traits/优化目标](reports/opus_full305_after9020_20260928/CANDIDATES.md)
+- [305项最优CSV](reports/opus_full305_after9020_20260928/tuned.csv)
+- [全候选profile](reports/opus_full305_after9020_20260928/profile.csv)
+- [校验与统计](reports/opus_full305_after9020_20260928/summary.json)
+
+## 2026-09-28：继续优化 9020，16 项三轮中位数全部胜出（已整合）
+
+已将本轮 `mid_packb_seed0_bptr` 整合到生产 9020 的 main pipeline。
+最终同场三轮：**16/16 中位数快于实测外部候选，14/16 每轮都快于当轮所有外部候选**；
+`(1536,7168,3072)` 和 `(1344,16384,1536)` 各赢 2/3 轮，不能声称每轮稳定 16/16。
+相对外部中位数耗时降低 0.808%–4.057%；相对同场原 9020，15/16 更快，
+几何平均耗时降低 2.745%，最佳降低 5.749%，最差回退仅 0.119%。
+原 9020 同场本身已赢外部 6/16，以上优化收益均来自本轮新旧同场比较。
+
+改动为 A XOR LDS 映射、B-scale 双字节打包、中点发布流水线、
+K0 与 scale panel 重叠，并在预取处重建 B 指针描述符以消除编译器 waterfall。
+仍为同一个 9020、192×256×128、8-wave、runtime K128–16384；没有新增候选。
+只改一个生产 pipeline 文件。packed storage 类型限定在该文件，原 main traits 不动，
+避免影响继承 main traits 的 9030。9000、9023、9030、共享 helpers、注册/codegen、
+mp_tuner、原输入/baseline CSV 的保护哈希均未变。
+
+最终 155 个启动检查和 465 次计时后检查全部 error=0，保留原数值判据与 profiler。
+整合后重新编译的生产机器指令与实测版本完全相同：VGPR208、SGPR52、LDS143360、无 spill。
+6 项边界/原有赢家回归的28条记录全部通过；四个旧赢家耗时变化为
+−5.113%、+0.021%、−1.766%、−1.898%，没有追加全量 295/305 项调优。
+忽略项 `(1536,768,7168)` 的 9023 未改。GPU 工作已结束，未提交或推送。
+
+- [本轮完整结果与16项表](reports/opus_9020_resume_20260928/RESULTS.md)
+- [最终三轮比较](reports/opus_9020_resume_20260928/bptr16_r3_comparison.csv)
+- [汇总/保护哈希](reports/opus_9020_resume_20260928/summary.json)
+- [生产机器码核对](reports/opus_9020_resume_20260928/final/device_audit.json)
+- [边界与已有赢家回归](reports/opus_9020_resume_20260928/final_regression_run.json)
+
+## 2026-09-28：按用户要求直接尝试优化 9020 的 16 个慢项
+
+用户将范围改为优化现有 9020，忽略 `(1536,768,7168)` 的 9023。
+已完成隔离实验及 16 项同 GPU 三轮比较，**尚未达到 16/16，未替换生产 9020**。
+最好的三轮统一改法 `prefetch_first` 胜外部 7/16、比原 9020 快 9/16，
+相对原版几何平均耗时仅降低 0.125%，最差回退 2.438%。
+原版本次同场也已经赢 6/16，不能把旧记录与新计时之差算作优化收益。
+155 个候选/shape 的启动检查和 465 次计时后的数值检查全部通过。
+输出重排、scale 打包、循环调度、最终转换错开和新的 M 分组均已留存探索结果；
+没有得到足以覆盖生产 9020 的稳定收益。所有 GPU 工作已结束。
+9000、9023、9030、共享 helpers、注册/codegen、mp_tuner 和原始 CSV 的保护哈希未变。
+没有新增注册候选、全量调优、提交或推送。
+
+- [本次结果及 16 项明细](reports/opus_9020_opt_20260928/RESULTS.md)
+- [三轮逐项比较](reports/opus_9020_opt_20260928/target16_r3_comparison.csv)
+- [汇总与保护哈希结论](reports/opus_9020_opt_20260928/summary.json)
+
+## 2026-09-28 最新：新增 9030，额外 10 项全部由 OPUS 覆盖
+
+新增独立 `large_output` 候选 **9030**，192×256×128、8 wave、runtime K。
+以 9020 的计算流程为基础，仅在独立 pipeline 中将 C 基址改为 64 位计算，
+buffer 范围限制为当前 tile 的有效行跨度，batch=1 的未使用输出 batch stride 设为 0。
+A/B 和局部 tile 字节跨度仍受 signed 32-bit 限制；原七个候选的大小限制不变。
+新候选在本次 305 项输入中恰好支持此前额外的 10 项。
+
+**10/10 项 GPU 数值检查通过，全部 errRatio=0，退出码 0。**
+使用原专用 tuner，仅扫描 9030 和这 10 个目标，物理 GPU 0–7，warmup 5、iters 51。
+本批包含 2/2.5/3/3.5/4/5/6/7/8 GiB 输出，最大 `(65536,65536,1536)` 也通过。
+全部目标 K=1536；没有追加其它边界形状或 295 项全量复测。
+本批调优器统计耗时 20.6128 秒（含 OPUS JIT），测量耗时范围 1828.6272–7750.0115 us。
+外部后端未重测，不能用此前 CK 微秒数作同场性能结论。
+
+当前注册为 **9000、9010、9020–9024、9030，共 8 项**。
+结合原 295 项的已通过结果和本批 10 项，现在 **305 项全部有数值通过的 OPUS 候选**。
+这不代表 305 项全部性能胜出，也不改写先前 300 成功/5 失败的全后端扫描记录。
+
+一次 CPU 核对确认原七个生成 launcher 完全相同、1945 个候选/shape 支持关系未变、
+59 个已有头文件哈希未变。9000、共享 helpers、现有七个 kernel 的计算代码和
+`mp_tuner.py` 未改；本批已结束，没有后台 GPU 工作，未提交或推送。
+
+- [9030 结果报告](reports/opus_large_output_20260928/RESULTS.md)
+- [10 项实测 CSV](reports/opus_large_output_20260928/tuned.csv)
+- [GPU 汇总](reports/opus_large_output_20260928/summary.json)、[CPU 接线核对](reports/opus_large_output_20260928/preflight.json)
+- [运行命令](reports/opus_large_output_20260928/run.sh)、[完整日志](reports/opus_large_output_20260928/tune.log)
+
+17 个慢 shape 的当前最佳 OPUS 仍为 9020×16、9023×1。
+优化建议是另建独立候选，以 9020 为起点先处理 9 项 N7168/K384或768 的短 K 组；
+这组占差距最大的前 8 项。窄 N 的 `(1536,768,7168)` 单独看 9023，
+0.064%/0.012% 两项尚无跨轮稳定性证据，不为这些微小差距新增专用实现。
+本次落实的是额外 10 项覆盖，尚未开展 17 项的新性能优化实验。
+
+## 2026-09-28 最新：删除旧三项并重编号，列出 17 个慢 shape
+
+当前注册仅七项：**9000、9010、9020、9021、9022、9023、9024**。
+9000 不变，旧 9020（padded-M）改为 9010，旧 9060–9064 依次改为 9020–9024。
+旧 9010/9011/9012 的实现、六个专用 pipeline/traits 头及生成分支已删除。
+以下较早调优记录中的 ID 仍表示实测时的旧编号。
+
+一次 CPU 核对通过：七个保留项的元数据、生成 launcher 和实例化代码逐项完全相同，
+59 个保留头文件哈希未变，包含 9000 及共享依赖。未执行 HIP 编译或 GPU 复测。
+默认目录的旧 OPUS JIT 二进制及 receipt 已移入本轮归档，避免新编号误用旧映射；
+后续执行需要重建与当前注册一致的 OPUS JIT。历史实测 JIT、CSV、计时均保留原样。
+
+已提供[新编号的 300 项 tuned CSV](reports/opus_mxfp8_renumber_20260928/tuned.csv)，
+只改 OPUS 的 kernelId，原 kernelName、shape、耗时与其它后端记录均保持。
+编号映射及 CPU 验证见
+[id_mapping.json](reports/opus_mxfp8_renumber_20260928/id_mapping.json)、
+[validation.json](reports/opus_mxfp8_renumber_20260928/validation.json)。
+
+集合核对：旧 295 项是当前 305 项的真子集，**恰好多 10 项，没有多 19 项**。
+当前 305 项与原始 baseline 的 gfx950/256CU、M>=1024 唯一 shape 集合完全一致。
+新增项为 `(M,65536,1536)`，M=16384/20480/24576/28672/32768/40960/49152/57344/65536，
+以及 `(65536,16384,1536)`；均超出 OPUS 现有输出字节范围。
+精确差集：[added_shapes.csv](reports/opus_mxfp8_renumber_20260928/added_shapes.csv)。
+
+现有实测中 OPUS 慢于有效外部候选的 **17 项**完整列表见
+[slow_shapes.csv](reports/opus_mxfp8_renumber_20260928/slow_shapes.csv)，
+同时保留 `opus_measured_id` 旧编号和 `opus_kernelId` 当前编号。
+它们全在原 295 项中，不含那 10 项无 OPUS 候选的大 shape；
+16 项的最快 OPUS 为当前 9020，另 `(1536,768,7168)` 为当前 9023。
+未解决的 5 项不算作这 17 个计时慢项。
+
+## 2026-09-28：原专用 tuner 已重扫全部 305 项，300 项有有效选择
+
+按 strict-task-scope 继续昨日记录，使用下方原专用 tuner 命令，物理 GPU 0–7、
+`--mp 8 --shape_grouped --warmup 5 --iters 51 --all`，OPUS 限定
+9000/9020/9060–9064，CK/CKTile/ASM 全候选及合法 ASM splitK。
+本轮从头测量，独立 JIT 和结果目录为
+[`reports/opus_m_ge1024_retune_20260928/`](reports/opus_m_ge1024_retune_20260928/)。
+调优器统计耗时 **1076.54 秒（约 17.94 分钟，含扫描期间的 JIT 构建）**。
+四批全部执行完，29,170 条候选记录覆盖全部 305 项；
+**300 项获得有效最优，5 项无有效候选，进程退出码为 1，不能称为 305 项全部通过。**
+
+整体中选：**OPUS 278、CK 7、CKTile 15、ASM 0**。
+300 条已保存选择均为本批最小有效耗时，且 `errRatio=0`。
+OPUS 的 1,945 条合法候选记录全部通过；全部七个 ID 均有中选：
+9000×132、9020×30、9060×31、9061×14、9062×50、9063×11、9064×10。
+本轮只完成调优及记录，没有追加 kernel 优化、删除或再次测量。
+
+在 OPUS 与外部均有有效候选的 **295 项**上，OPUS **278 快 / 17 慢**，
+相对最快有效外部的等权几何平均耗时降低 **11.867965%**。
+相对同批仅 9000/9020，七项候选池有 **133 项更快、162 项相同**，
+几何平均耗时降低 **15.876562%**。这些是本轮结果；
+51 次计时不是 51 个独立调优轮次，也不与历史微秒数混合选型。
+最差外部差距为 `(1472,7168,768)`：OPUS 17.2066 us，外部 16.5248 us，
+OPUS 慢 4.125920%。
+
+五个未解决 shape 均为 **N=65536、K=1536**，
+**M=32768/40960/49152/57344/65536**（BF16 输出分别为 4/5/6/7/8 GiB）。
+每项均为：OPUS 被现有支持范围过滤，CKTile 的 33 项明确不支持，
+CK 的 18 项有正耗时但 `errRatio=1`，ASM 的 30 项也被数值检查拒绝。
+其余五个无 OPUS 候选的大 shape 均得到有效 CK 选择。
+保留原始 305 项输入与所有失败记录，不把输入缩回 295 项。
+
+ASM 本轮 **11,670 条记录全部有正耗时且被严格数值检查拒绝**。
+只读核对未发现专用适配层明显的 ASM 数据布局或参考复用错误；
+底层数值差异原因仍未确定。CK/CKTile/ASM 保持原 generic 的独立随机 FP32 scale，
+OPUS 保持原生随机 E8M0 scale，各自计算参考；跨后端计时不是同一组数学输入。
+没有放宽数值阈值或用旧计时替代被拒绝候选。
+
+交付：
+
+- [本轮结果与限制](reports/opus_m_ge1024_retune_20260928/RESULTS.md)
+- [300 项有效最优](reports/opus_m_ge1024_retune_20260928/tuned.csv)
+- [全部 29,170 条候选记录](reports/opus_m_ge1024_retune_20260928/profile.csv)
+- [305 项逐 shape 比较](reports/opus_m_ge1024_retune_20260928/comparison.csv)
+- [候选用量](reports/opus_m_ge1024_retune_20260928/candidate_usage.csv)
+- [完整性与来源汇总](reports/opus_m_ge1024_retune_20260928/summary.json)
+- [本轮命令](reports/opus_m_ge1024_retune_20260928/run.sh)、[运行记录](reports/opus_m_ge1024_retune_20260928/run.json)、[日志](reports/opus_m_ge1024_retune_20260928/tune.log)
+
+71 个记录文件的 SHA256 均保持一致，包含原始 CSV、305 项输入、专用 tuner、
+`mp_tuner.py`、9000/9020 及相关头文件。未改 kernel、共享框架或生产 dispatch CSV；
+本轮无后台 GPU 工作，未提交或推送。
+
 ## 当前入口：原专用 tuner + M >= 1024 untuned CSV
 
 运行文件恢复为
@@ -10,7 +521,7 @@
 按当前要求，已将其中 `M >= 1024` 的全部 **305 个唯一 shape** 提取到
 [`aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv`](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)。
 新文件只含 `gfx,cu_num,M,N,K` 五列，保留旧 295 项子集之外的全部 10 项。
-本次只提取并核对 CSV，未运行 GPU 调优。
+2026-09-27 仅提取并核对 CSV；2026-09-28 的 GPU 调优结果见上节。
 
 输入按后端生成：CK/CKTile/ASM 直接复用原 blockscale tuner 的
 `generate_data`，A/B 为 `rand(FP16) / 10` 后转 FP8，scale 独立随机生成 FP32；
@@ -28,7 +539,7 @@ python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
   -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv \
   -o /tmp/dsv4_m_ge1024_tuned.csv \
   -o2 /tmp/dsv4_m_ge1024_profile.csv \
-  --opus-kids 9000,9020,9060,9061,9062,9063,9064 \
+  --opus-kids 9000,9010,9020,9021,9022,9023,9024,9030 \
   --libtype all --splitK --shape_grouped --mp 1 \
   --warmup 5 --iters 51 --all
 ```
@@ -42,14 +553,14 @@ python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
 
 | Family | 正式 ID | 历史独立库 ID | Tile M×N×K |
 |---|---:|---:|---|
-| main | 9060 | 21000 | 192×256×128 |
-| small | 9061 | 21310 | 128×128×128 |
-| small | 9062 | 21311 | 160×128×128 |
-| narrow | 9063 | 21220 | 64×128×128 |
-| narrow | 9064 | 21221 | 64×64×128 |
+| main | 9020 | 21000 | 192×256×128 |
+| small | 9021 | 21310 | 128×128×128 |
+| small | 9022 | 21311 | 160×128×128 |
+| narrow | 9023 | 21220 | 64×128×128 |
+| narrow | 9024 | 21221 | 64×64×128 |
 
-上面的命令只在 OPUS 侧选择 9000/9020 + 新五项，并与 CK/CKTile/ASM 比较。
-旧 9010/9011/9012 注册仍在；省略 `--opus-kids` 时原 tuner 枚举全部已注册项。
+上面的命令在 OPUS 侧选择 9000/9010、五个合并候选及大输出 9030，并与 CK/CKTile/ASM 比较。
+旧 9010/9011/9012 实现已删除；省略 `--opus-kids` 时原 tuner 枚举当前八项，包含大输出候选 9030。
 不支持某个 shape 的 OPUS 候选按原规则跳过；原始 shape 仍由有效的外部候选参与比较。
 
 `-i` 读取新 untuned CSV 的 shape；`-o` 保存新的逐 shape 最优选择，`-o2` 保存

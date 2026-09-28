@@ -1,0 +1,441 @@
+{
+  "status": "passed",
+  "cpu_only": true,
+  "gpu_executed": false,
+  "build_executed": true,
+  "build_attempts": 2,
+  "candidate_ids": [
+    9000,
+    9010
+  ],
+  "baseline_token_check": {
+    "lexer": "/root/toolchains/llvm-amdgpu-pin-op-dst-49c41889-build/bin/clang",
+    "mode": "-cc1 -std=c++17 -dump-raw-tokens",
+    "normalization": "Drop only comment tokens and whitespace unknown tokens; retain token kinds and exact spelling including literals.",
+    "all_code_tokens_identical": false,
+    "reference_reuse_accepted": true,
+    "authorized_exception": "Root explicitly accepted the user's deletion of static_assert(sizeof(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) == 96); it defines no type and changes neither layout nor runtime code. All other code tokens must match. Preserve the deletion.",
+    "files": {
+      "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh": {
+        "reference_source": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_layout_9000_20260928/before_sources/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh",
+        "snapshot_source": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/before_sources/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh",
+        "reference_sha256": "86a63b43f3f15114bada7a3c30528a615339ad4abb90c8dd1649f4bbb9dab15f",
+        "snapshot_sha256": "1a93d130933891dfd223b51eac9a088bd11b3bd98395557985dc8e08f2f61cdb",
+        "reference_token_count": 15460,
+        "snapshot_token_count": 15460,
+        "reference_tokens_sha256": "fdab1765fbd7b290c97fb765292d7abc948ceedf3bd58c29b791d41eb31d857c",
+        "snapshot_tokens_sha256": "fdab1765fbd7b290c97fb765292d7abc948ceedf3bd58c29b791d41eb31d857c",
+        "code_tokens_identical": true
+      },
+      "opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh": {
+        "reference_source": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_layout_9000_20260928/before_sources/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh",
+        "snapshot_source": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/before_sources/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh",
+        "reference_sha256": "bb2a9426049e83b7febfc11cd1c7b7c61bd34976ceac5eab8288a62c272cc4ce",
+        "snapshot_sha256": "05dbc6c3899f322bf2400a7237b960878b08ff76b4fc7296b8c2da74aa8bd78e",
+        "reference_token_count": 754,
+        "snapshot_token_count": 744,
+        "reference_tokens_sha256": "864c986cca1be83c62330072856f721fe93ac40373d19f6a484f3acc5122cf9b",
+        "snapshot_tokens_sha256": "f4d13e366ead38a354ac013e96482e3ec22afac046314d66dc1500bd1c95d8aa",
+        "code_tokens_identical": false,
+        "first_token_difference": {
+          "index": 744,
+          "reason": "different token count"
+        },
+        "only_authorized_static_assert_deletion": true,
+        "removed_tail_tokens": [
+          [
+            "raw_identifier",
+            "static_assert"
+          ],
+          [
+            "l_paren",
+            "("
+          ],
+          [
+            "raw_identifier",
+            "sizeof"
+          ],
+          [
+            "l_paren",
+            "("
+          ],
+          [
+            "raw_identifier",
+            "opus_gemm_mxscale_bpreshuffle_kargs_gfx950"
+          ],
+          [
+            "r_paren",
+            ")"
+          ],
+          [
+            "equalequal",
+            "=="
+          ],
+          [
+            "numeric_constant",
+            "96"
+          ],
+          [
+            "r_paren",
+            ")"
+          ],
+          [
+            "semi",
+            ";"
+          ]
+        ]
+      }
+    }
+  },
+  "before": {
+    "generated": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/before/generated",
+    "candidates": {
+      "9000": {
+        "public_name": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_nooob",
+        "registry": {
+          "BLOCK_SIZE": 256,
+          "B_M": 256,
+          "B_N": 256,
+          "B_K": 128,
+          "T_M": 2,
+          "T_N": 2,
+          "W_M": 16,
+          "W_N": 16,
+          "W_K": 128,
+          "VEC_A": 16,
+          "VEC_B": 16,
+          "VEC_C": 4,
+          "GROUP_M": 1,
+          "GROUP_N": 128,
+          "GROUP_K": 128,
+          "kernel_tag": "a8w8_mxscale_gemm_bpreshuffle",
+          "output_dtypes": [
+            "bf16_t"
+          ],
+          "WG_PER_CU": 1,
+          "has_oob": false,
+          "cachectl_a": -1,
+          "cachectl_b": -1,
+          "is_4g_safe": false,
+          "arch_prefix": "gfx950",
+          "name_tag": "",
+          "splitk_workspace_dtype": null,
+          "ctdm_layout": "tileN",
+          "num_slots": 3,
+          "wg_per_cu": 2,
+          "cluster_wg_m": 4,
+          "cluster_wg_n": 4,
+          "direct_only": true,
+          "prefetch_scale": false,
+          "fused_reduce": false,
+          "preload_sf": false,
+          "workspace_preload_sf": null,
+          "skip_scale_wait": false,
+          "pack_scale_on_demand": false,
+          "k1024_only": false,
+          "k1024_lb1": false,
+          "preload_sf_lds": false,
+          "name_root": "opus_gemm",
+          "fuse_split_k": 0,
+          "fuse_m_cluster": 1,
+          "co_num_vgpr": 0,
+          "co_min_waves_per_eu": 1,
+          "co_device_flags": [],
+          "co_variant": "",
+          "co_dtypes": [
+            "bf16_t",
+            "bf16_t",
+            "bf16_t",
+            "fp32_t"
+          ],
+          "co_wave_layout": [
+            4,
+            1
+          ],
+          "max_m": null,
+          "output_tiles_per_wg": 1,
+          "scale_dtype": "e8m0",
+          "max_tensor_bytes": 2147483647,
+          "pad_m": false,
+          "max_k": null
+        },
+        "machine": {
+          "name": "_Z28gemm_a8w8_mxfp8_scale_kernelI49opus_gemm_mxscale_bpreshuffle_4wave_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+          "target": "hip-amdgcn-amd-amdhsa--gfx950",
+          "instruction_bytes": 20808,
+          "instruction_sha256": "8cd2388a2887e6f11e83468374d7e74fe142bb65db14448b598c5f6249ab5806",
+          "resources": {
+            ".agpr_count": 221,
+            ".args": [
+              {
+                ".offset": 0,
+                ".size": 96,
+                ".value_kind": "by_value"
+              }
+            ],
+            ".group_segment_fixed_size": 152064,
+            ".kernarg_segment_align": 8,
+            ".kernarg_segment_size": 96,
+            ".language": "OpenCL C",
+            ".language_version": [
+              2,
+              0
+            ],
+            ".max_flat_workgroup_size": 256,
+            ".private_segment_fixed_size": 0,
+            ".sgpr_count": 72,
+            ".sgpr_spill_count": 0,
+            ".uses_dynamic_stack": false,
+            ".vgpr_count": 477,
+            ".vgpr_spill_count": 0,
+            ".wavefront_size": 64
+          },
+          "amdhsa_target": "amdgpu9.50-amd-amdhsa-unknown-gfx950",
+          "amdhsa_version": [
+            1,
+            2
+          ]
+        },
+        "generated_tu": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/before/generated/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_nooob_Cbf16_t.device.cu",
+        "generated_tu_sha256": "b5cfac9381a58f790bb16ed2f7023a5834cd5dbb3c2d151669560f9a86fc2dea",
+        "generated_impl_sha256": "7610f8b062e9572172d23734820ac2d98ab39497f0130459aea738c1d83bb4c8",
+        "reference_object": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_layout_9000_20260928/after/build/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_nooob_Cbf16_t.device.cuda.o",
+        "reference_object_sha256": "ca33af3c0eb9382fabe3080e5a252c2172394eb7f3a6d1fbd37b61303b656ec8",
+        "reference_report": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_layout_9000_20260928/validation.json",
+        "reference_report_sha256": "fb217ddca094213fb67579303382ef9ee2248e5354cf32541bba285d33c75066",
+        "reference_stage": "after"
+      },
+      "9010": {
+        "public_name": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1",
+        "registry": {
+          "BLOCK_SIZE": 256,
+          "B_M": 256,
+          "B_N": 256,
+          "B_K": 128,
+          "T_M": 2,
+          "T_N": 2,
+          "W_M": 16,
+          "W_N": 16,
+          "W_K": 128,
+          "VEC_A": 16,
+          "VEC_B": 16,
+          "VEC_C": 4,
+          "GROUP_M": 1,
+          "GROUP_N": 128,
+          "GROUP_K": 128,
+          "kernel_tag": "a8w8_mxscale_gemm_bpreshuffle",
+          "output_dtypes": [
+            "bf16_t"
+          ],
+          "WG_PER_CU": 1,
+          "has_oob": true,
+          "cachectl_a": -1,
+          "cachectl_b": -1,
+          "is_4g_safe": false,
+          "arch_prefix": "gfx950",
+          "name_tag": "padm",
+          "splitk_workspace_dtype": null,
+          "ctdm_layout": "tileN",
+          "num_slots": 3,
+          "wg_per_cu": 2,
+          "cluster_wg_m": 4,
+          "cluster_wg_n": 4,
+          "direct_only": true,
+          "prefetch_scale": false,
+          "fused_reduce": false,
+          "preload_sf": false,
+          "workspace_preload_sf": null,
+          "skip_scale_wait": false,
+          "pack_scale_on_demand": false,
+          "k1024_only": false,
+          "k1024_lb1": false,
+          "preload_sf_lds": false,
+          "name_root": "opus_gemm",
+          "fuse_split_k": 0,
+          "fuse_m_cluster": 1,
+          "co_num_vgpr": 0,
+          "co_min_waves_per_eu": 1,
+          "co_device_flags": [],
+          "co_variant": "",
+          "co_dtypes": [
+            "bf16_t",
+            "bf16_t",
+            "bf16_t",
+            "fp32_t"
+          ],
+          "co_wave_layout": [
+            4,
+            1
+          ],
+          "max_m": null,
+          "output_tiles_per_wg": 1,
+          "scale_dtype": "e8m0",
+          "max_tensor_bytes": 2147483647,
+          "pad_m": true,
+          "max_k": null
+        },
+        "machine": {
+          "name": "_Z28gemm_a8w8_mxfp8_scale_kernelI66opus_gemm_mxscale_bpreshuffle_4wave_256x256_padded_m_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+          "target": "hip-amdgcn-amd-amdhsa--gfx950",
+          "instruction_bytes": 24312,
+          "instruction_sha256": "0a9e4a04873800f39f3e04f8388fdf895a1ffabcfd18dc6a39d0eec2bad520df",
+          "resources": {
+            ".agpr_count": 256,
+            ".args": [
+              {
+                ".offset": 0,
+                ".size": 96,
+                ".value_kind": "by_value"
+              }
+            ],
+            ".group_segment_fixed_size": 152064,
+            ".kernarg_segment_align": 8,
+            ".kernarg_segment_size": 96,
+            ".language": "OpenCL C",
+            ".language_version": [
+              2,
+              0
+            ],
+            ".max_flat_workgroup_size": 256,
+            ".private_segment_fixed_size": 44,
+            ".sgpr_count": 76,
+            ".sgpr_spill_count": 0,
+            ".uses_dynamic_stack": false,
+            ".vgpr_count": 512,
+            ".vgpr_spill_count": 14,
+            ".wavefront_size": 64
+          },
+          "amdhsa_target": "amdgpu9.50-amd-amdhsa-unknown-gfx950",
+          "amdhsa_version": [
+            1,
+            2
+          ]
+        },
+        "generated_tu": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/before/generated/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_Cbf16_t.device.cu",
+        "generated_tu_sha256": "a221dc0f273442bfff333a600f1b33559cbb636c62a81c071adef70e4d4aada9",
+        "generated_impl_sha256": "ff6770d63a2f0e81c105f265b87e8a5de236c11fd0e7f321879b9753863ea7e4",
+        "reference_object": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_layout_9000_20260928/after/build/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_Cbf16_t.device.cuda.o",
+        "reference_object_sha256": "7a2da2bcc9843ea8ee0a24000258905e1e87e1826047eb73aa109b46594d69b2",
+        "reference_report": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_layout_9000_20260928/validation.json",
+        "reference_report_sha256": "fb217ddca094213fb67579303382ef9ee2248e5354cf32541bba285d33c75066",
+        "reference_stage": "after"
+      }
+    },
+    "frozen_ninja_sha256": "8eafc914d3c4ddd7fa2beb5e7499b1e0e05dc18e2ec127fe8f4200282504d324"
+  },
+  "after": {
+    "generated": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/after/generated",
+    "candidates": {
+      "9000": {
+        "public_name": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_nooob",
+        "public_name_unchanged": true,
+        "registry_unchanged": true,
+        "host_launcher_tokens_unchanged": true,
+        "generated_tu": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/after/generated/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_nooob_Cbf16_t.device.cu",
+        "generated_tu_sha256": "b5cfac9381a58f790bb16ed2f7023a5834cd5dbb3c2d151669560f9a86fc2dea",
+        "generated_impl_sha256": "7610f8b062e9572172d23734820ac2d98ab39497f0130459aea738c1d83bb4c8",
+        "pipeline_source": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh",
+        "compile_attempted": true,
+        "pipeline_source_sha256": "440426ad4d3410ef6619d5d1ab60ea52d410d13bb4abe502e32af5fa6d9a5c2a",
+        "build_returncode": 0,
+        "build_seconds": 1.2315003871917725,
+        "machine": {
+          "name": "_Z28gemm_a8w8_mxfp8_scale_kernelI49opus_gemm_mxscale_bpreshuffle_4wave_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+          "target": "hip-amdgcn-amd-amdhsa--gfx950",
+          "instruction_bytes": 20808,
+          "instruction_sha256": "8cd2388a2887e6f11e83468374d7e74fe142bb65db14448b598c5f6249ab5806",
+          "resources": {
+            ".agpr_count": 221,
+            ".args": [
+              {
+                ".offset": 0,
+                ".size": 96,
+                ".value_kind": "by_value"
+              }
+            ],
+            ".group_segment_fixed_size": 152064,
+            ".kernarg_segment_align": 8,
+            ".kernarg_segment_size": 96,
+            ".language": "OpenCL C",
+            ".language_version": [
+              2,
+              0
+            ],
+            ".max_flat_workgroup_size": 256,
+            ".private_segment_fixed_size": 0,
+            ".sgpr_count": 72,
+            ".sgpr_spill_count": 0,
+            ".uses_dynamic_stack": false,
+            ".vgpr_count": 477,
+            ".vgpr_spill_count": 0,
+            ".wavefront_size": 64
+          },
+          "amdhsa_target": "amdgpu9.50-amd-amdhsa-unknown-gfx950",
+          "amdhsa_version": [
+            1,
+            2
+          ]
+        },
+        "object_sha256": "8314f154db939f24c97028ec60e757b9f6164b4f20d1a075ff370168ced550d9",
+        "instruction_bytes_identical": true,
+        "full_metadata_identical": true
+      },
+      "9010": {
+        "public_name": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1",
+        "public_name_unchanged": true,
+        "registry_unchanged": true,
+        "host_launcher_tokens_unchanged": true,
+        "generated_tu": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/after/generated/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_Cbf16_t.device.cu",
+        "generated_tu_sha256": "6a4725453712d16ca0b476e794d077a4336ba587069e49dc7dcd00a4ca48ebfa",
+        "generated_impl_sha256": "b387a4b400cba700d4fd64161bdecc8e4ce802a9f90d092875a428a31c369df5",
+        "pipeline_source": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh",
+        "compile_attempted": true,
+        "pipeline_source_sha256": "588e9b7f74053b5df94a15a96de61f8fb80af021efad263a4a6b3f2cba27eecd",
+        "build_returncode": 0,
+        "build_seconds": 1.248793125152588,
+        "machine": {
+          "name": "_Z51gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernelI66opus_gemm_mxscale_bpreshuffle_4wave_256x256_padded_m_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+          "target": "hip-amdgcn-amd-amdhsa--gfx950",
+          "instruction_bytes": 24312,
+          "instruction_sha256": "0a9e4a04873800f39f3e04f8388fdf895a1ffabcfd18dc6a39d0eec2bad520df",
+          "resources": {
+            ".agpr_count": 256,
+            ".args": [
+              {
+                ".offset": 0,
+                ".size": 96,
+                ".value_kind": "by_value"
+              }
+            ],
+            ".group_segment_fixed_size": 152064,
+            ".kernarg_segment_align": 8,
+            ".kernarg_segment_size": 96,
+            ".language": "OpenCL C",
+            ".language_version": [
+              2,
+              0
+            ],
+            ".max_flat_workgroup_size": 256,
+            ".private_segment_fixed_size": 44,
+            ".sgpr_count": 76,
+            ".sgpr_spill_count": 0,
+            ".uses_dynamic_stack": false,
+            ".vgpr_count": 512,
+            ".vgpr_spill_count": 14,
+            ".wavefront_size": 64
+          },
+          "amdhsa_target": "amdgpu9.50-amd-amdhsa-unknown-gfx950",
+          "amdhsa_version": [
+            1,
+            2
+          ]
+        },
+        "object_sha256": "c4e18c1f4e98a11fdbf33d1628d3241de5eeb01ad843bd600d5f5ed78cd76c1d",
+        "instruction_bytes_identical": true,
+        "full_metadata_identical": true
+      }
+    }
+  },
+  "metadata_normalization": "Only .name and .symbol are removed recursively; all argument/offset/size/alignment/register/LDS/private/wavefront and remaining metadata fields are retained.",
+  "compiler_policy": "Frozen full305 ninja cuda_cflags and per-device -D__HIPCC_RTC__; only generated include/source/output paths change; HIP_CLANG_PATH is the original 49c41889 toolchain."
+}

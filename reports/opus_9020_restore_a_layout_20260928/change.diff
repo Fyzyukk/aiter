@@ -1,0 +1,164 @@
+--- before/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
++++ after/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
+@@ -9,74 +9,55 @@
+ namespace opus_gemm_8wave_192x256_layout {
+ 
+ template<class T>
+-__device__ inline auto make_layout_ga_scale(int lane_id, int wave_id, int stride_a) {
+-    constexpr int rows_per_pass = T::BLOCK_SIZE / (T::B_K / T::VEC_A);
+-    // Each row contains eight K16 chunks. XOR permutes those chunks within
+-    // the row. Cache the three producer addresses in their issue order.
+-    auto u = opus::make_layout<T::VEC_A>(
+-        opus::make_tuple(opus::number<T::B_M / rows_per_pass>{}, opus::number<T::VEC_A>{}),
+-        opus::make_tuple(rows_per_pass * stride_a, 1_I),
+-        opus::make_tuple(opus::underscore{}, opus::underscore{}));
+-    opus::static_for<T::B_M / rows_per_pass>([&](auto p) {
+-        constexpr int pass = decltype(p)::value;
+-        const int a_row = pass * 64 + wave_id * 8 + lane_id / 8;
+-        const int source_chunk = (lane_id % 8) ^ ((a_row >> 1) & 7);
+-        u.offsets[p] = a_row * stride_a + source_chunk * 16;
+-    });
+-    return u;
+-}
+-
+-template<class T>
+-__device__ inline auto make_layout_sa_scale(int wave_id) {
+-    constexpr int rows_per_pass = T::BLOCK_SIZE / (T::B_K / T::VEC_A);
+-    // The direct-to-LDS instruction adds lane_id * VEC_A itself.
++__device__ inline auto make_layout_ra_scale(int lane_id, int wave_id_m) {
++    constexpr int pitch = T::smem_linear_wave + T::smem_padding;
++    constexpr int rows_per_wave = T::WARP_SIZE / (T::B_K / T::VEC_A);
++    constexpr int lanes_k = T::WARP_SIZE / T::W_M;
++    constexpr int k_vectors = T::B_K / (lanes_k * T::VEC_A);
++    const int lane_row = lane_id % T::W_M;
++    const int producer_wave = (wave_id_m / 2) * T::T_M + lane_row % T::T_M;
++    const int producer_lane_row =
++        (wave_id_m % 2) * (T::W_M / T::T_M) + lane_row / T::T_M;
++
++    // Match the shared A producer layout: each 1024-byte wave segment has
++    // 32 bytes of LDS padding. The free dimensions are repeat, chunk, byte.
+     return opus::make_layout<T::VEC_A>(
+-        opus::make_tuple(opus::number<T::B_M / rows_per_pass>{}, opus::number<T::VEC_A>{}),
+-        opus::make_tuple(opus::number<rows_per_pass * T::B_K>{}, 1_I),
+-        opus::make_tuple(opus::underscore{}, opus::underscore{})) +
+-        wave_id * T::WARP_SIZE * T::VEC_A;
+-}
+-
+-template<class T>
+-__device__ inline auto make_layout_ra_scale(int lane_id, int wave_id_m) {
+-    auto u = opus::make_layout<T::VEC_A>(
+-        opus::make_tuple(opus::number<T::E_M>{}, 2_I, opus::number<T::VEC_A>{}),
+-        opus::make_tuple(opus::number<T::T_M * T::W_M * T::B_K>{}, 64_I, 1_I),
+-        opus::make_tuple(opus::underscore{}, opus::underscore{}, opus::underscore{}));
+-    // Cache the six fragment addresses using the same XOR as the producer.
+-    opus::static_for<T::E_M>([&](auto m) {
+-        constexpr int repeat = decltype(m)::value;
+-        opus::static_for<2>([&](auto c) {
+-            constexpr int index = repeat * 2 + decltype(c)::value;
+-            const int matrix_row = repeat * T::T_M * T::W_M + wave_id_m * T::W_M + lane_id % T::W_M;
+-            const int matrix_chunk = lane_id / T::W_M + decltype(c)::value * 4;
+-            const int lds_chunk = matrix_chunk ^ ((matrix_row >> 1) & 7);
+-            u.offsets[index] = matrix_row * T::B_K + lds_chunk * 16;
+-        });
+-    });
+-    return u;
++        opus::make_tuple(opus::number<T::E_M>{}, opus::number<T::NUM_WAVES>{},
++                         opus::number<rows_per_wave>{}, opus::number<k_vectors>{},
++                         opus::number<lanes_k>{}, opus::number<T::VEC_A>{}),
++        opus::make_tuple(opus::number<T::NUM_WAVES * pitch>{}, opus::number<pitch>{},
++                         opus::number<T::B_K>{}, opus::number<lanes_k * T::VEC_A>{},
++                         opus::number<T::VEC_A>{}, 1_I),
++        opus::make_tuple(opus::underscore{}, producer_wave, producer_lane_row,
++                         opus::underscore{}, lane_id / T::W_M, opus::underscore{}));
++}
++
++template<class T>
++__device__ inline auto make_layout_sfa_panel(int thread_id, int group_stride) {
++    constexpr int vec = 16;
++    constexpr int threads_per_group = T::BLOCK_SIZE / T::SCALE_PANEL;
++    constexpr int rows_per_pass = threads_per_group * vec;
++    static_assert(T::BLOCK_SIZE % T::SCALE_PANEL == 0);
++    static_assert(T::SFA_PASSES * rows_per_pass == T::B_M);
++
++    // Four threads per K128 group load the 192 rows in three 64-row passes.
++    // Global and LDS copies share the same coordinates and differ in stride.
++    return opus::make_layout<16>(
++        opus::make_tuple(opus::number<T::SCALE_PANEL>{}, opus::number<T::SFA_PASSES>{},
++                         opus::number<threads_per_group>{}, opus::number<vec>{}),
++        opus::make_tuple(group_stride, opus::number<rows_per_pass>{}, opus::number<vec>{}, 1_I),
++        opus::make_tuple(thread_id / threads_per_group, opus::underscore{},
++                         thread_id % threads_per_group, opus::underscore{}));
++}
++
++template<class T>
++__device__ inline auto make_layout_gsfa_scale(int thread_id, int row, int stride_sfa) {
++    return make_layout_sfa_panel<T>(thread_id, stride_sfa) + row;
+ }
+ 
+ template<class T>
+ __device__ inline auto make_layout_ssfa_scale(int thread_id) {
+-    // The complete scale panel is stored as [K128 group][M row] bytes.
+-    return opus::make_layout<16>(
+-        opus::make_tuple(opus::number<T::SFA_PASSES>{}, 16_I),
+-        opus::make_tuple(opus::number<T::BLOCK_SIZE * 16>{}, 1_I),
+-        opus::make_tuple(opus::underscore{}, opus::underscore{})) + thread_id * 16;
+-}
+-
+-template<class T>
+-__device__ inline auto make_layout_gsfa_scale(int thread_id, int row, int stride_sfa) {
+-    auto u = make_layout_ssfa_scale<T>(thread_id);
+-    // Convert each panel offset to the corresponding strided global address.
+-    opus::static_for<T::SFA_PASSES>([&](auto p) {
+-        const int index = u.offsets[p];
+-        const int group = index / T::B_M;
+-        const int local_row = index % T::B_M;
+-        u.offsets[p] = group * stride_sfa + row + local_row;
+-    });
+-    return u;
++    return make_layout_sfa_panel<T>(thread_id, T::B_M);
+ }
+ 
+ template<class T>
+@@ -164,8 +145,8 @@
+     auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb));
+ 
+     // Matrix and scale layouts: global -> LDS -> registers.
+-    const auto u_ga = layout_9020::make_layout_ga_scale<T>(lane_id, wave_id, kargs.stride_a);
+-    const auto u_sa = layout_9020::make_layout_sa_scale<T>(wave_id);
++    const auto u_ga = make_layout_ga_scale<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_a);
++    const auto u_sa = make_layout_sa_scale<T>(wave_id_m, wave_id_n);
+     const auto u_ra = layout_9020::make_layout_ra_scale<T>(lane_id, wave_id_m);
+     const auto u_gb = make_layout_gb_scale<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_b);
+     const auto u_sb = make_layout_sb_scale<T>(wave_id_m, wave_id_n);
+@@ -228,25 +209,18 @@
+         constexpr int slot = decltype(stage)::value;
+         const int group = tile;
+         static_assert(slot >= 0 && slot < T::NUM_STAGES);
+-        // Compact A producer layout: each wave owns eight adjacent rows.
+-        // The reserved A_STAGE stays unchanged; only its first 24576 bytes are used.
+-        // CDNA adds lane_id * 16 to this wave-uniform destination. Keep i_os=0;
+-        // the runtime K displacement belongs to the source-only scalar offset.
+-        static_assert(sizeof(D_A) == 1 && T::B_M == 192 && T::B_K == 128);
+-        static_assert(T::BLOCK_SIZE == 512 && T::A_STAGE == 25344);
+-        static_for<3>([&](auto p) {
+-            g_a.template _async_load<16>(s_a.ptr + sa_offset(slot) + u_sa.offsets[p],
+-                                        u_ga.offsets[p], ga_offset(group));
+-        });
++        // Reuse the shared A layouts and bulk load, including the LDS padding.
++        async_load<16>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(slot), ga_offset(group));
+         async_load<16>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(slot),
+                        gb_offset(group));
+     };
+     auto load_scale_panel = [&]() {
++        constexpr int sfa_threads_per_group = T::BLOCK_SIZE / T::SCALE_PANEL;
++        const int sfa_group = thread_id_x() / sfa_threads_per_group;
+         static_for<T::SFA_PASSES>([&](auto i) {
+             const int index = u_ssfa.offsets[i];
+-            const int group = index / T::B_M;
+-            const int local_row = index % T::B_M;
+-            if (index < T::SFA_BYTES && group < loops) {
++            const int local_row = index - sfa_group * T::B_M;
++            if (index < T::SFA_BYTES && sfa_group < loops) {
+                 vector_t<D_SF, 16> values;
+                 if (row + local_row < kargs.m)
+                     values = load<16>(g_sfa, u_gsfa.offsets[i]);

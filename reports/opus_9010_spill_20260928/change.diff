@@ -1,0 +1,15 @@
+--- before/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh
++++ after/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh
+@@ -177,9 +177,11 @@
+             const int first_k_group = panel_k_begin + pass * T::SFA_K_COLUMNS_PER_PASS + wave_id * T::SFA_K_COLUMNS_PER_WAVE;
+             // 0 + 0/1/2/3 * 16 + 0/1/2/3 * 4
+             // 8192/128 = 64 K groups, divided into 4 passes, with 16 K groups per pass. Each pass has 4 waves, and each wave consecutively loads 4 groups.
++            // Inactive K passes are never published. Defining them here keeps
++            // their old values from staying live across the matrix loop.
++            sfa_panel_raw[pass] = {};
+             if (first_k_group < scale_k_groups) {
+                 const int scale_row = ((lane_id & 8) | ((lane_id & 3) << 1) | ((lane_id & 4) >> 2)) * T::VEC_SCALE_A;
+-                sfa_panel_raw[pass] = {};
+                 if (row + scale_row < kargs.m) {
+                     sfa_panel_raw[pass] = load<T::VEC_SCALE_A>(g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin));
+                 }

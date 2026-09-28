@@ -1,0 +1,2808 @@
+{
+  "generated_at_utc": "2026-09-28T11:00:52.792724+00:00",
+  "repository_root": "/root/workspace/aiter-opus-mxfp8-bpreshuffle",
+  "root_documents": [
+    "HANDOFF_MXFP8.md",
+    "csrc/opus_gemm/README.md",
+    "csrc/opus_gemm/mxfp8_bpreshuffle_retained/README.md"
+  ],
+  "policy": [
+    "只从三份指定文档的 Markdown 链接递归读取报告 Markdown；已 tracked 的 Markdown 仅用于发现明确链接的后续报告。",
+    "候选仅包含本地已存在、尚未 tracked 的 .md/.json/.csv/.py/.diff/.sh 文本。",
+    "目录链接仅收集允许扩展名的顶层文件；不递归扩散目录内容，顶层 Markdown 的目录枚举不会触发链接递归。",
+    "对于明确链接的普通报告目录，仅补入 attempt*/validation.json、host_layout/validation.json 等命名验证文件；直接 Markdown 链接的嵌套 validation.json 正常收集。",
+    "snapshot/before/after/source/kernels 和 *_exp 等原始目录仅列推荐，不自动纳入其文件或递归原始结果。",
+    "排除二进制、.so/.co、无文本扩展名的 executable、压缩包、日志以及 generated/JIT cache 树。",
+    "不扫描无链接的历史目录，不解析 JSON/CSV 内的路径为新依赖，不执行源码或 Git 写操作。",
+    "本次清单是可审查的提交建议；不表示已 git add、commit 或 push。",
+    "历史 epilogue_r5 多 GPU raw 结果目录仅列目录推荐；其顶层大批运行 JSON/CSV 不自动收集，除非另有 Markdown 显式文件链接。"
+  ],
+  "counts": {
+    "candidate_files": 152,
+    "candidate_total_bytes": 12322691,
+    "candidate_20260928_files": 91,
+    "candidate_20260928_bytes": 9409671,
+    "candidate_explicitly_linked_historical_files": 61,
+    "already_tracked_linked_report_files": 61,
+    "markdown_documents_read": 41,
+    "linked_directories": 6,
+    "recommend_only_raw_or_snapshot_directories": 4,
+    "missing_link_targets": 6,
+    "excluded_link_targets": 12,
+    "git_ignored_candidates": 0,
+    "candidate_files_by_extension": {
+      ".diff": 12,
+      ".json": 66,
+      ".md": 24,
+      ".csv": 43,
+      ".sh": 3,
+      ".py": 4
+    },
+    "raw_directory_only_files_withdrawn_from_candidates": 95,
+    "raw_directory_only_bytes_withdrawn_from_candidates": 6555222
+  },
+  "proposed_report_paths": [
+    "reports/opus_9000_9010_separate_20260928/refactor.diff",
+    "reports/opus_9000_9010_separate_20260928/validation.json",
+    "reports/opus_9010_spill_20260928/change.diff",
+    "reports/opus_9010_spill_20260928/diagnosis/summary.md",
+    "reports/opus_9010_spill_20260928/summary.json",
+    "reports/opus_9020_9030_traits_20260928/change.diff",
+    "reports/opus_9020_9030_traits_20260928/source_check.json",
+    "reports/opus_9020_9030_traits_20260928/validation.json",
+    "reports/opus_9020_batch_gmem_style_20260928/RESULTS.md",
+    "reports/opus_9020_batch_gmem_style_20260928/after/build_manifest.json",
+    "reports/opus_9020_batch_gmem_style_20260928/change.diff",
+    "reports/opus_9020_batch_gmem_style_20260928/device_comparison.json",
+    "reports/opus_9020_batch_gmem_style_20260928/validation.json",
+    "reports/opus_9020_frontmatter_20260928/attempt2/validation.json",
+    "reports/opus_9020_frontmatter_20260928/change.diff",
+    "reports/opus_9020_frontmatter_20260928/source_check.json",
+    "reports/opus_9020_gmem_style_20260928/RESULTS.md",
+    "reports/opus_9020_gmem_style_20260928/change.diff",
+    "reports/opus_9020_gmem_style_20260928/device_comparison.json",
+    "reports/opus_9020_gmem_style_20260928/direct/build_manifest.json",
+    "reports/opus_9020_gmem_style_20260928/validation.json",
+    "reports/opus_9020_mma_vtypes_20260928/RESULTS.md",
+    "reports/opus_9020_mma_vtypes_20260928/after/build_manifest.json",
+    "reports/opus_9020_mma_vtypes_20260928/change.diff",
+    "reports/opus_9020_mma_vtypes_20260928/device_comparison.json",
+    "reports/opus_9020_mma_vtypes_20260928/validation.json",
+    "reports/opus_9020_opt_20260928/RESULTS.md",
+    "reports/opus_9020_opt_20260928/summary.json",
+    "reports/opus_9020_opt_20260928/target16_r3_comparison.csv",
+    "reports/opus_9020_opt_20260928/target16_r3_raw.csv",
+    "reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md",
+    "reports/opus_9020_pipeline_offsets_style_20260928/after/build_manifest.json",
+    "reports/opus_9020_pipeline_offsets_style_20260928/change.diff",
+    "reports/opus_9020_pipeline_offsets_style_20260928/device_comparison.json",
+    "reports/opus_9020_pipeline_offsets_style_20260928/validation.json",
+    "reports/opus_9020_ra_shape_dim_20260928/change.diff",
+    "reports/opus_9020_ra_shape_dim_20260928/source_check.json",
+    "reports/opus_9020_restore_a_layout_20260928/change.diff",
+    "reports/opus_9020_restore_a_layout_20260928/host_layout/validation.json",
+    "reports/opus_9020_restore_a_layout_20260928/source_check.json",
+    "reports/opus_9020_restore_a_layout_20260928/validation.json",
+    "reports/opus_9020_resume_20260928/RESULTS.md",
+    "reports/opus_9020_resume_20260928/bptr16_r3_comparison.csv",
+    "reports/opus_9020_resume_20260928/bptr16_r3_raw.csv",
+    "reports/opus_9020_resume_20260928/bptr16_r3_run.json",
+    "reports/opus_9020_resume_20260928/final/device_audit.json",
+    "reports/opus_9020_resume_20260928/final_regression_run.json",
+    "reports/opus_9020_resume_20260928/summary.json",
+    "reports/opus_9020_sfa_pack_ab_20260928/RESULTS.md",
+    "reports/opus_9020_style_consistency_20260928/RESULTS.md",
+    "reports/opus_9030_lds_helper_20260928/change.diff",
+    "reports/opus_9030_lds_helper_20260928/source_check.json",
+    "reports/opus_9030_lds_helper_20260928/validation.json",
+    "reports/opus_full305_after9020_20260928/CANDIDATES.md",
+    "reports/opus_full305_after9020_20260928/RESULTS.md",
+    "reports/opus_full305_after9020_20260928/added10_results.csv",
+    "reports/opus_full305_after9020_20260928/candidate_stats.csv",
+    "reports/opus_full305_after9020_20260928/comparison.csv",
+    "reports/opus_full305_after9020_20260928/jit_9020_audit.json",
+    "reports/opus_full305_after9020_20260928/profile.csv",
+    "reports/opus_full305_after9020_20260928/run.json",
+    "reports/opus_full305_after9020_20260928/run.sh",
+    "reports/opus_full305_after9020_20260928/slow_shapes.csv",
+    "reports/opus_full305_after9020_20260928/summary.json",
+    "reports/opus_full305_after9020_20260928/tuned.csv",
+    "reports/opus_large_output_20260928/RESULTS.md",
+    "reports/opus_large_output_20260928/preflight.json",
+    "reports/opus_large_output_20260928/profile.csv",
+    "reports/opus_large_output_20260928/run.sh",
+    "reports/opus_large_output_20260928/summary.json",
+    "reports/opus_large_output_20260928/tuned.csv",
+    "reports/opus_layout_9000_20260928/validation.json",
+    "reports/opus_m_ge1024_retune_20260928/RESULTS.md",
+    "reports/opus_m_ge1024_retune_20260928/candidate_usage.csv",
+    "reports/opus_m_ge1024_retune_20260928/comparison.csv",
+    "reports/opus_m_ge1024_retune_20260928/profile.csv",
+    "reports/opus_m_ge1024_retune_20260928/run.json",
+    "reports/opus_m_ge1024_retune_20260928/run.sh",
+    "reports/opus_m_ge1024_retune_20260928/summarize.py",
+    "reports/opus_m_ge1024_retune_20260928/summary.json",
+    "reports/opus_m_ge1024_retune_20260928/tuned.csv",
+    "reports/opus_mxfp8_renumber_20260928/added_shapes.csv",
+    "reports/opus_mxfp8_renumber_20260928/id_mapping.json",
+    "reports/opus_mxfp8_renumber_20260928/slow_shapes.csv",
+    "reports/opus_mxfp8_renumber_20260928/tuned.csv",
+    "reports/opus_mxfp8_renumber_20260928/validation.json",
+    "reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md",
+    "reports/opus_pipeline_structure_20260928/attempt2/validation.json",
+    "reports/opus_split_9021_9024_20260928/validation.json",
+    "reports/opus_traits_9000_style_20260928/change.diff",
+    "reports/opus_traits_9000_style_20260928/source_check.json",
+    "reports/opus_cover87_20260926/RESULTS.md",
+    "reports/opus_cover87_20260926/RETUNE295.md",
+    "reports/opus_cover87_20260926/close295_r5/launch.json",
+    "reports/opus_cover87_20260926/coverage295_v1/cohort_summary.csv",
+    "reports/opus_cover87_20260926/coverage295_v1/summary.json",
+    "reports/opus_cover87_20260926/coverage87/best_opus_selection.csv",
+    "reports/opus_cover87_20260926/coverage87/comparison.csv",
+    "reports/opus_cover87_20260926/coverage87/remaining.csv",
+    "reports/opus_cover87_20260926/coverage87/summary.json",
+    "reports/opus_cover87_20260926/coverage87_v11/summary.json",
+    "reports/opus_cover87_20260926/display295_v1/README.md",
+    "reports/opus_cover87_20260926/display295_v1/comparison.csv",
+    "reports/opus_cover87_20260926/display295_v1/overall_winners.csv",
+    "reports/opus_cover87_20260926/display295_v1/usage/opus_candidate_usage.csv",
+    "reports/opus_cover87_20260926/display295_v1/usage/opus_choices.csv",
+    "reports/opus_cover87_20260926/display_v10/comparison.csv",
+    "reports/opus_cover87_20260926/display_v10/overall_winners.csv",
+    "reports/opus_cover87_20260926/display_v10/summary.json",
+    "reports/opus_cover87_20260926/display_v11/README.md",
+    "reports/opus_cover87_20260926/display_v11/comparison.csv",
+    "reports/opus_cover87_20260926/display_v11/overall_winners.csv",
+    "reports/opus_cover87_20260926/display_v11/summary.json",
+    "reports/opus_cover87_20260926/experiments295.json",
+    "reports/opus_cover87_20260926/full295_r3/launch.json",
+    "reports/opus_cover87_20260926/full87_analysis.json",
+    "reports/opus_cover87_20260926/full87_analysis.md",
+    "reports/opus_cover87_20260926/full87_r3/launch.json",
+    "reports/opus_cover87_20260926/full87_r3/results/comparison.csv",
+    "reports/opus_cover87_20260926/full87_r3/results/rejected.csv",
+    "reports/opus_cover87_20260926/full87_r3/results/remaining.csv",
+    "reports/opus_cover87_20260926/selected_experiments.json",
+    "reports/opus_cover87_20260926/selected_experiments295.json",
+    "reports/opus_generalize_20260926/README.md",
+    "reports/opus_generalize_20260926/RUNTIME_REVIEW.md",
+    "reports/opus_generalize_20260926/queue_resume99_v1_r3/queue_state.json",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/candidate_usage.csv",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/choices295.csv",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/report.md",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/selected_experiments.json",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/RESULTS.md",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/candidate_effects.csv",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/runtime_analysis/summary.json",
+    "reports/opus_generalize_20260926/resume_launch.py",
+    "reports/opus_generalize_20260926/v7_final_selection_review.json",
+    "reports/opus_generalize_20260926/v7_results_review.json",
+    "reports/opus_resume_20260926/RESULTS.md",
+    "reports/opus_resume_20260926/k1536_epilogue_exp/build_manifest.json",
+    "reports/opus_resume_20260926/k1536_epilogue_exp/variants.json",
+    "reports/opus_resume_20260926/shortk_epilogue_exp/build_manifest.json",
+    "reports/opus_resume_20260926/shortk_epilogue_exp/variants.json",
+    "reports/opus_resume_run_20260926/build.json",
+    "reports/opus_resume_run_20260926/epilogue_r5/gpu0_k1536_epilogue_r5_raw.csv",
+    "reports/opus_resume_run_20260926/epilogue_r5/gpu0_shortk_epilogue_r5_raw.csv",
+    "reports/opus_resume_run_20260926/epilogue_r5/launch.json",
+    "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/remaining_cktile_shapes.csv",
+    "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/selected_8wave_shapes.csv",
+    "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/summary.json",
+    "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/variants_by_k.csv",
+    "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/variants_by_shape.csv",
+    "reports/opus_resume_run_20260926/experiment_benchmark.py",
+    "reports/opus_resume_run_20260926/summarize_experiments.py"
+  ],
+  "candidates": [
+    {
+      "path": "reports/opus_9000_9010_separate_20260928/refactor.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/refactor.diff",
+      "bytes": 63085,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9000_9010_separate_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9000_9010_separate_20260928/validation.json",
+      "bytes": 18578,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9010_spill_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9010_spill_20260928/change.diff",
+      "bytes": 1190,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9010_spill_20260928/diagnosis/summary.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9010_spill_20260928/diagnosis/summary.md",
+      "bytes": 3143,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9010_spill_20260928/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9010_spill_20260928/summary.json",
+      "bytes": 8643,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_9030_traits_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_9030_traits_20260928/change.diff",
+      "bytes": 7579,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_9030_traits_20260928/source_check.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_9030_traits_20260928/source_check.json",
+      "bytes": 3877,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_9030_traits_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_9030_traits_20260928/validation.json",
+      "bytes": 23594,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_batch_gmem_style_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_batch_gmem_style_20260928/RESULTS.md",
+      "bytes": 2034,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_batch_gmem_style_20260928/after/build_manifest.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_batch_gmem_style_20260928/after/build_manifest.json",
+      "bytes": 10772,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_batch_gmem_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_batch_gmem_style_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_batch_gmem_style_20260928/change.diff",
+      "bytes": 1950,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_batch_gmem_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_batch_gmem_style_20260928/device_comparison.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_batch_gmem_style_20260928/device_comparison.json",
+      "bytes": 6298,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_batch_gmem_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_batch_gmem_style_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_batch_gmem_style_20260928/validation.json",
+      "bytes": 449,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_batch_gmem_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_frontmatter_20260928/attempt2/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_frontmatter_20260928/attempt2/validation.json",
+      "bytes": 10818,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_frontmatter_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_frontmatter_20260928/change.diff",
+      "bytes": 13037,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_frontmatter_20260928/source_check.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_frontmatter_20260928/source_check.json",
+      "bytes": 7078,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_gmem_style_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_gmem_style_20260928/RESULTS.md",
+      "bytes": 1877,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_gmem_style_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_gmem_style_20260928/change.diff",
+      "bytes": 1327,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_gmem_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_gmem_style_20260928/device_comparison.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_gmem_style_20260928/device_comparison.json",
+      "bytes": 6225,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_gmem_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_gmem_style_20260928/direct/build_manifest.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_gmem_style_20260928/direct/build_manifest.json",
+      "bytes": 10738,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_gmem_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_gmem_style_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_gmem_style_20260928/validation.json",
+      "bytes": 422,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_gmem_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_mma_vtypes_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_mma_vtypes_20260928/RESULTS.md",
+      "bytes": 2338,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_mma_vtypes_20260928/after/build_manifest.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_mma_vtypes_20260928/after/build_manifest.json",
+      "bytes": 10729,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_mma_vtypes_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_mma_vtypes_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_mma_vtypes_20260928/change.diff",
+      "bytes": 4287,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_mma_vtypes_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_mma_vtypes_20260928/device_comparison.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_mma_vtypes_20260928/device_comparison.json",
+      "bytes": 10114,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_mma_vtypes_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_mma_vtypes_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_mma_vtypes_20260928/validation.json",
+      "bytes": 991,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_mma_vtypes_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_opt_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_opt_20260928/RESULTS.md",
+      "bytes": 4310,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_opt_20260928/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_opt_20260928/summary.json",
+      "bytes": 1336,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_opt_20260928/target16_r3_comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_opt_20260928/target16_r3_comparison.csv",
+      "bytes": 8446,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_9020_opt_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_opt_20260928/target16_r3_raw.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_opt_20260928/target16_r3_raw.csv",
+      "bytes": 43427,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_opt_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md",
+      "bytes": 3102,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_pipeline_offsets_style_20260928/after/build_manifest.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_pipeline_offsets_style_20260928/after/build_manifest.json",
+      "bytes": 10814,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_pipeline_offsets_style_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_pipeline_offsets_style_20260928/change.diff",
+      "bytes": 18000,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_pipeline_offsets_style_20260928/device_comparison.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_pipeline_offsets_style_20260928/device_comparison.json",
+      "bytes": 10087,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_pipeline_offsets_style_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_pipeline_offsets_style_20260928/validation.json",
+      "bytes": 644,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_ra_shape_dim_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_ra_shape_dim_20260928/change.diff",
+      "bytes": 2234,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_ra_shape_dim_20260928/source_check.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_ra_shape_dim_20260928/source_check.json",
+      "bytes": 745,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_restore_a_layout_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/change.diff",
+      "bytes": 8919,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_restore_a_layout_20260928/host_layout/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/validation.json",
+      "bytes": 5540,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_restore_a_layout_20260928/source_check.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/source_check.json",
+      "bytes": 6346,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_restore_a_layout_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/validation.json",
+      "bytes": 18633,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_resume_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_resume_20260928/RESULTS.md",
+      "bytes": 6194,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_resume_20260928/bptr16_r3_comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_resume_20260928/bptr16_r3_comparison.csv",
+      "bytes": 8652,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_9020_resume_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_resume_20260928/bptr16_r3_raw.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_resume_20260928/bptr16_r3_raw.csv",
+      "bytes": 44313,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_resume_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_resume_20260928/bptr16_r3_run.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_resume_20260928/bptr16_r3_run.json",
+      "bytes": 46298,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_9020_resume_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_resume_20260928/final/device_audit.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_resume_20260928/final/device_audit.json",
+      "bytes": 1475,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_9020_resume_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_resume_20260928/final_regression_run.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_resume_20260928/final_regression_run.json",
+      "bytes": 8024,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_9020_resume_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_resume_20260928/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_resume_20260928/summary.json",
+      "bytes": 11667,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_9020_resume_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_sfa_pack_ab_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_sfa_pack_ab_20260928/RESULTS.md",
+      "bytes": 5909,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9020_style_consistency_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_style_consistency_20260928/RESULTS.md",
+      "bytes": 2625,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9030_lds_helper_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9030_lds_helper_20260928/change.diff",
+      "bytes": 4401,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9030_lds_helper_20260928/source_check.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9030_lds_helper_20260928/source_check.json",
+      "bytes": 7347,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_9030_lds_helper_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9030_lds_helper_20260928/validation.json",
+      "bytes": 12386,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/CANDIDATES.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/CANDIDATES.md",
+      "bytes": 9031,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md",
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/RESULTS.md",
+      "bytes": 6247,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md",
+        "reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/added10_results.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/added10_results.csv",
+      "bytes": 5039,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/candidate_stats.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/candidate_stats.csv",
+      "bytes": 14421,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/comparison.csv",
+      "bytes": 148759,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/jit_9020_audit.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/jit_9020_audit.json",
+      "bytes": 6799,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/profile.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/profile.csv",
+      "bytes": 3944176,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/run.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/run.json",
+      "bytes": 141534,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/run.sh",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/run.sh",
+      "bytes": 1414,
+      "extension": ".sh",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/slow_shapes.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/slow_shapes.csv",
+      "bytes": 3322,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/summary.json",
+      "bytes": 52819,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_full305_after9020_20260928/tuned.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/tuned.csv",
+      "bytes": 50473,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_large_output_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_large_output_20260928/RESULTS.md",
+      "bytes": 1982,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_large_output_20260928/preflight.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_large_output_20260928/preflight.json",
+      "bytes": 2018,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_large_output_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_large_output_20260928/profile.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_large_output_20260928/profile.csv",
+      "bytes": 1712,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_large_output_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_large_output_20260928/run.sh",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_large_output_20260928/run.sh",
+      "bytes": 1258,
+      "extension": ".sh",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_large_output_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_large_output_20260928/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_large_output_20260928/summary.json",
+      "bytes": 2034,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_large_output_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_large_output_20260928/tuned.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_large_output_20260928/tuned.csv",
+      "bytes": 1712,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_large_output_20260928/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_layout_9000_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_layout_9000_20260928/validation.json",
+      "bytes": 49346,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/RESULTS.md",
+      "bytes": 7083,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link",
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/candidate_usage.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/candidate_usage.csv",
+      "bytes": 14562,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link",
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/comparison.csv",
+      "bytes": 70403,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link",
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/profile.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/profile.csv",
+      "bytes": 3942383,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link",
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/run.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/run.json",
+      "bytes": 12863,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link",
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/run.sh",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/run.sh",
+      "bytes": 1350,
+      "extension": ".sh",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link",
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/summarize.py",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/summarize.py",
+      "bytes": 24578,
+      "extension": ".py",
+      "priority": "20260928",
+      "reasons": [
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/summary.json",
+      "bytes": 153949,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link",
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/tuned.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928/tuned.csv",
+      "bytes": 49353,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link",
+        "linked_directory_top_level"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_m_ge1024_retune_20260928"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_mxfp8_renumber_20260928/added_shapes.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_mxfp8_renumber_20260928/added_shapes.csv",
+      "bytes": 308,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_mxfp8_renumber_20260928/id_mapping.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_mxfp8_renumber_20260928/id_mapping.json",
+      "bytes": 546,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_mxfp8_renumber_20260928/slow_shapes.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_mxfp8_renumber_20260928/slow_shapes.csv",
+      "bytes": 1423,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_mxfp8_renumber_20260928/tuned.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_mxfp8_renumber_20260928/tuned.csv",
+      "bytes": 49654,
+      "extension": ".csv",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_mxfp8_renumber_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_mxfp8_renumber_20260928/validation.json",
+      "bytes": 2794,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md",
+      "bytes": 14621,
+      "extension": ".md",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_pipeline_structure_20260928/attempt2/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_pipeline_structure_20260928/attempt2/validation.json",
+      "bytes": 43599,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md",
+        "reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_split_9021_9024_20260928/validation.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_split_9021_9024_20260928/validation.json",
+      "bytes": 27183,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "csrc/opus_gemm/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_traits_9000_style_20260928/change.diff",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_traits_9000_style_20260928/change.diff",
+      "bytes": 10518,
+      "extension": ".diff",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_traits_9000_style_20260928/source_check.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_traits_9000_style_20260928/source_check.json",
+      "bytes": 5358,
+      "extension": ".json",
+      "priority": "20260928",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/RESULTS.md",
+      "bytes": 7656,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/display295_v1/README.md",
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/RETUNE295.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/RETUNE295.md",
+      "bytes": 5750,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/close295_r5/launch.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/close295_r5/launch.json",
+      "bytes": 124593,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/coverage295_v1/cohort_summary.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/coverage295_v1/cohort_summary.csv",
+      "bytes": 2570,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/coverage295_v1/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/coverage295_v1/summary.json",
+      "bytes": 45289,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md",
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/coverage87/best_opus_selection.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/coverage87/best_opus_selection.csv",
+      "bytes": 30336,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/coverage87/comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/coverage87/comparison.csv",
+      "bytes": 37056,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/coverage87/remaining.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/coverage87/remaining.csv",
+      "bytes": 737,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/coverage87/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/coverage87/summary.json",
+      "bytes": 100628,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/coverage87_v11/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/coverage87_v11/summary.json",
+      "bytes": 115352,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/display_v11/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display295_v1/README.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display295_v1/README.md",
+      "bytes": 5986,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md",
+        "reports/opus_cover87_20260926/RETUNE295.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display295_v1/comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display295_v1/comparison.csv",
+      "bytes": 129819,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/RESULTS.md",
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display295_v1/overall_winners.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display295_v1/overall_winners.csv",
+      "bytes": 106369,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md",
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display295_v1/usage/opus_candidate_usage.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display295_v1/usage/opus_candidate_usage.csv",
+      "bytes": 10056,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md",
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display295_v1/usage/opus_choices.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display295_v1/usage/opus_choices.csv",
+      "bytes": 103526,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md",
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display_v10/comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display_v10/comparison.csv",
+      "bytes": 40895,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display_v10/overall_winners.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display_v10/overall_winners.csv",
+      "bytes": 34097,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display_v10/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display_v10/summary.json",
+      "bytes": 2150,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display_v11/README.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display_v11/README.md",
+      "bytes": 1632,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display_v11/comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display_v11/comparison.csv",
+      "bytes": 41440,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/display_v11/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display_v11/overall_winners.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display_v11/overall_winners.csv",
+      "bytes": 37581,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/display_v11/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/display_v11/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/display_v11/summary.json",
+      "bytes": 3793,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/display_v11/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/experiments295.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/experiments295.json",
+      "bytes": 4990,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md",
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/full295_r3/launch.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/full295_r3/launch.json",
+      "bytes": 150250,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/full87_analysis.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/full87_analysis.json",
+      "bytes": 21080,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/full87_analysis.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/full87_analysis.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/full87_analysis.md",
+      "bytes": 3047,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/full87_r3/launch.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/full87_r3/launch.json",
+      "bytes": 39122,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/full87_analysis.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/full87_r3/results/comparison.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/full87_r3/results/comparison.csv",
+      "bytes": 31143,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/full87_analysis.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/full87_r3/results/rejected.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/full87_r3/results/rejected.csv",
+      "bytes": 596436,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/full87_analysis.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/full87_r3/results/remaining.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/full87_r3/results/remaining.csv",
+      "bytes": 5697,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_cover87_20260926/full87_analysis.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/selected_experiments.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/selected_experiments.json",
+      "bytes": 2164,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_cover87_20260926/selected_experiments295.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_cover87_20260926/selected_experiments295.json",
+      "bytes": 2652,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_cover87_20260926/RESULTS.md",
+        "reports/opus_cover87_20260926/display295_v1/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/README.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/README.md",
+      "bytes": 6173,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/RUNTIME_REVIEW.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/RUNTIME_REVIEW.md",
+      "bytes": 8889,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/queue_resume99_v1_r3/queue_state.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/queue_resume99_v1_r3/queue_state.json",
+      "bytes": 8689,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/candidate_usage.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/candidate_usage.csv",
+      "bytes": 1848,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/choices295.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/choices295.csv",
+      "bytes": 246539,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/report.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/report.md",
+      "bytes": 2848,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/selected_experiments.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/selected_experiments.json",
+      "bytes": 1039,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/RESULTS.md",
+      "bytes": 7659,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/candidate_effects.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/candidate_effects.csv",
+      "bytes": 16022,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/refine117_20260927_v7_r3/runtime_analysis/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/refine117_20260927_v7_r3/runtime_analysis/summary.json",
+      "bytes": 504040,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/resume_launch.py",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/resume_launch.py",
+      "bytes": 7097,
+      "extension": ".py",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/v7_final_selection_review.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/v7_final_selection_review.json",
+      "bytes": 74478,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_generalize_20260926/v7_results_review.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_generalize_20260926/v7_results_review.json",
+      "bytes": 9117,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_generalize_20260926/README.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_20260926/RESULTS.md",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20260926/RESULTS.md",
+      "bytes": 5647,
+      "extension": ".md",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_20260926/k1536_epilogue_exp/build_manifest.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20260926/k1536_epilogue_exp/build_manifest.json",
+      "bytes": 16999,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_20260926/k1536_epilogue_exp/variants.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20260926/k1536_epilogue_exp/variants.json",
+      "bytes": 732,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_20260926/shortk_epilogue_exp/build_manifest.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20260926/shortk_epilogue_exp/build_manifest.json",
+      "bytes": 11210,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_20260926/shortk_epilogue_exp/variants.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20260926/shortk_epilogue_exp/variants.json",
+      "bytes": 2117,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/build.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/build.json",
+      "bytes": 2222,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5/gpu0_k1536_epilogue_r5_raw.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5/gpu0_k1536_epilogue_r5_raw.csv",
+      "bytes": 6522,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5/gpu0_shortk_epilogue_r5_raw.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5/gpu0_shortk_epilogue_r5_raw.csv",
+      "bytes": 17408,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5/launch.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5/launch.json",
+      "bytes": 37131,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/remaining_cktile_shapes.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/remaining_cktile_shapes.csv",
+      "bytes": 5108,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/selected_8wave_shapes.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/selected_8wave_shapes.csv",
+      "bytes": 10859,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/summary.json",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/summary.json",
+      "bytes": 10733,
+      "extension": ".json",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/variants_by_k.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/variants_by_k.csv",
+      "bytes": 3056,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/variants_by_shape.csv",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5/variant_comparison/variants_by_shape.csv",
+      "bytes": 21655,
+      "extension": ".csv",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/experiment_benchmark.py",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/experiment_benchmark.py",
+      "bytes": 14339,
+      "extension": ".py",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/summarize_experiments.py",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/summarize_experiments.py",
+      "bytes": 8952,
+      "extension": ".py",
+      "priority": "explicitly_linked_history",
+      "reasons": [
+        "explicit_markdown_link"
+      ],
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "git_ignored": false
+    }
+  ],
+  "directory_recommendations": [
+    {
+      "path": "reports/opus_full305_after9020_20260928/attempt1_compile_failure",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/attempt1_compile_failure",
+      "referenced_by": [
+        "reports/opus_full305_after9020_20260928/RESULTS.md"
+      ],
+      "policy": "top_level_allowed_text_only",
+      "top_level_allowed_files": [],
+      "nested_validation_files": [],
+      "subdirectories_not_expanded": []
+    },
+    {
+      "path": "reports/opus_layout_9000_20260928/before_sources",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_layout_9000_20260928/before_sources",
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "policy": "recommend_only_for_raw_or_snapshot",
+      "top_level_allowed_files": [
+        {
+          "path": "reports/opus_layout_9000_20260928/before_sources/HANDOFF_MXFP8.md",
+          "bytes": 49295,
+          "tracked": false
+        }
+      ],
+      "nested_validation_files": [],
+      "subdirectories_not_expanded": [
+        "reports/opus_layout_9000_20260928/before_sources/csrc"
+      ]
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_m_ge1024_retune_20260928",
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "policy": "top_level_allowed_text_only",
+      "top_level_allowed_files": [
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/RESULTS.md",
+          "bytes": 7083,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/candidate_usage.csv",
+          "bytes": 14562,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/comparison.csv",
+          "bytes": 70403,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/profile.csv",
+          "bytes": 3942383,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/run.json",
+          "bytes": 12863,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/run.sh",
+          "bytes": 1350,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/summarize.py",
+          "bytes": 24578,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/summary.json",
+          "bytes": 153949,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_m_ge1024_retune_20260928/tuned.csv",
+          "bytes": 49353,
+          "tracked": false
+        }
+      ],
+      "nested_validation_files": [],
+      "subdirectories_not_expanded": [
+        "reports/opus_m_ge1024_retune_20260928/jit"
+      ]
+    },
+    {
+      "path": "reports/opus_resume_20260926/k1536_epilogue_exp",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20260926/k1536_epilogue_exp",
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "policy": "recommend_only_for_raw_or_snapshot",
+      "top_level_allowed_files": [
+        {
+          "path": "reports/opus_resume_20260926/k1536_epilogue_exp/README.md",
+          "bytes": 1263,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_resume_20260926/k1536_epilogue_exp/build_manifest.json",
+          "bytes": 16999,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_resume_20260926/k1536_epilogue_exp/generation.json",
+          "bytes": 587,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_resume_20260926/k1536_epilogue_exp/variants.json",
+          "bytes": 732,
+          "tracked": false
+        }
+      ],
+      "nested_validation_files": [],
+      "subdirectories_not_expanded": []
+    },
+    {
+      "path": "reports/opus_resume_20260926/shortk_epilogue_exp",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20260926/shortk_epilogue_exp",
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ],
+      "policy": "recommend_only_for_raw_or_snapshot",
+      "top_level_allowed_files": [
+        {
+          "path": "reports/opus_resume_20260926/shortk_epilogue_exp/README.md",
+          "bytes": 1040,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_resume_20260926/shortk_epilogue_exp/build_manifest.json",
+          "bytes": 11210,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_resume_20260926/shortk_epilogue_exp/generation.json",
+          "bytes": 893,
+          "tracked": false
+        },
+        {
+          "path": "reports/opus_resume_20260926/shortk_epilogue_exp/variants.json",
+          "bytes": 2117,
+          "tracked": false
+        }
+      ],
+      "nested_validation_files": [],
+      "subdirectories_not_expanded": []
+    },
+    {
+      "path": "reports/opus_resume_run_20260926/epilogue_r5",
+      "absolute_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_run_20260926/epilogue_r5",
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ],
+      "policy": "recommend_only_for_raw_or_snapshot",
+      "nested_validation_files": [],
+      "subdirectories_not_expanded": [
+        "reports/opus_resume_run_20260926/epilogue_r5/harness_source",
+        "reports/opus_resume_run_20260926/epilogue_r5/variant_comparison"
+      ],
+      "top_level_allowed_file_count": 98,
+      "top_level_allowed_total_bytes": 6616283,
+      "recommended_raw_directory_only": true,
+      "note": "历史原始多GPU运行结果目录；不将其98个顶层文本自动扩散到候选。仅保留其他Markdown直接链接到的个别汇总文件。"
+    }
+  ],
+  "missing_links": [
+    {
+      "path": "reports/opus_9021_9030_style_20260928/RESULTS.md",
+      "referenced_by": [
+        "csrc/opus_gemm/README.md"
+      ]
+    },
+    {
+      "path": "reports/opus_resume_20260926/k1536_epilogue_exp/launch.hip",
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ]
+    },
+    {
+      "path": "reports/opus_resume_20260926/k1536_epilogue_exp/pipeline_epilogue8.cuh",
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ]
+    },
+    {
+      "path": "reports/opus_resume_20260926/shortk_epilogue_exp/launch.hip",
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ]
+    },
+    {
+      "path": "reports/opus_resume_20260926/shortk_epilogue_exp/pipeline_control_8wave.cuh",
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ]
+    },
+    {
+      "path": "reports/opus_resume_20260926/shortk_epilogue_exp/pipeline_lds_8wave.cuh",
+      "referenced_by": [
+        "reports/opus_resume_20260926/RESULTS.md"
+      ]
+    }
+  ],
+  "excluded_links": [
+    {
+      "path": "reports/opus_9020_batch_gmem_style_20260928/after/device_isa.txt",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_9020_batch_gmem_style_20260928/RESULTS.md"
+      ]
+    },
+    {
+      "path": "reports/opus_9020_gmem_style_20260928/direct/device_isa.txt",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_9020_gmem_style_20260928/RESULTS.md"
+      ]
+    },
+    {
+      "path": "reports/opus_generalize_20260926/queue_resume99_v1_r3/queue.log",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_generalize_20260926/README.md"
+      ]
+    },
+    {
+      "path": "reports/opus_k1536_20260925/offline/9050.log",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_k1536_20260925/offline/README.md"
+      ]
+    },
+    {
+      "path": "reports/opus_k1536_20260925/offline/9050.s",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_k1536_20260925/offline/README.md"
+      ]
+    },
+    {
+      "path": "reports/opus_k1536_20260925/offline/9051.log",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_k1536_20260925/offline/README.md"
+      ]
+    },
+    {
+      "path": "reports/opus_k1536_20260925/offline/9051.s",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_k1536_20260925/offline/README.md"
+      ]
+    },
+    {
+      "path": "reports/opus_k1536_20260925/offline/generated_host.log",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_k1536_20260925/offline/README.md"
+      ]
+    },
+    {
+      "path": "reports/opus_large_output_20260928/tune.log",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "HANDOFF_MXFP8.md",
+        "reports/opus_large_output_20260928/RESULTS.md"
+      ]
+    },
+    {
+      "path": "reports/opus_m_ge1024_retune_20260928/tune.log",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "HANDOFF_MXFP8.md"
+      ]
+    },
+    {
+      "path": "reports/opus_shortk_20260925/validation/elf_dynamic.txt",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_shortk_20260925/validation/README.md"
+      ]
+    },
+    {
+      "path": "reports/opus_shortk_20260925/validation/undefined_symbols.txt",
+      "reason": "extension_not_allowed",
+      "referenced_by": [
+        "reports/opus_shortk_20260925/validation/README.md"
+      ]
+    }
+  ],
+  "already_tracked_linked_reports": [
+    "reports/cktile_timing_diagnosis_20260925/README.md",
+    "reports/opus_9030_targets87_20260925/validate.py",
+    "reports/opus_9030_targets87_20260925/validation.json",
+    "reports/opus_fixedk_gpu_20260925/build.json",
+    "reports/opus_fixedk_gpu_20260925/validation.json",
+    "reports/opus_k1536_20260925/integration/REVIEW.md",
+    "reports/opus_k1536_20260925/offline/README.md",
+    "reports/opus_k1536_20260925/offline_compile.json",
+    "reports/opus_local_gap_current_20260925/RESULTS.md",
+    "reports/opus_local_gap_current_20260925/build.json",
+    "reports/opus_local_gap_current_20260925/final_close_shapes.csv",
+    "reports/opus_local_gap_current_20260925/final_comparison.csv",
+    "reports/opus_local_gap_current_20260925/final_opus_best.csv",
+    "reports/opus_local_gap_current_20260925/final_remaining_shapes.csv",
+    "reports/opus_local_gap_current_20260925/final_tuned.csv",
+    "reports/opus_local_gap_current_20260925/full_r3_run.json",
+    "reports/opus_local_gap_current_20260925/local_gap_details.csv",
+    "reports/opus_local_gap_current_20260925/optimization_targets.csv",
+    "reports/opus_local_gap_current_20260925/profile.csv",
+    "reports/opus_local_gap_current_20260925/rejected_candidates.csv",
+    "reports/opus_local_gap_current_20260925/remaining_by_gap.csv",
+    "reports/opus_local_gap_current_20260925/replay.json",
+    "reports/opus_local_gap_current_20260925/replay.py",
+    "reports/opus_native_style_20260927/README.md",
+    "reports/opus_native_style_20260927/build_manifest.json",
+    "reports/opus_native_style_20260927/experiments.json",
+    "reports/opus_native_style_20260927/sources.json",
+    "reports/opus_remote_handoff_20260925/manifest.json",
+    "reports/opus_remote_handoff_20260925/prepare_remote.py",
+    "reports/opus_remote_tune_20260927/README.md",
+    "reports/opus_remote_tune_20260927/VALIDATION.md",
+    "reports/opus_remote_tune_20260927/baseline/old16_vs_external_295.csv",
+    "reports/opus_remote_tune_20260927/baseline/overall_selection_295.csv",
+    "reports/opus_remote_tune_20260927/baseline/provenance.json",
+    "reports/opus_remote_tune_20260927/shape_groups.csv",
+    "reports/opus_remote_tune_20260927/shapes295.csv",
+    "reports/opus_retune_prune_20260927/README.md",
+    "reports/opus_retune_prune_20260927/SELECTED_CANDIDATES.md",
+    "reports/opus_retune_prune_20260927/deleted_experiment_files.json",
+    "reports/opus_retune_prune_20260927/full295_r3/results/RESULTS.md",
+    "reports/opus_retune_prune_20260927/full295_r3/results/candidate_usage.csv",
+    "reports/opus_retune_prune_20260927/full295_r3/results/overall_selection.csv",
+    "reports/opus_retune_prune_20260927/full295_r3/results/remaining_losses.csv",
+    "reports/opus_retune_prune_20260927/full295_r3/results/summary.json",
+    "reports/opus_retune_prune_20260927/production_prune_applied/prune_manifest.json",
+    "reports/opus_retune_prune_20260927/pruned_jit_install.json",
+    "reports/opus_retune_prune_20260927/selected_candidates.csv",
+    "reports/opus_retune_prune_20260927/selected_candidates.json",
+    "reports/opus_retune_prune_20260927/selected_experiments.json",
+    "reports/opus_shortk_20260925/README.md",
+    "reports/opus_shortk_20260925/integration/REVIEW.md",
+    "reports/opus_shortk_20260925/offline_compile.json",
+    "reports/opus_shortk_20260925/plan/README.md",
+    "reports/opus_shortk_20260925/plan/cohorts.csv",
+    "reports/opus_shortk_20260925/plan/first25_candidates.csv",
+    "reports/opus_shortk_20260925/plan/source_manifest.json",
+    "reports/opus_shortk_20260925/plan/staged_ledger.json",
+    "reports/opus_shortk_20260925/plan/targets87_ledger.csv",
+    "reports/opus_shortk_20260925/tune_adapter.py",
+    "reports/opus_shortk_20260925/validation/README.md",
+    "reports/opus_shortk_20260925/validation/layout_check.json"
+  ],
+  "traversed_markdown_documents": [
+    "HANDOFF_MXFP8.md",
+    "csrc/opus_gemm/README.md",
+    "csrc/opus_gemm/mxfp8_bpreshuffle_retained/README.md",
+    "reports/cktile_timing_diagnosis_20260925/README.md",
+    "reports/opus_9010_spill_20260928/diagnosis/summary.md",
+    "reports/opus_9020_batch_gmem_style_20260928/RESULTS.md",
+    "reports/opus_9020_gmem_style_20260928/RESULTS.md",
+    "reports/opus_9020_mma_vtypes_20260928/RESULTS.md",
+    "reports/opus_9020_opt_20260928/RESULTS.md",
+    "reports/opus_9020_pipeline_offsets_style_20260928/RESULTS.md",
+    "reports/opus_9020_resume_20260928/RESULTS.md",
+    "reports/opus_9020_sfa_pack_ab_20260928/RESULTS.md",
+    "reports/opus_9020_style_consistency_20260928/RESULTS.md",
+    "reports/opus_cover87_20260926/RESULTS.md",
+    "reports/opus_cover87_20260926/RETUNE295.md",
+    "reports/opus_cover87_20260926/display295_v1/README.md",
+    "reports/opus_cover87_20260926/display_v11/README.md",
+    "reports/opus_cover87_20260926/full87_analysis.md",
+    "reports/opus_full305_after9020_20260928/CANDIDATES.md",
+    "reports/opus_full305_after9020_20260928/RESULTS.md",
+    "reports/opus_generalize_20260926/README.md",
+    "reports/opus_generalize_20260926/RUNTIME_REVIEW.md",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/exact_generic_selection/report.md",
+    "reports/opus_generalize_20260926/refine117_20260927_v7_r3/review_results/RESULTS.md",
+    "reports/opus_k1536_20260925/integration/REVIEW.md",
+    "reports/opus_k1536_20260925/offline/README.md",
+    "reports/opus_large_output_20260928/RESULTS.md",
+    "reports/opus_local_gap_current_20260925/RESULTS.md",
+    "reports/opus_m_ge1024_retune_20260928/RESULTS.md",
+    "reports/opus_native_style_20260927/README.md",
+    "reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md",
+    "reports/opus_remote_tune_20260927/README.md",
+    "reports/opus_remote_tune_20260927/VALIDATION.md",
+    "reports/opus_resume_20260926/RESULTS.md",
+    "reports/opus_retune_prune_20260927/README.md",
+    "reports/opus_retune_prune_20260927/SELECTED_CANDIDATES.md",
+    "reports/opus_retune_prune_20260927/full295_r3/results/RESULTS.md",
+    "reports/opus_shortk_20260925/README.md",
+    "reports/opus_shortk_20260925/integration/REVIEW.md",
+    "reports/opus_shortk_20260925/plan/README.md",
+    "reports/opus_shortk_20260925/validation/README.md"
+  ]
+}

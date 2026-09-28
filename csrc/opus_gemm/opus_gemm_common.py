@@ -1744,18 +1744,20 @@ def _a8w8_mxscale_gemm_bpreshuffle(b_m=256, b_n=256, *, pad_m=False):
 def _a8w8_mxscale_gemm_bpreshuffle_merged(family, b_m, b_n):
     geometries = {
         "main": {(192, 256)},
+        "large_output": {(192, 256)},
         "small": {(128, 128), (160, 128)},
         "narrow": {(64, 128), (64, 64)},
     }
     assert (b_m, b_n) in geometries[family]
-    waves = 8 if family == "main" else 4
+    waves = 8 if family in {"main", "large_output"} else 4
     pad_m = family != "narrow"
     return OpusGemmInstance(
         waves * 64, b_m, b_n, 128, waves // 2, 2, 16, 16, 128, 16, 16, 4,
         1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
         WG_PER_CU=1, has_oob=pad_m, arch_prefix="gfx950", direct_only=True,
         output_tiles_per_wg=1, scale_dtype="e8m0",
-        max_tensor_bytes=2**31 - 1, pad_m=pad_m, max_k=16384,
+        max_tensor_bytes=2**63 - 1 if family == "large_output" else 2**31 - 1,
+        pad_m=pad_m, max_k=16384,
         name_tag=family,
     )
 
@@ -1765,18 +1767,14 @@ def _a8w8_mxscale_gemm_bpreshuffle_merged(family, b_m, b_n):
 # of the default subset-compile floor.
 a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
     9000: _a8w8_mxscale_gemm_bpreshuffle(),
-    # Keep historical 9001..9003 retired; each new tile has its own pipeline.
-    9010: _a8w8_mxscale_gemm_bpreshuffle(128, 128),
-    9011: _a8w8_mxscale_gemm_bpreshuffle(64, 128),
-    9012: _a8w8_mxscale_gemm_bpreshuffle(64, 64),
-    9020: _a8w8_mxscale_gemm_bpreshuffle(pad_m=True),
-    # Native IDs for the merged private 21000/21310/21311/21220/21221 kernels.
-    # The 21000 range belongs to gfx1250 CO instances in the global registry.
-    9060: _a8w8_mxscale_gemm_bpreshuffle_merged("main", 192, 256),
-    9061: _a8w8_mxscale_gemm_bpreshuffle_merged("small", 128, 128),
-    9062: _a8w8_mxscale_gemm_bpreshuffle_merged("small", 160, 128),
-    9063: _a8w8_mxscale_gemm_bpreshuffle_merged("narrow", 64, 128),
-    9064: _a8w8_mxscale_gemm_bpreshuffle_merged("narrow", 64, 64),
+    9010: _a8w8_mxscale_gemm_bpreshuffle(pad_m=True),
+    # The merged runtime-K families follow the original and padded-M kernels.
+    9020: _a8w8_mxscale_gemm_bpreshuffle_merged("main", 192, 256),
+    9021: _a8w8_mxscale_gemm_bpreshuffle_merged("small", 128, 128),
+    9022: _a8w8_mxscale_gemm_bpreshuffle_merged("small", 160, 128),
+    9023: _a8w8_mxscale_gemm_bpreshuffle_merged("narrow", 64, 128),
+    9024: _a8w8_mxscale_gemm_bpreshuffle_merged("narrow", 64, 64),
+    9030: _a8w8_mxscale_gemm_bpreshuffle_merged("large_output", 192, 256),
 }
 
 
@@ -1795,7 +1793,17 @@ def a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
         or (instance.max_k is not None and k > instance.max_k)
     ):
         return False
-    # This family has FP8 A/B and BF16 output, with signed-int byte extents.
+    if instance.name_tag == "large_output":
+        # A/B and tile-local offsets keep their signed-int byte contract.
+        # Only C's global base uses 64-bit addressing and a per-tile resource.
+        input_byte_limit = 2**31 - 1
+        output_bytes = 2 * m * n
+        tile_bytes = 2 * ((instance.B_M - 1) * n + instance.B_N)
+        return (
+            max(m * k, n * k, tile_bytes) <= input_byte_limit
+            and input_byte_limit < output_bytes <= instance.max_tensor_bytes
+        )
+    # The original families retain their signed-int total byte extents.
     return max(m * k, n * k, 2 * m * n) <= instance.max_tensor_bytes
 
 

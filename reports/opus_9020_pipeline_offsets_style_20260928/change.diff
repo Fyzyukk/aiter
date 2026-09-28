@@ -1,0 +1,312 @@
+--- before/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
++++ after/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
+@@ -226,105 +226,127 @@
+     typename decltype(mma)::vtype_c v_c;
+     clear(v_c);
+ 
+-    const auto p_coord = opus::make_tuple(wave_id_m, lane_id % mma.grpn_c, wave_id_n, lane_id / mma.grpn_c);
+-    const auto u_sc = partition_layout_c<T::VEC_C>(mma, opus::make_tuple(number<T::C_LDS_ROW_STRIDE_ELEMS>{}, 1_I), p_coord);
+-    const auto sc_offsets = layout_to_offsets<T::VEC_C>(u_sc);
++    // C output layout; BF16 fragments are first staged in LDS.
++    const auto p_coord_c = opus::make_tuple(wave_id_m, lane_id % mma.grpn_c, wave_id_n, lane_id / mma.grpn_c);
++    const auto u_gc = partition_layout_c<T::VEC_C>(mma, opus::make_tuple(number<T::C_LDS_ROW_STRIDE_ELEMS>{}, 1_I), p_coord_c);
++    const auto gc_offsets = layout_to_offsets<T::VEC_C>(u_gc);
+     array<D_SF_PACK, T::A_SCALE_PACKS> v_sfa{}, v_sfa_next{};
+     array<D_SF_PACK, T::B_SCALE_PACKS> v_sfb{}, v_sfb_next{};
+ 
+-    // Matrix offsets and pipeline helpers.
+-    auto ga_offset = [&](int tile) { return tile * number<T::B_K>{}; };
+-    auto gb_offset = [&](int tile) { return tile * number<T::B_K * T::W_N>{}; };
++    // Matrix, scale panel and C staging offsets.
++    auto ga_offset = [&](int tile_k) { return tile_k * number<T::B_K>{}; };
++    auto gb_offset = [&](int tile_k) { return tile_k * number<T::B_K * T::W_N>{}; };
+     auto sa_offset = [&](int stage) { return stage * T::A_STAGE; };
+     auto sb_offset = [&](int stage) { return stage * T::B_STAGE; };
+-
+-    auto issue_matrix_prefetch = [&](auto stage, int tile) {
+-        constexpr int slot = decltype(stage)::value;
+-        const int group = tile;
+-        static_assert(slot >= 0 && slot < T::NUM_STAGES);
+-        // Reuse the shared A layouts and bulk load, including the LDS padding.
+-        async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(slot), ga_offset(group));
+-        async_load<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(slot),
+-                       gb_offset(group));
+-    };
+-    auto load_scale_panel = [&]() {
+-        const int sfa_group = wave_id * T::SFA_K_COLUMNS_PER_WAVE + lane_id / T::SFA_THREADS_PER_GROUP;
+-        static_for<T::SFA_PASSES>([&](auto i) {
+-            const int index = u_ssfa.offsets[i];
+-            const int local_row = index - sfa_group * T::B_M;
+-            if (index < T::SFA_BYTES && sfa_group < loops) {
+-                vector_t<D_SF, T::VEC_SCALE_A> values;
++    auto gsfa_offset = [&](int panel_k_begin) { return panel_k_begin * kargs.stride_sfa; };
++    auto gsfb_offset = [&](int panel_k_begin) { return panel_k_begin; };
++    auto ssfa_offset = [&](int tile_k) { return tile_k * number<T::B_M>{}; };
++    // s_sfb addresses packed uint words, one word per K128 group.
++    auto ssfb_offset = [&](int tile_k) { return tile_k; };
++    auto c_offset = [&](int row_c, int col_c) { return row_c * T::C_LDS_ROW_STRIDE_ELEMS + col_c; };
++
++    // A/B global memory -> LDS ping-pong stage.
++    auto issue_matrix_prefetch = [&](auto stage_i, int tile_k) {
++        constexpr int stage = decltype(stage_i)::value;
++        static_assert(stage >= 0 && stage < T::NUM_STAGES);
++        async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(stage), ga_offset(tile_k));
++        async_load<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(stage), gb_offset(tile_k));
++    };
++    const int scale_k_groups = kargs.k / T::GROUP_K;
++    const auto sfa_gmem_offsets = layout_to_offsets<T::VEC_SCALE_A>(u_gsfa);
++    const auto sfa_smem_offsets = layout_to_offsets<T::VEC_SCALE_A>(u_ssfa);
++    const auto sfb_gmem_offsets = layout_to_offsets<1>(u_gsfb);
++    const auto sfb_smem_offsets = layout_to_offsets<1>(u_ssfb);
++    const auto rsfa_offsets = layout_to_offsets<1>(u_rsfa);
++    const auto rsfb_offsets = layout_to_offsets<1>(u_rsfb);
++
++    // Scale A global memory -> VGPR -> LDS, retaining raw E8M0 bytes.
++    auto load_sfa_panel = [&](int panel_k_begin) {
++        const int local_k_group = wave_id * T::SFA_K_COLUMNS_PER_WAVE + lane_id / T::SFA_THREADS_PER_GROUP;
++        const int k_group = panel_k_begin + local_k_group;
++        static_for<T::SFA_PASSES>([&](auto pass_i) {
++            constexpr int pass = decltype(pass_i)::value;
++            const int smem_offset = sfa_smem_offsets[pass];
++            const int local_row = smem_offset - local_k_group * T::B_M;
++            if (smem_offset < T::SFA_BYTES && k_group < scale_k_groups) {
++                vector_t<D_SF, T::VEC_SCALE_A> raw;
+                 if (row + local_row < kargs.m)
+-                    values = load<T::VEC_SCALE_A>(g_sfa, u_gsfa.offsets[i]);
++                    raw = load<T::VEC_SCALE_A>(g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin));
+                 else
+-                    static_for<T::VEC_SCALE_A>([&](auto j) { values[decltype(j)::value] = 0x7f; });
+-                store<T::VEC_SCALE_A>(s_sfa, values, index);
++                    static_for<T::VEC_SCALE_A>([&](auto byte_i) { raw[decltype(byte_i)::value] = 0x7f; });
++                store<T::VEC_SCALE_A>(s_sfa, raw, smem_offset);
+             }
+         });
+-        if (wave_id * T::WARP_SIZE + lane_id < loops) {
+-            const unsigned lo = load<1>(g_sfb, u_gsfb.offsets[0])[0];
+-            const unsigned hi = load<1>(g_sfb, u_gsfb.offsets[1])[0];
++    };
++    // Scale B global memory -> VGPR packing -> LDS.
++    auto load_sfb_panel = [&](int panel_k_begin) {
++        const int k_group = panel_k_begin + wave_id * T::WARP_SIZE + lane_id;
++        if (k_group < scale_k_groups) {
++            const unsigned lo = load<1>(g_sfb, sfb_gmem_offsets[0] + gsfb_offset(panel_k_begin))[0];
++            const unsigned hi = load<1>(g_sfb, sfb_gmem_offsets[1] + gsfb_offset(panel_k_begin))[0];
+             // One word per K128 group: low/high bytes select the two N128 halves.
+-            const vector_t<unsigned, 1> packed{lo | (hi << 8)};
+-            store<1>(s_sfb, packed, u_ssfb.offsets[0]);
++            const vector_t<D_SF_PACK, 1> packed{lo | (hi << 8)};
++            store<1>(s_sfb, packed, sfb_smem_offsets[0]);
+         }
+     };
+-    auto read_scales = [&](int tile, auto& scale_a, auto& scale_b) {
+-        const int group = tile;
++    // Scale LDS -> VGPR; pack the three A repeats after reading LDS.
++    auto read_scales = [&](int tile_k, auto& scale_a, auto& scale_b) {
+         static_for<T::A_SCALE_PACKS>([&](auto p) { scale_a[decltype(p)::value] = 0; });
+-        static_for<T::E_M>([&](auto i) {
+-            constexpr int repeat = decltype(i)::value;
+-            const unsigned value = load<1>(s_sfa, group * number<T::B_M>{} + u_rsfa.offsets[i])[0];
+-            scale_a[repeat / 4] |= value << ((repeat % 4) * 8);
+-        });
+-        scale_b[0] = load<1>(s_sfb, u_rsfb.offsets[0] + group)[0];
+-    };
+-    auto load_a = [&](auto m, auto stage) {
+-        constexpr int repeat = decltype(m)::value;
+-        constexpr int slot = decltype(stage)::value;
+-        static_for<T::A_CHUNKS_PER_FRAGMENT>([&](auto c) {
+-            constexpr int index = repeat * T::A_CHUNKS_PER_FRAGMENT + decltype(c)::value;
+-            const int offset = u_ra.offsets[index] + sa_offset(slot);
+-            set_slice(v_a, load<T::VEC_A>(s_a, offset),
++        static_for<T::E_M>([&](auto m_i) {
++            constexpr int m_repeat = decltype(m_i)::value;
++            const unsigned value = load<1>(s_sfa, rsfa_offsets[m_repeat] + ssfa_offset(tile_k))[0];
++            scale_a[m_repeat / 4] |= value << ((m_repeat % 4) * 8);
++        });
++        scale_b[0] = load<1>(s_sfb, rsfb_offsets[0] + ssfb_offset(tile_k))[0];
++    };
++    // Matrix LDS -> VGPR, one MFMA operand fragment at a time.
++    auto load_a_fragment = [&](auto m_i, auto stage_i) {
++        constexpr int m_repeat = decltype(m_i)::value;
++        constexpr int stage = decltype(stage_i)::value;
++        const auto offsets = layout_to_offsets<T::VEC_A>(u_ra + sa_offset(stage));
++        static_for<T::A_CHUNKS_PER_FRAGMENT>([&](auto chunk_i) {
++            constexpr int index = m_repeat * T::A_CHUNKS_PER_FRAGMENT + decltype(chunk_i)::value;
++            set_slice(v_a, load<T::VEC_A>(s_a, offsets[index]),
+                       number<index * T::VEC_A>{}, number<(index + 1) * T::VEC_A>{});
+         });
+     };
+-    auto load_b = [&](auto n, auto stage) {
+-        constexpr int repeat = decltype(n)::value;
+-        constexpr int slot = decltype(stage)::value;
+-        const auto offsets = layout_to_offsets<T::VEC_B>(u_rb + sb_offset(slot));
+-        static_for<T::B_CHUNKS_PER_FRAGMENT>([&](auto c) {
+-            constexpr int index = repeat * T::B_CHUNKS_PER_FRAGMENT + decltype(c)::value;
++    auto load_b_fragment = [&](auto n_i, auto stage_i) {
++        constexpr int n_repeat = decltype(n_i)::value;
++        constexpr int stage = decltype(stage_i)::value;
++        const auto offsets = layout_to_offsets<T::VEC_B>(u_rb + sb_offset(stage));
++        static_for<T::B_CHUNKS_PER_FRAGMENT>([&](auto chunk_i) {
++            constexpr int index = n_repeat * T::B_CHUNKS_PER_FRAGMENT + decltype(chunk_i)::value;
+             set_slice(v_b, load<T::VEC_B>(s_b, offsets[index]),
+                       number<index * T::VEC_B>{}, number<(index + 1) * T::VEC_B>{});
+         });
+     };
+-    auto mma_scale_fragment = [&](auto m, auto n) {
+-        constexpr int mi = decltype(m)::value, ni = decltype(n)::value;
+-        constexpr int ci = mi * T::E_N + ni;
+-        constexpr int half_n = ni / (T::GROUP_N / (T::T_N * T::W_N));
+-        const auto a = slice(v_a, number<mi * ELEM_A>{}, number<(mi + 1) * ELEM_A>{});
+-        const auto b = slice(v_b, number<ni * ELEM_B>{}, number<(ni + 1) * ELEM_B>{});
+-        auto c = slice(v_c, number<ci * ELEM_C>{}, number<(ci + 1) * ELEM_C>{});
++    auto mma_scale_fragment = [&](auto m_i, auto n_i) {
++        constexpr int m_repeat = decltype(m_i)::value;
++        constexpr int n_repeat = decltype(n_i)::value;
++        constexpr int c_index = m_repeat * T::E_N + n_repeat;
++        constexpr int scale_n_index = n_repeat / (T::GROUP_N / (T::T_N * T::W_N));
++        const auto a = slice(v_a, number<m_repeat * ELEM_A>{}, number<(m_repeat + 1) * ELEM_A>{});
++        const auto b = slice(v_b, number<n_repeat * ELEM_B>{}, number<(n_repeat + 1) * ELEM_B>{});
++        auto c = slice(v_c, number<c_index * ELEM_C>{}, number<(c_index + 1) * ELEM_C>{});
+         c = typename decltype(mma)::MMA{}(a, b, c,
+-                                        static_cast<int>(v_sfa[mi / 4]), static_cast<int>(v_sfb[0]),
+-                                        number<mi % 4>{}, number<half_n>{});
+-        set_slice(v_c, c, number<ci * ELEM_C>{}, number<(ci + 1) * ELEM_C>{});
+-    };
+-
+-    auto advance_tile = [&](auto stage, int tile) {
+-        constexpr int slot = decltype(stage)::value;
+-        constexpr int next_stage = (slot + 1) % T::NUM_STAGES;
+-        read_scales(tile + 1, v_sfa_next, v_sfb_next);
++                                        static_cast<int>(v_sfa[m_repeat / 4]), static_cast<int>(v_sfb[0]),
++                                        number<m_repeat % 4>{}, number<scale_n_index>{});
++        set_slice(v_c, c, number<c_index * ELEM_C>{}, number<(c_index + 1) * ELEM_C>{});
++    };
++
++    auto advance_tile = [&](auto stage_i, int tile_k) {
++        constexpr int stage = decltype(stage_i)::value;
++        constexpr int next_stage = (stage + 1) % T::NUM_STAGES;
++        read_scales(tile_k + 1, v_sfa_next, v_sfb_next);
+         // The first M repeat needs only current registers, allowing the
+         // pending next matrix tile to overlap its eight MFMAs.
+-        static_for<T::E_M>([&](auto m) {
+-            static_for<T::E_N>([&](auto n) {
+-                mma_scale_fragment(m, n);
+-                if constexpr (decltype(m)::value == T::E_M - 1)
+-                    load_b(n, number<next_stage>{});
++        static_for<T::E_M>([&](auto m_i) {
++            static_for<T::E_N>([&](auto n_i) {
++                mma_scale_fragment(m_i, n_i);
++                if constexpr (decltype(m_i)::value == T::E_M - 1)
++                    load_b_fragment(n_i, number<next_stage>{});
+             });
+-            if constexpr (decltype(m)::value == 0) {
++            if constexpr (decltype(m_i)::value == 0) {
+                 __builtin_amdgcn_sched_barrier(0);
+                 s_waitcnt_vmcnt(0_I);
+                 s_waitcnt_lgkmcnt(0_I);
+@@ -332,13 +354,13 @@
+                 // also finished reading K before reaching this barrier,
+                 // so K+2 may now replace K's slot without a reader race.
+                 __builtin_amdgcn_s_barrier();
+-                if (tile + 2 < loops)
+-                    issue_matrix_prefetch(stage, tile + 2);
++                if (tile_k + 2 < loops)
++                    issue_matrix_prefetch(stage_i, tile_k + 2);
+                 __builtin_amdgcn_sched_barrier(0);
+             }
+             // Replace A only after its last N use; B is replaced above
+             // only after its last M use, exactly as in the original loop.
+-            load_a(m, number<next_stage>{});
++            load_a_fragment(m_i, number<next_stage>{});
+         });
+         // Make next operands usable by this wave. The next midpoint
+         // barrier retires all other waves before that slot is overwritten.
+@@ -351,8 +373,9 @@
+     // Keep the two seed stages in issue order for the partial wait.
+     issue_matrix_prefetch(number<0>{}, 0);
+     __builtin_amdgcn_sched_barrier(0);
+-    // Load only valid scale groups once. No scale refill path is needed.
+-    load_scale_panel();
++    // Both complete scale panels fit in LDS and are loaded once at K0.
++    load_sfa_panel(0);
++    load_sfb_panel(0);
+     __builtin_amdgcn_sched_barrier(0);
+     if (loops > 1) {
+         issue_matrix_prefetch(number<1>{}, 1);
+@@ -365,8 +388,8 @@
+     s_waitcnt_lgkmcnt(0_I);
+     __builtin_amdgcn_s_barrier();
+     read_scales(0, v_sfa, v_sfb);
+-    static_for<T::E_M>([&](auto m) { load_a(m, number<0>{}); });
+-    static_for<T::E_N>([&](auto n) { load_b(n, number<0>{}); });
++    static_for<T::E_M>([&](auto m_i) { load_a_fragment(m_i, number<0>{}); });
++    static_for<T::E_N>([&](auto n_i) { load_b_fragment(n_i, number<0>{}); });
+     s_waitcnt_lgkmcnt(0_I);
+     // Slot reuse is deferred to the first advance's midpoint barrier.
+ 
+@@ -375,15 +398,21 @@
+     // is one compiled advance per static stage, not one kernel per K value.
+     // K128 skips the loop; its K0 register fragments go straight to final compute.
+ #pragma clang loop unroll(disable)
+-    for (int group = 0; group + 1 < loops; group += 2) {
+-        advance_tile(number<0>{}, group);
++    for (int tile_k = 0; tile_k + 1 < loops; tile_k += T::LOOP_UNROLL) {
++        advance_tile(number<0>{}, tile_k);
+         // For an even group count, stage0 above is the final drain. For an
+         // odd group count, stage1 below is the final drain. Both load only
+         // the real last group and suppress a nonexistent future prefetch.
+-        if (group + 2 < loops)
+-            advance_tile(number<1>{}, group + 1);
++        if (tile_k + 2 < loops)
++            advance_tile(number<1>{}, tile_k + 1);
+     }
+     // ===== Epilogue =====
++    // Completed FP32 fragment -> BF16 -> C staging layout in LDS.
++    auto stage_output_fragment = [&](auto c_i) {
++        constexpr int c_index = decltype(c_i)::value;
++        const auto c = slice(v_c, number<c_index * ELEM_C>{}, number<(c_index + 1) * ELEM_C>{});
++        store<T::VEC_C>(s_c, cast<D_C>(c), gc_offsets[c_index]);
++    };
+     // K128 read K0 in the prologue; every larger K read the final tile
+     // in its last no-future advance. The last midpoint drained all VMEM.
+     // Retire every wave's final matrix/scale LDS reads before fused final
+@@ -392,12 +421,11 @@
+     __builtin_amdgcn_s_barrier();
+     // All final-group operands are in registers. Consume each final MFMA
+     // once and stage its completed BF16 fragment while independent MFMAs run.
+-    static_for<T::E_M>([&](auto m) {
+-        static_for<T::E_N>([&](auto n) {
+-            constexpr int index = decltype(m)::value * T::E_N + decltype(n)::value;
+-            mma_scale_fragment(m, n);
+-            const auto c = slice(v_c, number<index * ELEM_C>{}, number<(index + 1) * ELEM_C>{});
+-            store<T::VEC_C>(s_c, cast<D_C>(c), sc_offsets[index]);
++    static_for<T::E_M>([&](auto m_i) {
++        static_for<T::E_N>([&](auto n_i) {
++            constexpr int c_index = decltype(m_i)::value * T::E_N + decltype(n_i)::value;
++            mma_scale_fragment(m_i, n_i);
++            stage_output_fragment(number<c_index>{});
+         });
+     });
+     // ===== Output writeback =====
+@@ -405,18 +433,17 @@
+     s_waitcnt_lgkmcnt(0_I);
+     __builtin_amdgcn_s_barrier();
+     const int output_thread_id = wave_id * T::WARP_SIZE + lane_id;
+-    auto copy_output_bf16 = [&](auto i) {
+-        constexpr int pass = decltype(i)::value;
+-        const int linear = output_thread_id * T::VEC_OUTPUT + pass * T::BLOCK_SIZE * T::VEC_OUTPUT;
++    auto copy_output_bf16 = [&](int copy_index) {
++        const int linear = output_thread_id * T::VEC_OUTPUT + copy_index * T::BLOCK_SIZE * T::VEC_OUTPUT;
+         const int output_row = linear / T::B_N;
+         const int output_col = linear % T::B_N;
+-        const auto value = load<T::VEC_OUTPUT>(s_c, output_row * T::C_LDS_ROW_STRIDE_ELEMS + output_col);
++        const auto value = load<T::VEC_OUTPUT>(s_c, c_offset(output_row, output_col));
+         // Keep the original bounded g_c resource. Check missing rows before
+         // forming a wide-N offset, as in the established four-wave BF16 epilogue.
+         if (row + output_row < kargs.m)
+             store<T::VEC_OUTPUT>(g_c, value, output_row * kargs.stride_c + output_col,
+                      0, opus::number<2>{});
+     };
+-    static_for<T::OUTPUT_PASSES>(copy_output_bf16);
++    static_for<T::OUTPUT_PASSES>([&](auto copy_i) { copy_output_bf16(decltype(copy_i)::value); });
+ }
+ #endif

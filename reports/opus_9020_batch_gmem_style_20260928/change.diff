@@ -1,0 +1,23 @@
+--- before/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
++++ after/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
+@@ -179,14 +179,15 @@
+     }
+     const int row = block_m * T::B_M;
+     const int col = block_n * T::B_N;
++    const int batch_id = block_id_z();
+     const int loops = kargs.k / T::B_K;
+ 
+     // Matrix and scale global-memory views.
+-    auto g_a = make_gmem(reinterpret_cast<const D_A*>(kargs.ptr_a) + row * kargs.stride_a, static_cast<unsigned>((kargs.m - row) * kargs.stride_a));
+-    auto g_b = make_gmem(reinterpret_cast<const D_B*>(kargs.ptr_b) + col * kargs.stride_b);
+-    auto g_c = make_gmem(reinterpret_cast<D_C*>(kargs.ptr_c) + row * kargs.stride_c + col, static_cast<unsigned>(((kargs.m - row) * kargs.stride_c - col) * sizeof(D_C)));
+-    auto g_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + row);
+-    auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + (col / T::GROUP_N) * kargs.stride_sfb);
++    auto g_a = make_gmem(reinterpret_cast<const D_A*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * kargs.stride_a, static_cast<unsigned>((kargs.m - row) * kargs.stride_a));
++    auto g_b = make_gmem(reinterpret_cast<const D_B*>(kargs.ptr_b) + batch_id * kargs.stride_b_batch + col * kargs.stride_b);
++    auto g_c = make_gmem(reinterpret_cast<D_C*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + row * kargs.stride_c + col, static_cast<unsigned>(((kargs.m - row) * kargs.stride_c - col) * sizeof(D_C)));
++    auto g_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + batch_id * kargs.stride_sfa_batch + row);
++    auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + batch_id * kargs.stride_sfb_batch + (col / T::GROUP_N) * kargs.stride_sfb);
+ 
+     // Matrix and scale layouts: global -> LDS -> registers.
+     const auto u_ga = make_layout_ga_scale<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_a);

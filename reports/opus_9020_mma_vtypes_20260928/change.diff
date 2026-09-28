@@ -1,0 +1,81 @@
+--- before/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
++++ after/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
+@@ -217,23 +217,20 @@
+         seq<T::T_M, T::T_N, T::T_K>{},
+         seq<T::W_M, T::W_N, T::W_K>{},
+         mfma_adaptor_swap_ab{});
++    constexpr int ELEM_A = decltype(mma)::elem_a;
++    constexpr int ELEM_B = decltype(mma)::elem_b;
++    constexpr int ELEM_C = decltype(mma)::elem_c;
++
++    typename decltype(mma)::vtype_a v_a;
++    typename decltype(mma)::vtype_b v_b;
++    typename decltype(mma)::vtype_c v_c;
++    clear(v_c);
++
+     const auto p_coord = opus::make_tuple(wave_id_m, lane_id % mma.grpn_c, wave_id_n, lane_id / mma.grpn_c);
+     const auto u_sc = partition_layout_c<T::VEC_C>(mma, opus::make_tuple(number<T::C_LDS_ROW_STRIDE_ELEMS>{}, 1_I), p_coord);
+     const auto sc_offsets = layout_to_offsets<T::VEC_C>(u_sc);
+-    using BaseMMA = typename decltype(mma)::MMA;
+-    using AFragment = typename BaseMMA::vtype_a;
+-    using BFragment = typename BaseMMA::vtype_b;
+-    using AccFragment = typename BaseMMA::vtype_c;
+-    using AChunk = opus::vector_t<D_A, T::VEC_A>;
+-    using BChunk = opus::vector_t<D_B, T::VEC_B>;
+-    using CTile = opus::array<AccFragment, T::E_M * T::E_N>;
+-    array<AFragment, T::E_M> v_a;
+-    array<BFragment, T::E_N> v_b;
+-    CTile c00{};
+     array<D_SF_PACK, T::A_SCALE_PACKS> v_sfa{}, v_sfa_next{};
+     array<D_SF_PACK, T::B_SCALE_PACKS> v_sfb{}, v_sfb_next{};
+-    auto* a_chunks = reinterpret_cast<AChunk*>(&v_a);
+-    auto* b_chunks = reinterpret_cast<BChunk*>(&v_b);
+ 
+     // Matrix offsets and pipeline helpers.
+     auto ga_offset = [&](int tile) { return tile * number<T::B_K>{}; };
+@@ -288,7 +285,8 @@
+         static_for<T::A_CHUNKS_PER_FRAGMENT>([&](auto c) {
+             constexpr int index = repeat * T::A_CHUNKS_PER_FRAGMENT + decltype(c)::value;
+             const int offset = u_ra.offsets[index] + sa_offset(slot);
+-            a_chunks[index] = load<T::VEC_A>(s_a, offset);
++            set_slice(v_a, load<T::VEC_A>(s_a, offset),
++                      number<index * T::VEC_A>{}, number<(index + 1) * T::VEC_A>{});
+         });
+     };
+     auto load_b = [&](auto n, auto stage) {
+@@ -297,16 +295,21 @@
+         const auto offsets = layout_to_offsets<T::VEC_B>(u_rb + sb_offset(slot));
+         static_for<T::B_CHUNKS_PER_FRAGMENT>([&](auto c) {
+             constexpr int index = repeat * T::B_CHUNKS_PER_FRAGMENT + decltype(c)::value;
+-            b_chunks[index] = load<T::VEC_B>(s_b, offsets[index]);
++            set_slice(v_b, load<T::VEC_B>(s_b, offsets[index]),
++                      number<index * T::VEC_B>{}, number<(index + 1) * T::VEC_B>{});
+         });
+     };
+     auto mma_scale_fragment = [&](auto m, auto n) {
+         constexpr int mi = decltype(m)::value, ni = decltype(n)::value;
+         constexpr int ci = mi * T::E_N + ni;
+         constexpr int half_n = ni / (T::GROUP_N / (T::T_N * T::W_N));
+-        c00[ci] = BaseMMA{}(v_a[mi], v_b[ni], c00[ci],
+-                           static_cast<int>(v_sfa[mi / 4]), static_cast<int>(v_sfb[0]),
+-                           number<mi % 4>{}, number<half_n>{});
++        const auto a = slice(v_a, number<mi * ELEM_A>{}, number<(mi + 1) * ELEM_A>{});
++        const auto b = slice(v_b, number<ni * ELEM_B>{}, number<(ni + 1) * ELEM_B>{});
++        auto c = slice(v_c, number<ci * ELEM_C>{}, number<(ci + 1) * ELEM_C>{});
++        c = typename decltype(mma)::MMA{}(a, b, c,
++                                        static_cast<int>(v_sfa[mi / 4]), static_cast<int>(v_sfb[0]),
++                                        number<mi % 4>{}, number<half_n>{});
++        set_slice(v_c, c, number<ci * ELEM_C>{}, number<(ci + 1) * ELEM_C>{});
+     };
+ 
+     auto advance_tile = [&](auto stage, int tile) {
+@@ -393,7 +396,8 @@
+         static_for<T::E_N>([&](auto n) {
+             constexpr int index = decltype(m)::value * T::E_N + decltype(n)::value;
+             mma_scale_fragment(m, n);
+-            store<T::VEC_C>(s_c, cast<D_C>(c00[index]), sc_offsets[index]);
++            const auto c = slice(v_c, number<index * ELEM_C>{}, number<(index + 1) * ELEM_C>{});
++            store<T::VEC_C>(s_c, cast<D_C>(c), sc_offsets[index]);
+         });
+     });
+     // ===== Output writeback =====

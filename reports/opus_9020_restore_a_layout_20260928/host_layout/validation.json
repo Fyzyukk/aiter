@@ -1,0 +1,115 @@
+{
+  "status": "passed",
+  "cpu_only": true,
+  "gpu_kernel_compilation": false,
+  "hip_runtime_api_calls": false,
+  "command": [
+    "/opt/rocm/bin/hipcc",
+    "-x",
+    "hip",
+    "--offload-host-only",
+    "--offload-arch=gfx950",
+    "-std=c++20",
+    "-O2",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/host_include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include",
+    "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/layout_check.cpp",
+    "-o",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/layout_check"
+  ],
+  "compiler_environment": {
+    "HIP_CLANG_PATH": "/root/toolchains/llvm-amdgpu-pin-op-dst-49c41889-build/bin"
+  },
+  "source_sha256": {
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh": "473097daedd3e835d691cd1c85c9b4b66b74cf2517273aee34e85bb3619c9201",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh": "2315f95cc8396b3b5edbbd5ec2c120e14b551812587360869de09cfd165dd354",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh": "97a726e1e9bb51c7fd28c3cc4a01aad9a0f3592ce154e0ff4b7844b7db18f62b",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/include/opus/opus.hpp": "cb671fc4c694ca62d526bf2ff64933f3a63cb38b396d2118c2aa895b704dd7b0",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/include/opus/dtypes.hpp": "8a40bd239520d390e6a708dfaaf65099166d4395487d6fc7bac240131c75e7c5",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh": "2259c6dfe4ee29ccfa8e02b2bc51ebc5c02dea95e5ad47bbbefdb4b470cd23ce",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/opus_gemm_utils.cuh": "8a0031d8e5c5329727160c54b1082782054444f5fa08039fc13bd4bfcba8b1a4",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/layout_check.cpp": "71eabac35062e1ff4718b3a50ad26bc109eb5555c7bddd7a8458f565720db1b3",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/host_layout_helpers.inc": "ad1cb0e938491091c02389ff61f99d15a88c6e6e5ccd161ff50408357c8c2f1a",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/host_include/opus/opus.hpp": "4141dac337e0314b33f3d2cb6354a0d5db23872d5b0bfe5ee5507ecd7b81c4ce",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/host_include/opus/dtypes.hpp": "8a40bd239520d390e6a708dfaaf65099166d4395487d6fc7bac240131c75e7c5",
+    "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_restore_a_layout_20260928/host_layout/check_layout.py": "be98433f137311056151cf5a0e98a1a6de5afaec4280fc62c886ad973d0b6fec"
+  },
+  "reference_method": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9030_wide_n_20260924/check_layout.py",
+  "host_adaptation": "Extract exact current ga/sa and 9020 namespace; replace only host/device qualifiers as in the reference. Include the real current traits directly.",
+  "source_namespace_has_no_manual_cached_offset_access": true,
+  "scope": {
+    "a": {
+      "valid_rows": [
+        64,
+        128,
+        192
+      ],
+      "k_tiles": [
+        0,
+        1,
+        127
+      ],
+      "stages": [
+        0,
+        1
+      ],
+      "checks": [
+        "unique logical byte coverage",
+        "LDS unique writes",
+        "padding and other-stage sentinels",
+        "M-tail resource bound and zero result",
+        "eight-wave reader row/K tags"
+      ]
+    },
+    "sfa": {
+      "valid_k_groups": [
+        1,
+        3,
+        128
+      ],
+      "valid_rows": [
+        64,
+        128,
+        192
+      ],
+      "checks": [
+        "four producers per K group",
+        "three 64-row passes",
+        "global and LDS unique coverage",
+        "0x7f M-tail fill",
+        "inactive-group sentinels",
+        "eight-wave reader tags and packed bytes"
+      ]
+    },
+    "excluded": [
+      "B",
+      "SFB",
+      "C",
+      "GEMM",
+      "HIP runtime calls",
+      "GPU execution"
+    ]
+  },
+  "compile_attempts": 1,
+  "run_attempts": 1,
+  "compile_returncode": 0,
+  "binary_sha256": "ac6f5dba167cdd48121189520836158abb6d57f4a5e248837df0a320411fac13",
+  "run_returncode": 0,
+  "stdout": "{\"status\":\"passed\",\"a_cases\":18,\"a_produced_bytes\":442368,\"a_reader_label_checks\":884736,\"a_padding_sentinel_checks\":13824,\"sfa_cases\":9,\"sfa_published_bytes\":76032,\"sfa_global_bytes\":50688,\"sfa_padding_bytes\":25344,\"sfa_reader_label_checks\":608256,\"sfa_inactive_sentinel_checks\":145152}\n",
+  "stderr": "",
+  "checks": {
+    "status": "passed",
+    "a_cases": 18,
+    "a_produced_bytes": 442368,
+    "a_reader_label_checks": 884736,
+    "a_padding_sentinel_checks": 13824,
+    "sfa_cases": 9,
+    "sfa_published_bytes": 76032,
+    "sfa_global_bytes": 50688,
+    "sfa_padding_bytes": 25344,
+    "sfa_reader_label_checks": 608256,
+    "sfa_inactive_sentinel_checks": 145152
+  }
+}

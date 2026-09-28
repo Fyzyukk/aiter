@@ -1,6 +1,8 @@
 # MXFP8 B-preshuffle retained kernels
 
-本包保留2026-09-27完整295项、3轮重新调优中实际被整体选择使用的11个runtime-K OPUS kernel，共9个独立共享库。另5个候选9000、9010、9011、9012、9020继续位于生产注册及`../include/gfx950/`中。完整16候选的模板、Traits、几何和选择次数见[SELECTED_CANDIDATES.md](../../../reports/opus_retune_prune_20260927/SELECTED_CANDIDATES.md)。
+本包保留2026-09-27完整295项、3轮重新调优中实际被整体选择使用的11个runtime-K OPUS kernel，共9个独立共享库。当时的另5个候选为9000、9010、9011、9012、9020。完整16候选的历史模板、Traits、几何和选择次数见[SELECTED_CANDIDATES.md](../../../reports/opus_retune_prune_20260927/SELECTED_CANDIDATES.md)。
+
+2026-09-28已删除旧9010/9011/9012，并重编号当前七个注册项；本目录配置中的注册ID仍表示历史版本，当前列表见[上级README](../README.md)。
 
 | Library | 私有ID | Device kernel数量 |
 |---|---|---:|

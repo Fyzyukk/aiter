@@ -1,9 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-// Source: Fyzyukk/gcnasm, commit 896ed09c4d52f47be92f53f34208a187533615e1
-// Upstream directory: opus_gemm/mxfp8_gemm_16x16x128_1x32scale_blockscale_bpreshuffle_4wave
-// Modified for AITER: local includes/symbols, host stub, architecture/compiler guards,
-// and explicit scalar conversion of the wave-uniform matrix prefetch offset.
-// See ../../licenses/gcnasm-LICENSE for the upstream license.
 #pragma once
 
 #include <opus/hip_minimal.hpp>
@@ -11,13 +5,11 @@
 
 #include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"
 
-// Match upstream's host stub: assignment pin attributes are device-only.
 #if !defined(__HIP_DEVICE_COMPILE__)
 template<class Traits>
 __global__ void gemm_a8w8_mxfp8_scale_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
 #elif defined(__gfx950__)
 
-// This branch exposes the statement attribute with the C++ spelling only.
 #if !__has_cpp_attribute(clang::amdgpu_pin_agpr)
 #error "kid 9000 requires yuyzhang512/llvm-project branch amdgpu-pin-op-dst"
 #else
@@ -402,18 +394,10 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
     const int wave_id = __builtin_amdgcn_readfirstlane(thread_id_x() / T::WARP_SIZE);
     const int lane_id = thread_id_x() % T::WARP_SIZE;
 
-    // PAD_M uses a bounded view of the remaining real rows. Buffer loads
-    // beyond the final row zero-fill LDS; no padded global tensor is needed.
-    unsigned int a_bytes = 0xffffffffu;
-    unsigned int c_bytes = 0xffffffffu;
-    if constexpr (T::PAD_M) {
-        a_bytes = static_cast<unsigned int>((kargs.m - row) * kargs.stride_a);
-        c_bytes = static_cast<unsigned int>(((kargs.m - row) * kargs.stride_c - col) * sizeof(D_C));
-    }
     // Matrix global-memory views.
-    auto g_a = make_gmem(reinterpret_cast<const D_A*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * kargs.stride_a, a_bytes);
+    auto g_a = make_gmem(reinterpret_cast<const D_A*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * kargs.stride_a);
     auto g_b = make_gmem(reinterpret_cast<const D_B*>(kargs.ptr_b) + batch_id * kargs.stride_b_batch + col * kargs.stride_b);
-    auto g_c = make_gmem(reinterpret_cast<D_C*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + row * kargs.stride_c + col, c_bytes);
+    auto g_c = make_gmem(reinterpret_cast<D_C*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + row * kargs.stride_c + col);
     auto g_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + batch_id * kargs.stride_sfa_batch + row, static_cast<unsigned int>(kargs.stride_sfa_batch - row));
     auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + batch_id * kargs.stride_sfb_batch + (col / T::GROUP_N + wave_id % T::SCALE_N_HALVES) * kargs.stride_sfb, static_cast<unsigned int>(kargs.stride_sfb));
 
@@ -526,27 +510,13 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         constexpr int group = issue / 4;
         constexpr int immediate = local * matrix_lds_pitch;
         auto* dst = matrix_lds_base + matrix_stage * 2 * smem_a_elem + group * 4 * matrix_lds_pitch;
-        if constexpr (T::PAD_M) {
-            // Keep the complete source displacement in the checked offset.
-            // A separate group-dependent bound with scalar M displacements
-            // truncated valid K1 rows on gfx950; use the real A extent and
-            // soffset=0 throughout instead.
-            int voffset = static_cast<int>(matrix_voffsets[local]) +
-                __builtin_amdgcn_readfirstlane(tile_offset + group * 2 * matrix_pair_stride);
-            asm volatile("" : "+v"(voffset));
-            async_load<16>(
-                g_matrix_prefetch,
-                reinterpret_cast<void*>(reinterpret_cast<__UINTPTR_TYPE__>(dst)),
-                voffset, 0, opus::number<immediate>{}, opus::number<0>{});
-        } else {
-            async_load<16>(
-                g_matrix_prefetch,
-                reinterpret_cast<void*>(reinterpret_cast<__UINTPTR_TYPE__>(dst)),
-                static_cast<int>(matrix_voffsets[local]),
-                __builtin_amdgcn_readfirstlane(tile_offset + group * 2 * matrix_pair_stride),
-                opus::number<immediate>{},
-                opus::number<0>{});
-        }
+        async_load<16>(
+            g_matrix_prefetch,
+            reinterpret_cast<void*>(reinterpret_cast<__UINTPTR_TYPE__>(dst)),
+            static_cast<int>(matrix_voffsets[local]),
+            __builtin_amdgcn_readfirstlane(tile_offset + group * 2 * matrix_pair_stride),
+            opus::number<immediate>{},
+            opus::number<0>{});
     };
 
     // Load Scale_A
@@ -563,18 +533,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
             // 0 + 0/1/2/3 * 16 + 0/1/2/3 * 4
             // 8192/128 = 64 K groups, divided into 4 passes, with 16 K groups per pass. Each pass has 4 waves, and each wave consecutively loads 4 groups.
             if (first_k_group < scale_k_groups) {
-                if constexpr (T::PAD_M) {
-                    // Each lane reads 16 consecutive M scales. M%64==0
-                    // makes the whole vector valid or padding, including
-                    // short M grids and scale-panel refill after K=8192.
-                    const int scale_row = ((lane_id & 8) | ((lane_id & 3) << 1) | ((lane_id & 4) >> 2)) * T::VEC_SCALE_A;
-                    sfa_panel_raw[pass] = {};
-                    if (row + scale_row < kargs.m) {
-                        sfa_panel_raw[pass] = load<T::VEC_SCALE_A>(g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin));
-                    }
-                } else {
-                    sfa_panel_raw[pass] = load<T::VEC_SCALE_A>(g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin));
-                }
+                sfa_panel_raw[pass] = load<T::VEC_SCALE_A>(g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin));
             }
         });
     };
@@ -652,14 +611,8 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
     const int loops = static_cast<unsigned int>(kargs.k) / T::B_K;
 
     // ===== Prologue =====
-    if constexpr (T::PAD_M) {
-        // The second M half must also participate in the buffer bound.
-        async_load<T::VEC_A>(g_a, s_a.ptr, u_ga + ga_offset(0, 0), u_sa + sa_offset(0, 0));
-        async_load<T::VEC_A>(g_a, s_a.ptr, u_ga + ga_offset(1, 0), u_sa + sa_offset(0, 1));
-    } else {
-        async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 0), ga_offset(0, 0));
-        async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 1), ga_offset(1, 0));
-    }
+    async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 0), ga_offset(0, 0));
+    async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 1), ga_offset(1, 0));
     load_sfa_panel(0);
 
     D_SF_PACK panel_sfb_raw = 0;
@@ -708,12 +661,10 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         refill_scale_panel(k_tile + 1);
         const int next_stage = stage ^ 1;
         const int future_tile = k_tile + 2;
-        // Both factors are wave-uniform. Provide an explicit scalar value before
-        // the +s constraint, even if the compiler computes the product in VGPRs.
-        int future_matrix_offset =
-            __builtin_amdgcn_readfirstlane(future_tile * matrix_tile_stride);
+        int future_matrix_offset = __builtin_amdgcn_readfirstlane(future_tile * matrix_tile_stride);
         asm volatile("" : "+s"(future_matrix_offset));
 
+        // A half 0 x B half 0 -> C[0][0]
         mma_scale_group<T, 0, 2>(mma, v_a[0], v_b, c00, v_sfa[0], v_sfb[0]);
         v_sfa_next = __builtin_bit_cast(opus::vector_t<D_SF_PACK, 2>, load<T::VEC_SCALE_SF_PAIR>(s_sfa, u_rsfa_pair + ssfa_offset(k_tile + 1, 0)));
         mma_scale_group<T, 2, 3>(mma, v_a[0], v_b, c00, v_sfa[0], v_sfb[0]);
@@ -756,7 +707,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         __builtin_amdgcn_sched_group_barrier(0x008, 1, 0);
         __builtin_amdgcn_sched_barrier(0);
 
-        // A half 1 x B half 0 -> C[1][0] (128x128 wave quadrant).
+        // A half 1 x B half 0 -> C[1][0]
         mma_scale_group<T, 0, 1>(mma, v_a[1], v_b, c10, v_sfa[1], v_sfb[0]);
         issue_matrix_prefetch(opus::number<5>{}, stage, future_matrix_offset);
         __builtin_amdgcn_sched_group_barrier(0x008, 1, 1);
@@ -810,7 +761,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         __builtin_amdgcn_sched_barrier(0);
 
 
-        // A half 0 x B half 1 -> C[0][1] (128x128 wave quadrant).
+        // A half 0 x B half 1 -> C[0][1]
         mma_scale_group<T, 0, 1>(mma, v_a[0], v_b_second, c01, v_sfa[0], v_sfb[1]);
         issue_matrix_prefetch(opus::number<12>{}, stage, future_matrix_offset);
         __builtin_amdgcn_sched_group_barrier(0x008, 1, 2);
@@ -864,7 +815,8 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         __builtin_amdgcn_sched_group_barrier(0x008, 4, 2);
         __builtin_amdgcn_sched_group_barrier(0x100, 2, 2);
         __builtin_amdgcn_sched_barrier(0);
-
+        
+        // A half 1 x B half 1 -> C[1][1]
         mma_scale_group<T, 0, 2>(mma, v_a[1], v_b_second, c11, v_sfa[1], v_sfb[1]);
         mma_scale_group<T, 2, 2>(mma, v_a[1], v_b_second, c11, v_sfa[1], v_sfb[1]);
         load_operand_fragment_pinned<T::VEC_A, 0>(opus::number<32>{}, v_a[1][0], s_a, opus::layout_to_offsets<T::VEC_A>(u_ra + sa_offset(next_stage, 1)));
@@ -912,11 +864,8 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         __builtin_amdgcn_sched_group_barrier(0x100, 2, 3);
         __builtin_amdgcn_sched_group_barrier(0x008, 1, 3);
 
-        [[clang::amdgpu_pin_agpr(A1_AGPR_BASE + 3 * sizeof(AFragment) / sizeof(opus::u32_t))]]
-        v_a[1][3] = a1_m3_next;
-        [[clang::amdgpu_pin_agpr(B1_AGPR_BASE + 3 * sizeof(BFragment) / sizeof(opus::u32_t))]]
-        v_b_second[3] = b1_n3_next;
-        // Allow loop bookkeeping SALU into the preceding MFMA windows.
+        [[clang::amdgpu_pin_agpr(A1_AGPR_BASE + 3 * sizeof(AFragment) / sizeof(opus::u32_t))]] v_a[1][3] = a1_m3_next;
+        [[clang::amdgpu_pin_agpr(B1_AGPR_BASE + 3 * sizeof(BFragment) / sizeof(opus::u32_t))]] v_b_second[3] = b1_n3_next;
         __builtin_amdgcn_sched_barrier(0x004);
 
         v_sfb[1] = v_sfb_next[1];
@@ -930,7 +879,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_setprio(1);
 
-        // A half 0 x B half 0 -> C[0][0] (128x128 wave quadrant).
+        // A half 0 x B half 0 -> C[0][0]
         mma_scale_group<T, 0, 2>(mma, v_a[0], v_b, c00, v_sfa[0], v_sfb[0]);
         v_sfa_next = __builtin_bit_cast(opus::vector_t<D_SF_PACK, 2>, load<T::VEC_SCALE_SF_PAIR>(s_sfa, u_rsfa_pair + ssfa_offset(tile + 1, 0)));
         __builtin_amdgcn_sched_group_barrier(0x008, 2, 0);
@@ -955,7 +904,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         mma_scale_group<T, 14, 2>(mma, v_a[0], v_b, c00, v_sfa[0], v_sfb[0]);
         __builtin_amdgcn_sched_group_barrier(0x008, 10, 0);
 
-        // A half 1 x B half 0 -> C[1][0] (128x128 wave quadrant).
+        // A half 1 x B half 0 -> C[1][0]
         mma_scale_group<T, 0, 2>(mma, v_a[1], v_b, c10, v_sfa[1], v_sfb[0]);
         mma_scale_group<T, 2, 2>(mma, v_a[1], v_b, c10, v_sfa[1], v_sfb[0]);
         v_sfb_next = __builtin_bit_cast(opus::vector_t<D_SF_PACK, 2>, load<T::VEC_SCALE_SF_PAIR>(s_sfb, u_rsfb_pair + ssfb_offset(tile + 1, 0)));
@@ -981,7 +930,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         __builtin_amdgcn_sched_group_barrier(0x100, 2, 1);
         __builtin_amdgcn_sched_barrier(0);
 
-        // A half 0 x B half 1 -> C[0][1] (128x128 wave quadrant).
+        // A half 0 x B half 1 -> C[0][1]
         mma_scale_group<T, 0, 2>(mma, v_a[0], v_b_second, c01, v_sfa[0], v_sfb[1]);
         load_operand_fragment_pinned<T::VEC_B, 2>(opus::number<72>{}, v_b[1], s_b, opus::layout_to_offsets<T::VEC_B>(u_rb + sb_offset(next_stage, 0)));
         __builtin_amdgcn_sched_group_barrier(0x008, 2, 2);
@@ -1026,6 +975,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         __builtin_amdgcn_sched_group_barrier(0x100, 2, 2);
         __builtin_amdgcn_sched_barrier(0);
 
+        // A half 1 x B half 1 -> C[1][1]
         mma_scale_group<T, 0, 2>(mma, v_a[1], v_b_second, c11, v_sfa[1], v_sfb[1]);
         mma_scale_group<T, 2, 2>(mma, v_a[1], v_b_second, c11, v_sfa[1], v_sfb[1]);
         load_operand_fragment_pinned<T::VEC_A, 0>(opus::number<32>{}, v_a[1][0], s_a, opus::layout_to_offsets<T::VEC_A>(u_ra + sa_offset(next_stage, 1)));
@@ -1123,15 +1073,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
         const int output_row = linear / T::HALF_B_N + half_m * T::HALF_B_M;
         const int output_col = linear % T::HALF_B_N + half_n * T::HALF_B_N;
         const auto value = load<8>(s_c, output_row * c_lds_row_stride_elems + output_col);
-        if constexpr (T::PAD_M) {
-            // Check the row before forming its address: for M<256 and very
-            // wide N, even a masked padded-row offset could overflow int.
-            if (row + output_row < kargs.m) {
-                store<8>(g_c, value, output_row * kargs.stride_c + output_col, 0, opus::number<2>{});
-            }
-        } else {
-            store<8>(g_c, value, output_row * kargs.stride_c + output_col, 0, opus::number<2>{});
-        }
+        store<8>(g_c, value, output_row * kargs.stride_c + output_col, 0, opus::number<2>{});
     };
     const auto gc_offsets = opus::layout_to_offsets<T::VEC_C>(u_gc);
 

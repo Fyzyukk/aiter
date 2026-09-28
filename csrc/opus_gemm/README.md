@@ -6,26 +6,173 @@ family launch ABIs. They are shared private implementation boundaries for the
 Python `opus_gemm(..., kid=...)` and `opus_bmm(..., kid=...)` entries; the
 public operation split does not duplicate C++ launchers or kernels.
 
-## MXFP8 B-preshuffle shared pipeline headers
+## MXFP8 B-preshuffle pipeline and traits headers
 
-The merged gfx950 candidates use the same `template<class Traits>` kernel
-structure as 9000/9020, with separate pipeline and Traits headers:
+All eight gfx950 candidates follow 9000's `template<class Traits>` structure:
+pipeline headers contain device execution, and traits headers contain geometry,
+storage sizes, and layout constants. The files live in `include/gfx950/`.
 
-| Family | Tile M×N×K | Pipeline | Traits |
+| ID | Tile M×N×K / waves | Pipeline | Traits |
 |---|---|---|---|
-| main | 192×256×128 | [main pipeline](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_main_gfx950.cuh) | [main traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_main_gfx950.cuh) |
-| small | 128×128×128, 160×128×128 | [small pipeline](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_gfx950.cuh) | [small traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh) |
-| narrow | 64×128×128, 64×64×128 | [narrow pipeline](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_narrow_gfx950.cuh) | [narrow traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_narrow_gfx950.cuh) |
+| 9000 | 256×256×128 / 4 | [4wave](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh) | [original traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh) |
+| 9010 | 256×256×128 / 4, padded M | [4wave_256x256_padded_m](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh) | [padded-M traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh) |
+| 9020 | 192×256×128 / 8 | [8wave_192x256](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh) | [192×256 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh) |
+| 9021 | 128×128×128 / 4 | [4wave_128x128](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh) | [128×128 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh) |
+| 9022 | 160×128×128 / 4 | [4wave_160x128](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh) | [160×128 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh) |
+| 9023 | 64×128×128 / 4 | [4wave_64x128](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh) | [64×128 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh) |
+| 9024 | 64×64×128 / 4 | [4wave_64x64](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh) | [64×64 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh) |
+| 9030 | 192×256×128 / 8, large output | [8wave_192x256_large_output](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh) | [large-output traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh) |
 
-Each family has one computation flow and runtime K. The small family is
-instantiated with `Traits<128>` or `Traits<160>`; the narrow family with
-`Traits<128>` or `Traits<64>`. The main family uses one fixed Traits type.
-The five instances are registered as 9060 (main), 9061/9062 (small), and
-9063/9064 (narrow). The 9000/9020 implementations remain unchanged.
-Source relocation, symbol renaming, and main template conversion preserve all
-five kernels' device instructions and normalized resource descriptors.
-The full merged-pool GPU tuning remains pending; see the
-[source map and compilation evidence](../../reports/opus_native_style_20260927/README.md).
+Except for 9000's original naming, the same suffix identifies each
+pipeline, traits file, traits type, and device kernel:
+
+```text
+opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_<suffix>_gfx950.cuh
+opus_gemm_traits_a8w8_mxscale_bpreshuffle_<suffix>_gfx950.cuh
+opus_gemm_mxscale_bpreshuffle_<suffix>_traits_gfx950
+gemm_a8w8_mxfp8_scale_<suffix>_kernel
+```
+
+9000's `gemm_a8w8_mxfp8_scale_kernel` contains only the unpadded 256×256 flow.
+9010 owns `gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel`, including bounded
+A/C views, checked prefetch offsets, A-scale tail handling, and guarded output.
+Its geometry traits and layout/AGPR helpers are shared with 9000; its complete
+device body is defined in the padded-M pipeline. The 9000 pipeline and traits
+contain no `PAD_M` switch.
+
+Each of 9021, 9022, 9023, and 9024 owns an independent pipeline body and a
+fixed-geometry traits type. Their matrix rings retain three, two, three, and
+four stages respectively. This gives eight pipeline entry headers and eight
+device template bodies for eight registered candidates.
+Every pipeline uses runtime K and the shared 96-byte kargs ABI. Existing layout
+and AGPR helpers remain in the original 9000 header.
+
+The independent pipeline bodies follow 9000's internal organization:
+
+```text
+types and tile/thread coordinates
+  -> global-memory views
+  -> matrix layouts
+  -> LDS views
+  -> MMA and register fragments
+  -> address, prefetch, scale and operand helpers
+  -> Prologue
+  -> Main loop
+  -> Epilogue
+  -> Output writeback
+```
+
+Type and coordinate names use `D_A`, `D_B`, `D_C`, `D_ACC`, `D_SF`,
+`D_SF_PACK`, `wave_id`, and `lane_id`. The reorganized candidates use `v_c`
+for accumulators and `p_coord_c`, `u_gc`, and `gc_offsets` for C layout.
+Matrix address helpers use `ga_offset`, `gb_offset`, `sa_offset`, and
+`sb_offset`; the four scale offsets are grouped beside them. Matrix prefetch
+uses `issue_matrix_prefetch`. Setup and loading helpers precede the Prologue.
+All five global views include their own batch stride and tile base offset.
+
+9021/9022 place their advancing schedule directly in the runtime main loop.
+9020/9030 keep the two static-stage calls in their U2 loop, with `advance_tile`
+defined in the helper section. 9023/9024 use operand-load helpers at the same
+last-use replacement points as before. Stage counts, wait instructions,
+barriers, AGPR pins, scale layouts, and output strategies remain specific to
+each geometry. In particular, 9020/9030 retain fused final MFMA/BF16 staging,
+and 9023/9024 retain direct global output stores.
+
+9020 and 9030 each define their complete fixed 192×256 geometry, storage
+constants, and static assertions in their own traits file, without inheritance.
+Their declarations follow 9000's grouping: threads/waves, B/T/W geometry,
+half tiles and geometry checks, E/VEC/GROUP constants, then LDS and scale
+storage. Each constant has its own declaration. Address computations belong
+to the pipeline's layout helpers, not traits. 9020 reuses 9000's `make_layout_ga_scale`,
+`make_layout_sa_scale`, and bulk `async_load` for A. Its eight-wave register
+reader uses a matching affine layout with the original 32-byte LDS padding.
+Scale A's global and LDS copies share a regular layout: four threads per K128
+group cover 192 rows in three 64-row passes, with only the group stride differing.
+Its reader and scale packing retain the existing three M-repeat scales.
+These local layouts live in `opus_gemm_8wave_192x256_layout`. Its kernel
+declares all five `g_*` views and twelve `u_*` layouts before LDS/register setup;
+the loading helpers consume these layouts. Its obsolete traits helper has been
+removed. B's global view uses the same typed-pointer construction as 9000.
+9020 specifies packed B scales (`SFB_BYTES=512`, `B_SCALE_PACKS=1`,
+`LDS_BYTES=143360`). 9030 retains its byte scale panel (`256`, `2`, `143104`)
+and extends C addressing with a 64-bit base and a buffer range restricted to
+the current tile. Its A/B extents and tile-local offsets keep signed 32-bit
+limits. The older generic `192x256` traits template remains for retained
+experimental sources; neither current candidate includes or inherits it.
+
+9021, 9022, 9023, 9024, and 9030 also define their local layouts with explicit
+shape/dim/unfold expressions and lane/wave coordinates. All matrix and scale
+layouts are declared before the loading helpers. 9021/9022 retain their A/C
+AGPR pins. 9023/9024 retain XOR A addressing, prepacked u16 A scales, replicated
+u32 B scales, and direct global C stores. 9030 retains its byte B scales and
+its own U2 prefetch schedule. Their source cleanup and CPU address/resource
+checks are recorded in the [five-candidate report](../../reports/opus_9021_9030_style_20260928/RESULTS.md).
+
+9021/9022 reuse 9000's RA helper directly. 9023/9024 reuse 9000's GA helper
+with the original lane XOR. 9030 reuses 9020's eight-wave RA, and
+9021/9022/9030 share 9020's parameterized raw-byte SFA reader. Their includes
+expose the existing helpers without merging their independent kernel bodies.
+For 9023/9024, scale layouts describe positions within a K128 group, while
+the four scale offset helpers advance the group/panel; this preserves the
+original dynamic address computation and avoids retaining complete scale
+byte addresses across the main loop.
+
+Codegen maps the existing registry tags to these internal names. Candidate IDs,
+public `kernelName` values, and support guards are unchanged, so existing
+current-ID tuning CSVs remain valid. Historical reports retain their original
+source paths and symbol names.
+
+The latest complete all-backend sweep found valid winners for all 305 input
+shapes: OPUS won 299, CK 2, and CKTile 4. All 1,955 OPUS measurements passed
+the numerical check; the ten shapes omitted from the historical 295-shape
+subset all selected 9030. See the
+[full sweep](../../reports/opus_full305_after9020_20260928/RESULTS.md) and
+[candidate optimization details](../../reports/opus_full305_after9020_20260928/CANDIDATES.md).
+The source organization above is newer than that sweep. The initial organization
+change passed [CPU validation for all eight candidates](../../reports/opus_layout_9000_20260928/validation.json).
+The subsequent split of 9021–9024 compiled those four actual device TUs once each;
+their machine instructions match the previous version byte for byte, and their
+complete resource metadata matches after excluding symbol names. Public names,
+registry entries, and host guards are unchanged; see the
+[four-candidate split validation](../../reports/opus_split_9021_9024_20260928/validation.json).
+The subsequent internal pipeline reorganization also passed
+[CPU validation for all six independent bodies](../../reports/opus_pipeline_structure_20260928/attempt2/validation.json):
+instruction bytes and complete resource metadata match their previous versions.
+Wave-coordinate and runtime-K calculations retain their original evaluation
+points to preserve compiler lowering. No source refactor ran another GPU tune.
+The [per-candidate optimization summary](../../reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md)
+describes each candidate's target, retained optimization steps, and measured scope.
+The latest change separates 9000's unpadded body from 9010's padded-M body.
+Both actual device TUs compiled once each; their instruction bytes and complete
+resource metadata (excluding symbol names) match the prior implementations.
+Public names, registry entries, and host guards also match; see the
+[9000/9010 separation validation](../../reports/opus_9000_9010_separate_20260928/validation.json).
+The earlier optimization summary records 9010's former shared-body organization.
+9010's subsequent spill fix moves the SFA per-pass zero initialization before
+the K guard, preventing unused raw-scale values from remaining live across the
+matrix loop. The final production TU has zero VGPR/SGPR spills, zero private
+segment bytes, and no scratch load/store instructions; LDS remains 152064 bytes.
+This passed CPU compilation and source review only, with no new GPU numerical
+or performance run; see the [9010 spill report](../../reports/opus_9010_spill_20260928/summary.json).
+The subsequent expansion of 9020/9030 traits into complete independent structs
+compiled both device TUs once each. Their instruction bytes and full metadata,
+including names, match the previous versions; see the
+[traits expansion validation](../../reports/opus_9020_9030_traits_20260928/validation.json).
+Moving 9030's A-address helper into its pipeline also passed one device-TU
+CPU compilation: all 7884 instruction bytes and the complete metadata are
+identical. 9020's unused helper was removed without recompiling its pipeline.
+See the [helper relocation validation](../../reports/opus_9030_lds_helper_20260928/validation.json).
+9020's subsequent restoration of upfront global views and layouts compiled
+successfully with identical full metadata (VGPR 208, SGPR 52, LDS 143360 bytes,
+zero spills/private storage). Its instruction bytes changed from 7816 to 7880;
+no GPU correctness or timing run was performed for this source reorganization.
+See the [final frontmatter compilation](../../reports/opus_9020_frontmatter_20260928/attempt2/validation.json).
+The later restoration of A's non-XOR layout and regular Scale A producer layout
+passed one device-TU CPU compilation. VGPR usage decreased from 208 to 204;
+SGPR 52, LDS 143360 bytes, zero spills/private storage, and the public ABI remain
+unchanged. The instruction body is 7656 bytes. This layout change has no new GPU
+numerical or timing result; see the
+[A layout restoration validation](../../reports/opus_9020_restore_a_layout_20260928/validation.json).
 
 ## Original MXFP8 tuning entry
 
@@ -39,7 +186,7 @@ OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
 python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
   -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv \
   -o /tmp/dsv4_m_ge1024_tuned.csv -o2 /tmp/dsv4_m_ge1024_profile.csv \
-  --opus-kids 9000,9020,9060,9061,9062,9063,9064 \
+  --opus-kids 9000,9010,9020,9021,9022,9023,9024,9030 \
   --libtype all --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
 ```
 
@@ -51,8 +198,12 @@ pass the original baseline CSV to `-i`; input timings and choices are ignored.
 `-o` saves the fastest valid candidate per shape and `-o2` saves the candidate
 profile. OPUS candidates are compiled before the sweep; external backends use
 their existing JIT paths. `--shape_grouped` measures each shape's candidates
-on the same GPU. Omit `--opus-kids` to include all registered OPUS candidates,
-including the retained 9010/9011/9012 controls.
+on the same GPU. Omitting `--opus-kids` includes the same eight registered
+MXFP8 B-preshuffle candidates.
+
+The renumbering maps old 9020 to 9010 and old 9060–9064 to 9020–9024;
+9000 is unchanged. Historical CSVs and JIT binaries retain their old meanings.
+Use the current-ID CSV and rebuild the OPUS JIT before executing these new IDs.
 
 CK/CKTile/ASM reuse the original blockscale tuner's input generator: FP16
 uniform random operands divided by 10 and cast to FP8, plus independently

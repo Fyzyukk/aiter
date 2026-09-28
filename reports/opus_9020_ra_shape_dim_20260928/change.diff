@@ -1,0 +1,42 @@
+--- before/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
++++ after/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
+@@ -14,6 +14,19 @@
+     constexpr int rows_per_wave = T::WARP_SIZE / (T::B_K / T::VEC_A);
+     constexpr int lanes_k = T::WARP_SIZE / T::W_M;
+     constexpr int k_vectors = T::B_K / (lanes_k * T::VEC_A);
++
++    constexpr auto ra_block_shape = opus::make_tuple(
++        opus::number<T::E_M>{},
++        opus::number<T::NUM_WAVES>{},
++        opus::number<rows_per_wave>{},
++        opus::number<k_vectors>{},
++        opus::number<lanes_k>{},
++        opus::number<T::VEC_A>{});
++
++    constexpr auto ra_block_dim = opus::make_tuple(
++        opus::make_tuple(opus::y_dim{}, opus::p_dim{}),
++        opus::make_tuple(opus::p_dim{}, opus::y_dim{}, opus::p_dim{}, opus::y_dim{}));
++
+     const int lane_row = lane_id % T::W_M;
+     const int producer_wave = (wave_id_m / 2) * T::T_M + lane_row % T::T_M;
+     const int producer_lane_row =
+@@ -22,14 +35,11 @@
+     // Match the shared A producer layout: each 1024-byte wave segment has
+     // 32 bytes of LDS padding. The free dimensions are repeat, chunk, byte.
+     return opus::make_layout<T::VEC_A>(
+-        opus::make_tuple(opus::number<T::E_M>{}, opus::number<T::NUM_WAVES>{},
+-                         opus::number<rows_per_wave>{}, opus::number<k_vectors>{},
+-                         opus::number<lanes_k>{}, opus::number<T::VEC_A>{}),
+-        opus::make_tuple(opus::number<T::NUM_WAVES * pitch>{}, opus::number<pitch>{},
+-                         opus::number<T::B_K>{}, opus::number<lanes_k * T::VEC_A>{},
+-                         opus::number<T::VEC_A>{}, 1_I),
+-        opus::make_tuple(opus::underscore{}, producer_wave, producer_lane_row,
+-                         opus::underscore{}, lane_id / T::W_M, opus::underscore{}));
++        ra_block_shape,
++        opus::unfold_x_stride(ra_block_dim, ra_block_shape,
++                              opus::tuple{opus::number<pitch>{}, 1_I}),
++        opus::unfold_p_coord(ra_block_dim,
++                             opus::tuple{producer_wave, producer_lane_row, lane_id / T::W_M}));
+ }
+ 
+ template<class T>

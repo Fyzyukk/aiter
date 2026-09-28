@@ -1,0 +1,74 @@
+--- before/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh
++++ after/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh
+@@ -123,6 +123,20 @@
+     auto sa_offset = [&](int stage) { return stage * T::A_STAGE; };
+     auto sb_offset = [&](int stage) { return stage * T::B_STAGE; };
+ 
++    // Map an A fragment to the cooperative eight-wave LDS layout.
++    auto a_lds_offset = [](int wave_m, int lane, int repeat, int chunk) {
++        const int matrix_row = repeat * T::T_M * T::W_M + wave_m * T::W_M + lane % T::W_M;
++        constexpr int rows_per_pass = T::BLOCK_SIZE / (T::B_K / T::VEC_A);
++        const int pass = matrix_row / rows_per_pass;
++        const int remainder = matrix_row % rows_per_pass;
++        const int producer_n = remainder / (8 * T::T_M);
++        const int producer_m = remainder % T::T_M;
++        const int producer_lane_row = (remainder % (8 * T::T_M)) / T::T_M;
++        return (pass * T::NUM_WAVES + producer_n * T::T_M + producer_m) *
++                   (T::smem_linear_wave + T::smem_padding) +
++               producer_lane_row * T::B_K + (lane / T::W_M) * T::VEC_A + chunk * 64;
++    };
++
+     auto issue_matrix_prefetch = [&](auto stage, int tile) {
+         constexpr int slot = decltype(stage)::value;
+         const int group = tile;
+@@ -172,7 +186,7 @@
+         constexpr int slot = decltype(stage)::value;
+         static_for<2>([&](auto c) {
+             constexpr int index = repeat * 2 + decltype(c)::value;
+-            const int offset = T::a_lds_offset(wave_id_m, lane_id, repeat, decltype(c)::value) + sa_offset(slot);
++            const int offset = a_lds_offset(wave_id_m, lane_id, repeat, decltype(c)::value) + sa_offset(slot);
+             a_chunks[index] = load<16>(s_a, offset);
+         });
+     };
+--- before/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
++++ after/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh
+@@ -74,18 +74,4 @@
+     static_assert(SCALE_PANEL == 128 && SCALE_PANEL * B_K == MAX_K);
+     static_assert(SFA_BYTES == 24576 && SFA_PASSES == 3 && SFB_BYTES == 512);
+     static_assert(LDS_BYTES == 143360 && LDS_BYTES <= 160 * 1024);
+-
+-    // Map an A fragment to the cooperative eight-wave LDS layout.
+-    OPUS_H_D static constexpr int a_lds_offset(int wave_m, int lane, int repeat, int chunk) {
+-        const int matrix_row = repeat * T_M * W_M + wave_m * W_M + lane % W_M;
+-        constexpr int rows_per_pass = BLOCK_SIZE / (B_K / VEC_A);
+-        const int pass = matrix_row / rows_per_pass;
+-        const int remainder = matrix_row % rows_per_pass;
+-        const int producer_n = remainder / (8 * T_M);
+-        const int producer_m = remainder % T_M;
+-        const int producer_lane_row = (remainder % (8 * T_M)) / T_M;
+-        return (pass * NUM_WAVES + producer_n * T_M + producer_m) *
+-                   (smem_linear_wave + smem_padding) +
+-               producer_lane_row * B_K + (lane / W_M) * VEC_A + chunk * 64;
+-    }
+ };
+--- before/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh
++++ after/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh
+@@ -74,18 +74,4 @@
+     static_assert(SFA_BYTES == 24576 && SFA_PASSES == 3 && SFB_BYTES == 256);
+     static_assert(B_SCALE_PACKS == 2);
+     static_assert(LDS_BYTES == 143104 && LDS_BYTES <= 160 * 1024);
+-
+-    // Map an A fragment to the cooperative eight-wave LDS layout.
+-    OPUS_H_D static constexpr int a_lds_offset(int wave_m, int lane, int repeat, int chunk) {
+-        const int matrix_row = repeat * T_M * W_M + wave_m * W_M + lane % W_M;
+-        constexpr int rows_per_pass = BLOCK_SIZE / (B_K / VEC_A);
+-        const int pass = matrix_row / rows_per_pass;
+-        const int remainder = matrix_row % rows_per_pass;
+-        const int producer_n = remainder / (8 * T_M);
+-        const int producer_m = remainder % T_M;
+-        const int producer_lane_row = (remainder % (8 * T_M)) / T_M;
+-        return (pass * NUM_WAVES + producer_n * T_M + producer_m) *
+-                   (smem_linear_wave + smem_padding) +
+-               producer_lane_row * B_K + (lane / W_M) * VEC_A + chunk * 64;
+-    }
+ };

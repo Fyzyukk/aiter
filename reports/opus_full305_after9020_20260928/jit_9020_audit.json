@@ -1,0 +1,154 @@
+{
+  "status": "passed",
+  "cpu_only": true,
+  "gpu_executed": false,
+  "build_executed": false,
+  "created_utc": "2026-09-28T04:20:02.907703+00:00",
+  "checks": {
+    "exactly_one_main_kernel_in_each_binary": true,
+    "instruction_bytes_equal": true,
+    "instruction_sha256_equal": true,
+    "resources_equal": true,
+    "all_required_current_ids_present": true,
+    "no_legacy_9060": true,
+    "receipt_matches_binary": true,
+    "canonical_source_matches_recorded_u64_t_fix": true,
+    "binary_and_receipt_stable_during_audit": true
+  },
+  "audit_tool": {
+    "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/mxfp8_bpreshuffle_retained/audit_device_kernels.py",
+    "sha256": "fa6f2a57ca81cadd9daf5ee002987276e7ea76dec49194f977f37fae308be9ff"
+  },
+  "extraction_method": "Enumerated every ELF section named .hip_fatbin and every concatenated __CLANG_OFFLOAD_BUNDLE__ within it. Used existing audit_device_kernels.elf_sections/function_bytes/sha; llvm-readobj --notes supplied actual kernel resource metadata. The existing inspect() alone visits only the first concatenated bundle; shared helper was not modified.",
+  "jit": {
+    "binary": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/jit/module_deepgemm_opus.so",
+    "binary_sha256": "ae4c97aded8bfc76052fe95db35dcf17294f868228bde485660739f5b5ce8665",
+    "fatbin_sections": [
+      {
+        "index": 15,
+        "offset": 794624,
+        "bytes": 3956576,
+        "bundles": 184
+      }
+    ],
+    "device_object_count": 184,
+    "main_kernels": [
+      {
+        "name": "_Z39gemm_a8w8_mxfp8_bpreshuffle_main_kernelI48opus_gemm_mxscale_bpreshuffle_main_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+        "target": "hip-amdgcn-amd-amdhsa--gfx950",
+        "section_index": 15,
+        "bundle_index": 152,
+        "bundle_offset": 3391488,
+        "instruction_bytes": 7816,
+        "instruction_sha256": "159f250f1fbebc09346b000f3d26b90cda11d546e01683196d2ff124b6ef77cd",
+        "device_object_sha256": "717ee70190c726fab6dec16b32cfff9523b963bfa8338bc36e8d0b6eab775f19",
+        "resources": {
+          "agpr_count": 0,
+          "group_segment_fixed_size": 143360,
+          "kernarg_segment_align": 8,
+          "kernarg_segment_size": 96,
+          "max_flat_workgroup_size": 512,
+          "private_segment_fixed_size": 0,
+          "sgpr_count": 52,
+          "sgpr_spill_count": 0,
+          "vgpr_count": 208,
+          "vgpr_spill_count": 0,
+          "wavefront_size": 64,
+          "uses_dynamic_stack": "false"
+        }
+      }
+    ]
+  },
+  "measured": {
+    "binary": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_9020_resume_20260928/final/experiments.so",
+    "binary_sha256": "9478b4e622af6844bba5f28db7eb0617006289a58ef59ab60c76d96c97242aaa",
+    "fatbin_sections": [
+      {
+        "index": 14,
+        "offset": 8192,
+        "bytes": 16744,
+        "bundles": 1
+      }
+    ],
+    "device_object_count": 1,
+    "main_kernels": [
+      {
+        "name": "_Z39gemm_a8w8_mxfp8_bpreshuffle_main_kernelI48opus_gemm_mxscale_bpreshuffle_main_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+        "target": "hip-amdgcn-amd-amdhsa--gfx950",
+        "section_index": 14,
+        "bundle_index": 0,
+        "bundle_offset": 0,
+        "instruction_bytes": 7816,
+        "instruction_sha256": "159f250f1fbebc09346b000f3d26b90cda11d546e01683196d2ff124b6ef77cd",
+        "device_object_sha256": "beab8574250664cc56fa3a5f42519c57c9f30324f1db4a4aa034d0501924e8e8",
+        "resources": {
+          "agpr_count": 0,
+          "group_segment_fixed_size": 143360,
+          "kernarg_segment_align": 8,
+          "kernarg_segment_size": 96,
+          "max_flat_workgroup_size": 512,
+          "private_segment_fixed_size": 0,
+          "sgpr_count": 52,
+          "sgpr_spill_count": 0,
+          "vgpr_count": 208,
+          "vgpr_spill_count": 0,
+          "wavefront_size": 64,
+          "uses_dynamic_stack": "false"
+        }
+      }
+    ]
+  },
+  "receipt": {
+    "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/jit/build/compiled_kids_opus.json.receipt",
+    "sha256": "bb0a6eece968195fd9b957f5e1d861c13f3b8ecc8b88b4c2a5ef02e05e39ca01",
+    "contents": {
+      "artifact": [
+        66307,
+        65675022,
+        5317816,
+        1790568779442333400,
+        1790568779450333400
+      ],
+      "sha256": "890ef1c4d54780401ec8d82ea8606b8a7614b6df0f1c5e2aa3595d022b375486"
+    },
+    "artifact_matches_binary": true,
+    "compiled_ids_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/jit/build/compiled_kids_opus.json",
+    "compiled_ids_sha256": "890ef1c4d54780401ec8d82ea8606b8a7614b6df0f1c5e2aa3595d022b375486",
+    "compiled_ids_hash_matches_receipt": true,
+    "compiled_id_count": 93,
+    "required_current_ids": [
+      9000,
+      9010,
+      9020,
+      9021,
+      9022,
+      9023,
+      9024,
+      9030
+    ],
+    "all_required_ids_present": true,
+    "legacy_9060_present": false
+  },
+  "canonical_source": {
+    "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_main_gfx950.cuh",
+    "sha256": "4bfacd56ecdb0f2a35f4f973c7f8be59e5882de3e2405db4537a16c9ce768eae",
+    "u64_t_address_fix_present": true,
+    "matches_recorded_compile_fix": true,
+    "recorded_compile_fix": {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_main_gfx950.cuh",
+      "reason": "Generated __HIPCC_RTC__ device translation unit has no uintptr_t; use existing opus::u64_t for the same 64-bit address arithmetic",
+      "before_sha256": "3316c8c8e257c45e83684f86e48e4d4de0058601bfc7fd402fb52bde1d7283b1",
+      "after_sha256": "4bfacd56ecdb0f2a35f4f973c7f8be59e5882de3e2405db4537a16c9ce768eae",
+      "source_lines_changed": 4,
+      "first_attempt": "attempt1_compile_failure",
+      "first_attempt_exit_code": 1,
+      "first_attempt_completed_batches": 0,
+      "performance_measurements_before_failure": 0
+    }
+  },
+  "generated_main_source": {
+    "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_full305_after9020_20260928/jit/build/module_deepgemm_opus/blob/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x192x256x128_4x2_16x16x128_1x128x128_tiles1_main_Cbf16_t.device.cu",
+    "sha256": "aa5202375066945744fa7454f699028fa47e7e5305b0e32766656829fe0fdc45"
+  },
+  "performance_scope": "This audit establishes identical 9020 device instruction bytes and resources after the u64_t compile fix. It does not make timings from the earlier targeted run interchangeable with the full 305-shape run; each performance claim must retain its own contemporaneous baseline/external measurements."
+}

@@ -1,0 +1,175 @@
+{
+  "status": "spill_eliminated",
+  "cpu_only": true,
+  "gpu_executed": false,
+  "performance_measured": false,
+  "changed_production_files": [
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh"
+  ],
+  "protected_source_files_unchanged": {
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_bmm_launchers_a8w8_mxscale_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_persistent_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_flatmm_splitk_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_flatmm_splitk_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_mono_tile_4g_safe_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_flatmm_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/splitk_reduce_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_persistent_4g_safe_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_4g_safe_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_192x256_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_noscale_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_noscale_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a16w16_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_mono_tile_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_scale_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_arch_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_bmm_pipeline_a8w8_mxscale_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh": true,
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh": true,
+    "csrc/opus_gemm/codegen/gen_instances_gfx950.py": true,
+    "csrc/opus_gemm/opus_gemm_common.py": true
+  },
+  "source_change": "Move existing SFA per-pass zero initialization before the K guard; add two comments. No other production code changes.",
+  "semantic_review": [
+    "Active K passes execute the same zero assignment, M guard, and scale load in the same order.",
+    "Inactive K passes now define only their private temporary. publish_sfa_panel uses the same K guard, so these values are never published or consumed.",
+    "Prologue and each refill load/publish the same panel_k_begin; matrix loads, M bounds, output guards, MFMA order, waits, barriers and layouts are unchanged."
+  ],
+  "compile_attempts": 5,
+  "baseline": {
+    "machine": {
+      "name": "_Z51gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernelI66opus_gemm_mxscale_bpreshuffle_4wave_256x256_padded_m_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "target": "hip-amdgcn-amd-amdhsa--gfx950",
+      "instruction_bytes": 24312,
+      "instruction_sha256": "0a9e4a04873800f39f3e04f8388fdf895a1ffabcfd18dc6a39d0eec2bad520df",
+      "resources": {
+        ".agpr_count": 256,
+        ".args": [
+          {
+            ".offset": 0,
+            ".size": 96,
+            ".value_kind": "by_value"
+          }
+        ],
+        ".group_segment_fixed_size": 152064,
+        ".kernarg_segment_align": 8,
+        ".kernarg_segment_size": 96,
+        ".language": "OpenCL C",
+        ".language_version": [
+          2,
+          0
+        ],
+        ".max_flat_workgroup_size": 256,
+        ".private_segment_fixed_size": 44,
+        ".sgpr_count": 76,
+        ".sgpr_spill_count": 0,
+        ".uses_dynamic_stack": false,
+        ".vgpr_count": 512,
+        ".vgpr_spill_count": 14,
+        ".wavefront_size": 64
+      },
+      "amdhsa_target": "amdgpu9.50-amd-amdhsa-unknown-gfx950",
+      "amdhsa_version": [
+        1,
+        2
+      ]
+    },
+    "scratch_instruction_lines": 17
+  },
+  "final": {
+    "machine": {
+      "name": "_Z51gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernelI66opus_gemm_mxscale_bpreshuffle_4wave_256x256_padded_m_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "target": "hip-amdgcn-amd-amdhsa--gfx950",
+      "instruction_bytes": 23872,
+      "instruction_sha256": "8da0a88e85f62f65800f89bd11338d92c286f775b5946118c936de50fa892880",
+      "resources": {
+        ".agpr_count": 241,
+        ".args": [
+          {
+            ".offset": 0,
+            ".size": 96,
+            ".value_kind": "by_value"
+          }
+        ],
+        ".group_segment_fixed_size": 152064,
+        ".kernarg_segment_align": 8,
+        ".kernarg_segment_size": 96,
+        ".language": "OpenCL C",
+        ".language_version": [
+          2,
+          0
+        ],
+        ".max_flat_workgroup_size": 256,
+        ".private_segment_fixed_size": 0,
+        ".sgpr_count": 80,
+        ".sgpr_spill_count": 0,
+        ".uses_dynamic_stack": false,
+        ".vgpr_count": 497,
+        ".vgpr_spill_count": 0,
+        ".wavefront_size": 64
+      },
+      "amdhsa_target": "amdgpu9.50-amd-amdhsa-unknown-gfx950",
+      "amdhsa_version": [
+        1,
+        2
+      ]
+    },
+    "scratch_instruction_lines": 0,
+    "source_sha256": "d269899fea6c9f22e526bd88d5166b846305e2376294e818b116873a900cf1f8",
+    "production_source": true
+  },
+  "final_matches_successful_trial_bytes": true,
+  "abi_and_lds_unchanged": true,
+  "generated_9010_impl_and_device_source_unchanged": {
+    "impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1.cuh": true,
+    "instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_Cbf16_t.device.cu": true
+  },
+  "generated_aggregate_note": "Fused all_instances_host_gfx950.cu contains only 9010 in this build versus 9000/9010 in the prior build; individual 9010 implementation and device TU are byte-identical.",
+  "experiments": {
+    "baseline": {
+      "spill": 14,
+      "private_bytes": 44,
+      "scratch_instruction_lines": 17
+    },
+    "scale_checked_offset": {
+      "spill": 14,
+      "private_bytes": 44,
+      "scratch_instruction_lines": 17
+    },
+    "output_buffer_bound": {
+      "spill": 16,
+      "private_bytes": 36,
+      "scratch_instruction_lines": 8
+    },
+    "scale_define_all_passes": {
+      "spill": 0,
+      "private_bytes": 0,
+      "scratch_instruction_lines": 0
+    },
+    "final": {
+      "spill": 0,
+      "private_bytes": 0,
+      "scratch_instruction_lines": 0
+    }
+  },
+  "rejected_experiment_notes": {
+    "scale_checked_offset": "Did not eliminate spill; not integrated.",
+    "output_buffer_bound": "Did not eliminate spill; not equivalent for the full shape domain because invalid-row byte offsets can wrap into the real C range. The output row guard is retained."
+  },
+  "limits": "CPU compilation, ISA/resource inspection and source semantic review only. No new GPU numerical or timing run; full305 measurements predate this change."
+}
