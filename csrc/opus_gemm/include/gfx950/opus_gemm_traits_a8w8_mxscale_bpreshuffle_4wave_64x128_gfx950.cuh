@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: Apache-2.0
 #pragma once
 #include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"
 
-struct opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_gfx950 {
+template<int NumStages = 3, int ScalePanel = 32, int FixedK = 0>
+struct opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950 {
     static constexpr int BLOCK_SIZE = 256;
+    static constexpr int FIXED_K = FixedK;
     static constexpr int WARP_SIZE = 64;
     static constexpr int NUM_WAVES = BLOCK_SIZE / WARP_SIZE;
     static constexpr int MIN_WGS_PER_CU = 1;
@@ -75,15 +76,15 @@ struct opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_gfx950 {
     static constexpr int smem_n_rep = B_N * B_K / smem_linear_wave;
     static constexpr int A_STAGE = smem_m_rep * (smem_linear_wave + smem_padding);
     static constexpr int B_STAGE = smem_n_rep * (smem_linear_wave + smem_padding);
-    static constexpr int NUM_STAGES = 3;
+    static constexpr int NUM_STAGES = NumStages;
     static constexpr int PREFETCH_DISTANCE = NUM_STAGES - 1;
     static constexpr int MATRIX_LDS_BYTES = NUM_STAGES * (A_STAGE + B_STAGE);
     static constexpr int VMEM_INSTRUCTIONS_PER_TILE =
         B_M * B_K / (BLOCK_SIZE * VEC_A) + B_N * B_K / (BLOCK_SIZE * VEC_B);
     static constexpr int VMEM_STEADY_WAIT = (PREFETCH_DISTANCE - 1) * VMEM_INSTRUCTIONS_PER_TILE;
-    static_assert(NUM_STAGES == 3 && VEC_A == VEC_B);
+    static_assert(NUM_STAGES >= 2 && NUM_STAGES <= 4 && VEC_A == VEC_B);
 
-    static constexpr int SCALE_PANEL = 64;
+    static constexpr int SCALE_PANEL = ScalePanel;
     static constexpr int SFA_ROWS_PER_REPEAT = T_M * W_M;
     static constexpr int SFA_PRODUCERS_PER_GROUP = SFA_ROWS_PER_REPEAT / VEC_SCALE_A;
     static constexpr int SFA_K_COLUMNS_PER_WAVE = WARP_SIZE / SFA_PRODUCERS_PER_GROUP;
@@ -93,15 +94,18 @@ struct opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_gfx950 {
     static constexpr int SFA_WORDS_PER_CHUNK = SFA_WORDS / SFA_PACK_CHUNKS;
     static constexpr unsigned SFA_PACK_PERM_LO = 0x05010400u;
     static constexpr unsigned SFA_PACK_PERM_HI = 0x07030602u;
-    static constexpr unsigned SFB_REPLICATE = 0x01010101u;
+    static constexpr int B_SCALE_PACKS = B_N / GROUP_N;
     static constexpr int SFA_BYTES = B_M * SCALE_PANEL;
-    static constexpr int SFB_BYTES = SCALE_PANEL * sizeof(opus::u32_t);
+    static constexpr int SFB_BYTES = B_SCALE_PACKS * SCALE_PANEL;
     static constexpr int LDS_BYTES = MATRIX_LDS_BYTES + SFA_BYTES + SFB_BYTES;
     static_assert((SCALE_PANEL & (SCALE_PANEL - 1)) == 0);
+    static_assert(FIXED_K == 0 || (FIXED_K % B_K == 0 && FIXED_K <= SCALE_PANEL * B_K));
     static_assert(SFA_PRODUCERS_PER_GROUP == 2 && SFA_PACK_CHUNKS == 2 && SFA_WORDS_PER_CHUNK == 2);
     static_assert(WARP_SIZE % SFA_PRODUCERS_PER_GROUP == 0);
     static_assert(SFA_ROWS_PER_REPEAT * E_M == B_M && E_M == sizeof(opus::u16_t));
+    static_assert(B_SCALE_PACKS == 1);
     static_assert(SCALE_PANEL <= NUM_WAVES * SFA_K_COLUMNS_PER_WAVE && SCALE_PANEL <= BLOCK_SIZE);
-    static_assert(LDS_BYTES == 80384);
-    static_assert(((LDS_BYTES + 1279) / 1280 * 1280) * 2 <= 160 * 1024);
+    static_assert(LDS_BYTES <= 160 * 1024);
 };
+
+using opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_gfx950 = opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<>;

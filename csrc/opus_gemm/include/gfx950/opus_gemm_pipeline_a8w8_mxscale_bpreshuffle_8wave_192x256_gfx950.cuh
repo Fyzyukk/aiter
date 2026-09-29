@@ -180,7 +180,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
     const int row = block_m * T::B_M;
     const int col = block_n * T::B_N;
     const int batch_id = block_id_z();
-    const int loops = kargs.k / T::B_K;
+    const int loops = T::FIXED_K ? T::FIXED_K / T::B_K : kargs.k / T::B_K;
 
     // Matrix and scale global-memory views.
     auto g_a = make_gmem(reinterpret_cast<const D_A*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * kargs.stride_a, static_cast<unsigned>((kargs.m - row) * kargs.stride_a));
@@ -248,11 +248,10 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
     // A/B global memory -> LDS ping-pong stage.
     auto issue_matrix_prefetch = [&](auto stage_i, int tile_k) {
         constexpr int stage = decltype(stage_i)::value;
-        static_assert(stage >= 0 && stage < T::NUM_STAGES);
         async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(stage), ga_offset(tile_k));
         async_load<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(stage), gb_offset(tile_k));
     };
-    const int scale_k_groups = kargs.k / T::GROUP_K;
+    const int scale_k_groups = T::FIXED_K ? T::FIXED_K / T::GROUP_K : kargs.k / T::GROUP_K;
     const auto sfa_gmem_offsets = layout_to_offsets<T::VEC_SCALE_A>(u_gsfa);
     const auto sfa_smem_offsets = layout_to_offsets<T::VEC_SCALE_A>(u_ssfa);
     const auto sfb_gmem_offsets = layout_to_offsets<1>(u_gsfb);
@@ -268,7 +267,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
             constexpr int pass = decltype(pass_i)::value;
             const int smem_offset = sfa_smem_offsets[pass];
             const int local_row = smem_offset - local_k_group * T::B_M;
-            if (smem_offset < T::SFA_BYTES && k_group < scale_k_groups) {
+            if (local_row < T::B_M && smem_offset < T::SFA_BYTES && k_group < scale_k_groups) {
                 vector_t<D_SF, T::VEC_SCALE_A> raw;
                 if (row + local_row < kargs.m)
                     raw = load<T::VEC_SCALE_A>(g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin));
@@ -283,13 +282,15 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
         const int k_group = panel_k_begin + wave_id * T::WARP_SIZE + lane_id;
         if (k_group < scale_k_groups) {
             const unsigned lo = load<1>(g_sfb, sfb_gmem_offsets[0] + gsfb_offset(panel_k_begin))[0];
-            const unsigned hi = load<1>(g_sfb, sfb_gmem_offsets[1] + gsfb_offset(panel_k_begin))[0];
+            unsigned hi = 0;
+            if constexpr (T::SCALE_N_HALVES == 2)
+                hi = load<1>(g_sfb, sfb_gmem_offsets[1] + gsfb_offset(panel_k_begin))[0];
             // One word per K128 group: low/high bytes select the two N128 halves.
             const vector_t<D_SF_PACK, 1> packed{lo | (hi << 8)};
             store<1>(s_sfb, packed, sfb_smem_offsets[0]);
         }
     };
-    // Scale LDS -> VGPR; pack the three A repeats after reading LDS.
+    // Scale LDS -> VGPR; pack A repeats after reading LDS.
     auto read_scales = [&](int tile_k, auto& scale_a, auto& scale_b) {
         static_for<T::A_SCALE_PACKS>([&](auto p) { scale_a[decltype(p)::value] = 0; });
         static_for<T::E_M>([&](auto m_i) {
@@ -364,17 +365,16 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
         v_sfb = v_sfb_next;
     };
 
-    // Prologue: seed K0/K1 in issue order for the partial wait.
+    // Prologue
     issue_matrix_prefetch(number<0>{}, 0);
     __builtin_amdgcn_sched_barrier(0);
-    // Both complete scale panels fit in LDS and are loaded once at K0.
+
     load_sfa_panel(0);
     load_sfb_panel(0);
     __builtin_amdgcn_sched_barrier(0);
     if (loops > 1) {
         issue_matrix_prefetch(number<1>{}, 1);
         __builtin_amdgcn_sched_barrier(0);
-        // K0 and the scale panel are ready; K1 may still be in flight.
         s_waitcnt_vmcnt(number<T::MATRIX_VMEM_INSTRUCTIONS>{});
     } else {
         s_waitcnt_vmcnt(0_I);
@@ -385,26 +385,25 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
     static_for<T::E_M>([&](auto m_i) { load_a_fragment(m_i, number<0>{}); });
     static_for<T::E_N>([&](auto n_i) { load_b_fragment(n_i, number<0>{}); });
     s_waitcnt_lgkmcnt(0_I);
-    // Slot reuse is deferred to the first advance's midpoint barrier.
 
-    // Main loop: advance two K tiles per iteration; K128 skips directly to the epilogue.
-#pragma clang loop unroll(disable)
+    // Main loop
     for (int tile_k = 0; tile_k + 1 < loops; tile_k += T::LOOP_UNROLL) {
         advance_tile(number<0>{}, tile_k);
-        // Even counts drain stage 0; odd counts drain stage 1, without prefetching beyond the last tile.
+
         if (tile_k + 2 < loops)
             advance_tile(number<1>{}, tile_k + 1);
     }
-    // Epilogue: convert completed FP32 fragments to BF16 and stage them in LDS.
+
+    // Epilogue
     auto stage_output_fragment = [&](auto c_i) {
         constexpr int c_index = decltype(c_i)::value;
         const auto c = slice(v_c, number<c_index * ELEM_C>{}, number<(c_index + 1) * ELEM_C>{});
         store<T::VEC_C>(s_c, cast<D_C>(c), gc_offsets[c_index]);
     };
-    // Retire all final operand reads before reusing matrix and scale LDS for C.
+
     s_waitcnt_lgkmcnt(0_I);
     __builtin_amdgcn_s_barrier();
-    // Interleave each final MFMA with its BF16 fragment store to LDS.
+
     static_for<T::E_M>([&](auto m_i) {
         static_for<T::E_N>([&](auto n_i) {
             constexpr int c_index = decltype(m_i)::value * T::E_N + decltype(n_i)::value;
@@ -412,7 +411,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
             stage_output_fragment(number<c_index>{});
         });
     });
-    // Output writeback: publish the BF16 tile before cooperative contiguous reads.
+    // Output writeback
     s_waitcnt_lgkmcnt(0_I);
     __builtin_amdgcn_s_barrier();
     const int output_thread_id = wave_id * T::WARP_SIZE + lane_id;
@@ -421,7 +420,6 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
         const int output_row = linear / T::B_N;
         const int output_col = linear % T::B_N;
         const auto value = load<T::VEC_OUTPUT>(s_c, c_offset(output_row, output_col));
-        // Skip missing M rows before forming the bounded global output offset.
         if (row + output_row < kargs.m)
             store<T::VEC_OUTPUT>(g_c, value, output_row * kargs.stride_c + output_col,
                      0, opus::number<2>{});

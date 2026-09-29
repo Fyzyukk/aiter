@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-// Large-output runtime K128..16384, 192x256, eight Wave64, E8M0 and M64 tails.
 #pragma once
 
 #include <opus/hip_minimal.hpp>
@@ -9,109 +7,6 @@
 
 #include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh"
 #include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh"
-
-namespace opus_gemm_8wave_192x256_large_output_layout {
-
-template<class T, int Pass>
-__device__ inline constexpr auto make_layout_gsfa_scale(int lane_id, int wave_id_m, int wave_id_n, int stride_sfa) {
-    static_assert(Pass >= 0 && Pass < T::SFA_PASSES);
-    constexpr auto block_shape = opus::make_tuple(
-        opus::number<T::SCALE_PANEL>{},
-        opus::number<T::SFA_ROW_VECTORS>{},
-        opus::number<T::VEC_SCALE_A>{});
-
-    constexpr auto block_dim = opus::make_tuple(
-        opus::make_tuple(opus::p_dim{}),
-        opus::make_tuple(opus::p_dim{}, opus::y_dim{}));
-
-    // Preserve the original pass and wave starts when a group crosses a wave boundary.
-    const int wave_vector_begin = (Pass * T::NUM_WAVES + wave_id_n * T::T_M + wave_id_m) * T::WARP_SIZE;
-    const int lane_vector = wave_vector_begin % T::SFA_ROW_VECTORS + lane_id;
-    const int local_k_group = wave_vector_begin / T::SFA_ROW_VECTORS + lane_vector / T::SFA_ROW_VECTORS;
-    const int row_vector = lane_vector % T::SFA_ROW_VECTORS;
-
-    return opus::make_layout<T::VEC_SCALE_A>(
-        block_shape,
-        opus::unfold_x_stride(block_dim, block_shape, opus::tuple{stride_sfa, 1_I}),
-        opus::unfold_p_coord(block_dim, opus::tuple{local_k_group, row_vector}));
-}
-
-template<class T, int Pass>
-__device__ inline constexpr auto make_layout_ssfa_scale(int lane_id, int wave_id_m, int wave_id_n) {
-    static_assert(Pass >= 0 && Pass < T::SFA_PASSES);
-    constexpr auto block_shape = opus::make_tuple(
-        opus::number<T::SCALE_PANEL>{},
-        opus::number<T::SFA_ROW_VECTORS>{},
-        opus::number<T::VEC_SCALE_A>{});
-
-    constexpr auto block_dim = opus::make_tuple(
-        opus::make_tuple(opus::p_dim{}),
-        opus::make_tuple(opus::p_dim{}, opus::y_dim{}));
-
-    // Preserve the original pass and wave starts when a group crosses a wave boundary.
-    const int wave_vector_begin = (Pass * T::NUM_WAVES + wave_id_n * T::T_M + wave_id_m) * T::WARP_SIZE;
-    const int lane_vector = wave_vector_begin % T::SFA_ROW_VECTORS + lane_id;
-    const int local_k_group = wave_vector_begin / T::SFA_ROW_VECTORS + lane_vector / T::SFA_ROW_VECTORS;
-    const int row_vector = lane_vector % T::SFA_ROW_VECTORS;
-
-    return opus::make_layout<T::VEC_SCALE_A>(
-        block_shape,
-        opus::unfold_x_stride(block_dim, block_shape, opus::tuple{opus::number<T::B_M>{}, 1_I}),
-        opus::unfold_p_coord(block_dim, opus::tuple{local_k_group, row_vector}));
-}
-
-template<class T>
-__device__ inline constexpr auto make_layout_gsfb_scale(int lane_id, int wave_id_m, int wave_id_n, int stride_sfb) {
-    constexpr auto block_shape = opus::make_tuple(
-        opus::number<T::SCALE_N_HALVES>{},
-        opus::number<T::SFB_WAVES_PER_HALF>{},
-        opus::number<T::WARP_SIZE>{},
-        1_I);
-
-    constexpr auto block_dim = opus::make_tuple(
-        opus::make_tuple(opus::p_dim{}),
-        opus::make_tuple(opus::p_dim{}, opus::p_dim{}, opus::y_dim{}));
-
-    const int half_n = wave_id_n * (T::T_M / T::SFB_WAVES_PER_HALF) + wave_id_m / T::SFB_WAVES_PER_HALF;
-    return opus::make_layout<1>(
-        block_shape,
-        opus::unfold_x_stride(block_dim, block_shape, opus::tuple{stride_sfb, 1_I}),
-        opus::unfold_p_coord(block_dim, opus::tuple{half_n, wave_id_m % T::SFB_WAVES_PER_HALF, lane_id}));
-}
-
-template<class T>
-__device__ inline constexpr auto make_layout_ssfb_scale(int lane_id, int wave_id_m, int wave_id_n) {
-    constexpr auto block_shape = opus::make_tuple(
-        opus::number<T::SCALE_N_HALVES>{},
-        opus::number<T::SFB_WAVES_PER_HALF>{},
-        opus::number<T::WARP_SIZE>{},
-        1_I);
-
-    constexpr auto block_dim = opus::make_tuple(
-        opus::make_tuple(opus::p_dim{}),
-        opus::make_tuple(opus::p_dim{}, opus::p_dim{}, opus::y_dim{}));
-
-    const int half_n = wave_id_n * (T::T_M / T::SFB_WAVES_PER_HALF) + wave_id_m / T::SFB_WAVES_PER_HALF;
-    return opus::make_layout<1>(
-        block_shape,
-        opus::unfold_x_stride(block_dim, block_shape, opus::tuple{opus::number<T::SCALE_PANEL>{}, 1_I}),
-        opus::unfold_p_coord(block_dim, opus::tuple{half_n, wave_id_m % T::SFB_WAVES_PER_HALF, lane_id}));
-}
-
-template<class T>
-__device__ inline constexpr auto make_layout_rsfb_scale() {
-    constexpr auto block_shape = opus::make_tuple(opus::number<T::B_SCALE_PACKS>{}, 1_I);
-    constexpr auto block_dim = opus::make_tuple(
-        opus::make_tuple(opus::y_dim{}),
-        opus::make_tuple(opus::y_dim{}));
-
-    return opus::make_layout<1>(
-        block_shape,
-        opus::unfold_x_stride(block_dim, block_shape, opus::tuple{opus::number<T::SCALE_PANEL>{}, 1_I}),
-        opus::unfold_p_coord(block_dim, opus::tuple{}));
-}
-
-} // namespace opus_gemm_8wave_192x256_large_output_layout
 
 #if !defined(__HIP_DEVICE_COMPILE__)
 template<class Traits>
@@ -129,7 +24,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
     using D_ACC = opus::fp32_t;
     using D_SF = unsigned char;
     using D_SF_PACK = unsigned int;
-    namespace layout_9030 = opus_gemm_8wave_192x256_large_output_layout;
+    namespace layout_9020 = opus_gemm_8wave_192x256_layout;
 
     const int wave_id = __builtin_amdgcn_readfirstlane(thread_id_x() / T::WARP_SIZE);
     const int lane_id = thread_id_x() % T::WARP_SIZE;
@@ -169,20 +64,16 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
     // Matrix and scale layouts: global -> LDS -> registers.
     const auto u_ga = make_layout_ga_scale<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_a);
     const auto u_sa = make_layout_sa_scale<T>(wave_id_m, wave_id_n);
-    const auto u_ra = opus_gemm_8wave_192x256_layout::make_layout_ra_scale<T>(lane_id, wave_id_m);
+    const auto u_ra = layout_9020::make_layout_ra_scale<T>(lane_id, wave_id_m);
     const auto u_gb = make_layout_gb_scale<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_b);
     const auto u_sb = make_layout_sb_scale<T>(wave_id_m, wave_id_n);
     const auto u_rb = make_layout_rb_scale<T>(lane_id, wave_id_n);
-    const auto u_gsfa_0 = layout_9030::make_layout_gsfa_scale<T, 0>(lane_id, wave_id_m, wave_id_n, kargs.stride_sfa);
-    const auto u_ssfa_0 = layout_9030::make_layout_ssfa_scale<T, 0>(lane_id, wave_id_m, wave_id_n);
-    const auto u_gsfa_1 = layout_9030::make_layout_gsfa_scale<T, 1>(lane_id, wave_id_m, wave_id_n, kargs.stride_sfa);
-    const auto u_ssfa_1 = layout_9030::make_layout_ssfa_scale<T, 1>(lane_id, wave_id_m, wave_id_n);
-    const auto u_gsfa_2 = layout_9030::make_layout_gsfa_scale<T, 2>(lane_id, wave_id_m, wave_id_n, kargs.stride_sfa);
-    const auto u_ssfa_2 = layout_9030::make_layout_ssfa_scale<T, 2>(lane_id, wave_id_m, wave_id_n);
-    const auto u_rsfa = opus_gemm_8wave_192x256_layout::make_layout_rsfa_scale<T>(lane_id, wave_id_m);
-    const auto u_gsfb = layout_9030::make_layout_gsfb_scale<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_sfb);
-    const auto u_ssfb = layout_9030::make_layout_ssfb_scale<T>(lane_id, wave_id_m, wave_id_n);
-    const auto u_rsfb = layout_9030::make_layout_rsfb_scale<T>();
+    const auto u_gsfa = layout_9020::make_layout_gsfa_scale<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_sfa);
+    const auto u_ssfa = layout_9020::make_layout_ssfa_scale<T>(lane_id, wave_id_m, wave_id_n);
+    const auto u_rsfa = layout_9020::make_layout_rsfa_scale<T>(lane_id, wave_id_m);
+    const auto u_gsfb = layout_9020::make_layout_gsfb_scale<T>(lane_id, wave_id, kargs.stride_sfb);
+    const auto u_ssfb = layout_9020::make_layout_ssfb_scale<T>(lane_id, wave_id);
+    const auto u_rsfb = layout_9020::make_layout_rsfb_scale();
 
     // Matrix and scale LDS; matrix storage is reused for the C epilogue.
     alignas(16) __shared__ char smem_matrix[T::LDS_BYTES];
@@ -190,7 +81,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
     auto s_b = make_smem(reinterpret_cast<D_B*>(smem_matrix + T::NUM_STAGES * T::A_STAGE));
     auto s_c = make_smem(reinterpret_cast<D_C*>(smem_matrix));
     auto s_sfa = make_smem(reinterpret_cast<D_SF*>(smem_matrix + T::MATRIX_LDS_BYTES));
-    auto s_sfb = make_smem(reinterpret_cast<D_SF*>(smem_matrix + T::MATRIX_LDS_BYTES + T::SFA_BYTES));
+    auto s_sfb = make_smem(reinterpret_cast<D_SF_PACK*>(smem_matrix + T::MATRIX_LDS_BYTES + T::SFA_BYTES));
 
     // MMA and register fragments.
     auto mma = make_tiled_mma<D_A, D_B, D_ACC>(
@@ -222,6 +113,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
     auto gsfa_offset = [&](int panel_k_begin) { return panel_k_begin * kargs.stride_sfa; };
     auto gsfb_offset = [&](int panel_k_begin) { return panel_k_begin; };
     auto ssfa_offset = [&](int tile_k) { return tile_k * number<T::B_M>{}; };
+    // s_sfb addresses packed uint words, one word per K128 group.
     auto ssfb_offset = [&](int tile_k) { return tile_k; };
     auto c_offset = [&](int row_c, int col_c) { return row_c * T::C_LDS_ROW_STRIDE_ELEMS + col_c; };
 
@@ -232,14 +124,9 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
         async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(stage), ga_offset(tile_k));
         async_load<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(stage), gb_offset(tile_k));
     };
-    const auto sfa_gmem_offsets = opus::make_tuple(
-        layout_to_offsets<T::VEC_SCALE_A>(u_gsfa_0),
-        layout_to_offsets<T::VEC_SCALE_A>(u_gsfa_1),
-        layout_to_offsets<T::VEC_SCALE_A>(u_gsfa_2));
-    const auto sfa_smem_offsets = opus::make_tuple(
-        layout_to_offsets<T::VEC_SCALE_A>(u_ssfa_0),
-        layout_to_offsets<T::VEC_SCALE_A>(u_ssfa_1),
-        layout_to_offsets<T::VEC_SCALE_A>(u_ssfa_2));
+    const int scale_k_groups = kargs.k / T::GROUP_K;
+    const auto sfa_gmem_offsets = layout_to_offsets<T::VEC_SCALE_A>(u_gsfa);
+    const auto sfa_smem_offsets = layout_to_offsets<T::VEC_SCALE_A>(u_ssfa);
     const auto sfb_gmem_offsets = layout_to_offsets<1>(u_gsfb);
     const auto sfb_smem_offsets = layout_to_offsets<1>(u_ssfb);
     const auto rsfa_offsets = layout_to_offsets<1>(u_rsfa);
@@ -247,28 +134,30 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
 
     // Scale A global memory -> VGPR -> LDS, retaining raw E8M0 bytes.
     auto load_sfa_panel = [&](int panel_k_begin) {
+        const int local_k_group = wave_id * T::SFA_K_COLUMNS_PER_WAVE + lane_id / T::SFA_THREADS_PER_GROUP;
+        const int k_group = panel_k_begin + local_k_group;
         static_for<T::SFA_PASSES>([&](auto pass_i) {
             constexpr int pass = decltype(pass_i)::value;
-            const int smem_offset = opus::get<pass>(sfa_smem_offsets)[0];
-            const int local_k_group = smem_offset / T::B_M;
-            const int local_row = smem_offset % T::B_M;
-            if (smem_offset < T::SFA_BYTES && panel_k_begin + local_k_group < loops) {
+            const int smem_offset = sfa_smem_offsets[pass];
+            const int local_row = smem_offset - local_k_group * T::B_M;
+            if (smem_offset < T::SFA_BYTES && k_group < scale_k_groups) {
                 vector_t<D_SF, T::VEC_SCALE_A> raw;
                 if (row + local_row < kargs.m)
-                    raw = load<T::VEC_SCALE_A>(g_sfa, opus::get<pass>(sfa_gmem_offsets)[0] + gsfa_offset(panel_k_begin));
+                    raw = load<T::VEC_SCALE_A>(g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin));
                 else
                     static_for<T::VEC_SCALE_A>([&](auto byte_i) { raw[decltype(byte_i)::value] = 0x7f; });
                 store<T::VEC_SCALE_A>(s_sfa, raw, smem_offset);
             }
         });
     };
-    // Scale B global memory -> VGPR -> LDS, retaining two 128-byte panels.
+    // Scale B global memory -> VGPR packing -> LDS.
     auto load_sfb_panel = [&](int panel_k_begin) {
-        const int smem_offset = sfb_smem_offsets[0];
-        const int local_k_group = smem_offset % T::SCALE_PANEL;
-        if (smem_offset < T::SFB_BYTES && panel_k_begin + local_k_group < loops) {
-            store<1>(s_sfb, load<1>(g_sfb, sfb_gmem_offsets[0] + gsfb_offset(panel_k_begin)),
-                     smem_offset);
+        const int k_group = panel_k_begin + wave_id * T::WARP_SIZE + lane_id;
+        if (k_group < scale_k_groups) {
+            const unsigned lo = load<1>(g_sfb, sfb_gmem_offsets[0] + gsfb_offset(panel_k_begin))[0];
+            const unsigned hi = load<1>(g_sfb, sfb_gmem_offsets[1] + gsfb_offset(panel_k_begin))[0];
+            const vector_t<D_SF_PACK, 1> packed{lo | (hi << 8)};
+            store<1>(s_sfb, packed, sfb_smem_offsets[0]);
         }
     };
     // Scale LDS -> VGPR; pack the three A repeats after reading LDS.
@@ -279,10 +168,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
             const unsigned value = load<1>(s_sfa, rsfa_offsets[m_repeat] + ssfa_offset(tile_k))[0];
             scale_a[m_repeat / 4] |= value << ((m_repeat % 4) * 8);
         });
-        static_for<T::B_SCALE_PACKS>([&](auto pack_i) {
-            constexpr int pack = decltype(pack_i)::value;
-            scale_b[pack] = load<1>(s_sfb, rsfb_offsets[pack] + ssfb_offset(tile_k))[0];
-        });
+        scale_b[0] = load<1>(s_sfb, rsfb_offsets[0] + ssfb_offset(tile_k))[0];
     };
     // Matrix LDS -> VGPR, one MFMA operand fragment at a time.
     auto load_a_fragment = [&](auto m_i, auto stage_i) {
@@ -314,19 +200,17 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
         const auto b = slice(v_b, number<n_repeat * ELEM_B>{}, number<(n_repeat + 1) * ELEM_B>{});
         auto c = slice(v_c, number<c_index * ELEM_C>{}, number<(c_index + 1) * ELEM_C>{});
         c = typename decltype(mma)::MMA{}(a, b, c,
-                                        static_cast<int>(v_sfa[m_repeat / 4]), static_cast<int>(v_sfb[scale_n_index]),
-                                        number<m_repeat % 4>{}, number<0>{});
+                                        static_cast<int>(v_sfa[m_repeat / 4]), static_cast<int>(v_sfb[0]),
+                                        number<m_repeat % 4>{}, number<scale_n_index>{});
         set_slice(v_c, c, number<c_index * ELEM_C>{}, number<(c_index + 1) * ELEM_C>{});
     };
 
     auto advance_tile = [&](auto stage_i, int tile_k) {
         constexpr int stage = decltype(stage_i)::value;
         constexpr int next_stage = (stage + 1) % T::NUM_STAGES;
-        // Current operands are in registers; K+2 can replace their LDS slot.
         if (tile_k + 2 < loops)
             issue_matrix_prefetch(stage_i, tile_k + 2);
         read_scales(tile_k + 1, v_sfa_next, v_sfb_next);
-        // Replace A after its last N use and B after its last M use.
         static_for<T::E_M>([&](auto m_i) {
             static_for<T::E_N>([&](auto n_i) {
                 mma_scale_fragment(m_i, n_i);
@@ -335,7 +219,6 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
             });
             load_a_fragment(m_i, number<next_stage>{});
         });
-        // Publish the future slot and finish all reads before slot reuse.
         s_waitcnt_vmcnt(0_I);
         s_waitcnt_lgkmcnt(0_I);
         __builtin_amdgcn_s_barrier();
@@ -343,7 +226,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
         v_sfb = v_sfb_next;
     };
 
-    // Prologue: both complete scale panels are loaded once at K0.
+    // Prologue
     load_sfa_panel(0);
     load_sfb_panel(0);
     issue_matrix_prefetch(number<0>{}, 0);
@@ -356,18 +239,16 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
     static_for<T::E_M>([&](auto m_i) { load_a_fragment(m_i, number<0>{}); });
     static_for<T::E_N>([&](auto n_i) { load_b_fragment(n_i, number<0>{}); });
     s_waitcnt_lgkmcnt(0_I);
-    // Retire every K0 reader before any producer reuses its slot.
     __builtin_amdgcn_s_barrier();
 
-    // Main loop: advance two K tiles per iteration; K128 goes directly to final compute.
-#pragma clang loop unroll(disable)
+    // Main loop
     for (int tile_k = 0; tile_k + 1 < loops; tile_k += T::LOOP_UNROLL) {
         advance_tile(number<0>{}, tile_k);
-        // Even counts drain stage 0; odd counts drain stage 1 without a future prefetch.
+
         if (tile_k + 2 < loops)
             advance_tile(number<1>{}, tile_k + 1);
     }
-    // Epilogue: stage each final FP32 fragment as BF16 immediately after its MFMA.
+    // Epilogue
     auto stage_output_fragment = [&](auto c_i) {
         constexpr int c_index = decltype(c_i)::value;
         const auto c = slice(v_c, number<c_index * ELEM_C>{}, number<(c_index + 1) * ELEM_C>{});
@@ -380,7 +261,7 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
             stage_output_fragment(number<c_index>{});
         });
     });
-    // Output writeback: publish the BF16 tile before cooperative contiguous reads.
+    // Output writeback
     s_waitcnt_lgkmcnt(0_I);
     __builtin_amdgcn_s_barrier();
     const int output_thread_id = wave_id * T::WARP_SIZE + lane_id;
@@ -390,7 +271,6 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_b
         const int output_row = linear / T::B_N;
         const int output_col = linear % T::B_N;
         const auto value = load<T::VEC_OUTPUT>(s_c, c_offset(output_row, output_col));
-        // Skip missing rows before forming the bounded tile-local output offset.
         if (row + output_row < kargs.m)
             store<T::VEC_OUTPUT>(g_c, value, output_row * kargs.stride_c + output_col,
                      0, opus::number<2>{});

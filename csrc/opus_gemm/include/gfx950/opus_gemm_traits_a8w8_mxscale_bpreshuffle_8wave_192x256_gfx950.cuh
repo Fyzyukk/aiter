@@ -2,14 +2,16 @@
 
 #include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"
 
-struct opus_gemm_mxscale_bpreshuffle_8wave_192x256_traits_gfx950 {
+template<int BlockM = 192, int BlockN = 256, int ScalePanel = 128, int FixedK = 0>
+struct opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950 {
     static constexpr int BLOCK_SIZE = 512;
+    static constexpr int FIXED_K = FixedK;
     static constexpr int WARP_SIZE = 64;
     static constexpr int NUM_WAVES = BLOCK_SIZE / WARP_SIZE;
     static constexpr int MIN_WGS_PER_CU = 1;
 
-    static constexpr int B_M = 192;
-    static constexpr int B_N = 256;
+    static constexpr int B_M = BlockM;
+    static constexpr int B_N = BlockN;
     static constexpr int B_K = 128;
 
     static constexpr int T_M = 4;
@@ -25,7 +27,7 @@ struct opus_gemm_mxscale_bpreshuffle_8wave_192x256_traits_gfx950 {
 
     static_assert(NUM_WAVES == T_M * T_N * T_K);
     static_assert(B_M % (T_M * W_M) == 0 && B_N % (T_N * W_N) == 0);
-    static_assert(B_M == 192 && B_N == 256 && B_K == 128);
+    static_assert((B_M == 128 || B_M == 192) && (B_N == 128 || B_N == 256));
     static_assert(NUM_WAVES == 8 && BLOCK_SIZE == 512 && T_M == 4 && T_N == 2);
 
     static constexpr int E_M = B_M / (T_M * W_M);
@@ -51,7 +53,7 @@ struct opus_gemm_mxscale_bpreshuffle_8wave_192x256_traits_gfx950 {
     static constexpr int SWIZZLE_MIN_M = 4096;
 
     static constexpr int MIN_K = 128;
-    static constexpr int MAX_K = 16384;
+    static constexpr int MAX_K = ScalePanel * GROUP_K;
     static constexpr int LOOP_UNROLL = 2;
 
     static constexpr int smem_linear_wave = WARP_SIZE * VEC_A;
@@ -66,9 +68,9 @@ struct opus_gemm_mxscale_bpreshuffle_8wave_192x256_traits_gfx950 {
     static constexpr int MATRIX_LDS_BYTES = NUM_STAGES * (A_STAGE + B_STAGE);
     static constexpr int MATRIX_VMEM_INSTRUCTIONS =
         B_M * B_K / (BLOCK_SIZE * VEC_A) + B_N * B_K / (BLOCK_SIZE * VEC_B);
-    static_assert(MATRIX_VMEM_INSTRUCTIONS == 7 && NUM_STAGES == 2);
+    static_assert(NUM_STAGES == 2);
 
-    static constexpr int SCALE_PANEL = 128;
+    static constexpr int SCALE_PANEL = ScalePanel;
     static constexpr int SFA_BYTES = B_M * SCALE_PANEL;
     static constexpr int SFB_BYTES = SCALE_PANEL * sizeof(unsigned);
     static constexpr int SFA_THREADS_PER_GROUP = BLOCK_SIZE / SCALE_PANEL;
@@ -78,17 +80,20 @@ struct opus_gemm_mxscale_bpreshuffle_8wave_192x256_traits_gfx950 {
         (SFA_BYTES + BLOCK_SIZE * VEC_SCALE_A - 1) / (BLOCK_SIZE * VEC_SCALE_A);
 
     static_assert(BLOCK_SIZE % SCALE_PANEL == 0);
+    static_assert(SFA_THREADS_PER_GROUP <= WARP_SIZE);
+    static_assert(FIXED_K == 0 || (FIXED_K % B_K == 0 && FIXED_K <= MAX_K));
     static_assert(WARP_SIZE % SFA_THREADS_PER_GROUP == 0);
     static_assert(T_N * T_M * SFA_K_COLUMNS_PER_WAVE == SCALE_PANEL);
-    static_assert(SFA_PASSES * SFA_ROWS_PER_PASS == B_M);
+    static_assert(SFA_PASSES * SFA_ROWS_PER_PASS >= B_M);
 
     static constexpr int A_SCALE_PACKS = (E_M + 3) / 4;
     static constexpr int B_SCALE_PACKS = 1;
     static constexpr int LDS_BYTES = MATRIX_LDS_BYTES + SFA_BYTES + SFB_BYTES;
 
-    // Row stride in BF16 elements for the cooperative output staging tile.
     static constexpr int C_LDS_ROW_STRIDE_ELEMS = B_N + 8;
     static constexpr int OUTPUT_PASSES = B_M * B_N / (BLOCK_SIZE * VEC_OUTPUT);
     static_assert(B_M * C_LDS_ROW_STRIDE_ELEMS * sizeof(opus::bf16_t) <= LDS_BYTES);
     static_assert(B_M * B_N % (BLOCK_SIZE * VEC_OUTPUT) == 0);
 };
+
+using opus_gemm_mxscale_bpreshuffle_8wave_192x256_traits_gfx950 = opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950<>;

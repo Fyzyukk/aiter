@@ -333,12 +333,6 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
     cannot be proven from Tensor shape or strides. Build it with
     ``shuffle_weight(WQ, layout=(16, 16))``. The generated launcher checks
     output dtype, scale layout, batch and tile alignment.
-
-    E8M0 A scales have physical [K/128,M] storage. Accept both logical
-    [M,K/128] column-major views and the contiguous [M,K/128] packed views
-    returned by ``per_group_quant_hip(..., transpose_scale=True)``. A packed
-    view declares that same physical order; ordinary row-major scale values
-    are not compatible. Normalize only the Tensor metadata for the raw ABI.
     """
     resolved_kid = kid
     if instance is None:
@@ -354,8 +348,6 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
             kid=kid,
             output_dtype=Y.dtype,
         )
-    if x_scale.dtype in _E8M0_DTYPES and x_scale.dim() == 2 and x_scale.is_contiguous():
-        x_scale = x_scale.view(x_scale.shape[1], x_scale.shape[0]).transpose(0, 1)
     _launch_a8w8_backend(
         XQ.unsqueeze(0),
         WQ.unsqueeze(0),

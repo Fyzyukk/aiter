@@ -1,0 +1,128 @@
+--- a/csrc/opus_gemm/opus_gemm_common.py
++++ b/csrc/opus_gemm/opus_gemm_common.py
+@@ -289,6 +289,11 @@
+                 self.name_tag == "small" and self.B_M == 128
+             ):
+                 return 1
++            if self.name_tag == "main" or (
++                self.name_tag == "small" and self.B_M == 160
++            ):
++                # A/C are bounded; scale A loads complete vectors of 16 rows.
++                return 16
+             return 64
+         mult = _BMM_M_ALIGN_TILES.get(self.kernel_tag)
+         if mult is not None:
+@@ -1806,6 +1811,7 @@
+     9043: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 32, 64, 1, 4),
+     9044: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 64, 64, 2, 2),
+     9045: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 96, 64, 2, 2),
++    9046: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 64, 128, 2, 2),
+ }
+ 
+ 
+--- a/csrc/opus_gemm/codegen/gen_instances_gfx950.py
++++ b/csrc/opus_gemm/codegen/gen_instances_gfx950.py
+@@ -2857,7 +2857,8 @@
+         family = k.name_tag
+         assert k.max_k == 16384
+         assert k.m_align == (
+-            1 if family in {"narrow", "tiny"} or (family == "small" and k.B_M == 128) else 64
++            1 if family in {"narrow", "tiny"} or (family == "small" and k.B_M == 128)
++            else 16 if family in {"main", "small"} else 64
+         )
+         assert k.pad_m
+         if family in {"main", "large_output"}:
+--- a/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh
++++ b/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh
+@@ -76,3 +76,5 @@
+     opus_gemm_small_lds_traits_gfx950<64, 64, 2, 2, 6, 2>;
+ using opus_gemm_mxscale_bpreshuffle_small_lds_96x64_traits_gfx950 =
+     opus_gemm_small_lds_traits_gfx950<96, 64, 2, 2, 4, 1, 1>;
++using opus_gemm_mxscale_bpreshuffle_small_lds_64x128_traits_gfx950 =
++    opus_gemm_small_lds_traits_gfx950<64, 128, 2, 2, 6, 2>;
+--- a/csrc/opus_gemm/include/gfx950/opus_gemm_mxscale_bpreshuffle_small_output_gfx950.cuh
++++ b/csrc/opus_gemm/include/gfx950/opus_gemm_mxscale_bpreshuffle_small_output_gfx950.cuh
+@@ -7,7 +7,9 @@
+ namespace opus_gemm_small_output {
+ 
+ // Two groups of four BF16 results become one contiguous 16-byte store.
+-// Pair N fragments when possible so all lanes can write without using LDS.
++// Pair adjacent accumulator fragments, including across M when E_N is odd,
++// so all lanes write a pair without using LDS. Only a final unpaired fragment
++// needs half of the lanes.
+ template<class T, class Accumulators, class Gmem>
+ __device__ __forceinline__ void store_mfma16_packed(
+     const Accumulators& c, Gmem gc, int lane, int wm, int wn, int stride_c) {
+@@ -15,42 +17,38 @@
+     static_assert(T::W_M == 16 && T::W_N == 16);
+ 
+     const int side = (lane / 16) % 2;
+-    static_for<T::E_M>([&](auto mi) {
+-        constexpr int m = decltype(mi)::value;
++    static_for<T::E_M * T::E_N / 2>([&](auto pair) {
++        constexpr int ci = decltype(pair)::value * 2;
++        const auto first = __builtin_bit_cast(vector_t<unsigned, 2>, cast<bf16_t>(c[ci]));
++        const auto second = __builtin_bit_cast(vector_t<unsigned, 2>, cast<bf16_t>(c[ci + 1]));
++        const unsigned own0 = side ? second[0] : first[0];
++        const unsigned own1 = side ? second[1] : first[1];
++        const unsigned src0 = side ? first[0] : second[0];
++        const unsigned src1 = side ? first[1] : second[1];
++        const unsigned other0 = __builtin_amdgcn_ds_bpermute((lane ^ 16) * 4, src0);
++        const unsigned other1 = __builtin_amdgcn_ds_bpermute((lane ^ 16) * 4, src1);
++        vector_t<unsigned, 4> packed;
++        packed[0] = side ? other0 : own0;
++        packed[1] = side ? other1 : own1;
++        packed[2] = side ? own0 : other0;
++        packed[3] = side ? own1 : other1;
++        const int m = (ci + side) / T::E_N, n = (ci + side) % T::E_N;
+         const int rr = (m * T::T_M + wm) * 16 + lane % 16;
+-        if constexpr (T::E_N % 2 == 0) {
+-            static_for<T::E_N / 2>([&](auto pair) {
+-                constexpr int n = decltype(pair)::value * 2;
+-                const auto first = __builtin_bit_cast(vector_t<unsigned, 2>, cast<bf16_t>(c[m * T::E_N + n]));
+-                const auto second = __builtin_bit_cast(vector_t<unsigned, 2>, cast<bf16_t>(c[m * T::E_N + n + 1]));
+-                const unsigned own0 = side ? second[0] : first[0];
+-                const unsigned own1 = side ? second[1] : first[1];
+-                const unsigned src0 = side ? first[0] : second[0];
+-                const unsigned src1 = side ? first[1] : second[1];
+-                const unsigned other0 = __builtin_amdgcn_ds_bpermute((lane ^ 16) * 4, src0);
+-                const unsigned other1 = __builtin_amdgcn_ds_bpermute((lane ^ 16) * 4, src1);
+-                vector_t<unsigned, 4> packed;
+-                packed[0] = side ? other0 : own0;
+-                packed[1] = side ? other1 : own1;
+-                packed[2] = side ? own0 : other0;
+-                packed[3] = side ? own1 : other1;
+-                const int nn = ((n + side) * T::T_N + wn) * 16 + (lane / 32) * 8;
+-                store<8>(gc, __builtin_bit_cast(vector_t<bf16_t, 8>, packed), rr * stride_c + nn, 0, number<2>{});
+-            });
+-        } else {
+-            static_for<T::E_N>([&](auto ni) {
+-                constexpr int n = decltype(ni)::value;
+-                const auto words = __builtin_bit_cast(vector_t<unsigned, 2>, cast<bf16_t>(c[m * T::E_N + n]));
+-                const unsigned other0 = __builtin_amdgcn_ds_bpermute((lane ^ 16) * 4, words[0]);
+-                const unsigned other1 = __builtin_amdgcn_ds_bpermute((lane ^ 16) * 4, words[1]);
+-                if (side == 0) {
+-                    vector_t<unsigned, 4> packed{words[0], words[1], other0, other1};
+-                    const int nn = (n * T::T_N + wn) * 16 + (lane / 32) * 8;
+-                    store<8>(gc, __builtin_bit_cast(vector_t<bf16_t, 8>, packed), rr * stride_c + nn, 0, number<2>{});
+-                }
+-            });
++        const int nn = (n * T::T_N + wn) * 16 + (lane / 32) * 8;
++        store<8>(gc, __builtin_bit_cast(vector_t<bf16_t, 8>, packed), rr * stride_c + nn, 0, number<2>{});
++    });
++    if constexpr (T::E_M * T::E_N % 2 != 0) {
++        constexpr int ci = T::E_M * T::E_N - 1;
++        const auto words = __builtin_bit_cast(vector_t<unsigned, 2>, cast<bf16_t>(c[ci]));
++        const unsigned other0 = __builtin_amdgcn_ds_bpermute((lane ^ 16) * 4, words[0]);
++        const unsigned other1 = __builtin_amdgcn_ds_bpermute((lane ^ 16) * 4, words[1]);
++        if (side == 0) {
++            vector_t<unsigned, 4> packed{words[0], words[1], other0, other1};
++            const int rr = ((ci / T::E_N) * T::T_M + wm) * 16 + lane % 16;
++            const int nn = ((ci % T::E_N) * T::T_N + wn) * 16 + (lane / 32) * 8;
++            store<8>(gc, __builtin_bit_cast(vector_t<bf16_t, 8>, packed), rr * stride_c + nn, 0, number<2>{});
+         }
+-    });
++    }
+ }
+ 
+ } // namespace opus_gemm_small_output

@@ -2837,14 +2837,35 @@ def gen_mxscale_bpreshuffle_instance(
 ):
     """Emit the optional gfx950 compact-E8M0 bpreshuffle implementation."""
     assert k.B_K == 128 and k.output_tiles_per_wg == 1
+    small_pipeline = k.name_tag in {"small_register", "small_lds"}
     large_output = k.name_tag == "large_output"
-    merged = k.name_tag in {"main", "small", "narrow", "large_output"}
-    if merged:
+    merged = k.name_tag in {"main", "small", "narrow", "large_output", "tiny"}
+    if small_pipeline:
+        assert k.pad_m and k.m_align == 1 and k.max_m == 512
+        implementation = k.name_tag
+        pipeline_header = (
+            "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
+            f"{implementation}_gfx950.cuh"
+        )
+        traits_header = "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh"
+        kernel_func = f"gemm_a8w8_mxfp8_scale_{implementation}_kernel"
+        traits_name = (
+            "opus_gemm_mxscale_bpreshuffle_"
+            f"{implementation}_{k.B_M}x{k.B_N}_traits_gfx950"
+        )
+    elif merged:
         family = k.name_tag
-        assert k.max_k == 16384 and k.m_align == 64
-        assert k.pad_m == (family != "narrow")
+        assert k.max_k == 16384
+        assert k.m_align == (
+            1 if family in {"narrow", "tiny"} or (family == "small" and k.B_M == 128)
+            else 16 if family in {"main", "small"} else 64
+        )
+        assert k.pad_m
         if family in {"main", "large_output"}:
             assert (k.B_M, k.B_N, k.BLOCK_SIZE, k.T_M, k.T_N) == (192, 256, 512, 4, 2)
+        elif family == "tiny":
+            assert k.B_M in (16, 32) and k.B_N == 64
+            assert k.BLOCK_SIZE == 128 and (k.T_M, k.T_N) == (1, 2)
         else:
             assert k.BLOCK_SIZE == 256 and (k.T_M, k.T_N) == (2, 2)
             if family == "small":
@@ -2858,6 +2879,7 @@ def gen_mxscale_bpreshuffle_instance(
             "small": f"4wave_{k.B_M}x{k.B_N}",
             "narrow": f"4wave_{k.B_M}x{k.B_N}",
             "large_output": "8wave_192x256_large_output",
+            "tiny": f"2wave_{k.B_M}x{k.B_N}",
         }[family]
         pipeline_header = (
             "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
@@ -2897,12 +2919,63 @@ __global__ void {kernel_func}({kargs_name} kargs);
 #endif"""
     assert k.output_dtypes == ["bf16_t"]
     traits_alias = f"using {k.name}_Traits = {traits_name};"
+    lds_bytes = f"{k.name}_Traits::lds_bytes(k)" if k.name_tag == "small_lds" else "0"
     kernel_launch = f"""{kernel_func}<{k.name}_Traits><<<
-        grid, dim3({k.BLOCK_SIZE}), 0, aiter::getCurrentHIPStream()>>>(args);"""
+        grid, dim3({k.BLOCK_SIZE}), {lds_bytes}, aiter::getCurrentHIPStream()>>>(args);"""
     device_decl = (
         f"template __global__ void {kernel_func}<\n"
         f"    {k.name}_Traits>({kargs_name});\n"
     )
+    # Keep the public IDs stable and retain the original fallback in every family.
+    specializations = []
+    if merged and family == "main":
+        config = "opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950"
+        specializations = [
+            # Avoid an extra scheduling round while 192x256 still fits in 256 blocks.
+            ("m >= 8192 && n <= 1024 && k <= 8192 && "
+             "(((m + 127) / 128) * (n / 128) <= 512 || ((m + 191) / 192) * (n / 256) > 256)",
+             f"{config}<128, 128, 64>"),
+            ("m >= 1024 && k == 384", f"{config}<192, 256, 8, 384>"),
+            ("m >= 1024 && k == 768", f"{config}<192, 256, 8, 768>"),
+            ("m >= 1024 && k == 1536", f"{config}<192, 256, 32, 1536>"),
+            ("m >= 1024 && k == 3072", f"{config}<192, 256, 32, 3072>"),
+            ("m >= 1024 && k == 7168", f"{config}<192, 256, 64, 7168>"),
+        ]
+    elif merged and family == "narrow" and k.B_N == 128:
+        specializations = [(
+            "m >= 1024 && n <= 1024 && k == 7168 && ((m + 63) / 64) * (n / 128) <= 256",
+            "opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<4, 64, 7168>",
+        )]
+    elif merged and family == "narrow" and k.B_N == 64:
+        specializations = [(
+            "m >= 1024 && m <= 2048 && n <= 1024 && k == 7168",
+            "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+        )]
+    if specializations:
+        launches = []
+        emitted = {}
+        for index, specialization in enumerate(specializations):
+            condition, config = specialization[:2]
+            specialized_kernel = specialization[2] if len(specialization) == 3 else kernel_func
+            identity = (specialized_kernel, config)
+            if identity not in emitted:
+                alias = f"{k.name}_Specialization{index}"
+                emitted[identity] = alias
+                traits_alias += f"\nusing {alias} = {config};"
+                device_decl += (
+                    f"template __global__ void {specialized_kernel}<\n"
+                    f"    {alias}>({kargs_name});\n"
+                )
+            alias = emitted[identity]
+            branch = "if" if index == 0 else "else if"
+            launches.append(
+                f"{branch} ({condition}) {{\n"
+                f"        {specialized_kernel}<{alias}><<<\n"
+                f"            dim3(n / {alias}::B_N, (m + {alias}::B_M - 1) / {alias}::B_M),\n"
+                f"            dim3({alias}::BLOCK_SIZE), 0, aiter::getCurrentHIPStream()>>>(args);\n"
+                f"    }}"
+            )
+        kernel_launch = "\n    ".join(launches) + f" else {{\n        {kernel_launch}\n    }}"
     cg._kid_pipeline_header[k.name] = pipeline_header
     assert (k.GROUP_M, k.GROUP_N, k.GROUP_K) == (1, 128, 128)
     assert k.scale_dtype == "e8m0"
@@ -2914,10 +2987,16 @@ __global__ void {kernel_func}({kargs_name} kargs);
         f'    AITER_CHECK(k <= {k.max_k}, entry, ": requires K <= {k.max_k}");\n'
         if k.max_k is not None else ""
     )
+    small_shape_check = (
+        f'    AITER_CHECK(m <= {k.max_m}, entry, ": requires M <= {k.max_m}");\n'
+        if small_pipeline else ""
+    )
+    m_alignment_check = f"m % {k.m_align} == 0 && " if k.m_align > 1 else ""
+    m_requirement = f"M multiple of {k.m_align}" if k.m_align > 1 else "M"
     scale_alignment_check = (
         '    AITER_CHECK(reinterpret_cast<uintptr_t>(x_scale.data_ptr()) % 16 == 0,\n'
         '                entry, ": x_scale must be 16-byte aligned");\n\n'
-        if merged else ""
+        if merged or small_pipeline else ""
     )
     if large_output:
         extent_checks = f"""    // Inputs and tile-local offsets remain signed-int; C's base is 64-bit.
@@ -2968,9 +3047,9 @@ void {k.name}(
 
     const int64_t m = XQ.size(-2), n = WQ.size(-2), k = XQ.size(-1);
     AITER_CHECK(m > 0 && n > 0 && k > 0 &&
-                m % {k.m_align} == 0 && n % {n_align} == 0 && k % {k.B_K} == 0,
-                entry, ": requires positive M multiple of {k.m_align}, N multiple of {n_align} and K multiple of 128");
-{max_k_check}    AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
+                {m_alignment_check}n % {n_align} == 0 && k % {k.B_K} == 0,
+                entry, ": requires positive {m_requirement}, N multiple of {n_align} and K multiple of 128");
+{max_k_check}{small_shape_check}    AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
                 entry, ": XQ/WQ/Y shapes do not match");
 {extent_checks}
     const auto is_e8m0 = [](const aiter_tensor_t& t) {{

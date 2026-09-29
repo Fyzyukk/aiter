@@ -7,8 +7,6 @@ struct opus_mxscale_bpreshuffle_common_gfx950 {
     static constexpr int VEC_SF_PAIR = 2 * VEC_SF;
 };
 
-// Runtime-K compact blockscale GEMM: one 256x256 output tile per workgroup.
-// Four Wave64s use pinned A/B and selected C with two LDS stages.
 struct opus_gemm_mxscale_bpreshuffle_4wave_traits_gfx950 : opus_mxscale_bpreshuffle_common_gfx950 {
     static constexpr int BLOCK_SIZE = 256;
     static constexpr int WARP_SIZE = 64;

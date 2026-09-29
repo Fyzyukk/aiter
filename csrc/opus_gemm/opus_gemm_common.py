@@ -156,7 +156,9 @@ class OpusGemmInstance:
         if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle":
             parts.insert(tag_at, self.kernel_tag)
             parts.append(f"tiles{self.output_tiles_per_wg}")
-            if self.name_tag in {"main", "small", "narrow"}:
+            if self.name_tag in {
+                "main", "small", "narrow", "tiny", "small_register", "small_lds"
+            }:
                 parts.append(self.name_tag)
         elif self.kernel_tag == "a8w8_mxscale_bmm_flatmm_splitk":
             parts.insert(tag_at, "a8w8_mxscale_flatmm_splitk")
@@ -283,6 +285,15 @@ class OpusGemmInstance:
     def m_align(self) -> int:
         """M multiple enforced by the generated launcher (1 means tail-safe)."""
         if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle" and self.pad_m:
+            if self.name_tag in {"narrow", "tiny", "small_register", "small_lds"} or (
+                self.name_tag == "small" and self.B_M == 128
+            ):
+                return 1
+            if self.name_tag == "main" or (
+                self.name_tag == "small" and self.B_M == 160
+            ):
+                # A/C are bounded; scale A loads complete vectors of 16 rows.
+                return 16
             return 64
         mult = _BMM_M_ALIGN_TILES.get(self.kernel_tag)
         if mult is not None:
@@ -1747,17 +1758,35 @@ def _a8w8_mxscale_gemm_bpreshuffle_merged(family, b_m, b_n):
         "large_output": {(192, 256)},
         "small": {(128, 128), (160, 128)},
         "narrow": {(64, 128), (64, 64)},
+        "tiny": {(16, 64), (32, 64)},
     }
     assert (b_m, b_n) in geometries[family]
-    waves = 8 if family in {"main", "large_output"} else 4
-    pad_m = family != "narrow"
+    waves = {"main": 8, "large_output": 8, "tiny": 2}.get(family, 4)
+    pad_m = True
     return OpusGemmInstance(
         waves * 64, b_m, b_n, 128, waves // 2, 2, 16, 16, 128, 16, 16, 4,
         1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
-        WG_PER_CU=1, has_oob=pad_m, arch_prefix="gfx950", direct_only=True,
+        WG_PER_CU=2 if family == "tiny" else 1,
+        has_oob=pad_m, arch_prefix="gfx950", direct_only=True,
         output_tiles_per_wg=1, scale_dtype="e8m0",
         max_tensor_bytes=2**63 - 1 if family == "large_output" else 2**31 - 1,
         pad_m=pad_m, max_k=16384,
+        name_tag=family,
+    )
+
+
+def _a8w8_mxscale_gemm_bpreshuffle_small(
+    family, b_m, b_n, wave_m, wave_n, wave_k=1,
+):
+    """A general small-M pipeline with a fixed tile and runtime K."""
+    assert family in {"small_register", "small_lds"}
+    return OpusGemmInstance(
+        wave_m * wave_n * wave_k * 64, b_m, b_n, 128,
+        wave_m, wave_n, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
+        WG_PER_CU=1, has_oob=True, arch_prefix="gfx950", direct_only=True,
+        output_tiles_per_wg=1, scale_dtype="e8m0",
+        max_tensor_bytes=2**31 - 1, pad_m=True, max_k=16384, max_m=512,
         name_tag=family,
     )
 
@@ -1775,6 +1804,14 @@ a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
     9023: _a8w8_mxscale_gemm_bpreshuffle_merged("narrow", 64, 128),
     9024: _a8w8_mxscale_gemm_bpreshuffle_merged("narrow", 64, 64),
     9030: _a8w8_mxscale_gemm_bpreshuffle_merged("large_output", 192, 256),
+    # Each small-M ID fixes its tile and pipeline and accepts runtime K.
+    9040: _a8w8_mxscale_gemm_bpreshuffle_small("small_register", 16, 32, 1, 1),
+    9041: _a8w8_mxscale_gemm_bpreshuffle_small("small_register", 16, 16, 1, 1, 8),
+    9042: _a8w8_mxscale_gemm_bpreshuffle_small("small_register", 32, 32, 1, 1, 2),
+    9043: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 32, 64, 1, 4),
+    9044: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 64, 64, 2, 2),
+    9045: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 96, 64, 2, 2),
+    9046: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 64, 128, 2, 2),
 }
 
 
@@ -1791,6 +1828,7 @@ def a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
         or n % instance.GROUP_N
         or k % instance.B_K
         or (instance.max_k is not None and k > instance.max_k)
+        or (instance.max_m is not None and m > instance.max_m)
     ):
         return False
     if instance.name_tag == "large_output":

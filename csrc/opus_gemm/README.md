@@ -174,32 +174,39 @@ unchanged. The instruction body is 7656 bytes. This layout change has no new GPU
 numerical or timing result; see the
 [A layout restoration validation](../../reports/opus_9020_restore_a_layout_20260928/validation.json).
 
-## Original MXFP8 tuning entry
+## Current MXFP8 tuning entry
 
-Use the restored [`opus_gemm_mxscale_bpreshuffle_tune.py`](opus_gemm_mxscale_bpreshuffle_tune.py)
-with the [M >= 1024 untuned CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)
-extracted from the original model baseline. From the checkout root:
+Use [`opus_gemm_mxscale_bpreshuffle_tune.py`](opus_gemm_mxscale_bpreshuffle_tune.py)
+from the checkout root. The latest remote setup, source map, full-shape command,
+and replay instructions are at the top of [HANDOFF_MXFP8.md](../../HANDOFF_MXFP8.md).
+For the 290 shapes with M <= 512:
 
 ```bash
 ROCR_VISIBLE_DEVICES=0 \
 OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
 python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
-  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv \
-  -o /tmp/dsv4_m_ge1024_tuned.csv -o2 /tmp/dsv4_m_ge1024_profile.csv \
-  --opus-kids 9000,9010,9020,9021,9022,9023,9024,9030 \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_le512_untuned_gemm.csv \
+  -o /tmp/dsv4_m_le512_tuned.csv -o2 /tmp/dsv4_m_le512_profile.csv \
   --libtype all --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
 ```
 
-The original CSV remains unchanged and contains 1042 rows across architectures,
-including 745 gfx950/256 CU shapes. The new untuned CSV contains all 305 of those
-shapes with M >= 1024 and only the `gfx,cu_num,M,N,K` columns. It includes the ten
-shapes omitted from the historical 295-shape subset. To tune all 745 shapes,
-pass the original baseline CSV to `-i`; input timings and choices are ignored.
+The [original CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv)
+remains unchanged and contains 1042 rows across architectures, including 745
+gfx950/256 CU shapes. Pass it to `-i` to retune all 745; input timings and choices
+are ignored. The new small-M CSV contains the same 290 shapes as the previous
+general-candidate sweep and only `gfx,cu_num,M,N,K` columns. The existing
+[M >= 1024 CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)
+contains 305 shapes, including ten omitted from the historical 295-shape subset.
 `-o` saves the fastest valid candidate per shape and `-o2` saves the candidate
 profile. OPUS candidates are compiled before the sweep; external backends use
 their existing JIT paths. `--shape_grouped` measures each shape's candidates
-on the same GPU. Omitting `--opus-kids` includes the same eight registered
-MXFP8 B-preshuffle candidates.
+on the same GPU. Omitting `--opus-kids` includes all 15 registered MXFP8
+B-preshuffle candidates: 9000, 9010, 9020–9024, 9030, and 9040–9046.
+Each of 9040–9046 uses one fixed tile and pipeline with runtime K, for M <= 512.
+The latest 9020/9022 M-alignment extension, 9043 paired output, and new 9046
+passed CPU checks and offline compilation; their GPU correctness and performance
+remain unverified. The previous general version measured 234/290 wins and a
+1.159373x geometric-mean speedup; that result predates these final changes.
 
 The renumbering maps old 9020 to 9010 and old 9060–9064 to 9020–9024;
 9000 is unchanged. Historical CSVs and JIT binaries retain their old meanings.

@@ -1,5 +1,121 @@
 # MXFP8 B-preshuffle 优化交接
 
+## 2026-09-29：最新分支迁移与重新 tune
+
+分支为 `Fyzyukk/aiter:aiter-opus-mxfp8-bpreshuffle`。本节是最新测试入口；
+下方按日期保留的记录描述各自当时的源码、候选编号和测试状态。
+
+当前分支包含此前的大 M pipeline 优化，以及通用小 M 候选 **9040–9046**。
+每个小 M ID 固定一个 tile 和 pipeline，支持 M=1–512，使用运行时 K。
+本次最后一轮改动是 9020/9022 的 M 对齐由 64 放宽到 16、9043 跨 M 片段
+配对写回，以及新增 9046（64×128 small-LDS、4 wave）。
+这些最后改动已通过 CPU 覆盖/索引/边界检查和离线编译，GPU 正确性及性能待新机验证。
+修改前的正式通用版基线是 234/290 胜出、几何平均加速 1.159373×；
+273/290 是更早的按 shape 分发版本，不能作为当前代码的成绩。
+
+- [本轮源码与验证状态](reports/opus_mle512_general_opt_20260929/WORK_STATE.md)
+- [CPU 检查及源码 SHA256](reports/opus_mle512_general_opt_20260929/cpu_ready/validation.json)
+- [修改前通用版实测摘要](reports/opus_mle512_generic_tune_20260929/full290_r3/summary.md)
+- [修改前逐 shape 比较](reports/opus_mle512_generic_tune_20260929/full290_r3/comparison.csv)
+
+### 到新机后看哪些文件
+
+| 文件 | 用途 |
+|---|---|
+| `csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py` | 正式 tune 和保存结果回放入口 |
+| `csrc/opus_gemm/opus_gemm_common.py` | 15 个公开候选的注册及 shape 支持范围 |
+| `csrc/opus_gemm/codegen/gen_instances_gfx950.py` | 生成入口、边界检查和 kernel launch |
+| `csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh` | 9040–9046 的固定 tile 和 pipeline 参数 |
+| `csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh` | 9040–9042 的寄存器预取 pipeline |
+| `csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh` | 9043–9046 的 LDS pipeline |
+| `csrc/opus_gemm/include/gfx950/opus_gemm_mxscale_bpreshuffle_small_output_gfx950.cuh` | 小 M MFMA16 配对写回 |
+
+### 获取分支和准备环境
+
+在已有 ROCm/PyTorch/Triton 开发环境中执行。目标 GPU 须为 gfx950，PyTorch 须提供
+原生 `torch.float8_e8m0fnu`。初始化仓库记录的 CK submodule 版本。
+
+```bash
+git clone --branch aiter-opus-mxfp8-bpreshuffle --single-branch \
+  git@github.com:Fyzyukk/aiter.git aiter-opus-mxfp8-bpreshuffle
+cd aiter-opus-mxfp8-bpreshuffle
+git submodule update --init --recursive
+git rev-parse HEAD
+
+BUILD_TARGET=rocm AITER_USE_SYSTEM_TRITON=1 PREBUILD_KERNELS=0 \
+  python -m pip install -e . --no-build-isolation
+
+export ROCR_VISIBLE_DEVICES=0
+export OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin
+export AITER_JIT_DIR="$(mktemp -d /tmp/aiter-opus-mxfp8-20260929.XXXXXX)"
+export OPUS_RETUNE_DIR="$PWD/reports/opus_remote_retune_20260929"
+mkdir -p "$OPUS_RETUNE_DIR"
+set -o pipefail
+```
+
+`OPUS_HIP_CLANG_PATH` 必须替换成目标机的实际目录。9000 和共享 helper 仍要求
+支持 `clang::amdgpu_pin_agpr` 的编译器；已用版本是
+[`yuyzhang512/llvm-project`](https://github.com/yuyzhang512/llvm-project)
+的 `49c41889681640665400cb01c9fbb4c0a024cde4`。下方历史“新服务器准备”一节
+保留了该工具链的构建命令。专用 tuner 只在 OPUS 编译期间切换此编译器，
+CK/CKTile/ASM 沿用环境的 ROCm 编译器。新的 `AITER_JIT_DIR` 用于在目标机重新构建，
+首次运行包含 JIT 构建时间。
+
+### 全量重新 tune：745 个 gfx950 shape
+
+在仓库根目录执行正式模块入口：
+
+```bash
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv \
+  -o "$OPUS_RETUNE_DIR/full745_tuned.csv" \
+  -o2 "$OPUS_RETUNE_DIR/full745_profile.csv" \
+  --libtype all --splitK --shape_grouped --mp 1 \
+  --warmup 5 --iters 51 --all \
+  2>&1 | tee "$OPUS_RETUNE_DIR/full745.log"
+```
+
+原始 CSV 有 1042 行，tuner 按当前 `gfx/cu_num` 筛出 gfx950/256 CU 的 745 个 shape，
+忽略输入中的旧 `libtype/kernelId/us`。这里省略 `--opus-kids`，自动枚举当前全部
+15 个候选：9000、9010、9020–9024、9030、9040–9046，并按各自支持范围筛选。
+`--libtype all` 比较 OPUS、CK、CKTile、ASM；`--all` 强制重新测量已有 shape。
+每个候选都执行数值比较，`-o` 保存最快有效选择，`-o2` 保存候选 profile，日志保存失败详情。
+OPUS 使用原生随机 E8M0 scale，其他后端使用原 tuner 的随机 FP32 scale，分别对照各自 reference。
+
+### 只验证最新小 M：290 个 shape
+
+以下命令使用本次随分支提供的纯 shape CSV，与上一轮 290 项输入集合一致：
+
+```bash
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_le512_untuned_gemm.csv \
+  -o "$OPUS_RETUNE_DIR/small290_tuned.csv" \
+  -o2 "$OPUS_RETUNE_DIR/small290_profile.csv" \
+  --libtype all --splitK --shape_grouped --mp 1 \
+  --warmup 5 --iters 51 --all \
+  2>&1 | tee "$OPUS_RETUNE_DIR/small290.log"
+```
+
+只看 OPUS 时可将 `--libtype all` 改为 `--libtype opus`。全量 745 项已包含这 290 项，
+可按本次测试目标选择一个范围。上述 CSV 的 `cu_num` 为 256；其他 CU 规格的 gfx950
+可提供仅含 `M,N,K` 的 CSV，tuner 会填入当前 GPU 的 `gfx/cu_num`。
+
+四卡时将 `ROCR_VISIBLE_DEVICES` 改成实际空闲的四张卡，例如 `0,1,2,3`，并用 `--mp 4`；
+八卡对应 `--mp 8`。保留 `--shape_grouped`，让同一 shape 的候选在同一张卡上比较。
+
+### 回放保存的选择
+
+```bash
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  --run_config "$OPUS_RETUNE_DIR/small290_tuned.csv" \
+  --mp 1 --warmup 5 --iters 51 \
+  2>&1 | tee "$OPUS_RETUNE_DIR/small290_replay.log"
+```
+
+全量结果回放时改用 `full745_tuned.csv`。回放重新做数值检查并输出耗时，不搜索新候选。
+需要与历史三轮中位数比较时，分别用不同的输出文件名重新 tune 三轮，再按候选汇总中位数。
+保留每轮 `tuned.csv`、`profile.csv`、日志，以及当前 commit、GPU 和编译器版本。
+
 ## 2026-09-28：9021/9022/9023/9024/9030 全面整理与复用
 
 五个候选的 pipeline/traits 已按用户要求整理：能直接复用的 helper 直接复用，

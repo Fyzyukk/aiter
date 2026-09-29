@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 #pragma once
 
 #include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"
@@ -32,7 +31,6 @@ struct opus_gemm_mxscale_bpreshuffle_4wave_160x128_traits_gfx950 {
     static constexpr int E_M = B_M / (T_M * W_M);
     static constexpr int E_N = B_N / (T_N * W_N);
     static constexpr int E_K = 1;
-    static constexpr int C_REGS = B_M * B_N / BLOCK_SIZE;
     static_assert(E_M == 5 && E_N == 4 && E_K == 1);
 
     static constexpr int VEC_A = 16;
@@ -42,9 +40,6 @@ struct opus_gemm_mxscale_bpreshuffle_4wave_160x128_traits_gfx950 {
     static constexpr int VEC_OUTPUT = 8;
     static constexpr int A_CHUNKS_PER_FRAGMENT = W_M * W_K / (WARP_SIZE * VEC_A);
     static constexpr int B_CHUNKS_PER_FRAGMENT = W_N * W_K / (WARP_SIZE * VEC_B);
-    static constexpr int A_REGS_PER_CHUNK = VEC_A / sizeof(unsigned);
-    static_assert(C_REGS + E_M * A_CHUNKS_PER_FRAGMENT * A_REGS_PER_CHUNK <= 128,
-                  "C followed by A stays in AGPR0:127");
 
     static constexpr int GROUP_M = 1;
     static constexpr int GROUP_N = 128;
@@ -68,7 +63,6 @@ struct opus_gemm_mxscale_bpreshuffle_4wave_160x128_traits_gfx950 {
     static constexpr int MATRIX_LDS_BYTES = NUM_STAGES * (A_STAGE + B_STAGE);
     static_assert(NUM_STAGES == 2 && MATRIX_LDS_BYTES == 76032);
 
-    // Fixed per-wave request counts include buffer-OOB A loads.
     static constexpr int A_VMEM_INSTRUCTIONS = B_M * B_K / (BLOCK_SIZE * VEC_A);
     static constexpr int B_VMEM_INSTRUCTIONS = B_N * B_K / (BLOCK_SIZE * VEC_B);
     static constexpr int VMEM_INSTRUCTIONS_PER_TILE = A_VMEM_INSTRUCTIONS + B_VMEM_INSTRUCTIONS;
@@ -91,7 +85,6 @@ struct opus_gemm_mxscale_bpreshuffle_4wave_160x128_traits_gfx950 {
     static_assert(B_SCALE_PACKS == 1);
     static_assert(LDS_BYTES == 81184 && LDS_BYTES <= 80 * 1024);
 
-    // Row stride in BF16 elements for the cooperative output staging tile.
     static constexpr int C_LDS_ROW_STRIDE_ELEMS = B_N + 8;
     static constexpr int OUTPUT_PASSES = B_M * B_N / (BLOCK_SIZE * VEC_OUTPUT);
     static_assert(C_LDS_ROW_STRIDE_ELEMS == 136);
