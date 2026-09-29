@@ -23,7 +23,8 @@ void gemm_a8w8_mxfp8_scale_small_lds_kernel(opus_gemm_mxscale_bpreshuffle_kargs_
     auto ga = make_gmem(reinterpret_cast<const fp8_t*>(args.ptr_a) + row * args.stride_a,
                         static_cast<unsigned>((args.m - row) * args.stride_a));
     auto gb = make_gmem(reinterpret_cast<const fp8_t*>(args.ptr_b) + col * args.stride_b);
-    auto gsa = make_gmem(reinterpret_cast<const unsigned char*>(args.ptr_sfa) + row);
+    auto gsa = make_gmem(reinterpret_cast<const unsigned char*>(args.ptr_sfa) + row,
+                         static_cast<unsigned>(args.m * loops - row));
     auto gsb = make_gmem(reinterpret_cast<const unsigned char*>(args.ptr_sfb) + (col / 128) * args.stride_sfb);
     auto gc = make_gmem(reinterpret_cast<bf16_t*>(args.ptr_c) + row * args.stride_c + col,
                         static_cast<unsigned>(((args.m - row) * args.stride_c - col) * 2));
@@ -32,70 +33,130 @@ void gemm_a8w8_mxfp8_scale_small_lds_kernel(opus_gemm_mxscale_bpreshuffle_kargs_
     auto sb = make_smem(reinterpret_cast<fp8_t*>(lds + active_stages * T::A_STAGE));
     auto ssa = make_smem(reinterpret_cast<unsigned char*>(lds + matrix_bytes));
     auto ssb = make_smem(reinterpret_cast<unsigned char*>(lds + matrix_bytes + scale_bytes));
-    const auto uga = make_layout_ga_scale<T>(lane, wm, wn, args.stride_a);
+    const int load_lane = T::XOR_LDS ? lane ^ ((wave % 4) * 2) : lane;
+    const auto uga = make_layout_ga_scale<T>(load_lane, wm, wn, args.stride_a);
     const auto usa = make_layout_sa_scale<T>(wm, wn);
     const auto ugb = make_layout_gb_scale<T>(lane, wm, wn, args.stride_b);
     const auto usb = make_layout_sb_scale<T>(wm, wn);
     const auto urb = make_layout_rb_scale<T>(lane, wn);
+    const auto g_b_offsets = layout_to_offsets<16>(ugb);
+    const auto s_b_offsets = layout_to_offsets<16>(usb);
+    const auto r_b_offsets = layout_to_offsets<16>(urb);
+    auto lds_offset = [](int offset) {
+        if constexpr (T::XOR_LDS) return offset ^ (((offset >> 10) & 3) << 5);
+        else return offset;
+    };
     auto mma = make_tiled_mma<fp8_t, fp8_t, fp32_t>(seq<T::E_M, T::E_N, 1>{},
         seq<T::T_M, T::T_N, 1>{}, seq<16, 16, 128>{}, mfma_adaptor_swap_ab{});
     using Base = typename decltype(mma)::MMA;
     array<typename Base::vtype_c, T::E_M * T::E_N> c{};
-    auto prefetch = [&](int stage, int kt) {
+    array<unsigned, T::NUM_STAGES> qsa;
+    array<array<unsigned, T::B_GROUPS>, T::NUM_STAGES> qsb;
+    auto prefetch = [&](auto slot, int kt) {
+        constexpr int stage = decltype(slot)::value;
+        if constexpr (T::REGISTER_SCALES) {
+            qsa[stage] = 0;
+            static_for<T::E_M>([&](auto mi) {
+                constexpr int m = decltype(mi)::value;
+                const int r = (m * T::T_M + wm) * 16 + lane % 16;
+                const int offset = row + r < args.m ? kt * args.stride_sfa + r : -1;
+                qsa[stage] |= static_cast<unsigned>(load<1>(gsa, offset)[0]) << (m * 8);
+            });
+            static_for<T::B_GROUPS>([&](auto ni) {
+                constexpr int n = decltype(ni)::value;
+                qsb[stage][n] = load<1>(gsb, n * args.stride_sfb + kt)[0];
+            });
+        }
         async_load<16>(ga, sa.ptr, uga, usa + stage * T::A_STAGE, kt * 128);
-        async_load<16>(gb, sb.ptr, ugb, usb + stage * T::B_STAGE, kt * 2048);
+        if constexpr (T::XOR_LDS) {
+            // Each B copy covers a different 1024-byte group, unlike A's per-wave groups.
+            static_for<T::B_N * T::B_K / (T::BLOCK_SIZE * 16)>([&](auto i) {
+                constexpr int idx = decltype(i)::value;
+                const int mask = ((s_b_offsets[idx] >> 10) & 3) << 5;
+                async_load<16>(gb, sb.ptr + s_b_offsets[idx] + stage * T::B_STAGE,
+                               g_b_offsets[idx] ^ mask, kt * 2048);
+            });
+        } else {
+            async_load<16>(gb, sb.ptr, ugb, usb + stage * T::B_STAGE, kt * 2048);
+        }
     };
     constexpr int distance = T::NUM_STAGES - T::CLUSTER;
     const int initial_tiles = loops <= T::NUM_STAGES ? loops : distance;
-    static_for<T::NUM_STAGES>([&](auto i) {
-        if (decltype(i)::value < initial_tiles) prefetch(decltype(i)::value, decltype(i)::value);
-    });
-    static_for<(T::MAX_SFA_BYTES + T::BLOCK_SIZE * 16 - 1) / (T::BLOCK_SIZE * 16)>([&](auto pass) {
-        const int index = (thread_id_x() + decltype(pass)::value * T::BLOCK_SIZE) * 16;
-        if (index < scale_bytes) {
-            const int r = index % T::B_M, kt = index / T::B_M;
-            const auto value = opus_gemm_4wave_128x128_layout::load_sfa_vector<T>(gsa,
-                kt * args.stride_sfa + r, args.m - row - r);
-            store<16>(ssa, value, index);
+    auto load_scales = [&] {
+        static_for<(T::MAX_SFA_BYTES + T::BLOCK_SIZE * 16 - 1) / (T::BLOCK_SIZE * 16)>([&](auto pass) {
+            const int index = (thread_id_x() + decltype(pass)::value * T::BLOCK_SIZE) * 16;
+            if (index < scale_bytes) {
+                const int r = index % T::B_M, kt = index / T::B_M;
+                const auto value = opus_gemm_4wave_128x128_layout::load_sfa_vector<T>(gsa,
+                    kt * args.stride_sfa + r, args.m - row - r);
+                store<16>(ssa, value, index);
+            }
+        });
+        if (thread_id_x() < T::B_GROUPS * loops) {
+            const int index = thread_id_x();
+            store<1>(ssb, load<1>(gsb, (index / loops) * args.stride_sfb + index % loops), index);
         }
-    });
-    if (thread_id_x() < T::B_GROUPS * loops) {
-        const int index = thread_id_x();
-        store<1>(ssb, load<1>(gsb, (index / loops) * args.stride_sfb + index % loops), index);
+    };
+    if constexpr (!T::REGISTER_SCALES && T::EARLY_SCALE_LOADS) {
+        load_scales();
+        __builtin_amdgcn_sched_barrier(0);
     }
-    s_waitcnt_vmcnt(0_I);
-    s_waitcnt_lgkmcnt(0_I);
-    __builtin_amdgcn_s_barrier();
+    static_for<T::NUM_STAGES>([&](auto i) {
+        if (decltype(i)::value < initial_tiles) prefetch(i, decltype(i)::value);
+    });
+    if constexpr (!T::REGISTER_SCALES && !T::EARLY_SCALE_LOADS) load_scales();
+    if (loops <= T::NUM_STAGES || (!T::REGISTER_SCALES && !T::EARLY_SCALE_LOADS)) {
+        s_waitcnt_vmcnt(0_I);
+        s_waitcnt_lgkmcnt(0_I);
+        if (loops <= T::NUM_STAGES) __builtin_amdgcn_s_barrier();
+    }
     auto step = [&](auto si, int kt, auto ring) {
         constexpr int stage = decltype(si)::value;
-        if constexpr (decltype(ring)::value && T::CLUSTER == 1) {
+        if constexpr (decltype(ring)::value && T::CLUSTER == 1 && !T::READ_ONLY_DRAIN) {
             if (kt + distance <= loops)
                 s_waitcnt_vmcnt(number<(T::NUM_STAGES - 2) * T::VMEM_TILE>{});
             else s_waitcnt_vmcnt(0_I);
             s_waitcnt_lgkmcnt(0_I);
             __builtin_amdgcn_s_barrier();
         }
+        if constexpr (decltype(ring)::value && T::PREFETCH_BEFORE_READ) {
+            if (kt + distance < loops) prefetch(number<(stage + distance) % T::NUM_STAGES>{}, kt + distance);
+        }
         typename decltype(mma)::vtype_a a;
         static_for<T::E_M>([&](auto mi) {
             constexpr int m = decltype(mi)::value;
             const int r = (m * T::T_M + wm) * 16 + lane % 16;
-            const int offset = ((r / (8 * T::T_M)) * T::T_M + r % T::T_M) * 1056 +
+            const int offset = ((r / (8 * T::T_M)) * T::T_M + r % T::T_M) * (1024 + T::smem_padding) +
                                ((r / T::T_M) % 8) * 128 + (lane / 16) * 16 + stage * T::A_STAGE;
-            set_slice(a, load<16>(sa, offset), number<m * 32>{}, number<m * 32 + 16>{});
-            set_slice(a, load<16>(sa, offset + 64), number<m * 32 + 16>{}, number<(m + 1) * 32>{});
+            set_slice(a, load<16>(sa, lds_offset(offset)), number<m * 32>{}, number<m * 32 + 16>{});
+            set_slice(a, load<16>(sa, lds_offset(offset + 64)), number<m * 32 + 16>{}, number<(m + 1) * 32>{});
         });
-        const auto b = load<16>(sb, urb + stage * T::B_STAGE);
+        typename decltype(mma)::vtype_b b;
+        if constexpr (T::XOR_LDS) {
+            static_for<T::E_N * 2>([&](auto i) {
+                constexpr int idx = decltype(i)::value;
+                set_slice(b, load<16>(sb, lds_offset(r_b_offsets[idx] + stage * T::B_STAGE)),
+                          number<idx * 16>{}, number<(idx + 1) * 16>{});
+            });
+        } else {
+            b = load<16>(sb, urb + stage * T::B_STAGE);
+        }
         unsigned sfa = 0;
-        static_for<T::E_M>([&](auto mi) {
-            constexpr int m = decltype(mi)::value;
-            sfa |= static_cast<unsigned>(load<1>(ssa, kt * T::B_M + (m * T::T_M + wm) * 16 + lane % 16)[0]) << (m * 8);
-        });
         array<unsigned, T::B_GROUPS> sfb;
-        static_for<T::B_GROUPS>([&](auto ni) {
-            sfb[decltype(ni)::value] = load<1>(ssb, decltype(ni)::value * loops + kt)[0];
-        });
-        if constexpr (decltype(ring)::value) {
-            if (kt + distance < loops) prefetch((stage + distance) % T::NUM_STAGES, kt + distance);
+        if constexpr (T::REGISTER_SCALES) {
+            sfa = qsa[stage];
+            sfb = qsb[stage];
+        } else {
+            static_for<T::E_M>([&](auto mi) {
+                constexpr int m = decltype(mi)::value;
+                sfa |= static_cast<unsigned>(load<1>(ssa, kt * T::B_M + (m * T::T_M + wm) * 16 + lane % 16)[0]) << (m * 8);
+            });
+            static_for<T::B_GROUPS>([&](auto ni) {
+                sfb[decltype(ni)::value] = load<1>(ssb, decltype(ni)::value * loops + kt)[0];
+            });
+        }
+        if constexpr (decltype(ring)::value && !T::PREFETCH_BEFORE_READ) {
+            if (kt + distance < loops) prefetch(number<(stage + distance) % T::NUM_STAGES>{}, kt + distance);
         }
         static_for<T::E_M>([&](auto mi) {
             constexpr int m = decltype(mi)::value;
@@ -113,8 +174,30 @@ void gemm_a8w8_mxfp8_scale_small_lds_kernel(opus_gemm_mxscale_bpreshuffle_kargs_
         static_for<T::NUM_STAGES>([&](auto i) {
             if (decltype(i)::value < loops) step(i, decltype(i)::value, 0_I);
         });
+    } else if constexpr (T::CLUSTER == 1 && T::READ_ONLY_DRAIN) {
+        const int drain_begin = loops - distance;
+        for (int base = 0; base < drain_begin; base += T::NUM_STAGES) {
+            static_for<T::NUM_STAGES>([&](auto i) {
+                if (base + decltype(i)::value < drain_begin) {
+                    s_waitcnt_vmcnt(number<(T::NUM_STAGES - 2) * T::VMEM_TILE>{});
+                    s_waitcnt_lgkmcnt(0_I);
+                    __builtin_amdgcn_s_barrier();
+                    step(i, base + decltype(i)::value, 1_I);
+                }
+            });
+        }
+        // No ring slot is overwritten after this wait; the whole drain is read-only.
+        s_waitcnt_vmcnt(0_I);
+        s_waitcnt_lgkmcnt(0_I);
+        __builtin_amdgcn_s_barrier();
+        for (int base = (drain_begin / T::NUM_STAGES) * T::NUM_STAGES;
+             base < loops; base += T::NUM_STAGES) {
+            static_for<T::NUM_STAGES>([&](auto i) {
+                const int kt = base + decltype(i)::value;
+                if (kt >= drain_begin && kt < loops) step(i, kt, 0_I);
+            });
+        }
     } else if constexpr (T::CLUSTER == 1) {
-        // Keep the wait in step so each ring slot can be expanded independently.
         for (int base = 0; base < loops; base += T::NUM_STAGES) {
             static_for<T::NUM_STAGES>([&](auto i) {
                 if (base + decltype(i)::value < loops)

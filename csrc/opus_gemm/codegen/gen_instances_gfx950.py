@@ -2837,12 +2837,14 @@ def gen_mxscale_bpreshuffle_instance(
 ):
     """Emit the optional gfx950 compact-E8M0 bpreshuffle implementation."""
     assert k.B_K == 128 and k.output_tiles_per_wg == 1
-    small_pipeline = k.name_tag in {"small_register", "small_lds"}
+    small_pipeline = k.name_tag in {
+        "small_register", "small_lds", "small_regscale", "small_regscale_xor"
+    }
     large_output = k.name_tag == "large_output"
     merged = k.name_tag in {"main", "small", "narrow", "large_output", "tiny"}
     if small_pipeline:
         assert k.pad_m and k.m_align == 1 and k.max_m == 512
-        implementation = k.name_tag
+        implementation = "small_register" if k.name_tag == "small_register" else "small_lds"
         pipeline_header = (
             "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
             f"{implementation}_gfx950.cuh"
@@ -2851,7 +2853,7 @@ def gen_mxscale_bpreshuffle_instance(
         kernel_func = f"gemm_a8w8_mxfp8_scale_{implementation}_kernel"
         traits_name = (
             "opus_gemm_mxscale_bpreshuffle_"
-            f"{implementation}_{k.B_M}x{k.B_N}_traits_gfx950"
+            f"{k.name_tag}_{k.B_M}x{k.B_N}_traits_gfx950"
         )
     elif merged:
         family = k.name_tag
@@ -2919,7 +2921,10 @@ __global__ void {kernel_func}({kargs_name} kargs);
 #endif"""
     assert k.output_dtypes == ["bf16_t"]
     traits_alias = f"using {k.name}_Traits = {traits_name};"
-    lds_bytes = f"{k.name}_Traits::lds_bytes(k)" if k.name_tag == "small_lds" else "0"
+    lds_bytes = (
+        f"{k.name}_Traits::lds_bytes(k)"
+        if small_pipeline and k.name_tag != "small_register" else "0"
+    )
     kernel_launch = f"""{kernel_func}<{k.name}_Traits><<<
         grid, dim3({k.BLOCK_SIZE}), {lds_bytes}, aiter::getCurrentHIPStream()>>>(args);"""
     device_decl = (

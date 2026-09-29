@@ -86,6 +86,8 @@ void gemm_a8w8_mxfp8_scale_small_register_kernel(opus_gemm_mxscale_bpreshuffle_k
     // Full queue groups overlap compute with the next prefetch. Only the
     // prologue and tail need bounds checks, including waves with no K tiles.
     const int full = loops / T::PREFETCH, tail = loops % T::PREFETCH;
+    // Another unrolled queue raises VGPR use without increasing the prefetch distance.
+    #pragma clang loop unroll(disable)
     for (int group = 0; group + 1 < full; ++group) {
         static_for<T::PREFETCH>([&](auto i) {
             compute(i);

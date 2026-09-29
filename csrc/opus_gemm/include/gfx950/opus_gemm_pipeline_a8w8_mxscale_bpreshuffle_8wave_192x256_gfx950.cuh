@@ -41,9 +41,9 @@ __device__ inline constexpr auto make_layout_gsfa_scale(int lane_id, int wave_id
     constexpr auto block_shape = opus::make_tuple(
         opus::number<T::T_N>{}, // 2 wave_n
         opus::number<T::T_M>{}, // 4 wave_m
-        opus::number<T::SFA_K_COLUMNS_PER_WAVE>{}, // 16 K128 groups per wave
-        opus::number<T::SFA_PASSES>{}, // 3 passes along M
-        opus::number<T::SFA_THREADS_PER_GROUP>{}, // 4 threads per K128 group
+        opus::number<T::SFA_K_COLUMNS_PER_WAVE>{}, // K128 groups per wave
+        opus::number<T::SFA_PASSES>{}, // passes along M
+        opus::number<T::SFA_THREADS_PER_GROUP>{}, // threads per K128 group
         opus::number<T::VEC_SCALE_A>{}); // 16 contiguous M scale bytes per thread
 
     constexpr auto block_dim = opus::make_tuple(
@@ -61,9 +61,9 @@ __device__ inline constexpr auto make_layout_ssfa_scale(int lane_id, int wave_id
     constexpr auto block_shape = opus::make_tuple(
         opus::number<T::T_N>{}, // 2 wave_n
         opus::number<T::T_M>{}, // 4 wave_m
-        opus::number<T::SFA_K_COLUMNS_PER_WAVE>{}, // 16 K128 groups per wave
-        opus::number<T::SFA_PASSES>{}, // 3 passes along M
-        opus::number<T::SFA_THREADS_PER_GROUP>{}, // 4 threads per K128 group
+        opus::number<T::SFA_K_COLUMNS_PER_WAVE>{}, // K128 groups per wave
+        opus::number<T::SFA_PASSES>{}, // passes along M
+        opus::number<T::SFA_THREADS_PER_GROUP>{}, // threads per K128 group
         opus::number<T::VEC_SCALE_A>{}); // 16 contiguous M scale bytes per thread
 
     constexpr auto block_dim = opus::make_tuple(
@@ -165,7 +165,19 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
     const int wave_id_n = wave_id / T::T_M;
     int block_m = block_id_y();
     int block_n = block_id_x();
-    if (kargs.n <= T::SWIZZLE_MAX_N && kargs.m >= T::SWIZZLE_MIN_M) {
+    if (kargs.n / T::B_N >= T::SWIZZLE_MIN_N_TILES && kargs.m > T::B_M) {
+        // Keep the M tiles for a small panel of B close in the launch order.
+        const int grid_m = 1 + (kargs.m - 1) / T::B_M;
+        const int grid_n = kargs.n / T::B_N;
+        const int linear = block_id_y() * grid_n + block_id_x();
+        const int group_size = grid_m * T::SWIZZLE_GROUP_N;
+        const int first_n = (linear / group_size) * T::SWIZZLE_GROUP_N;
+        const int remaining_n = grid_n - first_n;
+        const int actual_n = remaining_n < T::SWIZZLE_GROUP_N ? remaining_n : T::SWIZZLE_GROUP_N;
+        const int within_group = linear % group_size;
+        block_m = within_group / actual_n;
+        block_n = first_n + within_group % actual_n;
+    } else if (kargs.n <= T::SWIZZLE_MAX_N && kargs.m >= T::SWIZZLE_MIN_M) {
         const int grid_m = 1 + (kargs.m - 1) / T::B_M;
         const int grid_n = kargs.n / T::B_N;
         const int linear = block_id_y() * grid_n + block_id_x();
@@ -265,8 +277,8 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
         const int k_group = panel_k_begin + local_k_group;
         static_for<T::SFA_PASSES>([&](auto pass_i) {
             constexpr int pass = decltype(pass_i)::value;
-            const int smem_offset = sfa_smem_offsets[pass];
-            const int local_row = smem_offset - local_k_group * T::B_M;
+            const int local_row = sfa_smem_offsets[pass] - local_k_group * T::B_M;
+            const int smem_offset = sfa_smem_offsets[pass] + panel_k_begin * T::B_M;
             if (local_row < T::B_M && smem_offset < T::SFA_BYTES && k_group < scale_k_groups) {
                 vector_t<D_SF, T::VEC_SCALE_A> raw;
                 if (row + local_row < kargs.m)
@@ -369,7 +381,11 @@ void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel(opus_gemm_mxscale_bpreshuffle_ka
     issue_matrix_prefetch(number<0>{}, 0);
     __builtin_amdgcn_sched_barrier(0);
 
-    load_sfa_panel(0);
+    // Spread short-K scale loads across waves without reserving K-specific kernels.
+    static_for<T::SFA_K_PASSES>([&](auto i) {
+        const int first_k = decltype(i)::value * T::SFA_K_PANEL;
+        if (first_k < scale_k_groups) load_sfa_panel(first_k);
+    });
     load_sfb_panel(0);
     __builtin_amdgcn_sched_barrier(0);
     if (loops > 1) {

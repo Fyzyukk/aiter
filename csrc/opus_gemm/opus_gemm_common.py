@@ -157,7 +157,8 @@ class OpusGemmInstance:
             parts.insert(tag_at, self.kernel_tag)
             parts.append(f"tiles{self.output_tiles_per_wg}")
             if self.name_tag in {
-                "main", "small", "narrow", "tiny", "small_register", "small_lds"
+                "main", "small", "narrow", "tiny", "small_register", "small_lds",
+                "small_regscale", "small_regscale_xor",
             }:
                 parts.append(self.name_tag)
         elif self.kernel_tag == "a8w8_mxscale_bmm_flatmm_splitk":
@@ -285,7 +286,10 @@ class OpusGemmInstance:
     def m_align(self) -> int:
         """M multiple enforced by the generated launcher (1 means tail-safe)."""
         if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle" and self.pad_m:
-            if self.name_tag in {"narrow", "tiny", "small_register", "small_lds"} or (
+            if self.name_tag in {
+                "narrow", "tiny", "small_register", "small_lds",
+                "small_regscale", "small_regscale_xor",
+            } or (
                 self.name_tag == "small" and self.B_M == 128
             ):
                 return 1
@@ -1779,7 +1783,7 @@ def _a8w8_mxscale_gemm_bpreshuffle_small(
     family, b_m, b_n, wave_m, wave_n, wave_k=1,
 ):
     """A general small-M pipeline with a fixed tile and runtime K."""
-    assert family in {"small_register", "small_lds"}
+    assert family in {"small_register", "small_lds", "small_regscale", "small_regscale_xor"}
     return OpusGemmInstance(
         wave_m * wave_n * wave_k * 64, b_m, b_n, 128,
         wave_m, wave_n, 16, 16, 128, 16, 16, 4,
@@ -1807,11 +1811,14 @@ a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
     # Each small-M ID fixes its tile and pipeline and accepts runtime K.
     9040: _a8w8_mxscale_gemm_bpreshuffle_small("small_register", 16, 32, 1, 1),
     9041: _a8w8_mxscale_gemm_bpreshuffle_small("small_register", 16, 16, 1, 1, 8),
-    9042: _a8w8_mxscale_gemm_bpreshuffle_small("small_register", 32, 32, 1, 1, 2),
+    9042: _a8w8_mxscale_gemm_bpreshuffle_small("small_register", 32, 32, 1, 1, 4),
     9043: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 32, 64, 1, 4),
     9044: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 64, 64, 2, 2),
     9045: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 96, 64, 2, 2),
-    9046: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 64, 128, 2, 2),
+    9046: _a8w8_mxscale_gemm_bpreshuffle_small("small_lds", 64, 128, 4, 2),
+    9047: _a8w8_mxscale_gemm_bpreshuffle_small("small_regscale", 32, 64, 2, 2),
+    9048: _a8w8_mxscale_gemm_bpreshuffle_small("small_regscale_xor", 32, 64, 2, 2),
+    9049: _a8w8_mxscale_gemm_bpreshuffle_small("small_regscale_xor", 32, 128, 2, 2),
 }
 
 

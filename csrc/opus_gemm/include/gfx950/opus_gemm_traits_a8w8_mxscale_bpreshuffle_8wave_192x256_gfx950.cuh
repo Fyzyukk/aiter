@@ -49,6 +49,8 @@ struct opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950 {
     static constexpr int SCALE_N_HALVES = B_N / GROUP_N;
 
     static constexpr int SWIZZLE_GROUP_M = 4;
+    static constexpr int SWIZZLE_GROUP_N = 8;
+    static constexpr int SWIZZLE_MIN_N_TILES = 256;
     static constexpr int SWIZZLE_MAX_N = 2048;
     static constexpr int SWIZZLE_MIN_M = 4096;
 
@@ -73,17 +75,20 @@ struct opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950 {
     static constexpr int SCALE_PANEL = ScalePanel;
     static constexpr int SFA_BYTES = B_M * SCALE_PANEL;
     static constexpr int SFB_BYTES = SCALE_PANEL * sizeof(unsigned);
-    static constexpr int SFA_THREADS_PER_GROUP = BLOCK_SIZE / SCALE_PANEL;
+    static constexpr int SFA_K_PANEL = SCALE_PANEL < 32 ? SCALE_PANEL : 32;
+    static constexpr int SFA_K_PASSES = SCALE_PANEL / SFA_K_PANEL;
+    static constexpr int SFA_THREADS_PER_GROUP = BLOCK_SIZE / SFA_K_PANEL;
     static constexpr int SFA_K_COLUMNS_PER_WAVE = WARP_SIZE / SFA_THREADS_PER_GROUP;
     static constexpr int SFA_ROWS_PER_PASS = SFA_THREADS_PER_GROUP * VEC_SCALE_A;
     static constexpr int SFA_PASSES =
-        (SFA_BYTES + BLOCK_SIZE * VEC_SCALE_A - 1) / (BLOCK_SIZE * VEC_SCALE_A);
+        (B_M + SFA_ROWS_PER_PASS - 1) / SFA_ROWS_PER_PASS;
 
     static_assert(BLOCK_SIZE % SCALE_PANEL == 0);
     static_assert(SFA_THREADS_PER_GROUP <= WARP_SIZE);
     static_assert(FIXED_K == 0 || (FIXED_K % B_K == 0 && FIXED_K <= MAX_K));
     static_assert(WARP_SIZE % SFA_THREADS_PER_GROUP == 0);
-    static_assert(T_N * T_M * SFA_K_COLUMNS_PER_WAVE == SCALE_PANEL);
+    static_assert(T_N * T_M * SFA_K_COLUMNS_PER_WAVE == SFA_K_PANEL);
+    static_assert(SFA_K_PANEL * SFA_K_PASSES == SCALE_PANEL);
     static_assert(SFA_PASSES * SFA_ROWS_PER_PASS >= B_M);
 
     static constexpr int A_SCALE_PACKS = (E_M + 3) / 4;
