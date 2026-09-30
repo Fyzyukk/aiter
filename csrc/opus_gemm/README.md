@@ -185,24 +185,23 @@ numerical or timing result; see the
 Use [`opus_gemm_mxscale_bpreshuffle_tune.py`](opus_gemm_mxscale_bpreshuffle_tune.py)
 from the checkout root. The latest remote setup, source map, full-shape command,
 and replay instructions are at the top of [HANDOFF_MXFP8.md](../../HANDOFF_MXFP8.md).
-For the 290 shapes with M <= 512:
+For all 745 gfx950/256-CU shapes:
 
 ```bash
 ROCR_VISIBLE_DEVICES=0 \
 OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
 python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
-  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_le512_untuned_gemm.csv \
-  -o /tmp/dsv4_m_le512_tuned.csv -o2 /tmp/dsv4_m_le512_profile.csv \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv \
+  -o /tmp/dsv4_opus_tuned.csv -o2 /tmp/dsv4_opus_profile.csv \
   --libtype all --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
 ```
 
-The [original CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv)
-remains unchanged and contains 1042 rows across architectures, including 745
-gfx950/256 CU shapes. Pass it to `-i` to retune all 745; input timings and choices
-are ignored. The new small-M CSV contains the same 290 shapes as the previous
-general-candidate sweep and only `gfx,cu_num,M,N,K` columns. The existing
-[M >= 1024 CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)
-contains 305 shapes, including ten omitted from the historical 295-shape subset.
+The [complete tuned CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)
+contains the fastest valid candidate per shape, using the same 13-column format as
+the [original CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv).
+The original CSV contains 1042 rows across architectures, including these 745
+gfx950/256-CU shapes. Either CSV can be passed to `-i`; the tuner selects the
+current gfx/CU shapes and ignores the input timings and candidate choices.
 `-o` saves the fastest valid candidate per shape and `-o2` saves the candidate
 profile. OPUS candidates are compiled before the sweep; external backends use
 their existing JIT paths. `--shape_grouped` measures each shape's candidates

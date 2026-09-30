@@ -77,27 +77,20 @@ python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
 
 原始 CSV 有 1042 行，tuner 按当前 `gfx/cu_num` 筛出 gfx950/256 CU 的 745 个 shape，
 忽略输入中的旧 `libtype/kernelId/us`。这里省略 `--opus-kids`，自动枚举当前全部
-15 个候选：9000、9010、9020–9024、9030、9040–9046，并按各自支持范围筛选。
+26 个默认候选：9000、9010、9020–9024、9030、9040–9047、9049、9051–9055、9060–9063，
+并按各自支持范围筛选。
 `--libtype all` 比较 OPUS、CK、CKTile、ASM；`--all` 强制重新测量已有 shape。
 每个候选都执行数值比较，`-o` 保存最快有效选择，`-o2` 保存候选 profile，日志保存失败详情。
 OPUS 使用原生随机 E8M0 scale，其他后端使用原 tuner 的随机 FP32 scale，分别对照各自 reference。
 
-### 只验证最新小 M：290 个 shape
+### 使用最新完整调优表
 
-以下命令使用本次随分支提供的纯 shape CSV，与上一轮 290 项输入集合一致：
+最新的 [745 行调优表](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)
+采用基线的 13 列格式，每个 shape 保留最快有效候选。也可以将此文件传给上方命令的 `-i`，
+tuner 会读取 shape 并重新枚举候选。
 
-```bash
-python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
-  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_le512_untuned_gemm.csv \
-  -o "$OPUS_RETUNE_DIR/small290_tuned.csv" \
-  -o2 "$OPUS_RETUNE_DIR/small290_profile.csv" \
-  --libtype all --splitK --shape_grouped --mp 1 \
-  --warmup 5 --iters 51 --all \
-  2>&1 | tee "$OPUS_RETUNE_DIR/small290.log"
-```
-
-只看 OPUS 时可将 `--libtype all` 改为 `--libtype opus`。全量 745 项已包含这 290 项，
-可按本次测试目标选择一个范围。上述 CSV 的 `cu_num` 为 256；其他 CU 规格的 gfx950
+只看 OPUS 时可将 `--libtype all` 改为 `--libtype opus`。全量 745 项包含 290 个 M≤512 shape。
+上述 CSV 的 `cu_num` 为 256；其他 CU 规格的 gfx950
 可提供仅含 `M,N,K` 的 CSV，tuner 会填入当前 GPU 的 `gfx/cu_num`。
 
 四卡时将 `ROCR_VISIBLE_DEVICES` 改成实际空闲的四张卡，例如 `0,1,2,3`，并用 `--mp 4`；
@@ -107,12 +100,12 @@ python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
 
 ```bash
 python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
-  --run_config "$OPUS_RETUNE_DIR/small290_tuned.csv" \
+  --run_config "$OPUS_RETUNE_DIR/full745_tuned.csv" \
   --mp 1 --warmup 5 --iters 51 \
-  2>&1 | tee "$OPUS_RETUNE_DIR/small290_replay.log"
+  2>&1 | tee "$OPUS_RETUNE_DIR/full745_replay.log"
 ```
 
-全量结果回放时改用 `full745_tuned.csv`。回放重新做数值检查并输出耗时，不搜索新候选。
+回放重新做数值检查并输出耗时，不搜索新候选。
 需要与历史三轮中位数比较时，分别用不同的输出文件名重新 tune 三轮，再按候选汇总中位数。
 保留每轮 `tuned.csv`、`profile.csv`、日志，以及当前 commit、GPU 和编译器版本。
 
@@ -627,17 +620,17 @@ OPUS 保持原生随机 E8M0 scale，各自计算参考；跨后端计时不是�
 `mp_tuner.py`、9000/9020 及相关头文件。未改 kernel、共享框架或生产 dispatch CSV；
 本轮无后台 GPU 工作，未提交或推送。
 
-## 当前入口：原专用 tuner + M >= 1024 untuned CSV
+## M >= 1024 的 305 项输入
 
 运行文件恢复为
 [`csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py`](csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py)。
 原始输入和历史基线是
 [`aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv`](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv)，
 本次未修改其内容。原表共 1042 条数据，其中 gfx950/256 CU 共 745 个唯一 shape。
-按当前要求，已将其中 `M >= 1024` 的全部 **305 个唯一 shape** 提取到
-[`aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv`](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv)。
-新文件只含 `gfx,cu_num,M,N,K` 五列，保留旧 295 项子集之外的全部 10 项。
-2026-09-27 仅提取并核对 CSV；2026-09-28 的 GPU 调优结果见上节。
+其中 `M >= 1024` 的全部 **305 个唯一 shape** 已包含在
+[2026-09-28 的逐 shape 对比记录](reports/opus_m_ge1024_retune_20260928/comparison.csv) 中，
+可直接用作该范围的 shape 输入；tuner 忽略其中的旧候选和耗时。
+它包含旧 295 项子集之外的全部 10 项。该轮 GPU 调优结果见上节。
 
 输入按后端生成：CK/CKTile/ASM 直接复用原 blockscale tuner 的
 `generate_data`，A/B 为 `rand(FP16) / 10` 后转 FP8，scale 独立随机生成 FP32；
@@ -652,7 +645,7 @@ OPUS 使用相同的 A/B 生成方式，scale 独立生成原生 E8M0 指数字�
 ROCR_VISIBLE_DEVICES=0 \
 OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
 python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
-  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_m_ge1024_untuned_gemm.csv \
+  -i reports/opus_m_ge1024_retune_20260928/comparison.csv \
   -o /tmp/dsv4_m_ge1024_tuned.csv \
   -o2 /tmp/dsv4_m_ge1024_profile.csv \
   --opus-kids 9000,9010,9020,9021,9022,9023,9024,9030 \
@@ -676,7 +669,7 @@ python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
 | narrow | 9024 | 21221 | 64×64×128 |
 
 上面的命令在 OPUS 侧选择 9000/9010、五个合并候选及大输出 9030，并与 CK/CKTile/ASM 比较。
-旧 9010/9011/9012 实现已删除；省略 `--opus-kids` 时原 tuner 枚举当前八项，包含大输出候选 9030。
+旧 9010/9011/9012 实现已删除；省略 `--opus-kids` 时原 tuner 枚举当前 26 个默认候选。
 不支持某个 shape 的 OPUS 候选按原规则跳过；原始 shape 仍由有效的外部候选参与比较。
 
 `-i` 读取新 untuned CSV 的 shape；`-o` 保存新的逐 shape 最优选择，`-o2` 保存
