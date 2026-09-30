@@ -1,14 +1,20 @@
 # OPUS GEMM C++ and code generation
 
 The public Python contract is documented in
-[`aiter/ops/opus/README.md`](../../aiter/ops/opus/README.md). C++ keeps five
-family launch ABIs. They are shared private implementation boundaries for the
+[`aiter/ops/opus/README.md`](../../aiter/ops/opus/README.md). C++ keeps family launch ABIs and a bpreshuffle workspace entry. They are shared private implementation boundaries for the
 Python `opus_gemm(..., kid=...)` and `opus_bmm(..., kid=...)` entries; the
 public operation split does not duplicate C++ launchers or kernels.
 
+The [latest gfx950 results](../../reports/opus_current745_tables_20260930/REPORT.md)
+list all 26 default MXFP8 B-preshuffle candidates and their win counts, with
+per-shape timings in milliseconds against the original CSV. The
+[same-run comparison](../../reports/opus_current745_tables_20260930/SAME_RUN.md)
+compares OPUS with the fastest valid CK/CKTile/ASM candidate for all 745 shapes.
+The reports also quantify timing changes for matching historical configurations.
+
 ## MXFP8 B-preshuffle pipeline and traits headers
 
-All eight gfx950 candidates follow 9000's `template<class Traits>` structure:
+The original eight gfx950 candidates follow 9000's `template<class Traits>` structure:
 pipeline headers contain device execution, and traits headers contain geometry,
 storage sizes, and layout constants. The files live in `include/gfx950/`.
 
@@ -200,13 +206,31 @@ contains 305 shapes, including ten omitted from the historical 295-shape subset.
 `-o` saves the fastest valid candidate per shape and `-o2` saves the candidate
 profile. OPUS candidates are compiled before the sweep; external backends use
 their existing JIT paths. `--shape_grouped` measures each shape's candidates
-on the same GPU. Omitting `--opus-kids` includes all 15 registered MXFP8
-B-preshuffle candidates: 9000, 9010, 9020–9024, 9030, and 9040–9046.
-Each of 9040–9046 uses one fixed tile and pipeline with runtime K, for M <= 512.
-The latest 9020/9022 M-alignment extension, 9043 paired output, and new 9046
-passed CPU checks and offline compilation; their GPU correctness and performance
-remain unverified. The previous general version measured 234/290 wins and a
-1.159373x geometric-mean speedup; that result predates these final changes.
+on the same GPU. Omitting `--opus-kids` includes 26 consolidated MXFP8
+B-preshuffle candidates: 9000, 9010, 9020–9024, 9030, 9040–9047, 9049,
+9051–9055, and 9060–9063. The later candidates share two device templates:
+[register](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh)
+and [LDS](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh).
+K length and tile-grid size select prefetch, tile geometry, and reduction
+configurations inside each family; K remains runtime up to 16384. This reduces
+tuning IDs and duplicated implementation, while retaining useful compiled variants.
+The 13 historical IDs remain callable with their original names and shape/workspace
+contracts, and can be explicitly selected by `--opus-kids`. Saved tables can still
+be replayed. Rebuild the OPUS JIT after changing the candidate set.
+
+| Default ID | Configurations consolidated into it |
+|---:|---|
+| 9041 | 9041 / 9050, register-prefetch depth |
+| 9042 | runtime-K fallback plus 9071 / 9073 N48 tiles at K=7168 |
+| 9044 | 9044 / 9056, LDS queue depth |
+| 9047 | 9048 removed from default tuning; 9047 retained |
+| 9052 | runtime-K fallback plus 9070 at K=7168 |
+| 9053 | runtime-K fallback plus 9072 at K=7168 |
+| 9062 | 9062 / 9064, two FP32 partitions, M80 / M96 tiles |
+| 9063 | 9063 / 9065–9069, four FP32 partitions, M48–M128 tiles |
+
+9043–9046, 9055 and 9060–9063 accept M <= 2048; the other default 904x/905x
+candidates accept M <= 512. 9000/9010 retain their original implementations.
 
 The renumbering maps old 9020 to 9010 and old 9060–9064 to 9020–9024;
 9000 is unchanged. Historical CSVs and JIT binaries retain their old meanings.
@@ -431,3 +455,69 @@ specialization that writes partial sums. Its direct BF16/FP32
 | `include/gfx1250/opus_co_launch_gfx1250.cuh` | first-use CO loader and cluster launcher |
 | `include/gfx*/opus_gemm_arch_*.cuh` | sorted exact-kid tables |
 | `include/gfx*/**/opus_gemm_traits*.cuh` | kernel arguments and traits |
+
+
+## Fine-M tiles and global split-K (9060–9069)
+
+These configurations use the common LDS pipeline through
+[fine traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_fine_gfx950.cuh).
+Normal tuning enumerates 9060–9063. The table lists the individual configurations;
+9064–9069 remain available for explicit calls and historical-table replay.
+They accept M ≤ 2048, K ≤ 16384, N divisible by 128 and K divisible by 128,
+including arbitrary positive M tails. Each ID fixes its global K partition count.
+
+| ID | M×N tile | Waves | Global split-K |
+|---|---|---:|---:|
+| 9060 | 80×128 | 4 | 1 |
+| 9061 | 96×128 | 8 | 1 |
+| 9062 | 80×128 | 4 | 2 |
+| 9063 | 80×128 | 4 | 4 |
+| 9064 | 96×128 | 8 | 2 |
+| 9065 | 96×128 | 8 | 4 |
+| 9066 | 96×128 | 4 | 4 |
+| 9067 | 128×128 | 4 | 4 |
+| 9068 | 112×128 | 4 | 4 |
+| 9069 | 48×128 | 4 | 4 |
+
+Use the existing `opus_gemm(..., kid=9063, layout="bpreshuffle", x_scale=..., w_scale=...)`
+route. A scales remain native E8M0 logical `[M,K/128]` in dense column-major storage;
+B scales remain contiguous `[N/128,K/128]`. K128 tiles are balanced over partitions,
+including uneven and empty partitions. Partial sums and the reduction stay FP32
+until the final BF16 conversion.
+
+For split-K IDs, Python allocates a temporary FP32 workspace through PyTorch's
+stream-aware allocator. A caller may supply `workspace=` with at least
+`global_split_k * M * N` contiguous FP32 elements on the same GPU, aligned to 16
+bytes and disjoint from inputs/output. Each invocation overwrites every partial;
+no initialization or persistent counter is needed. Separate concurrent invocations
+must use separate workspaces. Both automatic allocation and caller-owned storage
+support graph capture/replay. The original raw launch ABI remains available;
+workspace candidates use a separate checked raw entry.
+
+The public `split_k` argument and tuned CSV `splitK` column remain zero for these
+fixed-ID candidates; the actual partition count is encoded in the kernel name.
+9060 specializes K=3072/7168, 9062/9063 specialize K=16384, and 9069 specializes
+K=7168. Their other legal K values use the general pipeline. Performance comparisons
+include both the producer and reduction kernels. See the
+[latest 745-shape all-backend comparison](../../reports/opus_current745_tables_20260930/SAME_RUN.md).
+
+## Fixed-K register tiles (9070–9073)
+
+These historical single-launch IDs are now private choices of the general
+9042/9052/9053 families and use the common register pipeline. Explicit calls to
+9070–9073 still require `1 <= M <= 512`, `N % 128 == 0`, and
+`K == 7168`. K waves write FP32 partials to LDS; each output fragment is reduced
+and converted to BF16 by one wave. They use no global workspace.
+
+| ID | M×N tile | K waves | Register prefetch | B cache |
+|---:|---:|---:|---:|---:|
+| 9070 | 16×32 | 8 | 3 | 3 |
+| 9071 | 16×48 | 4 | 4 | 3 |
+| 9072 | 32×32 | 4 | 4 | 3 |
+| 9073 | 32×48 | 4 | 3 | 0 |
+
+N32 tiles reuse the B scale across their N16 fragments. N48 tiles load each
+fragment's scale separately and mask the last N tile, including when `N` is not
+divisible by 48. Use the same native E8M0 `opus_gemm(..., layout="bpreshuffle")`
+entry; public `split_k` remains zero. Their parent families support other legal K
+values through the existing runtime-K configurations.

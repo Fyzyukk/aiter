@@ -30,7 +30,7 @@ using OpusA8W8BlockscaleKernel = void (*)(
     aiter_tensor_t&, aiter_tensor_t&);
 using OpusA8W8BlockscaleBpreshuffleKernel = void (*)(
     aiter_tensor_t&, aiter_tensor_t&, aiter_tensor_t&,
-    aiter_tensor_t&, aiter_tensor_t&);
+    aiter_tensor_t&, aiter_tensor_t&, std::optional<aiter_tensor_t>);
 #endif
 
 static OpusA8W8Kernel opus_a8w8_kid_dispatch(int kid)
@@ -455,13 +455,13 @@ void opus_gemm_a8w8_blockscale_launch(
       XQ, WQ, Y, x_scale, w_scale);
 }
 
-void opus_gemm_a8w8_blockscale_bpreshuffle_launch(
+static void opus_gemm_a8w8_blockscale_bpreshuffle_impl(
     aiter_tensor_t &XQ,
     aiter_tensor_t &WQ,
     aiter_tensor_t &x_scale,
     aiter_tensor_t &w_scale,
     aiter_tensor_t &Y,
-    int kid)
+    int kid, std::optional<aiter_tensor_t> workspace)
 {
   aiter_detail::g_aiter_can_throw = true;
   constexpr const char* entry =
@@ -472,12 +472,12 @@ void opus_gemm_a8w8_blockscale_bpreshuffle_launch(
   if (Y.dtype() == AITER_DTYPE_bf16)
   {
     opus_a8w8_blockscale_bpreshuffle_kid_dispatch<bf16_t>(kid)(
-        XQ, WQ, x_scale, w_scale, Y);
+        XQ, WQ, x_scale, w_scale, Y, workspace);
   }
   else if (Y.dtype() == AITER_DTYPE_fp32)
   {
     opus_a8w8_blockscale_bpreshuffle_kid_dispatch<fp32_t>(kid)(
-        XQ, WQ, x_scale, w_scale, Y);
+        XQ, WQ, x_scale, w_scale, Y, workspace);
   }
   else
   {
@@ -485,6 +485,24 @@ void opus_gemm_a8w8_blockscale_bpreshuffle_launch(
                 entry, ": unsupported Y dtype ",
                 AiterDtype_to_str(Y.dtype()), "; expected bf16 or fp32");
   }
+}
+
+void opus_gemm_a8w8_blockscale_bpreshuffle_launch(
+    aiter_tensor_t& XQ, aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale, aiter_tensor_t& w_scale,
+    aiter_tensor_t& Y, int kid)
+{
+    opus_gemm_a8w8_blockscale_bpreshuffle_impl(
+        XQ, WQ, x_scale, w_scale, Y, kid, std::nullopt);
+}
+
+void opus_gemm_a8w8_blockscale_bpreshuffle_workspace_launch(
+    aiter_tensor_t& XQ, aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale, aiter_tensor_t& w_scale,
+    aiter_tensor_t& Y, int kid, aiter_tensor_t& workspace)
+{
+    opus_gemm_a8w8_blockscale_bpreshuffle_impl(
+        XQ, WQ, x_scale, w_scale, Y, kid, workspace);
 }
 
 #endif // !__HIP_DEVICE_COMPILE__

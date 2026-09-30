@@ -4,7 +4,7 @@
 
 This gfx950 adapter keeps each backend's scale input format: OPUS receives
 random native E8M0 scales, while CK, CKTile and ASM reuse the original
-blockscale tuner's random FP32 scales. Each dataset has its own reference.
+blockscale tuner's random FP32 scales, reference and accuracy checks.
 """
 
 import argparse
@@ -36,6 +36,7 @@ from aiter.ops.opus import opus_gemm
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.base_tuner import GemmCommonTuner
 from csrc.opus_gemm.opus_gemm_common import (
+    A8W8_BPRESHUFFLE_TUNING_KIDS,
     a8w8_mxscale_bpreshuffle_supports_shape,
     a8w8_mxscale_gemm_bpreshuffle_kernels_list,
     canonical_output_dtype,
@@ -143,7 +144,7 @@ def _ensure_kids_compiled(candidate_kids):
             sys.path.remove(opus_dir)
 
 
-def candidate_kids_for_shape(gfx, m, n, k, outdtype="bf16"):
+def candidate_kids_for_shape(gfx, m, n, k, outdtype="bf16", *, include_legacy=False):
     """Use registry tiling and byte limits before allocating tuning inputs."""
     if min(m, n, k) <= 0:
         return []
@@ -153,6 +154,8 @@ def candidate_kids_for_shape(gfx, m, n, k, outdtype="bf16"):
         return []
     candidates = []
     for kid, instance in sorted(a8w8_mxscale_gemm_bpreshuffle_kernels_list.items()):
+        if not include_legacy and kid not in A8W8_BPRESHUFFLE_TUNING_KIDS:
+            continue
         if (
             gfx != (instance.arch_prefix or "gfx950")
             or instance.kernel_tag != _TAG
@@ -278,7 +281,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         **generic_tune.GemmA8W8BlockScaleTuner.ARG_DEFAULTS,
         "tune_file": "/tmp/opus_mxscale_bpreshuffle_tuned.csv",
         "untune_file": "",
-        "errRatio": 0.0,
+        # Inherit the external backends' original error-ratio threshold.
+        # OPUS candidates retain their stricter zero-outlier contract.
         # Exact replay calls backend tuning entries directly. Publishing this
         # dataset as a production FP32-scale config would change its contract.
         "config_env_name": None,
@@ -338,6 +342,12 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 action.help = (
                     "include supported ASM split-K candidates; CK, CKTile and "
                     "OPUS B-preshuffle candidates use splitK=0"
+                )
+            elif action.dest == "errRatio":
+                action.help = (
+                    "maximum outlier fraction for the original CK/CKTile/ASM "
+                    "accuracy checks (default: 0.05); OPUS always requires "
+                    "zero outliers under its accumulation-bounds check"
                 )
         self.parser.add_argument(
             "--input_file", dest="untune_file", default=argparse.SUPPRESS
@@ -491,7 +501,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             ].reset_index(drop=True)
 
     def _candidate_kids(self, gfx, m, n, k):
-        kids = candidate_kids_for_shape(gfx, m, n, k)
+        kids = candidate_kids_for_shape(
+            gfx, m, n, k, include_legacy=self.opus_kids is not None,
+        )
         return (
             kids
             if self.opus_kids is None
@@ -531,31 +543,17 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             ("out",),
         )
 
-    @classmethod
-    def _adapt_generic_tasks(cls, tasks, info_keys, seed):
-        """Keep the original FP32-scale inputs and validate their own reference."""
-        _gfx, _cu_num, m, n, k = info_keys
+    @staticmethod
+    def _adapt_generic_tasks(tasks):
+        """Preserve the external tuner's data, reference and comparison contract."""
         adapted = []
         for task in tasks:
-            info, gen_data, _gen_args, func, args, kwargs, *_rest = task
-            arg_keys = tuple(args[0])
+            info, args = task[0], task[4]
             if info[4] == "cktile":
-                arg_keys = cktile_bench_keys(info[1])
-            adapted.append(
-                cls._make_task(
-                    info,
-                    m,
-                    n,
-                    k,
-                    seed,
-                    func,
-                    arg_keys,
-                    args[1:],
-                    kwargs,
-                    gen_data=gen_data,
-                    ref_keys=_CK_REF_KEYS,
-                )
-            )
+                # The wrapper's activation-scale layout depends on the instance.
+                args = (cktile_bench_keys(info[1]), *args[1:])
+                task = (*task[:4], args, *task[5:])
+            adapted.append(task)
         return adapted
 
     def get_gemm_a8w8_blockscale_tune_task(
@@ -564,7 +562,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         tasks = super().get_gemm_a8w8_blockscale_tune_task(
             info_keys, useSplitK, seed, preshuffleB, run_kwargs
         )
-        return self._adapt_generic_tasks(tasks, info_keys, seed)
+        return self._adapt_generic_tasks(tasks)
 
     def get_gemm_a8w8_blockscale_cktile_tune_task(
         self,
@@ -583,7 +581,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             block_per_cu,
             run_kwargs,
         )
-        return self._adapt_generic_tasks(tasks, info_keys, seed)
+        return self._adapt_generic_tasks(tasks)
 
     def get_gemm_a8w8_blockscale_asm_tune_task(
         self, info_keys, useSplitK, seed, preshuffleB, run_kwargs
@@ -591,7 +589,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         tasks = super().get_gemm_a8w8_blockscale_asm_tune_task(
             info_keys, useSplitK, seed, preshuffleB, run_kwargs
         )
-        return self._adapt_generic_tasks(tasks, info_keys, seed)
+        return self._adapt_generic_tasks(tasks)
 
     def get_gemm_a8w8_blockscale_opus_tune_task(
         self, info_keys, seed, preshuffleB, run_kwargs
@@ -661,13 +659,39 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             return []
 
         # In the unchanged mp_tuner, fast_mode=True refreshes the reference
-        # when the generator changes. Every task here supplies ref_func and
-        # compare_outputs, so correctness checks still run for every candidate.
+        # when the generator changes. Every task supplies its own reference;
+        # external tasks retain checkAllclose and OPUS uses compare_outputs.
         return generic_tune.mp_tuner(
             tasks, tasks_data, args.mp, True,
             args.shape_grouped or args.mp == 1, args.errRatio,
             timeout=args.timeout, verbose=args.verbose,
         )
+
+    @staticmethod
+    def _error_limit(libtype, args):
+        return 0.0 if libtype == "opus" else args.errRatio
+
+    def post_process(self, rets, args, topk=-1, fast_mode=False):
+        rets = list(rets)
+        # Save the original timings and measured error ratios without alteration.
+        raw = super().post_process(rets, args, topk=-1, fast_mode=True)
+        if fast_mode or topk == -1:
+            return raw
+        # The shared selector has one threshold. Mark rejected candidates as
+        # unavailable for selection while retaining their raw profile records.
+        selection = [
+            (
+                info,
+                us if math.isfinite(error)
+                and 0 <= error <= self._error_limit(info[4], args)
+                else self.INVALID_TIME,
+                error,
+            )
+            for info, us, error in rets
+        ]
+        selection_args = argparse.Namespace(**vars(args))
+        selection_args.profile_file = ""
+        return super().post_process(selection, selection_args, topk, False)
 
     def getKernelName(self, kernel_id, libType="opus", preshuffleB=True):
         if libType == "opus":
@@ -689,7 +713,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         return super().result_to_df(normalized)[self.columns]
 
     def run_config(self, args):
-        from aiter.test_common import run_perftest
+        from aiter.test_common import checkAllclose, run_perftest
 
         results = []
         rows = self._normalize_rows(self.untunedf, saved=True)
@@ -708,7 +732,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 row.splitK != 0
                 or row.kernelId
                 not in candidate_kids_for_shape(
-                    row.gfx, row.M, row.N, row.K, row.outdtype
+                    row.gfx, row.M, row.N, row.K, row.outdtype, include_legacy=True,
                 )
             ):
                 raise ValueError(
@@ -757,7 +781,12 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             else:
                 gen_data, ref_keys = generic_tune.generate_data, _CK_REF_KEYS
             data = gen_data(row.M, row.N, row.K, 0, device="cuda")
-            ref = run_torch(*(data[key] for key in ref_keys), with_bounds=True)
+            ref_inputs = tuple(data[key] for key in ref_keys)
+            ref = (
+                run_torch(*ref_inputs, with_bounds=True)
+                if row.libtype == "opus"
+                else generic_tune.run_torch(*ref_inputs)
+            )
             data["out"].fill_(float("nan"))
             if row.libtype == "opus":
                 bench, bench_args = run_bench, (
@@ -791,14 +820,20 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 num_warmup=args.warmup,
                 num_iters=args.iters,
             )
-            error = compare_outputs(
-                ref, out, printLog=args.verbose, tol_err_ratio=args.errRatio
-            )
+            if row.libtype == "opus":
+                error = compare_outputs(ref, out, printLog=args.verbose)
+            else:
+                error = checkAllclose(
+                    ref, out, rtol=1e-2, atol=1e-2,
+                    printLog=args.verbose, tol_err_ratio=args.errRatio,
+                    catastrophic_check=True,
+                )
             if (
                 not math.isfinite(us)
                 or us <= 0
                 or not math.isfinite(error)
-                or error > args.errRatio
+                or error < 0
+                or error > self._error_limit(row.libtype, args)
             ):
                 raise RuntimeError(
                     f"Saved {row.libtype} kid {kid} failed: {us=}, errRatio={error}"

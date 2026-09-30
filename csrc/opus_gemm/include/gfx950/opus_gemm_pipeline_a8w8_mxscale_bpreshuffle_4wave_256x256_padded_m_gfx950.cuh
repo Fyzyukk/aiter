@@ -249,7 +249,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_4wave_256x256_pa
             s_waitcnt_vmcnt(0_I);
             publish_sfa_panel(next_tile);
             if (wave_id < T::SCALE_N_HALVES) {
-                const D_SF_PACK packed = raw_b * 0x01010101u;
+                const D_SF_PACK packed = raw_b;
                 store<T::VEC_SF>(s_sfb, __builtin_bit_cast(opus::vector_t<D_SF, T::VEC_SF>, packed), u_ssfb);
             }
             s_waitcnt_lgkmcnt(0_I);
@@ -276,7 +276,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_4wave_256x256_pa
 
     publish_sfa_panel(0);
     if (wave_id < T::SCALE_N_HALVES) {
-        const D_SF_PACK packed = panel_sfb_raw * 0x01010101u;
+        const D_SF_PACK packed = panel_sfb_raw;
         store<T::VEC_SF>(s_sfb, __builtin_bit_cast(opus::vector_t<D_SF, T::VEC_SF>, packed), u_ssfb);
     }
 

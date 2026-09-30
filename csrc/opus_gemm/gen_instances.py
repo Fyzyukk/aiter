@@ -343,7 +343,7 @@ def _make_a8w8_bpreshuffle_host_decl(kid_name, dtype, _host_extra_params):
         f"    aiter_tensor_t &WQ,\n"
         f"    aiter_tensor_t &x_scale,\n"
         f"    aiter_tensor_t &w_scale,\n"
-        f"    aiter_tensor_t &Y);\n"
+        f"    aiter_tensor_t &Y, std::optional<aiter_tensor_t> workspace);\n"
     )
 
 
@@ -762,7 +762,7 @@ void
     aiter_tensor_t &WQ,
     aiter_tensor_t &x_scale,
     aiter_tensor_t &w_scale,
-    aiter_tensor_t &Y);
+    aiter_tensor_t &Y, std::optional<aiter_tensor_t> workspace);
 """
         # a8w8 noscale (3 args, no splitK) has its own exact-kid table.
         MANIFEST_NOSCALE_3ARG = """

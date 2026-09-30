@@ -908,8 +908,10 @@ void
     aiter_tensor_t &WQ,
     aiter_tensor_t &x_scale,
     aiter_tensor_t &w_scale,
-    aiter_tensor_t &Y)
+    aiter_tensor_t &Y,
+    std::optional<aiter_tensor_t> workspace)
 {{{{
+    AITER_CHECK(!workspace.has_value(), "gfx942 bpreshuffle does not use workspace");
     AITER_CHECK((XQ.dim() == 2 || XQ.dim() == 3),
         "opus_gemm_a8w8_blockscale_bpreshuffle_launch: XQ must be "
         "[M,K] or [B,M,K]");

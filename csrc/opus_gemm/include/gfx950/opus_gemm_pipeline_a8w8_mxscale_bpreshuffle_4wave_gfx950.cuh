@@ -107,12 +107,12 @@ __device__ inline void mma_scale_group(MMA& mma, const VA& v_a, const VB& v_b, V
         constexpr int c_dwords = sizeof(typename base_mma::vtype_c) / sizeof(opus::u32_t);
         if constexpr (EXPLICIT_AGPR_BASE >= 0) {
             [[clang::amdgpu_pin_agpr(EXPLICIT_AGPR_BASE + (c_index - EXPLICIT_INDEX_BASE) * c_dwords)]]
-            v_c[c_index] = base_mma{}(v_a[m_repeat], v_b[n_repeat], v_c[c_index], static_cast<int>(v_sfa), static_cast<int>(v_sfb), opus::number<m_repeat>{}, opus::number<n_repeat>{});
+            v_c[c_index] = base_mma{}(v_a[m_repeat], v_b[n_repeat], v_c[c_index], static_cast<int>(v_sfa), static_cast<int>(v_sfb), opus::number<m_repeat>{}, opus::number<0>{});
         } else if constexpr (pin_traits::enabled) {
             [[clang::amdgpu_pin_agpr(pin_traits::agpr_base + c_index * c_dwords)]]
-            v_c[c_index] = base_mma{}(v_a[m_repeat], v_b[n_repeat], v_c[c_index], static_cast<int>(v_sfa), static_cast<int>(v_sfb), opus::number<m_repeat>{}, opus::number<n_repeat>{});
+            v_c[c_index] = base_mma{}(v_a[m_repeat], v_b[n_repeat], v_c[c_index], static_cast<int>(v_sfa), static_cast<int>(v_sfb), opus::number<m_repeat>{}, opus::number<0>{});
         } else {
-            v_c[c_index] = base_mma{}(v_a[m_repeat], v_b[n_repeat], v_c[c_index], static_cast<int>(v_sfa), static_cast<int>(v_sfb), opus::number<m_repeat>{}, opus::number<n_repeat>{});
+            v_c[c_index] = base_mma{}(v_a[m_repeat], v_b[n_repeat], v_c[c_index], static_cast<int>(v_sfa), static_cast<int>(v_sfb), opus::number<m_repeat>{}, opus::number<0>{});
         }
     });
 }
@@ -598,7 +598,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
             s_waitcnt_vmcnt(0_I);
             publish_sfa_panel(next_tile);
             if (wave_id < T::SCALE_N_HALVES) {
-                const D_SF_PACK packed = raw_b * 0x01010101u;
+                const D_SF_PACK packed = raw_b;
                 store<T::VEC_SF>(s_sfb, __builtin_bit_cast(opus::vector_t<D_SF, T::VEC_SF>, packed), u_ssfb);
             }
             s_waitcnt_lgkmcnt(0_I);
@@ -625,7 +625,7 @@ __global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm
 
     publish_sfa_panel(0);
     if (wave_id < T::SCALE_N_HALVES) {
-        const D_SF_PACK packed = panel_sfb_raw * 0x01010101u;
+        const D_SF_PACK packed = panel_sfb_raw;
         store<T::VEC_SF>(s_sfb, __builtin_bit_cast(opus::vector_t<D_SF, T::VEC_SF>, packed), u_ssfb);
     }
 
