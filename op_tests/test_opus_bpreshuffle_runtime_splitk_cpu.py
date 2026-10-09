@@ -142,6 +142,13 @@ class _TensorMetadata:
             strides = tuple(reversed(strides))
         self._strides = tuple(strides)
 
+    @property
+    def is_cuda(self):
+        return True
+
+    def numel(self):
+        return math.prod(self.shape)
+
     def dim(self):
         return len(self.shape)
 
@@ -638,8 +645,10 @@ class RuntimeSplitKCPU(unittest.TestCase):
         self.assertEqual({node.name for node in methods}, names)
         extracted_class = ast.ClassDef(name="ScalarTuner", bases=[], keywords=[], body=methods, decorator_list=[])
         inert = lambda *args, **kwargs: None
+        import opus_gemm_bpreshuffle_config as catalog
         namespace = {
             "generate_data": inert, "run_torch": inert, "compare_outputs": inert,
+            "run_config_bench": inert, "kernel_instance_from_config": catalog.kernel_instance_from_config,
             "run_bench": bench, "_REF_KEYS": ("reference",), "_BENCH_KEYS": ("inputs",),
             "a8w8_mxscale_gemm_bpreshuffle_kernels_list": self.registry,
             "bpreshuffle_candidate_split_k": self.common.bpreshuffle_candidate_split_k,
@@ -647,10 +656,10 @@ class RuntimeSplitKCPU(unittest.TestCase):
         exec(compile(ast.fix_missing_locations(ast.Module(body=[extracted_class], type_ignores=[])), str(path), "exec"), namespace)
         scalar = namespace["ScalarTuner"]()
         scalar._candidate_configs = lambda *args: [
-            SimpleNamespace(legacy_kid=kid) for kid in (92310, 92410, 9000)
+            catalog.config_from_legacy_kid(kid) for kid in (92310, 92410, 9000)
         ]
         tasks = scalar.get_gemm_a8w8_blockscale_opus_tune_task(("gfx950", 256, 256, 256, 384), 0, True, {})
-        choices = [(task[0][1], task[0][2]) for task in tasks]
+        choices = [(task[0][1].legacy_kid, task[0][2]) for task in tasks]
         self.assertEqual(choices, [(92310, 1), (92310, 2), (92310, 3),
                                    (92410, 1), (92410, 2), (92410, 3), (9000, 0)])
         for task in tasks:
@@ -765,6 +774,65 @@ class RuntimeSplitKCPU(unittest.TestCase):
                          kid=92310, split_k=3, instance=self.registry[92310])
             self.assertEqual(allocations, [])
 
+    def test_parameterized_adapter_validates_before_build_and_uses_config_backend(self):
+        import opus_gemm_bpreshuffle_config as catalog
+        import opus_gemm_bpreshuffle_policy as policy
+        launches, allocations, queries = [], [], []
+
+        def empty(elements, *, device, dtype):
+            allocations.append(elements)
+            return _TensorMetadata((elements,), dtype, device=device)
+
+        torch = SimpleNamespace(float8_e4m3fn="fp8", bfloat16="bf16", float32="fp32", empty=empty)
+        namespace = {
+            "Tensor": _TensorMetadata, "torch": torch, "_E8M0_DTYPES": {"e8m0", "uint8"},
+            "_A8W8_BPRESHUFFLE_FAMILY": "a8w8_blockscale_bpreshuffle",
+            "_device_arch_and_cu": lambda device: queries.append(device) or ("gfx950", 256),
+            "_launch_a8w8_backend": lambda *args: self.fail("configuration used legacy module"),
+        }
+        path = ROOT / "aiter/ops/opus/gemm_op_a8w8.py"
+        _definitions(path, {"_launch_bpreshuffle_config", "_launch_a8w8_blockscale_bpreshuffle_gemm"}, namespace)
+        launcher = namespace["_launch_bpreshuffle_config"]
+        m, n, k = 17, 384, 2048
+        x, w, y = (_TensorMetadata((m, k), "fp8"), _TensorMetadata((n, k), "fp8"),
+                   _TensorMetadata((m, n), "bf16"))
+        sa = _TensorMetadata((m, k // 128), "e8m0", (1, m))
+        sb = _TensorMetadata((n // 128, k // 128), "e8m0")
+        modules = {
+            "csrc.opus_gemm.opus_gemm_common": self.common,
+            "csrc.opus_gemm.opus_gemm_bpreshuffle_config": catalog,
+            "csrc.opus_gemm.opus_gemm_bpreshuffle_policy": policy,
+            "aiter.ops.opus.bpreshuffle_runtime": SimpleNamespace(launch_config=lambda *args: launches.append(args)),
+        }
+        namespace["__package__"] = "aiter.ops.opus"
+        with _cpu_imports(), patch.dict(sys.modules, modules):
+            cfg = catalog.config_from_legacy_kid(92310)
+            self.assertIs(launcher(x, w, y, sa, sb, config=cfg, split_k=3), y)
+            self.assertEqual(allocations, [3 * m * n])
+            self.assertIs(launches[0][0], cfg)
+            self.assertEqual(launches[0][-1], 3)
+            direct = catalog.config_from_legacy_kid(9041)
+            allocations.clear(); launches.clear()
+            self.assertIs(launcher(x, w, y, sa, sb, config=direct, split_k=0), y)
+            self.assertEqual(allocations, [])
+            self.assertIsNone(launches[0][-2])
+            self.assertEqual(launches[0][-1], 0)
+            calls_before = len(queries)
+            launches.clear()
+            for bad in (
+                (x, w, y, _TensorMetadata(sa.shape, "e8m0"), sb),
+                (x, w, _TensorMetadata(y.shape, "fp32"), sa, sb),
+                (x, w, y, sa, _TensorMetadata(sb.shape, "fp32")),
+            ):
+                with self.assertRaises(ValueError):
+                    launcher(*bad, config=cfg, split_k=3)
+            self.assertEqual(queries[calls_before:], [])
+            self.assertEqual(launches, [])
+            with self.assertRaises(ValueError):
+                launcher(x, w, y, sa, sb, config=cfg, split_k=3,
+                         workspace=_TensorMetadata((1,), "fp32"))
+            self.assertEqual(launches, [])
+
     def test_public_dispatch_forwards_explicit_and_auto_split_to_runtime_family(self):
         launches = []
         family_module = SimpleNamespace(
@@ -821,14 +889,18 @@ class RuntimeSplitKCPU(unittest.TestCase):
             "a8w8_mxscale_gemm_bpreshuffle_kernels_list": self.registry,
             "pd": SimpleNamespace(isna=lambda value: value is None,
                                   notna=lambda value: value is not None),
-            "_ensure_kids_compiled": lambda kids: compiled.append(kids),
+            "prepare_opus_configs": lambda configs: compiled.append({config.legacy_kid for config in configs}),
             "generate_data": data, "run_torch": lambda *args, **kwargs: object(),
             "compare_outputs": lambda *args, **kwargs: 0,
             "_REF_KEYS": ("x", "w", "x_scale", "w_scale"),
             "_BENCH_KEYS": ("x", "w", "out", "x_scale", "w_scale"),
             "math": math,
-            "opus_gemm": lambda *args, **kwargs: calls.append((kwargs["kid"], kwargs["split_k"])),
+            "run_config_bench": lambda *args: calls.append((args[-2].legacy_kid, args[-1])) or args[2],
         }
+        import opus_gemm_bpreshuffle_config as catalog
+        namespace.update(validate_saved_config=catalog.validate_saved_config,
+                         kernel_instance_from_config=catalog.kernel_instance_from_config,
+                         config_supports_shape=catalog.config_supports_shape)
         _definitions(path, {"run_bench"}, namespace)
         tree = ast.parse(path.read_text())
         tuner = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "OpusMxscaleBpreshuffleTuner")
@@ -845,7 +917,9 @@ class RuntimeSplitKCPU(unittest.TestCase):
         def row(kid, split, m=1, n=128, k=2048):
             return SimpleNamespace(gfx="gfx950", cu_num=256, M=m, N=n, K=k,
                                    libtype="opus", kernelId=kid, splitK=split,
-                                   outdtype="bf16", kernelName=self.registry[kid].name)
+                                   outdtype="bf16", kernelName=self.registry[kid].name,
+                                   pipeline=catalog.config_from_legacy_kid(kid).pipeline,
+                                   config=catalog.config_from_legacy_kid(kid).to_json())
 
         saved = [row(92310, 1), row(92310, 3), row(92310, 5),
                  row(92310, 0, k=128), row(92410, 0, k=128),

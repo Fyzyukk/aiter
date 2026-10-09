@@ -4,6 +4,9 @@
 
 import os
 from pathlib import Path
+from dataclasses import replace
+
+from opus_gemm_bpreshuffle_config import config_traits, construct_config, kernel_instance_from_config
 
 from opus_gemm_common import (
     OpusGemmInstance,
@@ -2828,6 +2831,8 @@ def gen_bmm_mxscale_fused_instance(
 
 def _bpreshuffle_compact_traits(k, specialization=None):
     """One traits description for direct, register, and split-K variants."""
+    if getattr(k, "bpreshuffle_config_codegen", False):
+        return config_traits(k.bpreshuffle_config, specialization)
     if k.name_tag.startswith("fine_lds"):
         fixed_k, stages, cluster, vec, block, cache = specialization or (
             0, k.bpreshuffle_stages, k.bpreshuffle_cluster,
@@ -2859,6 +2864,12 @@ def gen_mxscale_bpreshuffle_instance(
     """Emit the optional gfx950 compact-E8M0 bpreshuffle implementation."""
     assert k.B_K == 128 and k.output_tiles_per_wg == 1
     variant = getattr(k, "bpreshuffle_variant", None)
+    canonical = bool(getattr(k, "bpreshuffle_config_codegen", False))
+    config = getattr(k, "bpreshuffle_config", None) if canonical else None
+    if canonical and variant:
+        variant = replace(variant, traits=config_traits(config), schedule=config.schedule,
+                          dynamic_lds=config.dynamic_lds, sfa_alignment=config.sfa_alignment,
+                          c_alignment=config.c_alignment)
     runtime_split_k = bool(variant and getattr(variant, "runtime_split_k", False))
     small_pipeline = not variant and k.name_tag in {
         "small_register", "small_lds", "small_regscale", "small_regscale_xor",
@@ -2905,6 +2916,9 @@ def gen_mxscale_bpreshuffle_instance(
             traits_name = traits_name.removesuffix("_gfx950") + "_unroll4_gfx950"
         if k.bpreshuffle_scale_reset:
             traits_name = traits_name.removesuffix("_gfx950") + "_scale_reset_gfx950"
+    if canonical:
+        compute_pipeline, schedule = config.pipeline, config.schedule
+        traits_name = config_traits(config)
     pipeline_header = f"gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_{compute_pipeline}_gfx950.cuh"
     traits_header = "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"
     kernel_func = f"opus_gemm_mxscale_bpreshuffle_{compute_pipeline}_kernel"
@@ -2921,7 +2935,7 @@ __global__ void {kernel_func}({kargs_name} kargs);
 #else
 #include "{pipeline_header}"
 #endif"""
-    if variant:
+    if variant or canonical:
         # The selected traits may be a new specialization of an existing
         # pipeline, so the device path must include both descriptor headers.
         split = split.replace(
@@ -2995,7 +3009,7 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
             "__global__ void opus_gemm_mxscale_bpreshuffle_reduce_kernel("
             "const float*, opus::bf16_t*, int);\n#endif"
         )
-    if variant and variant.split_k > 1 and not runtime_split_k:
+    if variant and variant.split_k > 1 and not runtime_split_k and not (canonical and config.pipeline == "lds"):
         # Both register and LDS producers write one FP32 partition per z block.
         # Keep the complete-call reduction and workspace ABI shared across them.
         split_k, vec, block = variant.split_k, variant.reduce_vec, variant.reduce_block
@@ -3010,11 +3024,12 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
             "template __global__ void opus_gemm_mxscale_bpreshuffle_reduce_kernel<"
             f"{split_k}, {vec}, {block}>(const float*, opus::bf16_t*, int);\n"
         )
-    if small_pipeline or fine_pipeline or register_tail_pipeline:
+    if small_pipeline or fine_pipeline or register_tail_pipeline or (canonical and config.pipeline == "lds" and not runtime_split_k):
         reductions = set()
 
         def compact_launch(choice, alias):
-            dynamic_lds = choice.name_tag.startswith(("fine_lds", "small_lds", "small_regscale"))
+            dynamic_lds = (choice.bpreshuffle_config.dynamic_lds if canonical else
+                           choice.name_tag.startswith(("fine_lds", "small_lds", "small_regscale")))
             lds = f"{alias}::lds_bytes(k)" if dynamic_lds else "0"
             grid_n = f"(n + {choice.B_N - 1}) / {choice.B_N}" if choice.bpreshuffle_pad_n else f"n / {choice.B_N}"
             body = (f"{kernel_func}<{alias}><<<dim3({grid_n}, (m + {choice.B_M - 1}) / {choice.B_M}, "
@@ -3036,7 +3051,12 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
             assert choice.max_m == k.max_m and choice.m_align == k.m_align
             assert choice.GROUP_N == k.GROUP_N and choice.GROUP_K == k.GROUP_K
             if not declared:
-                traits_alias += f"\nusing {alias} = {policy_traits(_bpreshuffle_compact_traits(choice))};"
+                traits = _bpreshuffle_compact_traits(choice)
+                if canonical:
+                    traits = f"opus_gemm_mxscale_bpreshuffle_pipeline_traits<{traits}, {choice.bpreshuffle_config.schedule}>"
+                else:
+                    traits = policy_traits(traits)
+                traits_alias += f"\nusing {alias} = {traits};"
                 device_decl += f"template __global__ void {kernel_func}<{alias}>({kargs_name});\n"
             body = compact_launch(choice, alias)
             if choice.bpreshuffle_split_k > 1:
@@ -3054,8 +3074,11 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
             return body
 
         kernel_launch = emit_choice(k, f"{k.name}_Traits", declared=True)
-        for index, (condition, kid) in reversed(list(enumerate(k.bpreshuffle_dispatch))):
-            choice = a8w8_mxscale_gemm_bpreshuffle_kernels_list[kid]
+        choices = (tuple((condition, kernel_instance_from_config(construct_config(config.pipeline, config=payload)))
+                         for condition, payload in config.dispatch) if canonical else
+                   tuple((condition, a8w8_mxscale_gemm_bpreshuffle_kernels_list[kid])
+                         for condition, kid in k.bpreshuffle_dispatch))
+        for index, (condition, choice) in reversed(list(enumerate(choices))):
             body = emit_choice(choice, f"{k.name}_Choice{index}")
             kernel_launch = f"if ({condition}) {{\n        {body}\n    }} else {{\n        {kernel_launch}\n    }}"
         for split_k, vec, block in sorted(reductions):
@@ -3063,7 +3086,7 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
                             f"{split_k}, {vec}, {block}>(const float*, opus::bf16_t*, int);\n")
     # Keep the public IDs stable and retain the original fallback in every family.
     specializations = []
-    if merged and family == "main":
+    if merged and family == "main" and (not canonical or config.legacy_kid >= 0):
         config = "opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950"
         specializations = [
             # Avoid an extra scheduling round while 192x256 still fits in 256 blocks.
@@ -3076,12 +3099,12 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
             ("m >= 1024 && k == 3072", f"{config}<192, 256, 32, 3072>"),
             ("m >= 1024 && k == 7168", f"{config}<192, 256, 64, 7168>"),
         ]
-    elif merged and family == "narrow" and k.B_N == 128:
+    elif merged and family == "narrow" and k.B_N == 128 and (not canonical or config.legacy_kid >= 0):
         specializations = [(
             "m >= 1024 && n <= 1024 && k == 7168 && ((m + 63) / 64) * (n / 128) <= 256",
             "opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<4, 64, 7168>",
         )]
-    elif merged and family == "narrow" and k.B_N == 64:
+    elif merged and family == "narrow" and k.B_N == 64 and (not canonical or config.legacy_kid >= 0):
         specializations = [(
             "m >= 1024 && m <= 2048 && n <= 1024 && k == 7168",
             "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",

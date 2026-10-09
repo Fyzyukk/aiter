@@ -1222,3 +1222,90 @@ struct opus_gemm_mxscale_bpreshuffle_pipeline_traits : Base {
     static constexpr int BLOCK_GROUP_M = opus_bpreshuffle_policy::block_group_m<Base>();
     static constexpr int MIN_WGS_PER_CU = 1;
 };
+
+#include <type_traits>
+
+// Adapters recompute every dependent extent when a canonical axis changes.
+// Geometry bases only provide invariant MFMA/layout constants.
+template<int Panel, int FixedK, bool Reset, int Unroll>
+struct opus_gemm_mxscale_bpreshuffle_pin_config_traits
+    : opus_gemm_mxscale_bpreshuffle_4wave_traits_gfx950 {
+    static constexpr int FIXED_K = FixedK, LOOP_UNROLL = Unroll;
+    static constexpr bool RESET_SFA_BEFORE_LOAD = Reset;
+    static constexpr int SCALE_PANEL_K_CAPACITY = Panel;
+    static constexpr int SFA_PASSES_PER_CACHE_PANEL = Panel / SFA_K_COLUMNS_PER_PASS;
+    static constexpr int SFA_PANEL_BYTES = B_M * Panel;
+    static constexpr int SFB_PANEL_BYTES = SCALE_N_HALVES * Panel * VEC_SF;
+    static constexpr int LDS_BYTES = SMEM_A_ELEMS + SMEM_B_ELEMS + SFA_PANEL_BYTES + SFB_PANEL_BYTES;
+    static_assert(Panel == 16 || Panel == 32 || Panel == 64);
+    static_assert(Unroll == 2 || Unroll == 4);
+    static_assert(FixedK == 0 || (FixedK > 0 && FixedK % 128 == 0 && FixedK <= 16384));
+    static_assert(LDS_BYTES <= 160 * 1024);
+};
+
+template<int BM, int Stages, int Panel, int FixedK, int Schedule>
+struct opus_gemm_mxscale_bpreshuffle_small_config_traits
+    : std::conditional_t<Schedule == 1,
+          opus_gemm_mxscale_bpreshuffle_4wave_128x128_traits_gfx950,
+          opus_gemm_mxscale_bpreshuffle_4wave_160x128_traits_gfx950> {
+    using Base = std::conditional_t<Schedule == 1,
+          opus_gemm_mxscale_bpreshuffle_4wave_128x128_traits_gfx950,
+          opus_gemm_mxscale_bpreshuffle_4wave_160x128_traits_gfx950>;
+    static constexpr int B_M = BM, HALF_B_M = BM, FIXED_K = FixedK;
+    static constexpr int E_M = BM / (Base::T_M * Base::W_M);
+    static constexpr int smem_m_rep = BM * Base::B_K / Base::smem_linear_wave;
+    static constexpr int A_STAGE = smem_m_rep * (Base::smem_linear_wave + Base::smem_padding);
+    static constexpr int NUM_STAGES = Stages;
+    static constexpr int MATRIX_LDS_BYTES = Stages * (A_STAGE + Base::B_STAGE);
+    static constexpr int A_VMEM_INSTRUCTIONS = BM * Base::B_K / (Base::BLOCK_SIZE * Base::VEC_A);
+    static constexpr int VMEM_INSTRUCTIONS_PER_TILE = A_VMEM_INSTRUCTIONS + Base::B_VMEM_INSTRUCTIONS;
+    static constexpr int SCALE_PANEL = Panel, SFA_BYTES = BM * Panel, SFB_BYTES = Panel;
+    static constexpr int SFA_VECTORS_PER_GROUP = BM / Base::VEC_SCALE_A;
+    static constexpr int SFA_PASSES = (SFA_BYTES + Base::SFA_BYTES_PER_PASS - 1) / Base::SFA_BYTES_PER_PASS;
+    static constexpr int A_SCALE_PACKS = (E_M + 3) / 4;
+    static constexpr int LDS_BYTES = MATRIX_LDS_BYTES + SFA_BYTES + SFB_BYTES;
+    static constexpr int OUTPUT_PASSES = BM * Base::B_N / (Base::BLOCK_SIZE * Base::VEC_OUTPUT);
+    static_assert(BM == 64 || BM == 96 || BM == 128 || BM == 160);
+    static_assert(Schedule == 1 || Schedule == 2);
+    static_assert(Schedule != 1 || BM == 128);
+    static_assert(Stages == 2 || Stages == 3);
+    static_assert(Panel >= 8 && Panel <= 32 && (Panel & (Panel - 1)) == 0);
+    static_assert(BM * Base::C_LDS_ROW_STRIDE_ELEMS * 2 <= LDS_BYTES && LDS_BYTES <= 160 * 1024);
+};
+
+template<class Base, int Vec, int Block>
+struct opus_gemm_mxscale_bpreshuffle_runtime_config_traits : Base {
+    static constexpr int REDUCE_VEC = Vec, REDUCE_BLOCK = Block;
+    static constexpr int lds_bytes(int k, int split_k) {
+        const int total = k / Base::B_K;
+        const int loops = total / split_k + (total % split_k != 0);
+        const int stages = loops < Base::NUM_STAGES ? loops : Base::NUM_STAGES;
+        return stages * (Base::A_STAGE + Base::B_STAGE) +
+            (Base::REGISTER_SCALES ? 0 : (Base::B_M + Base::B_GROUPS) * loops);
+    }
+};
+
+template<int Panel, int FixedK, bool DirectB, int ChunkRows>
+struct opus_gemm_mxscale_bpreshuffle_large_config_traits
+    : opus_gemm_mxscale_bpreshuffle_8wave_192x256_large_output_traits_gfx950 {
+    static constexpr int FIXED_K = FixedK, MAX_K = Panel * 128;
+    static constexpr int SCALE_PANEL = Panel, SFA_BYTES = B_M * Panel;
+    static constexpr int SFB_BYTES = Panel * sizeof(unsigned);
+    static constexpr int SFA_THREADS_PER_GROUP = BLOCK_SIZE / Panel;
+    static constexpr int SFA_K_COLUMNS_PER_WAVE = WARP_SIZE / SFA_THREADS_PER_GROUP;
+    static constexpr int SFA_ROWS_PER_PASS = SFA_THREADS_PER_GROUP * VEC_SCALE_A;
+    static constexpr int SFA_PASSES = (B_M + SFA_ROWS_PER_PASS - 1) / SFA_ROWS_PER_PASS;
+    static constexpr int NUM_STAGES = DirectB ? 3 : 2;
+    static constexpr int MATRIX_LDS_BYTES = NUM_STAGES * (A_STAGE + (DirectB ? 0 : B_STAGE));
+    static constexpr int LDS_BYTES = MATRIX_LDS_BYTES + SFA_BYTES + SFB_BYTES;
+    static constexpr int B_DIRECT_SETS = 2, C_CHUNK_ROWS = DirectB ? ChunkRows : B_M;
+    static constexpr int C_CHUNKS = B_M / C_CHUNK_ROWS;
+    static constexpr int C_CHUNK_BYTES = C_CHUNK_ROWS * C_LDS_ROW_STRIDE_ELEMS * sizeof(opus::bf16_t);
+    static constexpr int CHUNK_OUTPUT_PASSES = C_CHUNK_ROWS * B_N / (BLOCK_SIZE * VEC_OUTPUT);
+    static constexpr int A_VMEM_INSTRUCTIONS = B_M * B_K / (BLOCK_SIZE * VEC_A);
+    static_assert(Panel == 16 || Panel == 32 || Panel == 64 || Panel == 128);
+    static_assert(FixedK == 0 || (FixedK > 0 && FixedK % 128 == 0 && FixedK <= MAX_K));
+    static_assert(B_M % C_CHUNK_ROWS == 0 && C_CHUNK_ROWS % 16 == 0);
+    static_assert(C_CHUNK_ROWS * B_N % (BLOCK_SIZE * VEC_OUTPUT) == 0);
+    static_assert(C_CHUNK_BYTES <= LDS_BYTES && LDS_BYTES <= 160 * 1024);
+};

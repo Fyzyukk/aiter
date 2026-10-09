@@ -12,7 +12,7 @@ import torch
 from torch import Tensor
 
 from ...jit.core import compile_ops
-from ._arch import _device_arch
+from ._arch import _device_arch, _device_arch_and_cu
 from .launch_plan import (
     _A8W8_BLOCKSCALE_FAMILY,
     _A8W8_BPRESHUFFLE_FAMILY,
@@ -366,6 +366,7 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
     workspace: Tensor | None = None,
     route_arch: str | None = None,
     instance: object | None = None,
+    compile_config: object | None = None,
 ) -> Tensor:
     """Launch logical 2D bpreshuffled blockscale A8W8 GEMM.
 
@@ -408,7 +409,7 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
         plan = bpreshuffle_launch_plan(
             instance, int(XQ.shape[0]), int(WQ.shape[0]), int(XQ.shape[1]), split_k, cu_num,
         )
-    if runtime_split_k or instance.bpreshuffle_split_k > 1:
+    if runtime_split_k or instance.bpreshuffle_split_k > 1 or compile_config is not None:
         # Allocate through PyTorch so stream lifetime and graph pools are tracked.
         # Shape/dtype/device checks precede allocation; C++ also checks every
         # physical workspace contract for direct raw-ABI callers.
@@ -429,7 +430,8 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
                 or w_scale.shape != (n // 128, k // 128) or not w_scale.is_contiguous()):
             raise ValueError("OPUS bpreshuffle requires column-major E8M0 A scales and row-major E8M0 B scales")
         workspace_elements = (
-            plan.workspace_elements if plan is not None else instance.bpreshuffle_split_k * m * n
+            plan.workspace_elements if plan is not None else
+            instance.bpreshuffle_split_k * m * n if instance.bpreshuffle_split_k > 1 else 0
         )
         if not workspace_elements and workspace is not None:
             raise ValueError("OPUS bpreshuffle split_k=1 does not use workspace")
@@ -439,6 +441,18 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
             )
     elif workspace is not None:
         raise ValueError("this OPUS bpreshuffle kid does not use workspace")
+    if compile_config is not None:
+        if workspace is not None:
+            if (workspace.dtype != torch.float32 or workspace.device != XQ.device
+                    or not workspace.is_contiguous() or workspace.numel() < workspace_elements):
+                raise ValueError("OPUS bpreshuffle requires sufficient contiguous FP32 workspace on the input device")
+        from .bpreshuffle_runtime import launch_config
+        launch_split_k = (0 if split_k == 0 else plan.split_k) if runtime_split_k else 0
+        launch_config(
+            compile_config, XQ.unsqueeze(0), WQ.unsqueeze(0), x_scale, w_scale,
+            Y.unsqueeze(0), workspace, launch_split_k,
+        )
+        return Y
     if runtime_split_k:
         # Zero remains the historical default sentinel, including empty
         # short-K register partitions. Explicit/auto splits are positive.
@@ -460,6 +474,57 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
         0,
     )
     return Y
+
+
+def _launch_bpreshuffle_config(
+    XQ: Tensor, WQ: Tensor, Y: Tensor, x_scale: Tensor, w_scale: Tensor,
+    *, pipeline: str | None = None, config=None, split_k: int | None = None,
+    workspace: Tensor | None = None, tuned_file: str | None = None,
+    **compile_params,
+) -> Tensor:
+    """Validate tensors, select a static configuration, then prepare its module."""
+    tensors = (XQ, WQ, Y, x_scale, w_scale)
+    if any(not isinstance(tensor, Tensor) for tensor in tensors):
+        raise TypeError("opus_gemm_bpreshuffle requires Tensor inputs, output and scales")
+    if workspace is not None and not isinstance(workspace, Tensor):
+        raise TypeError("opus_gemm_bpreshuffle workspace must be a Tensor")
+    if any(tensor.dim() != 2 for tensor in tensors):
+        raise ValueError("opus_gemm_bpreshuffle expects logical 2D tensors")
+    if not XQ.is_cuda or any(tensor.device != XQ.device for tensor in tensors[1:]):
+        raise ValueError("OPUS bpreshuffle tensors must be on the same GPU device")
+    m, k = map(int, XQ.shape)
+    n = int(WQ.shape[0])
+    if min(m, n, k) <= 0 or WQ.shape[1] != k or Y.shape != (m, n):
+        raise ValueError("OPUS bpreshuffle input/output shapes are incompatible")
+    if n % 128 or k % 128:
+        raise ValueError("OPUS native bpreshuffle requires N and K divisible by 128")
+    if XQ.dtype != torch.float8_e4m3fn or WQ.dtype != XQ.dtype or Y.dtype != torch.bfloat16:
+        raise ValueError("OPUS native bpreshuffle requires FP8 E4M3FN inputs and BF16 output")
+    if any(not tensor.is_contiguous() for tensor in (XQ, WQ, Y)):
+        raise ValueError("OPUS bpreshuffle XQ/WQ/Y must be contiguous")
+    if (x_scale.dtype not in _E8M0_DTYPES or w_scale.dtype not in _E8M0_DTYPES
+            or x_scale.shape != (m, k // 128) or x_scale.stride() != (1, m)
+            or w_scale.shape != (n // 128, k // 128) or not w_scale.is_contiguous()):
+        raise ValueError("OPUS bpreshuffle requires column-major E8M0 A scales and row-major E8M0 B scales")
+    if workspace is not None and (workspace.device != XQ.device or workspace.dtype != torch.float32
+                                  or not workspace.is_contiguous()):
+        raise ValueError("OPUS bpreshuffle workspace must be contiguous FP32 on the input device")
+    from csrc.opus_gemm.opus_gemm_bpreshuffle_policy import select_config
+    from csrc.opus_gemm.opus_gemm_bpreshuffle_config import kernel_instance_from_config
+
+    gfx, cu_num = _device_arch_and_cu(XQ.device)
+    if gfx != "gfx950":
+        raise ValueError(f"OPUS native bpreshuffle supports gfx950; got {gfx}")
+    selected = select_config(
+        (m, n, k), pipeline=pipeline, config=config, compile_params=compile_params,
+        split_k=split_k, gfx=gfx, cu_num=cu_num, tuned_file=tuned_file,
+    )
+    instance = kernel_instance_from_config(selected.config)
+    return _launch_a8w8_blockscale_bpreshuffle_gemm(
+        XQ, WQ, x_scale, w_scale, Y, kid=selected.config.legacy_kid,
+        split_k=selected.split_k, workspace=workspace, route_arch=gfx,
+        instance=instance, compile_config=selected.config,
+    )
 
 
 def _validate_a8w8_mxscale_bmm_tensors(

@@ -7,7 +7,6 @@ import os
 import shutil
 from pathlib import Path
 
-import pandas as pd
 from codegen import gen_instances_gfx942 as _gfx942  # noqa: F401
 
 # Architecture modules register their code emitters at import time.
@@ -845,7 +844,7 @@ void
 
     # -- Per-pass TU emission -- Replaces the old "one .cpp per (kid, dtype)" scheme.
 
-    def _emit_fused_host_tu(self):
+    def _emit_fused_host_tu(self, *, bpreshuffle_only=False):
         """Emit per-arch HOST translation units (one .cu per arch).
 
         Splitting by arch lets each TU's reduce-kernel forward decl match
@@ -890,6 +889,8 @@ void
                 "    const D_BIAS_* bias, int stride_bias_batch);\n"
                 f"{extra_forward_decls}"
             )
+            if bpreshuffle_only:
+                forward_decls = ""
             contents = (
                 "// SPDX-License-Identifier: MIT\n"
                 "// Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.\n"
@@ -1094,6 +1095,8 @@ void
 
 def _tune_df_kids(df):
     """Read kid values from either supported tuned-CSV column name."""
+    import pandas as pd
+
     kids = None
     for col in ("solidx", "kernelId"):
         if col not in df.columns:
@@ -1101,6 +1104,127 @@ def _tune_df_kids(df):
         values = pd.to_numeric(df[col], errors="coerce")
         kids = values if kids is None else kids.fillna(values)
     return kids
+
+
+def generate_bpreshuffle_config(config_file, working_path):
+    """Emit one scalar configuration, independent of legacy subset metadata.
+
+    Host-selected alternatives are emitted by the configuration's launcher in
+    the same translation unit. No defaults, other GEMM families, BMM symbols,
+    or shared compiled-kid receipt participate in this build.
+    """
+    from opus_gemm_bpreshuffle_config import construct_config, kernel_instance_from_config
+
+    payload = json.loads(Path(config_file).read_text())
+    if not isinstance(payload, dict) or set(payload) != {"pipeline", "compile_params"}:
+        raise ValueError("B-preshuffle config file must contain pipeline and compile_params")
+    config = construct_config(payload["pipeline"], config=payload["compile_params"])
+    instance = kernel_instance_from_config(config)
+    abi_kid = config.legacy_kid if config.legacy_kid >= 0 else 1
+    working_path = Path(working_path)
+    working_path.mkdir(parents=True, exist_ok=True)
+    codegen = opus_gemm_codegen(str(working_path))
+    for directory in (codegen.impl_path, codegen.instances_path):
+        if os.path.isdir(directory):
+            shutil.rmtree(directory)
+        os.mkdir(directory)
+    codegen.gen_instance(instance)
+    codegen._emit_fused_host_tu(bpreshuffle_only=True)
+    codegen._emit_device_tus()
+    codegen.gen_manifest_head({abi_kid: instance})
+
+    # These public raw signatures match the aggregate module, allowing the
+    # normal develop=True tensor conversion and HIP stream hooks to be reused.
+    # Lookup is module-local: an arbitrary configuration uses internal ID 1.
+    prefix = "opus_gemm_a8w8_blockscale_bpreshuffle"
+    runtime = config.runtime_split_k
+    supported = set(instance.output_dtypes)
+    branches = []
+    for ctype, dtype in (("bf16_t", "bf16"), ("fp32_t", "fp32")):
+        if ctype not in supported:
+            continue
+        tail = ", split_k" if runtime else ""
+        branches.append(
+            f"  if (Y.dtype() == AITER_DTYPE_{dtype}) {{\n"
+            f"    {instance.name}<{ctype}>(XQ, WQ, x_scale, w_scale, Y, workspace{tail});\n"
+            "    return;\n  }\n"
+        )
+    router = """// Auto-generated scalar OPUS B-preshuffle module.
+#ifndef __HIP_DEVICE_COMPILE__
+#include "opus_gemm_arch.cuh"
+#include "opus_gemm_manifest.h"
+#include "opus_gemm_utils.cuh"
+#include "opus_gemm.h"
+
+static void launch_config(
+    aiter_tensor_t& XQ, aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale, aiter_tensor_t& w_scale,
+    aiter_tensor_t& Y, int kid,
+    std::optional<aiter_tensor_t> workspace, int split_k)
+{
+  aiter_detail::g_aiter_can_throw = true;
+  AITER_CHECK(kid == ABI_KID, "OPUS B-preshuffle configuration ID mismatch");
+  AITER_CHECK(opus_get_gfx_arch() == OpusGfxArch::Gfx950,
+              "OPUS MXFP8 B-preshuffle requires gfx950");
+  AITER_CHECK(XQ.is_gpu() && WQ.is_gpu() && Y.is_gpu() &&
+              x_scale.is_gpu() && w_scale.is_gpu(), "expected GPU tensors");
+  AITER_CHECK(XQ.device_id == WQ.device_id && XQ.device_id == Y.device_id &&
+              XQ.device_id == x_scale.device_id && XQ.device_id == w_scale.device_id,
+              "OPUS B-preshuffle tensor device IDs must match");
+  int device = -1;
+  HIP_CALL(hipGetDevice(&device));
+  AITER_CHECK(device == XQ.device_id, "current HIP device must match tensor device");
+  AITER_CHECK(XQ.dtype() == AITER_DTYPE_fp8 && WQ.dtype() == AITER_DTYPE_fp8,
+              "OPUS B-preshuffle expects fp8 XQ/WQ");
+  AITER_CHECK(SPLIT_CHECK, "invalid split_k for this B-preshuffle configuration");
+DTYPE_BRANCHES
+  AITER_CHECK(false, "unsupported output dtype for this B-preshuffle configuration");
+}
+
+void PREFIX_launch(
+    aiter_tensor_t& XQ, aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale, aiter_tensor_t& w_scale, aiter_tensor_t& Y, int kid)
+{
+  launch_config(XQ, WQ, x_scale, w_scale, Y, kid, std::nullopt, 0);
+}
+void PREFIX_workspace_launch(
+    aiter_tensor_t& XQ, aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale, aiter_tensor_t& w_scale, aiter_tensor_t& Y, int kid,
+    aiter_tensor_t& workspace)
+{
+  launch_config(XQ, WQ, x_scale, w_scale, Y, kid, workspace, 0);
+}
+void PREFIX_runtime_launch(
+    aiter_tensor_t& XQ, aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale, aiter_tensor_t& w_scale, aiter_tensor_t& Y, int kid,
+    std::optional<aiter_tensor_t> workspace, int split_k)
+{
+  launch_config(XQ, WQ, x_scale, w_scale, Y, kid, workspace, split_k);
+}
+#endif
+"""
+    router = (router.replace("ABI_KID", str(abi_kid))
+              .replace("SPLIT_CHECK", "split_k >= 0 && split_k <= 16" if runtime else "split_k == 0")
+              .replace("DTYPE_BRANCHES", "".join(branches))
+              .replace("PREFIX", prefix))
+    Path(working_path, "bpreshuffle_config_dispatch.cu").write_text(router)
+    Path(working_path, "bpreshuffle_config_pybind.cu").write_text("""// Auto-generated scalar OPUS bindings.
+#ifndef __HIP_DEVICE_COMPILE__
+#include "rocm_ops.hpp"
+#include "aiter_stream.h"
+#include "opus_gemm.h"
+PYBIND11_MODULE(AITER_EXTENSION_NAME, m)
+{
+    AITER_SET_STREAM_PYBIND
+    OPUS_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_LAUNCH_PYBIND;
+}
+#endif
+""")
+    Path(working_path, "bpreshuffle_config.json").write_text(json.dumps({
+        "pipeline": config.pipeline, "compile_params": json.loads(config.to_json()),
+        "abi_kid": abi_kid, "symbol": instance.name,
+    }, sort_keys=True, indent=2) + "\n")
+    return config
 
 
 if __name__ == "__main__":
@@ -1115,6 +1239,12 @@ if __name__ == "__main__":
         default="./",
         required=False,
         help="the path where all the blobs are going to be generated",
+    )
+
+    parser.add_argument(
+        "--bpreshuffle_config",
+        type=Path,
+        help="Generate only the scalar MXFP8 B-preshuffle configuration in this JSON file.",
     )
 
     parser.add_argument(
@@ -1180,6 +1310,14 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.bpreshuffle_config is not None:
+        if args.tune or args.kernel_tag or args.tune_files or args.tune_file or args.extra_kids or args.compiled_kids_sidecar:
+            parser.error("--bpreshuffle_config cannot be combined with legacy subset selectors")
+        generate_bpreshuffle_config(args.bpreshuffle_config, args.working_path)
+        raise SystemExit(0)
+
+    import pandas as pd
+
     if args.tune_files is None and args.tune_file is not None:
         args.tune_files = args.tune_file
     TAG_TO_LIST = {

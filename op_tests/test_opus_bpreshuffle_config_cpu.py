@@ -219,49 +219,41 @@ class BpreshuffleConfigCPU(unittest.TestCase):
         # Serialization fills metadata for a newly measured result frame.
         self.assertEqual(normalize(legacy).rows, result.rows)
 
-    def test_public_wrapper_resolves_parameters_and_forwards_launch_arguments(self):
+    def test_public_wrapper_forwards_shape_selection_and_compile_parameters(self):
         path = ROOT / "aiter/ops/opus/__init__.py"
         node = next(node for node in ast.parse(path.read_text()).body
                     if isinstance(node, ast.FunctionDef) and node.name == "opus_gemm_bpreshuffle")
         future = ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0)
         calls = []
 
-        def dispatch(*args, **kwargs):
+        def launch(*args, **kwargs):
             calls.append((args, kwargs))
-            return args[4]
+            return args[2]
 
-        namespace = {"_opus_dispatch": dispatch}
+        namespace = {}
         exec(compile(ast.fix_missing_locations(ast.Module(body=[future, node], type_ignores=[])), str(path), "exec"), namespace)
         wrapper = namespace["opus_gemm_bpreshuffle"]
         tensors = [object() for _ in range(5)]
         workspace = object()
         config = catalog.config_from_legacy_kid(92310)
-        package_module = "csrc.opus_gemm.opus_gemm_bpreshuffle_config"
-        with _cpu_imports(), patch.dict(sys.modules, {package_module: catalog}):
-            for payload in (config, config.to_json(), dict(config.compile_params)):
-                self.assertIs(wrapper(*tensors, pipeline="register", config=payload,
-                                      split_k=3, workspace=workspace), tensors[2])
+        module = "aiter.ops.opus.gemm_op_a8w8"
+        namespace["__package__"] = "aiter.ops.opus"
+        with _cpu_imports(), patch.dict(sys.modules, {module: SimpleNamespace(_launch_bpreshuffle_config=launch)}):
+            self.assertIs(wrapper(*tensors), tensors[2])
+            self.assertIs(wrapper(*tensors, pipeline="register", config=config,
+                                  split_k=3, workspace=workspace, tuned_file="saved.csv"), tensors[2])
             self.assertIs(wrapper(*tensors, pipeline="register", tile_m=16, tile_n=16,
                                   wave_k=1, split_k=1), tensors[2])
-            self.assertEqual(len(calls), 4)
-            for args, kwargs in calls:
-                self.assertEqual(args, ("opus_gemm", 2, *tensors[:3]))
-                self.assertEqual(kwargs["kid"], 92310)
-                self.assertEqual(kwargs["layout"], "bpreshuffle")
-                self.assertIs(kwargs["x_scale"], tensors[3])
-                self.assertIs(kwargs["w_scale"], tensors[4])
-            for _, kwargs in calls[:3]:
-                self.assertEqual(kwargs["split_k"], 3)
-                self.assertIs(kwargs["workspace"], workspace)
-            self.assertEqual(calls[3][1]["split_k"], 1)
-            self.assertIsNone(calls[3][1]["workspace"])
-            for bad in ({"pipeline": "unknown"}, {"pipeline": "register", "tile_m": 17},
-                        {"pipeline": "register", "config": "broken"},
-                        {"pipeline": "lds", "config": config},
-                        {"pipeline": "register", "config": config, "tile_m": 16}):
-                with self.assertRaises(ValueError):
-                    wrapper(*tensors, **bad)
-            self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), 3)
+        for args, kwargs in calls:
+            self.assertEqual(args, tuple(tensors))
+        self.assertIsNone(calls[0][1]["pipeline"])
+        self.assertIsNone(calls[0][1]["split_k"])
+        self.assertIs(calls[1][1]["config"], config)
+        self.assertIs(calls[1][1]["workspace"], workspace)
+        self.assertEqual(calls[1][1]["tuned_file"], "saved.csv")
+        self.assertEqual(calls[2][1]["tile_m"], 16)
+        self.assertEqual(calls[2][1]["split_k"], 1)
 
 
 if __name__ == "__main__":

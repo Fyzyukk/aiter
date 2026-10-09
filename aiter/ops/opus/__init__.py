@@ -17,36 +17,37 @@ def opus_gemm_bpreshuffle(
     x_scale: Tensor,
     w_scale: Tensor,
     *,
-    pipeline: str,
+    pipeline: str | None = None,
     config=None,
-    split_k: int = 0,
+    split_k: int | None = None,
     workspace: Tensor | None = None,
+    tuned_file: str | None = None,
     **compile_params,
 ) -> Tensor:
-    """Launch native-E8M0 GEMM by pipeline and static compile parameters.
+    """Select and launch a parameterized native-E8M0 B-preshuffle GEMM.
 
     The five pipelines are ``pin``, ``tiled``, ``register``, ``lds`` and
-    ``large_output``. ``config`` accepts an enumerated BpreshuffleConfig, its
-    complete JSON payload, or its parameter mapping. Named compile parameters
-    can instead identify one registered configuration. Tile, wave and queue
-    parameters select compiled specializations; runtime split-K is a separate
-    launch argument. The internal compatibility ID is resolved automatically.
+    ``large_output``. Explicit ``config`` or named compile parameters select a
+    validated static specialization. Otherwise shape selection tries the tuned
+    table and then a legal default; ``pipeline`` optionally limits that choice.
+    Each configuration is compiled and cached independently before launch.
+    ``split_k=None`` uses the saved count or a grid heuristic; an integer
+    explicitly selects the existing fixed/runtime split contract.
     """
-    from csrc.opus_gemm.opus_gemm_bpreshuffle_config import resolve_config
+    from .gemm_op_a8w8 import _launch_bpreshuffle_config
 
-    selected = resolve_config(pipeline, config, **compile_params)
-    return _opus_dispatch(
-        "opus_gemm",
-        2,
+    return _launch_bpreshuffle_config(
         XQ,
         WQ,
         Y,
-        kid=selected.legacy_kid,
-        layout="bpreshuffle",
-        x_scale=x_scale,
-        w_scale=w_scale,
+        x_scale,
+        w_scale,
+        pipeline=pipeline,
+        config=config,
         split_k=split_k,
         workspace=workspace,
+        tuned_file=tuned_file,
+        **compile_params,
     )
 
 

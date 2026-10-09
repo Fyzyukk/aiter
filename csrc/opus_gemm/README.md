@@ -7,15 +7,20 @@ public operation split does not duplicate C++ launchers or kernels.
 
 MXFP8 B-preshuffle is organized as **five parameterized compute pipelines**:
 `pin`, `tiled`, `register`, `lds`, and `large_output`. The scalar
-[configuration catalog](opus_gemm_bpreshuffle_config.py) exposes pipeline names
-and tile/wave/stage/load-policy parameters. Normal tuning retains 89 compile
-configurations; 105 numeric IDs remain as internal compatibility launcher keys,
+[configuration model](opus_gemm_bpreshuffle_config.py) constructs traits from
+tile/wave/stage/load-policy parameters. The scalar
+[JSON catalog](opus_gemm_bpreshuffle_catalog.json) holds default configurations
+and historical ABI metadata; the compatibility registry is derived from it.
+Normal tuning retains 89 default configurations; legal new tuples can be
+compiled without ID registration. 105 numeric IDs remain as compatibility keys,
 including 16 historical entries. A compile configuration is a specialization
 of a pipeline, rather than another source file or public pipeline candidate.
 
+The [configuration flow report](../../reports/opus_configflow_20261009/README.md)
+records parameter codegen, independent module preparation, and shape selection.
 The [five-pipeline report](../../reports/opus_pipeline5_20261009/README.md) and
 [configuration map](../../reports/opus_pipeline5_20261009/configurations.csv)
-record the current layout. The earlier
+record the source consolidation stage. The earlier
 [runtime split-K](../../reports/opus_runtime_splitk_20261009/README.md) and
 [92-configuration registration](../../reports/opus_register92_20261009/README.md)
 reports are frozen evidence for earlier implementations. GPU tests remain
@@ -96,12 +101,36 @@ split count is also compile-time, whereas these nine OPUS runtime configurations
 accept a launch-time global split count.
 
 The public [Python wrapper](../../aiter/ops/opus/README.md) accepts pipeline and
-configuration parameters. Numeric IDs are resolved before the unchanged
-internal ABI. Unsupported or ambiguous parameter combinations are rejected;
-this catalog currently exposes the registered configurations and does not JIT
-an arbitrary new tuple supplied by a caller.
+configuration parameters, or selects by shape with tuned CSV first and a legal
+default afterward. The scalar [policy](opus_gemm_bpreshuffle_policy.py) validates
+shape and split before preparation. The
+[runtime](../../aiter/ops/opus/bpreshuffle_runtime.py) prepares one independent
+module per complete tuple, source, compiler, and build identity. Legal new tuples
+use module-local ABI ID 1; their saved compatibility ID is -1. Existing tuples
+retain their historical names and IDs. Unsupported geometry, inactive fields,
+and conflicting explicit parameters are rejected.
 
-All 105 configurations compiled offline, fused host/router/pybind compiled,
+`construct_config("register", tile_m=16, tile_n=32, prefetch=5,
+runtime_split_k=True)` is an example of a legal new tuple. `config_traits(config)`
+emits its traits template, and `kernel_instance_from_config(config)` constructs
+the launch contract directly. The dedicated generation command is:
+
+```bash
+python csrc/opus_gemm/gen_instances.py \
+  --bpreshuffle_config config.json --working_path /tmp/opus-config
+```
+
+The file contains `{"pipeline":"register","compile_params":{...}}`, with partial
+or complete parameters. Generation emits only that configuration, its required
+dispatch targets, and minimal host/router/bindings. It does not generate the
+aggregate BMM/default subset. The public API handles this step automatically.
+
+Current parameter codegen passed offline compilation for all 105 compatibility
+configurations and one new tuple per pipeline. Each new tuple's fused host,
+router and pybind compiled and linked with `--no-undefined`; no library was
+loaded. See the [current receipts](../../reports/opus_configflow_20261009/README.md).
+In the preceding consolidation stage, all 105 configurations compiled offline,
+fused host/router/pybind compiled,
 and the shared link resolved all 127 distinct launch references. The
 [verification scope](../../reports/opus_pipeline5_20261009/full_build/verification_scope.json)
 records changed instruction/register allocations and the pending GPU checks.
@@ -177,12 +206,28 @@ configurations and legal runtime split counts. The legacy `--opus-kids` and
 `--opus_pipelines`.
 
 New `-o` and `-o2` files add `pipeline` and canonical JSON `config` columns.
-Runtime split remains in `splitK`, and `kernelId` remains a compatibility ABI
-key. Old CSVs acquire metadata when read; new metadata is validated against
-the exact registered configuration before compilation. The measured production
+Runtime split remains in `splitK`; `kernelId` is a compatibility ABI key, with
+`-1` for legal tuples without an ID. Old CSVs acquire metadata when read; new
+metadata is validated as a complete canonical tuple before compilation. A
+positive saved ID must match its parameters. Parameter-only replay can omit the
+ID column. The measured production
 CSV remains the existing 13-column historical dataset. Rebuild the OPUS JIT
 after changing the kernel sources; historical binaries do not become the new
 implementation merely because their IDs are unchanged.
+
+Use `--opus_configs extra.json` to add configurations to the default search:
+
+```json
+[
+  {"pipeline":"register","compile_params":{"tile_m":16,"tile_n":32,"prefetch":5,"runtime_split_k":true}}
+]
+```
+
+The tuner filters these configurations by shape and pipeline, enumerates legal
+runtime splits, prepares independent modules before timing, and saves complete
+parameters. This option adds configurations to the existing search; the JSON
+does not register more compute pipelines. GPU tuning remains stopped until the
+user resumes it.
 
 | Default ID | Configurations consolidated into it |
 |---:|---|

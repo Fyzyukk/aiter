@@ -195,54 +195,78 @@ explicit OPUS exact-kid call above.
 
 ### gfx950 native-E8M0 MXFP8 bpreshuffle GEMM
 
-Select one of five pipelines with an exact configuration object or named
-compile parameters. The wrapper resolves the internal launcher ID. The
-configuration catalog filters by `(M,N,K)` before tuning; tile/wave/stage/load
-policies remain compile-time parameters. Partial named parameters must identify
-one registered tuple. Arbitrary unregistered tuples are rejected.
+The public wrapper selects a configuration by `(gfx, cu_num, M, N, K)`. It first
+reads a valid OPUS row from the tuned CSV and then tries legal default
+configurations if no matching row exists. A pipeline name limits this choice.
+An explicit configuration or named compile parameters bypass the table and
+construct traits for that tuple, including legal combinations with no numeric
+ID. Unsupported geometry and inactive parameters are rejected.
+
+There are five compute pipelines, 89 default configurations, and 105 historical
+compatibility IDs. Legal new tuples instantiate these same pipelines. Each
+configuration has an independent JIT module; its cache identity includes the
+complete parameters, source contents, compiler, resource headers, and build
+settings. First use prepares that module, and subsequent launches reuse it.
 
 A scales have logical shape `[M,K/128]` with dense column-major strides `(1,M)`;
 B scales are contiguous `[N/128,K/128]`. Both are one-byte E8M0. FP8 inputs
-and BF16 output are contiguous and on the same device. Configuration-specific
+and BF16 output are contiguous and on the same device. N and K must be divisible
+by 128. Configuration-specific
 shape, alignment, and byte limits apply.
 
 ```python
 from aiter.ops.opus import opus_gemm_bpreshuffle
 from aiter.ops.shuffle import shuffle_weight
-from csrc.opus_gemm.opus_gemm_bpreshuffle_config import pipeline_configs
+from csrc.opus_gemm.opus_gemm_bpreshuffle_config import construct_config
 
-# Existing tensors; this register configuration accepts M <= 512,
-# N divisible by 128 and K divisible by 128.
+# Existing tensors, with native E8M0 scales in the layouts described above.
 WQ_shuffled = shuffle_weight(WQ, layout=(16, 16))
 Y = torch.empty((M, N), device=XQ.device, dtype=torch.bfloat16)
+
+# Tuned CSV first, then a legal shape-based default.
+opus_gemm_bpreshuffle(XQ, WQ_shuffled, Y, x_scale, w_scale)
+
+# Restrict automatic selection to one pipeline.
 opus_gemm_bpreshuffle(
     XQ, WQ_shuffled, Y, x_scale, w_scale,
-    pipeline="register", tile_m=16, tile_n=16, wave_k=1, split_k=3,
+    pipeline="register",
 )
 
-# A tuner iterates configs, measures them, and saves the winning parameters.
-configs = pipeline_configs((M, N, K), pipelines=["register", "lds"])
-# Given a measured selection `best_config` and literal `best_split`:
+# New register queue depth: no ID registration or extra kernel source file.
+# This tuple retains the register seed's M <= 512 and K <= 16384 limits.
+config = construct_config(
+    "register", tile_m=16, tile_n=32, prefetch=5, runtime_split_k=True,
+)
 opus_gemm_bpreshuffle(
     XQ, WQ_shuffled, Y, x_scale, w_scale,
-    pipeline=best_config.pipeline, config=best_config, split_k=best_split,
+    config=config, split_k=3,  # K >= 384 for this literal split
 )
 ```
 
-`config` also accepts its complete parameter mapping or `config.to_json()`.
+`config` also accepts its complete parameter mapping or `config.to_json()`;
+these require a pipeline name. Named partial axes inherit a compatible default;
+save the complete canonical payload to replay the same tuple. The default table
+is `aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv`.
+Use `tuned_file=...` or `OPUS_BPRESHUFFLE_TUNED_CONFIG` to select another CSV.
+An invalid explicit file raises an error with its path and line; a missing or
+stale default row falls back. Rows from other backends do not select an OPUS
+configuration. The default heuristic has no measured speed guarantee.
+
 The lower-level `opus_gemm(..., kid=..., layout="bpreshuffle")` remains available
 for existing callers. Kernel source, parameter mapping, tuning CSV metadata and
 verification are documented in the
-[five-pipeline report](../../../reports/opus_pipeline5_20261009/README.md).
+[configuration flow report](../../../reports/opus_configflow_20261009/README.md).
 
 Runtime split-K is supported by register IDs 92310/92311/92320/92321/92330/92340
-and fine LDS IDs 92410/92420/92430. Positive `split_k` values are literal counts
+and fine LDS IDs 92410/92420/92430, and legal parameter configurations that enable
+`runtime_split_k`. `split_k=None` uses the tuned count or a grid/CU heuristic.
+Positive `split_k` values are literal counts
 in `1..min(16,K/128)`. Zero preserves the historical default: register four,
 fine one; the register default may include empty partitions for short K.
 Minus one chooses an optional grid/CU heuristic using M/N/K and the input
 device CU count. It has not been measured as the fastest split. Tile geometry
-and local WaveK remain static. The exact `opus_gemm` interface requires `kid`;
-`opus_gemm_bpreshuffle` resolves it from pipeline parameters.
+and local WaveK remain static. Global runtime split counts share a producer
+specialization; selecting another count does not create a configuration ID.
 
 Split one writes BF16 directly and requires `workspace=None`. Larger splits
 use `split_k * M * N` FP32 workspace elements and a shared reducer. Python
@@ -252,9 +276,11 @@ from input/output. Fine IDs 92411/92421/92431 retain their fixed-split-two
 compatibility paths and require public `split_k=0`, as do other fixed-split
 bpreshuffle IDs.
 
-All 105 compatibility configurations compiled offline after consolidation,
-and the host/router/link checks passed. GPU numerical and performance tests
-remain stopped. These examples were not executed during this update.
+All 105 compatibility configurations compiled offline through the parameter
+codegen path. Five new tuples, one per pipeline, also compiled and linked as
+independent modules. CPU checks cover selection, two configurations in one
+process, and tuning CSV replay. GPU numerical and performance tests remain
+stopped. These examples were not executed during this update.
 
 ### gfx950 MXFP8 BMM
 
@@ -319,9 +345,12 @@ MXFP8 BMM use `csrc/opus_gemm/opus_gemm_a8w8_tune.py` and
 
 Native-E8M0 gfx950 bpreshuffle GEMM uses
 `csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py`. Its default set contains
-89 static configurations. For each supported runtime kid, tuning enumerates
-every legal positive split and saves `(kernelId, splitK)` for exact replay;
-the runtime split count does not require another registered kid. The sixteen
+89 default configurations. `--opus_configs path.json` adds legal parameter
+tuples without registering IDs; `--opus_pipelines register,lds` filters the
+pipelines. For runtime configurations, tuning enumerates every legal positive
+split. Output saves canonical `pipeline/config`, `splitK`, and a compatibility
+`kernelId` (`-1` for new tuples). Replay also accepts parameter-only CSVs with no
+ID column. Configurations are prepared before timing. The sixteen
 historical compatibility/internal IDs remain callable when explicitly selected.
 
 The CK-owned blockscale tuner remains unchanged. Its legacy

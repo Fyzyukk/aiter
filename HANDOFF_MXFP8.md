@@ -1,6 +1,38 @@
 # MXFP8 B-preshuffle 优化交接
 
-## 2026-10-09：当前整理为 5 个计算 pipeline
+## 2026-10-09：补齐参数生成、按需编译与 shape 选型（当前）
+
+按用户确认的“少数 pipeline，配置作为参数调优”继续补齐框架流程。
+现在仍为 **5 个计算 pipeline、1 个 traits 头、89 组默认配置、105 个旧兼容 ID**；
+合法新 tuple 直接从参数生成 traits/launch contract，不用加候选 ID 或 kernel 源文件。
+标量 JSON catalog 是默认参数与旧 ABI metadata 的来源，common/variants 从它派生兼容注册。
+
+入口 `opus_gemm_bpreshuffle(XQ, WQ_shuffled, Y, x_scale, w_scale)` 根据
+`gfx/cu_num/M/N/K` 优先查正式 tuned CSV，再选择合法默认配置。
+指定 `pipeline="register"` 可限制选型；指定 config/参数直接生成对应实例。
+例：`construct_config("register", tile_m=16, tile_n=32, prefetch=5,
+runtime_split_k=True)` 无需注册 ID。只接受当前五个模板实际支持的参数/geometry，
+不保证任意 tuple 可编译，也不保证 heuristic 是最快配置。
+
+每个 tuple 单独 JIT module，key 覆盖完整参数、源码、编译器、resource/HIP headers 与构建设置；
+同一进程先后调用不同配置各自缓存，避免 aggregate subset 的已加载模块复用问题。
+首用自动 prepare，热调用复用；显式 `ensure_config(config)` 重新检查源码/工具链。
+旧 exact-kid 调用保持兼容 aggregate 路径。runtime global split 仍是启动参数：
+`None` 用 tuned split 或 heuristic、`0` 保留历史 sentinel、正数 literal、`-1` heuristic；
+固定 split 的配置启动参数为0。不同 runtime split 数不另建计算候选。
+
+tune 新增 `--opus_configs extra.json`，格式为 pipeline/compile_params 的 JSON 数组，
+加入合法新参数组合并在计时前独立编译。输出保存完整 pipeline/config、splitK，
+无旧 ID 的 tuple 保存 kernelId=-1；参数 CSV 可省略 ID 列。旧正 ID 必须精确匹配参数。
+正式745 CSV和旧报告未改；这次不产生新的性能胜负结论。
+
+代码位置与完整收据：[参数流程报告](reports/opus_configflow_20261009/README.md)、
+[公开接口](aiter/ops/opus/README.md)、[源码说明](csrc/opus_gemm/README.md)。
+已通过 CPU 参数/选择/JIT隔离/tune→CSV→回放检查，105 个旧 tuple 与五类新 tuple
+离线编译，五个独立 module 的 host/router/pybind 与 no-undefined 链接检查。
+GPU 测试持续停止；数值、性能、首次真实 JIT 调用和同卡745回归尚未执行。
+
+## 2026-10-09：整理为 5 个计算 pipeline（历史阶段）
 
 当前对外使用 `pin / tiled / register / lds / large_output` 五个 pipeline，
 `tile / wave / stage / B load / scale / schedule` 作为编译配置参数。

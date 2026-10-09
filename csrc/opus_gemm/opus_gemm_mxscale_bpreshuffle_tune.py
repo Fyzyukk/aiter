@@ -50,7 +50,11 @@ from csrc.opus_gemm.opus_gemm_common import (
 )
 from csrc.opus_gemm.opus_gemm_bpreshuffle_config import (
     BPRESHUFFLE_PIPELINE_NAMES,
+    BpreshuffleConfig,
     config_from_legacy_kid,
+    construct_config,
+    config_supports_shape,
+    kernel_instance_from_config,
     pipeline_configs,
     validate_saved_config,
 )
@@ -323,6 +327,39 @@ def run_bench(x, w, out, x_scale, w_scale, kid, split_k=0):
     return out
 
 
+def run_config_bench(x, w, out, x_scale, w_scale, config, split_k=0):
+    """Benchmark a canonical configuration through its independent JIT module."""
+    from aiter.ops.opus import opus_gemm_bpreshuffle
+    opus_gemm_bpreshuffle(
+        x, w, out, x_scale, w_scale, pipeline=config.pipeline,
+        config=config, split_k=split_k,
+    )
+    return out
+
+
+def load_opus_configs(path):
+    """Read additional compile tuples without registering numeric kernel IDs."""
+    import json
+    payload = json.loads(Path(path).read_text())
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("--opus_configs requires a non-empty JSON array")
+    configs = []
+    for row in payload:
+        if not isinstance(row, dict) or set(row) != {"pipeline", "compile_params"}:
+            raise ValueError("Each OPUS config needs pipeline and compile_params")
+        if not isinstance(row["compile_params"], dict):
+            raise ValueError("compile_params must be a JSON object")
+        configs.append(construct_config(row["pipeline"], **row["compile_params"]))
+    return tuple({(config.pipeline, config.to_json()): config for config in configs}.values())
+
+
+def prepare_opus_configs(configs):
+    """Compile configurations before timing; imports no tuner-side GPU probe."""
+    from aiter.ops.opus.bpreshuffle_runtime import ensure_config
+    for config in configs:
+        ensure_config(config)
+
+
 def compare_outputs(ref, out, **kwargs):
     """Check every value against the source kernel's accumulation contract.
 
@@ -368,6 +405,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         self.opus_kids = None
         self.opus_families = None
         self.opus_pipelines = None
+        self.opus_configs = ()
         super().__init__(
             "opus_mxscale_bpreshuffle",
             # Input/output dtypes are fixed; scale dtype follows the backend.
@@ -416,6 +454,10 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             help="comma-separated pipelines to tune: "
                  + ",".join(sorted(BPRESHUFFLE_PIPELINE_NAMES))
                  + "; each pipeline enumerates its supported tile/wave/stage configurations; ignored for --run_config",
+        )
+        self.parser.add_argument(
+            "--opus_configs", "--opus-configs", default=None,
+            help="JSON array of additional {pipeline, compile_params} tuples to tune; no ID registration required",
         )
         # This adapter is B-preshuffle-only.  Keep the generic flag accepted so
         # existing tune commands remain valid, but make it true by default.
@@ -478,6 +520,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             "outdtype": str(torch.bfloat16),
         }
         if saved:
+            if "kernelId" not in df and {"pipeline", "config"} <= set(df.columns):
+                # Parameter-only rows do not require a compatibility ID.
+                df["kernelId"] = -1
             missing = {
                 "gfx",
                 "cu_num",
@@ -500,7 +545,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             *(("kernelId", "splitK") if saved else ()),
         ):
             value = pd.to_numeric(df[column], errors="raise")
-            minimum = 0 if column in ("kernelId", "splitK") else 1
+            minimum = -1 if column == "kernelId" else 0 if column == "splitK" else 1
             if (value.isna() | (value < minimum) | (value % 1 != 0)).any():
                 raise ValueError(f"{column} must contain integers >= {minimum}")
             df[column] = value.astype("int64")
@@ -546,11 +591,15 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                     if not pipeline or not payload:
                         raise ValueError("Saved OPUS rows require both pipeline and config when either is present")
                     config = validate_saved_config(pipeline, payload, int(row.kernelId))
+                elif pipeline and payload:
+                    config = validate_saved_config(pipeline, payload, int(row.kernelId))
                 else:
                     config = config_from_legacy_kid(int(row.kernelId))
                 pipelines.append(config.pipeline)
                 configs.append(config.to_json())
             else:
+                if int(row.kernelId) < 0:
+                    raise ValueError("Only parameterized OPUS rows may omit kernelId")
                 if validate_saved and (pipeline or payload):
                     raise ValueError("pipeline/config metadata is only valid for OPUS rows")
                 pipelines.append("")
@@ -576,6 +625,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         self.opus_kids = None
         self.opus_families = None
         self.opus_pipelines = None
+        self.opus_configs = ()
         if args.compare or args.update_improved:
             self.parser.error(
                 "Use direct GEMM tuning or --run_config; production compare/update "
@@ -597,6 +647,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             self.parser.error("--input_file/-i is required")
         self.opus_kids = getattr(args, "opus_kids", None)
         self.opus_pipelines = getattr(args, "opus_pipelines", None)
+        if getattr(args, "opus_configs", None):
+            self.opus_configs = load_opus_configs(args.opus_configs)
         requested_families = getattr(args, "opus_families", None)
         if requested_families is not None:
             self.opus_families = frozenset(
@@ -644,6 +696,13 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             include_legacy=self.opus_kids is not None,
             families=getattr(self, "opus_families", None),
         )
+        extras = tuple(
+            config for config in getattr(self, "opus_configs", ())
+            if gfx == "gfx950" and config_supports_shape(config, m, n, k)
+            and (getattr(self, "opus_pipelines", None) is None or config.pipeline in self.opus_pipelines)
+        )
+        configs = tuple({(config.pipeline, config.to_json()): config
+                         for config in (*configs, *extras)}.values())
         return (
             configs
             if self.opus_kids is None
@@ -744,9 +803,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         tasks = []
         for config in self._candidate_configs(gfx, m, n, k):
             kid = config.legacy_kid
-            kernel = a8w8_mxscale_gemm_bpreshuffle_kernels_list[kid]
+            kernel = kernel_instance_from_config(config)
             for split_k in bpreshuffle_candidate_split_k(kernel, m, n, k, cu_num):
-                info = (info_keys, kid, split_k, kernel.name, "opus", True)
+                info = (info_keys, config, split_k, kernel.name, "opus", True)
                 tasks.append(
                     self._make_task(
                         info,
@@ -754,9 +813,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                         n,
                         k,
                         seed,
-                        run_bench,
+                        run_config_bench,
                         _BENCH_KEYS,
-                        (kid, split_k),
+                        (config, split_k),
                         run_kwargs,
                     )
                 )
@@ -765,18 +824,18 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def tune(self, untunedf, tunedf, args):
         self.opus_kids = getattr(args, "opus_kids", None)
         self.opus_pipelines = getattr(args, "opus_pipelines", None)
-        requested_kids = set()
+        requested_configs = {}
         if args.libtype in ("opus", "all"):
             for row in untunedf.itertuples(index=False):
-                kids = self._candidate_kids(row.gfx, row.M, row.N, row.K)
-                if args.libtype == "opus" and not kids:
+                configs = self._candidate_configs(row.gfx, row.M, row.N, row.K)
+                if args.libtype == "opus" and not configs:
                     raise ValueError(
                         f"No OPUS MXFP8 bpreshuffle candidates for "
                         f"{(row.M, row.N, row.K)}"
                     )
-                requested_kids.update(kids)
-        if requested_kids:
-            _ensure_kids_compiled(requested_kids)
+                requested_configs.update({(config.pipeline, config.to_json()): config for config in configs})
+        if requested_configs:
+            prepare_opus_configs(requested_configs.values())
 
         tasks, tasks_data = [], []
         run_kwargs = {"num_warmup": args.warmup, "num_iters": args.iters}
@@ -820,8 +879,24 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
 
     def post_process(self, rets, args, topk=-1, fast_mode=False):
         rets = list(rets)
+        # The generic profiler sorts the info tuple. Canonical configurations
+        # deliberately have no ordering; sort their complete identities here.
+        rets.sort(key=lambda result: (
+            result[0][0], result[0][4],
+            (result[0][1].pipeline, result[0][1].to_json())
+            if isinstance(result[0][1], BpreshuffleConfig) else ("", str(result[0][1])),
+            result[0][2],
+        ))
         # Save the original timings and measured error ratios without alteration.
-        raw = super().post_process(rets, args, topk=-1, fast_mode=True)
+        # Suppress generic tuple sorting while retaining the requested profile.
+        raw_args = argparse.Namespace(**vars(args))
+        raw_args.profile_file = ""
+        raw = super().post_process(rets, raw_args, topk=-1, fast_mode=True)
+        if args.profile_file:
+            profile = self.result_to_df(rets)
+            if Path(args.profile_file).is_file():
+                profile = pd.concat([pd.read_csv(args.profile_file), profile], ignore_index=True)
+            profile.to_csv(args.profile_file, index=False, na_rep="Null")
         if fast_mode or topk == -1:
             return raw
         # The shared selector has one threshold. Mark rejected candidates as
@@ -842,6 +917,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
 
     def getKernelName(self, kernel_id, libType="opus", preshuffleB=True):
         if libType == "opus":
+            if isinstance(kernel_id, BpreshuffleConfig):
+                return kernel_instance_from_config(kernel_id).name
             kernel = a8w8_mxscale_gemm_bpreshuffle_kernels_list.get(kernel_id)
             return None if kernel is None else kernel.name
         return super().getKernelName(kernel_id, libType, preshuffleB)
@@ -857,7 +934,15 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             if len(info) == 4:
                 info = (*info, "opus", True)
             normalized.append((info, time, err_ratio))
-        return self._config_columns(super().result_to_df(normalized))[self.columns]
+        configs = [info[1] if isinstance(info[1], BpreshuffleConfig) else None
+                   for info, _, _ in normalized]
+        result = super().result_to_df(normalized)
+        for index, config in enumerate(configs):
+            if config is not None:
+                result.at[index, "kernelId"] = config.legacy_kid
+                result.at[index, "pipeline"] = config.pipeline
+                result.at[index, "config"] = config.to_json()
+        return self._config_columns(result)[self.columns]
 
     def run_config(self, args):
         from aiter.test_common import checkAllclose, run_perftest
@@ -870,27 +955,29 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 f"Saved MXFP8 replay does not support libtype(s): {sorted(unsupported)}"
             )
         opus_rows = rows[rows.libtype.eq("opus")]
+        replay_configs = {}
         for row in rows.itertuples(index=False):
             if row.gfx != self.get_gfx() or row.cu_num != self.get_cu_num():
                 raise ValueError(
                     "Saved row does not match the current GPU's gfx/cu_num"
                 )
             if row.libtype == "opus":
-                if row.kernelId not in candidate_kids_for_shape(
-                    row.gfx, row.M, row.N, row.K, row.outdtype, include_legacy=True,
-                ):
+                selected_config = validate_saved_config(row.pipeline, row.config, int(row.kernelId))
+                instance = kernel_instance_from_config(selected_config)
+                if not config_supports_shape(selected_config, row.M, row.N, row.K):
                     raise ValueError(f"Saved OPUS kid {row.kernelId} is incompatible with {row}")
                 try:
                     if row.splitK < 0:
                         raise ValueError("saved splitK must be an exact count or historical zero")
                     bpreshuffle_launch_plan(
-                        a8w8_mxscale_gemm_bpreshuffle_kernels_list[row.kernelId],
+                        instance,
                         row.M, row.N, row.K, int(row.splitK), int(row.cu_num),
                     )
                 except ValueError as exc:
                     raise ValueError(
                         f"Saved OPUS kid {row.kernelId} / splitK={row.splitK} is incompatible with {row}"
                     ) from exc
+                replay_configs[(selected_config.pipeline, selected_config.to_json())] = selected_config
             if (
                 row.libtype == "ck"
                 and row.kernelId not in generic_tune.candidate_kernels_bpreshuffle_dict
@@ -920,13 +1007,14 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                         "is incompatible with the current B-preshuffle candidates"
                     )
             elif pd.notna(saved_name) and str(saved_name).strip():
-                expected_name = self.getKernelName(row.kernelId, row.libtype, True)
+                expected_name = (instance.name if row.libtype == "opus" else
+                                 self.getKernelName(row.kernelId, row.libtype, True))
                 if saved_name != expected_name:
                     raise ValueError(
                         f"Saved {row.libtype} kernelName does not match kid {row.kernelId}"
                     )
         if not opus_rows.empty:
-            _ensure_kids_compiled(set(opus_rows.kernelId))
+            prepare_opus_configs(replay_configs.values())
         for row in rows.itertuples(index=False):
             kid = row.kernelId
             if row.libtype == "opus":
@@ -942,9 +1030,10 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             )
             data["out"].fill_(float("nan"))
             if row.libtype == "opus":
-                bench, bench_args = run_bench, (
+                selected_config = validate_saved_config(row.pipeline, row.config, int(row.kernelId))
+                bench, bench_args = run_config_bench, (
                     *(data[key] for key in _BENCH_KEYS),
-                    kid,
+                    selected_config,
                     row.splitK,
                 )
             elif row.libtype == "ck":

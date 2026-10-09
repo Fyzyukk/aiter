@@ -1563,7 +1563,13 @@ def _get_ck_exclude_modules():
     return ck_modules
 
 
-def get_args_of_build(ops_name: str, exclude=None):
+def get_args_of_build(ops_name: str, exclude=None, *, overrides=None):
+    """Resolve module build settings, applying explicit values before eval.
+
+    A specialized caller can replace a dynamic setting without evaluating the
+    aggregate module's helper for that setting first. Existing callers retain
+    the same resolution and validation behavior.
+    """
     if exclude is None:
         exclude = []
     d_opt_build_args = {
@@ -1590,6 +1596,9 @@ def get_args_of_build(ops_name: str, exclude=None):
     }
 
     def convert(d_ops: dict):
+        d_ops = dict(d_ops)
+        if overrides:
+            d_ops.update(overrides)
         for k, val in d_ops.items():
             # `flags_extra_hip_per_source` is a dict-valued field
             # whose string elements are plain compile flags (no env-var
