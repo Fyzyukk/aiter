@@ -4,7 +4,8 @@
 
 This gfx950 adapter keeps each backend's scale input format: OPUS receives
 random native E8M0 scales, while CK, CKTile and ASM reuse the original
-blockscale tuner's random FP32 scales, reference and accuracy checks.
+blockscale tuner's random FP32 scales, reference and accuracy checks. FlyDSL
+uses the upstream quantized E8M0 distribution for MXPSH and B=1 BMM layouts.
 """
 
 import argparse
@@ -35,6 +36,7 @@ for _entry in (
 from aiter.ops.opus import opus_gemm
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.base_tuner import GemmCommonTuner
+from csrc.opus_gemm import opus_mxscale_flydsl_tune as flydsl_tune
 from csrc.opus_gemm.opus_gemm_common import (
     A8W8_BPRESHUFFLE_TUNING_KIDS,
     a8w8_mxscale_bpreshuffle_supports_shape,
@@ -76,7 +78,7 @@ _CK_ROWMAJOR_BENCH_KEYS = (
 _ASM_BENCH_KEYS = (*_CK_BENCH_KEYS, "zero_bias")
 _SCALE_GROUP_N = 128
 _SCALE_GROUP_K = 128
-_SUPPORTED_LIBTYPES = frozenset(("ck", "cktile", "asm", "opus"))
+_SUPPORTED_LIBTYPES = frozenset(("ck", "cktile", "asm", "opus", "flydsl"))
 
 
 def parse_opus_kids(value):
@@ -290,6 +292,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
 
     def __init__(self):
         self.opus_kids = None
+        self.flydsl_baseline = flydsl_tune.DEFAULT_BASELINE
         super().__init__(
             "opus_mxscale_bpreshuffle",
             # Input/output dtypes are fixed; scale dtype follows the backend.
@@ -308,8 +311,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             ],
             description=(
                 "Tune gfx950 FP8 B-preshuffle GEMM across CK, CKTile, ASM and "
-                "OPUS with BF16 output. CK/CKTile/ASM use random FP32 scales; "
-                "OPUS uses random native E8M0 scales. Measures backend GPU "
+                "OPUS and FlyDSL with BF16 output. CK/CKTile/ASM use random FP32 scales; "
+                "OPUS uses random native E8M0 scales and FlyDSL uses quantized E8M0 scales. Measures backend GPU "
                 "time, including internal transforms."
             ),
         )
@@ -322,13 +325,17 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             default=None,
             help="comma-separated registered OPUS IDs to tune; default: all legal OPUS; ignored for --run_config",
         )
+        self.parser.add_argument(
+            "--flydsl-baseline", default=flydsl_tune.DEFAULT_BASELINE,
+            help="FlyDSL baseline CSV: all gfx950 BMM kernel names and same-shape MXPSH rows are included",
+        )
         # This adapter is B-preshuffle-only.  Keep the generic flag accepted so
         # existing tune commands remain valid, but make it true by default.
         self.parser.set_defaults(preshuffle=True)
         for action in self.parser._actions:
             if action.dest == "libtype":
                 action.help = (
-                    "backend candidates to tune: ck, cktile, asm, opus, both "
+                    "backend candidates to tune: ck, cktile, asm, opus, flydsl, both "
                     "(CK + CKTile), or all"
                 )
             elif action.dest == "preshuffle":
@@ -341,11 +348,11 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             elif action.dest == "splitK":
                 action.help = (
                     "include supported ASM split-K candidates; CK, CKTile and "
-                    "OPUS B-preshuffle candidates use splitK=0"
+                    "OPUS B-preshuffle candidates use splitK=0; FlyDSL always enumerates its supported split-K configs"
                 )
             elif action.dest == "errRatio":
                 action.help = (
-                    "maximum outlier fraction for the original CK/CKTile/ASM "
+                    "maximum outlier fraction for the original CK/CKTile/ASM/FlyDSL "
                     "accuracy checks (default: 0.05); OPUS always requires "
                     "zero outliers under its accumulation-bounds check"
                 )
@@ -402,13 +409,23 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             "M",
             "N",
             "K",
-            *(("kernelId", "splitK") if saved else ()),
+            *(("splitK",) if saved else ()),
         ):
             value = pd.to_numeric(df[column], errors="raise")
             minimum = 0 if column in ("kernelId", "splitK") else 1
             if (value.isna() | (value < minimum) | (value % 1 != 0)).any():
                 raise ValueError(f"{column} must contain integers >= {minimum}")
             df[column] = value.astype("int64")
+        if saved:
+            is_bmm = df.libtype.eq("flydsl") & df.kernelId.astype(str).eq("bmm")
+            numeric_ids = pd.to_numeric(df.loc[~is_bmm, "kernelId"], errors="raise")
+            if (numeric_ids.isna() | (numeric_ids < 0) | (numeric_ids % 1 != 0)).any():
+                raise ValueError("kernelId must be a nonnegative integer or FlyDSL 'bmm'")
+            df["kernelId"] = df["kernelId"].astype(object)
+            df.loc[~is_bmm, "kernelId"] = numeric_ids.astype("int64")
+            df.loc[is_bmm, "kernelId"] = "bmm"
+        if "w_scale_block" in df and not df.w_scale_block.eq("128x128").all():
+            raise ValueError("MXFP8 bpreshuffle adapter requires w_scale_block=128x128")
         if (df["N"] % 16 != 0).any() or (df["K"] % _SCALE_GROUP_K != 0).any():
             raise ValueError(
                 "MXFP8 B-preshuffle requires N divisible by 16 and K divisible by 128"
@@ -429,13 +446,15 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         )
         # Scale dtype is selected by the backend, never by a legacy CSV column.
         if saved:
-            df["scale_dtype"] = df["libtype"].eq("opus").map(
+            df["scale_dtype"] = df["libtype"].isin(("opus", "flydsl")).map(
                 {True: "e8m0", False: "fp32"}
             )
         return df
 
     def get_tuned_gemm_list(self, tuned_gemm_file, columns=None):
-        df = super().get_tuned_gemm_list(tuned_gemm_file, columns)
+        # Read the complete schema directly: the production MXPSH tuner hides
+        # BMM rows while retuning, whereas this adapter replays both contracts.
+        df = GemmCommonTuner.get_tuned_gemm_list(self, tuned_gemm_file, columns)
         if df.empty:
             return df
         # Accept both legacy files carrying redundant dtype columns and the
@@ -450,6 +469,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             )
         args.preshuffle = True
         self.opus_kids = None
+        self.flydsl_baseline = args.flydsl_baseline
+        if args.libtype in ("flydsl", "all") and not args.run_config:
+            flydsl_tune.load_baseline(str(self.flydsl_baseline))
         if args.compare or args.update_improved:
             self.parser.error(
                 "Use direct GEMM tuning or --run_config; production compare/update "
@@ -559,6 +581,11 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def get_gemm_a8w8_blockscale_tune_task(
         self, info_keys, useSplitK, seed, preshuffleB, run_kwargs
     ):
+        _, _, m, n, k = info_keys
+        # CK's tensor descriptors use signed 32-bit byte offsets. The latest
+        # baseline also contains BF16 outputs of 2 GiB and larger.
+        if max(m * k, n * k, 2 * m * n) >= 2**31:
+            return []
         tasks = super().get_gemm_a8w8_blockscale_tune_task(
             info_keys, useSplitK, seed, preshuffleB, run_kwargs
         )
@@ -573,6 +600,11 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         block_per_cu,
         run_kwargs,
     ):
+        _, _, m, n, k = info_keys
+        # The current grouped-quant CKTile family rejects large tensors in
+        # its launcher; filter before allocating benchmark inputs/reference.
+        if max(m * k, n * k, 2 * m * n) >= 2**31:
+            return []
         tasks = super().get_gemm_a8w8_blockscale_cktile_tune_task(
             info_keys,
             useSplitK,
@@ -653,6 +685,10 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 tasks.extend(self.get_gemm_a8w8_blockscale_opus_tune_task(
                     info, 0, True, run_kwargs
                 ))
+            if args.libtype in ("flydsl", "all"):
+                tasks.extend(flydsl_tune.get_tune_tasks(
+                    self, info, 0, run_kwargs, self.flydsl_baseline
+                ))
             if len(tasks) != start:
                 tasks_data.append((len(tasks) - start, ()))
         if not tasks:
@@ -674,7 +710,22 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def post_process(self, rets, args, topk=-1, fast_mode=False):
         rets = list(rets)
         # Save the original timings and measured error ratios without alteration.
-        raw = super().post_process(rets, args, topk=-1, fast_mode=True)
+        # The shared profile sort compares integer IDs with the string "bmm".
+        # Use a stable string key here; selection below sorts only by timings.
+        if args.profile_file:
+            ordered = sorted(
+                rets, key=lambda result: (
+                    result[0][0], str(result[0][4]),
+                    str(result[0][1]), result[0][2], str(result[0][3]),
+                ),
+            )
+            profile = self.result_to_df(ordered)
+            if Path(args.profile_file).is_file():
+                profile = pd.concat(
+                    [pd.read_csv(args.profile_file), profile], ignore_index=True,
+                )
+            profile.to_csv(args.profile_file, index=False, na_rep="Null")
+        raw = rets
         if fast_mode or topk == -1:
             return raw
         # The shared selector has one threshold. Mark rejected candidates as
@@ -682,7 +733,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         selection = [
             (
                 info,
-                us if math.isfinite(error)
+                us if math.isfinite(us) and us > 0 and math.isfinite(error)
                 and 0 <= error <= self._error_limit(info[4], args)
                 else self.INVALID_TIME,
                 error,
@@ -696,6 +747,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def getKernelName(self, kernel_id, libType="opus", preshuffleB=True):
         if libType == "opus":
             kernel = a8w8_mxscale_gemm_bpreshuffle_kernels_list.get(kernel_id)
+            return None if kernel is None else kernel.name
+        if libType == "flydsl":
+            kernel = generic_tune.kernels_list_flydsl.get(kernel_id)
             return None if kernel is None else kernel.name
         return super().getKernelName(kernel_id, libType, preshuffleB)
 
@@ -751,7 +805,13 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             if row.libtype in ("ck", "cktile") and row.splitK != 0:
                 raise ValueError("CK/CKTile B-preshuffle replay requires splitK=0")
             saved_name = getattr(row, "kernelName", None)
-            if row.libtype == "asm":
+            if row.libtype == "flydsl":
+                if pd.isna(saved_name) or not str(saved_name).strip():
+                    raise ValueError("Saved FlyDSL row requires kernelName")
+                flydsl_tune.validate_candidate(
+                    row.kernelId, str(saved_name), row.splitK, row.M, row.N, row.K,
+                )
+            elif row.libtype == "asm":
                 if pd.isna(saved_name) or not str(saved_name).strip():
                     raise ValueError("Saved ASM row requires kernelName")
                 info_keys = tuple(getattr(row, key) for key in self.keys)
@@ -778,6 +838,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             kid = row.kernelId
             if row.libtype == "opus":
                 gen_data, ref_keys = generate_data, _REF_KEYS
+            elif row.libtype == "flydsl":
+                gen_data, ref_keys = flydsl_tune.generate_data, ("x_deq", "w_deq")
             else:
                 gen_data, ref_keys = generic_tune.generate_data, _CK_REF_KEYS
             data = gen_data(row.M, row.N, row.K, 0, device="cuda")
@@ -785,6 +847,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             ref = (
                 run_torch(*ref_inputs, with_bounds=True)
                 if row.libtype == "opus"
+                else generic_tune.run_torch_e8m0(*ref_inputs)
+                if row.libtype == "flydsl"
                 else generic_tune.run_torch(*ref_inputs)
             )
             data["out"].fill_(float("nan"))
@@ -807,6 +871,12 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                     row.splitK,
                     True,
                 )
+            elif row.libtype == "flydsl":
+                if kid == "bmm":
+                    bench, keys = flydsl_tune.run_bmm, flydsl_tune.BMM_KEYS
+                else:
+                    bench, keys = generic_tune.run_gemm_a8w8_blockscale_flydsl, flydsl_tune.MXPSH_KEYS
+                bench_args = (*(data[key] for key in keys), row.kernelName)
             else:
                 bench, bench_args = generic_tune.run_gemm_a8w8_blockscale_asm, (
                     *(data[key] for key in _ASM_BENCH_KEYS),

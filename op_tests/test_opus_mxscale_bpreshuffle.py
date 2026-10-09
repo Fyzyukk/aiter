@@ -374,3 +374,68 @@ def test_consolidated_bpreshuffle_signed_dispatch(kid, shape):
 ])
 def test_consolidated_bpreshuffle_cancellation(kid, shape):
     _check_signed_repeated(kid, shape, 3, cancellation=True)
+
+
+def test_experimental_bpreshuffle_registry_contract():
+    from csrc.opus_gemm.opus_gemm_common import A8W8_BPRESHUFFLE_EXPERIMENTAL_KIDS
+
+    kernels = a8w8_mxscale_gemm_bpreshuffle_kernels_list
+    experimental = A8W8_BPRESHUFFLE_EXPERIMENTAL_KIDS
+    assert experimental.isdisjoint(A8W8_BPRESHUFFLE_TUNING_KIDS)
+    assert experimental == frozenset(range(9080, 9090))
+    assert len({instance.name for instance in kernels.values()}) == len(kernels)
+    for kid in (9080, 9081, 9082, 9083):
+        assert a8w8_mxscale_bpreshuffle_supports_shape(kernels[kid], 193, 768, 7168)
+        assert not a8w8_mxscale_bpreshuffle_supports_shape(kernels[kid], 193, 768, 7296)
+        assert not a8w8_mxscale_bpreshuffle_supports_shape(kernels[kid], 2049, 768, 7168)
+    for kid in (9084, 9085, 9086):
+        assert a8w8_mxscale_bpreshuffle_supports_shape(kernels[kid], 177, 128, 768)
+        assert not a8w8_mxscale_bpreshuffle_supports_shape(kernels[kid], 513, 128, 768)
+        assert not a8w8_mxscale_bpreshuffle_supports_shape(kernels[kid], 177, 128, 1152)
+    assert kernels[9082].bpreshuffle_split_k == kernels[9083].bpreshuffle_split_k == 8
+    assert kernels[9087].bpreshuffle_split_k == 2
+    assert a8w8_mxscale_bpreshuffle_supports_shape(kernels[9087], 145, 768, 16384)
+    assert not a8w8_mxscale_bpreshuffle_supports_shape(kernels[9087], 145, 768, 8192)
+    assert a8w8_mxscale_bpreshuffle_supports_shape(kernels[9088], 545, 768, 16384)
+    assert a8w8_mxscale_bpreshuffle_supports_shape(kernels[9089], 1040, 768, 3072)
+    assert not a8w8_mxscale_bpreshuffle_supports_shape(kernels[9089], 1041, 768, 3072)
+
+
+@pytest.mark.parametrize("kid", (9080, 9081, 9082, 9083))
+@pytest.mark.parametrize("shape", ((193, 128, 7168), (385, 768, 7168)))
+def test_experimental_bpreshuffle_narrow_k_partitions(kid, shape):
+    # K=7168 / split8 gives seven K128 tiles: a partial ring/drain plus M tails.
+    _check_signed_repeated(kid, shape, 3)
+
+
+@pytest.mark.parametrize("kid", (9084, 9085, 9086))
+@pytest.mark.parametrize("shape", (
+    (17, 128, 384), (145, 768, 768), (177, 128, 1024), (33, 256, 640),
+))
+def test_experimental_bpreshuffle_shortk_drain(kid, shape):
+    # Distinct A scales and partial M test that a read-only drain never consumes
+    # a queue slot before its register scale and matrix operands are complete.
+    _check_signed_repeated(kid, shape, 3)
+
+
+@pytest.mark.parametrize("kid,shape", (
+    (9087, (145, 128, 16384)),
+    (9088, (545, 128, 7168)), (9088, (577, 128, 16384)),
+    (9088, (545, 128, 1536)),
+    (9089, (144, 128, 384)), (9089, (1040, 128, 768)),
+    (9089, (1040, 128, 1024)), (9089, (144, 128, 1536)),
+    (9089, (1040, 128, 3072)),
+    (9089, (1552, 128, 7168)), (9089, (1040, 128, 16384)),
+))
+def test_experimental_bpreshuffle_fixedk_scale_panel_refill(kid, shape):
+    # Long FixedK still refills SP32; it is not limited to the first scale panel.
+    _check_signed_repeated(kid, shape, 3)
+
+
+@pytest.mark.parametrize("kid,shape", (
+    (9082, (193, 128, 7168)), (9083, (193, 128, 7168)),
+    (9086, (145, 128, 768)), (9087, (145, 128, 16384)),
+    (9088, (545, 128, 7168)), (9089, (1040, 128, 7168)),
+))
+def test_experimental_bpreshuffle_cancellation(kid, shape):
+    _check_signed_repeated(kid, shape, 3, cancellation=True)

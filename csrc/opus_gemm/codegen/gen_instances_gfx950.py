@@ -2828,9 +2828,18 @@ def gen_bmm_mxscale_fused_instance(
 
 def _bpreshuffle_compact_traits(k, specialization=None):
     """One traits description for direct, register, and split-K variants."""
+    if k.name_tag.startswith("shortk_lds"):
+        fixed_k, stages, cluster, _, _, _ = specialization or (
+            0, k.bpreshuffle_stages, 1, 4, 128, 0,
+        )
+        return ("opus_gemm_small_lds_traits_gfx950<"
+                f"{k.B_M}, {k.B_N}, {k.T_M}, {k.T_N}, {stages}, {cluster}, "
+                "2, true, false, false, false, "
+                f"{str(k.bpreshuffle_read_only_drain).lower()}, "
+                f"1, 4, 128, 0, {fixed_k}, false>")
     if k.name_tag.startswith("fine_lds"):
         fixed_k, stages, cluster, vec, block, cache = specialization or (
-            0, k.bpreshuffle_stages, k.bpreshuffle_cluster,
+            k.bpreshuffle_fixed_k, k.bpreshuffle_stages, k.bpreshuffle_cluster,
             k.bpreshuffle_reduce_vec, k.bpreshuffle_reduce_block, k.bpreshuffle_store_cache,
         )
         return ("opus_gemm_mxscale_bpreshuffle_fine_traits_gfx950<"
@@ -2861,11 +2870,12 @@ def gen_mxscale_bpreshuffle_instance(
     small_pipeline = k.name_tag in {
         "small_register", "small_lds", "small_regscale", "small_regscale_xor",
         "small_register_prefetch", "small_register_wavek", "small_lds_deep",
-    }
+    } or k.name_tag.startswith("shortk_lds")
     fine_pipeline = k.name_tag.startswith("fine_lds")
     register_tail_pipeline = k.name_tag.startswith("register_tail")
     large_output = k.name_tag == "large_output"
-    merged = k.name_tag in {"main", "small", "narrow", "large_output", "tiny"}
+    fixed_geometry = k.name_tag in {"small_fixed", "narrow_fixed"}
+    merged = fixed_geometry or k.name_tag in {"main", "small", "narrow", "large_output", "tiny"}
     if register_tail_pipeline:
         assert k.pad_m and k.m_align == 1 and k.max_m == 512
         assert k.bpreshuffle_fixed_k == 7168 and (k.T_M, k.T_N) == (1, 1)
@@ -2891,10 +2901,11 @@ def gen_mxscale_bpreshuffle_instance(
         traits_name = _bpreshuffle_compact_traits(k)
     elif merged:
         family = k.name_tag
+        geometry_family = family.removesuffix("_fixed") if fixed_geometry else family
         assert k.max_k == 16384
         assert k.m_align == (
-            1 if family in {"narrow", "tiny"} or (family == "small" and k.B_M == 128)
-            else 16 if family in {"main", "small"} else 64
+            1 if geometry_family in {"narrow", "tiny"} or (geometry_family == "small" and k.B_M == 128)
+            else 16 if geometry_family in {"main", "small"} else 64
         )
         assert k.pad_m
         if family in {"main", "large_output"}:
@@ -2904,7 +2915,7 @@ def gen_mxscale_bpreshuffle_instance(
             assert k.BLOCK_SIZE == 128 and (k.T_M, k.T_N) == (1, 2)
         else:
             assert k.BLOCK_SIZE == 256 and (k.T_M, k.T_N) == (2, 2)
-            if family == "small":
+            if geometry_family == "small":
                 assert k.B_M in (128, 160) and k.B_N == 128
             else:
                 assert k.B_M == 64 and k.B_N in (64, 128)
@@ -2916,7 +2927,9 @@ def gen_mxscale_bpreshuffle_instance(
             "narrow": f"4wave_{k.B_M}x{k.B_N}",
             "large_output": "8wave_192x256_large_output",
             "tiny": f"2wave_{k.B_M}x{k.B_N}",
-        }[family]
+        }[geometry_family]
+        if family == "small_fixed":
+            implementation += "_fixed"
         pipeline_header = (
             "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
             f"{implementation}_gfx950.cuh"
@@ -2927,6 +2940,16 @@ def gen_mxscale_bpreshuffle_instance(
             f"{implementation}_gfx950.cuh"
         )
         traits_name = f"opus_gemm_mxscale_bpreshuffle_{implementation}_traits_gfx950"
+        if fixed_geometry:
+            traits_header = "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_fixed_gfx950.cuh"
+            traits_name = ("opus_gemm_mxscale_bpreshuffle_4wave_"
+                           f"{k.B_M}x{k.B_N}_fixed_traits_gfx950<>")
+            if family == "narrow_fixed":
+                # The normal device TU also needs the derived FixedK traits.
+                pipeline_header = (
+                    "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
+                    "4wave_64x128_fixed_gfx950.cuh"
+                )
     else:
         assert k.BLOCK_SIZE == 256
         assert (k.B_M, k.B_N) == (256, 256)
@@ -2975,7 +2998,7 @@ __global__ void {kernel_func}({kargs_name} kargs);
         reductions = set()
 
         def compact_launch(choice, alias):
-            dynamic_lds = choice.name_tag.startswith(("fine_lds", "small_lds", "small_regscale"))
+            dynamic_lds = choice.name_tag.startswith(("fine_lds", "small_lds", "small_regscale", "shortk_lds"))
             lds = f"{alias}::lds_bytes(k)" if dynamic_lds else "0"
             grid_n = f"(n + {choice.B_N - 1}) / {choice.B_N}" if choice.bpreshuffle_pad_n else f"n / {choice.B_N}"
             body = (f"{kernel_func}<{alias}><<<dim3({grid_n}, (m + {choice.B_M - 1}) / {choice.B_M}, "
@@ -3024,7 +3047,14 @@ __global__ void {kernel_func}({kargs_name} kargs);
                             f"{split_k}, {vec}, {block}>(const float*, opus::bf16_t*, int);\n")
     # Keep the public IDs stable and retain the original fallback in every family.
     specializations = []
-    if merged and family == "main":
+    if fixed_geometry:
+        config = ("opus_gemm_mxscale_bpreshuffle_4wave_"
+                  f"{k.B_M}x{k.B_N}_fixed_traits_gfx950")
+        fixed_ks = (7168, 16384) if family == "narrow_fixed" else (
+            384, 768, 1024, 1536, 3072, 7168, 16384,
+        )
+        specializations = [(f"k == {fixed_k}", f"{config}<{fixed_k}>") for fixed_k in fixed_ks]
+    elif merged and family == "main":
         config = "opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950"
         specializations = [
             # Avoid an extra scheduling round while 192x256 still fits in 256 blocks.

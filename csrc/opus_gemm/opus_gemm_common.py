@@ -143,6 +143,8 @@ class OpusGemmInstance:
     bpreshuffle_split_k: int = 1
     bpreshuffle_stages: int = 0
     bpreshuffle_cluster: int = 1
+    # Opt-in short-K experiments can drain completed LDS slots without reuse.
+    bpreshuffle_read_only_drain: bool = False
     bpreshuffle_reduce_vec: int = 4
     bpreshuffle_reduce_block: int = 128
     bpreshuffle_store_cache: int = 0
@@ -176,7 +178,8 @@ class OpusGemmInstance:
                 "main", "small", "narrow", "tiny", "small_register", "small_lds",
                 "small_regscale", "small_regscale_xor",
                 "small_register_prefetch", "small_register_wavek", "small_lds_deep",
-            } or self.name_tag.startswith(("fine_lds", "register_tail")):
+                "small_fixed", "narrow_fixed",
+            } or self.name_tag.startswith(("fine_lds", "register_tail", "shortk_lds")):
                 parts.append(self.name_tag)
         elif self.kernel_tag == "a8w8_mxscale_bmm_flatmm_splitk":
             parts.insert(tag_at, "a8w8_mxscale_flatmm_splitk")
@@ -307,12 +310,13 @@ class OpusGemmInstance:
                 "narrow", "tiny", "small_register", "small_lds",
                 "small_regscale", "small_regscale_xor",
                 "small_register_prefetch", "small_register_wavek", "small_lds_deep",
-            } or self.name_tag.startswith(("fine_lds", "register_tail")) or (
+                "narrow_fixed",
+            } or self.name_tag.startswith(("fine_lds", "register_tail", "shortk_lds")) or (
                 self.name_tag == "small" and self.B_M == 128
             ):
                 return 1
             if self.name_tag == "main" or (
-                self.name_tag == "small" and self.B_M == 160
+                self.name_tag in {"small", "small_fixed"} and self.B_M == 160
             ):
                 # A/C are bounded; scale A loads complete vectors of 16 rows.
                 return 16
@@ -1821,9 +1825,11 @@ def _a8w8_mxscale_gemm_bpreshuffle_small(
 def _a8w8_mxscale_gemm_bpreshuffle_fine(
     b_m, wave_m, wave_n, split_k=1, *, stages=4, cluster=1,
     reduce_vec=4, reduce_block=128, store_cache=0, specializations=(),
+    fixed_k=0,
 ):
     """Fine-M tiles with a fixed global split-K and FP32 partial storage."""
     assert split_k in (1, 2, 4, 8)
+    assert fixed_k == 0 or (0 < fixed_k <= 16384 and fixed_k % 128 == 0)
     return OpusGemmInstance(
         wave_m * wave_n * 64, b_m, 128, 128, wave_m, wave_n,
         16, 16, 128, 16, 16, 4, 1, 128, 128,
@@ -1831,13 +1837,42 @@ def _a8w8_mxscale_gemm_bpreshuffle_fine(
         WG_PER_CU=1, has_oob=True, arch_prefix="gfx950",
         direct_only=split_k == 1, output_tiles_per_wg=1, scale_dtype="e8m0",
         splitk_workspace_dtype="fp32_t" if split_k > 1 else None,
-        max_tensor_bytes=2**31 - 1, pad_m=True, max_k=16384, max_m=2048,
-        name_tag=f"fine_lds_s{stages}_c{cluster}_sk{split_k}_v{reduce_vec}b{reduce_block}",
+        max_tensor_bytes=2**31 - 1, pad_m=True, max_k=fixed_k or 16384, max_m=2048,
+        name_tag=(f"fine_lds_s{stages}_c{cluster}_sk{split_k}_v{reduce_vec}b{reduce_block}"
+                  + (f"_k{fixed_k}" if fixed_k else "")),
         bpreshuffle_split_k=split_k, bpreshuffle_stages=stages,
         bpreshuffle_cluster=cluster, bpreshuffle_reduce_vec=reduce_vec,
         bpreshuffle_reduce_block=reduce_block, bpreshuffle_store_cache=store_cache,
         bpreshuffle_specializations=specializations,
+        bpreshuffle_fixed_k=fixed_k,
     )
+
+
+def _a8w8_mxscale_gemm_bpreshuffle_shortk(stages=4, *, read_only_drain=False):
+    """Explicit experiments preserving 9047's geometry and register scales."""
+    assert stages in (3, 4)
+    return OpusGemmInstance(
+        256, 32, 64, 128, 2, 2, 16, 16, 128, 16, 16, 4,
+        1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
+        WG_PER_CU=1, has_oob=True, arch_prefix="gfx950", direct_only=True,
+        output_tiles_per_wg=1, scale_dtype="e8m0", max_tensor_bytes=2**31 - 1,
+        pad_m=True, max_m=512, max_k=1024,
+        name_tag=f"shortk_lds_s{stages}_drain{int(read_only_drain)}",
+        bpreshuffle_stages=stages, bpreshuffle_read_only_drain=read_only_drain,
+        bpreshuffle_specializations=tuple(
+            (k, stages, 1, 4, 128, 0) for k in (384, 768, 1024)
+        ),
+    )
+
+
+def _a8w8_mxscale_gemm_bpreshuffle_fixed(family):
+    """Keep 9022/9023 geometry, stage and scale panel; specialize only K."""
+    assert family in ("small", "narrow")
+    instance = _a8w8_mxscale_gemm_bpreshuffle_merged(
+        family, 160 if family == "small" else 64, 128,
+    )
+    instance.name_tag = family + "_fixed"
+    return instance
 
 
 def _a8w8_mxscale_gemm_bpreshuffle_register_tail(
@@ -1913,6 +1948,22 @@ a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
     9071: _a8w8_mxscale_gemm_bpreshuffle_register_tail(16, 48, 4, 4),
     9072: _a8w8_mxscale_gemm_bpreshuffle_register_tail(32, 32, 4, 4),
     9073: _a8w8_mxscale_gemm_bpreshuffle_register_tail(32, 48, 4, 3, b_cache=0),
+    # CPU-prepared experiments: explicit --opus-kids only until GPU validation.
+    # Same 64x128/4-wave pipeline isolates K partitioning before changing tile.
+    9080: _a8w8_mxscale_gemm_bpreshuffle_fine(64, 1, 4, fixed_k=7168),
+    9081: _a8w8_mxscale_gemm_bpreshuffle_fine(64, 1, 4, 4, fixed_k=7168),
+    9082: _a8w8_mxscale_gemm_bpreshuffle_fine(64, 1, 4, 8, fixed_k=7168),
+    9083: _a8w8_mxscale_gemm_bpreshuffle_fine(48, 1, 4, 8, fixed_k=7168),
+    # FixedK first, then one stage/drain change relative to 9084.
+    9084: _a8w8_mxscale_gemm_bpreshuffle_shortk(),
+    9085: _a8w8_mxscale_gemm_bpreshuffle_shortk(3),
+    9086: _a8w8_mxscale_gemm_bpreshuffle_shortk(read_only_drain=True),
+    # Relative to 9062's M80 Fixed16384 branch: only reduce vector 4 -> 16.
+    9087: _a8w8_mxscale_gemm_bpreshuffle_fine(
+        80, 1, 4, 2, reduce_vec=16, fixed_k=16384,
+    ),
+    9088: _a8w8_mxscale_gemm_bpreshuffle_fixed("narrow"),
+    9089: _a8w8_mxscale_gemm_bpreshuffle_fixed("small"),
 }
 
 
@@ -1935,9 +1986,12 @@ A8W8_BPRESHUFFLE_LEGACY_KIDS = {
     9072: 9053,
     9073: 9042,
 }
+# Registered and explicitly callable, but not eligible for default tuning or
+# adoption until correctness, ATT and same-method timing have been measured.
+A8W8_BPRESHUFFLE_EXPERIMENTAL_KIDS = frozenset(range(9080, 9090))
 A8W8_BPRESHUFFLE_TUNING_KIDS = frozenset(
     a8w8_mxscale_gemm_bpreshuffle_kernels_list
-).difference(A8W8_BPRESHUFFLE_LEGACY_KIDS)
+).difference(A8W8_BPRESHUFFLE_LEGACY_KIDS, A8W8_BPRESHUFFLE_EXPERIMENTAL_KIDS)
 
 _bpreshuffle_dispatch = {
     # Deeper register prefetch helps long K or grids smaller than one CU round.
