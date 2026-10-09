@@ -1,0 +1,231 @@
+{
+  "status": "cpu_prepared_limited_diagnosis_and_next_queue",
+  "gpu_access": false,
+  "source_evidence": "reports/opus_bound_analysis_20261007/profiles/counter_runtime_consistency_audit.json",
+  "source_evidence_sha256": "8328d31a0795ac8965df0ac04e85d0094e5e3ab1177f44d3461677442a317a42",
+  "existing_collection_summary": [
+    {
+      "collection": "target0_kid9000_sq_ea",
+      "shape": [
+        1792,
+        7168,
+        384
+      ],
+      "parent": 9000,
+      "actual_configuration": 9000,
+      "selected_dispatches": 51,
+      "count_evidence": {
+        "workgroups": 196,
+        "waves": 784,
+        "F8_operations": 9865003008,
+        "MFMA_count": 150528,
+        "all51_grid_waves_F8_exact": true
+      },
+      "limited_observations": {
+        "profiled_median_us": 13.72,
+        "DRAM_read_MB": 11.18208,
+        "DRAM_write_MB": 25.704448,
+        "profiled_DRAM_total_TB_s": 2.688876967930029,
+        "SQ_wait_ANY_pct": 37.3857521796306,
+        "SQ_issue_ANY_pct": 32.48845436333707,
+        "SQ_active_ANY_pct": 30.28636831172392,
+        "TCP_TA_stall_pct_of_unwindowed_gate": 5.16018910193753,
+        "TCP_TCR_stall_pct_of_unwindowed_gate": 6.4697762509858325
+      },
+      "layer_questions": [
+        {
+          "layer": "CU/MFMA",
+          "question": "短K384的起步、输出和同步占比与8192³的长K稳态有多大差异？",
+          "next_evidence": "同一正式9000长K sq_ea；动态F8ops/waves、wave内等待、无profiler完成时间；GRBM绝对util继续暂缓。"
+        },
+        {
+          "layer": "GL2/SoC",
+          "question": "输出写bytes约25.7MB、输入读约11.2MB在短K任务中是否产生内部/外部回压？",
+          "next_evidence": "l2_tagmap hit/miss/tagstall；utcl1_credits外部credit；分别看累计physicalbytes。"
+        },
+        {
+          "layer": "TA/TCP/LDS",
+          "question": "9000矩阵供数与输出LDS重排的等待或接收停顿是否推迟MFMA？",
+          "next_evidence": "ta_lds的read-LDS、SQ LDS issue/bank、TA addr FIFO、TCP tagconflict/RFIFO；聚合不足时另测raw实例。"
+        }
+      ],
+      "bound_classification": "notestablished_bytheseaggregatecountersonly"
+    },
+    {
+      "collection": "target18_kid9052_sq_ea",
+      "shape": [
+        96,
+        768,
+        7168
+      ],
+      "parent": 9052,
+      "actual_configuration": 9070,
+      "selected_dispatches": 51,
+      "count_evidence": {
+        "workgroups": 144,
+        "waves": 1152,
+        "F8_operations": 1056964608,
+        "MFMA_count": 16128,
+        "all51_grid_waves_F8_exact": true
+      },
+      "limited_observations": {
+        "profiled_median_us": 8.64,
+        "DRAM_read_MB": 11.082752,
+        "DRAM_write_MB": 0.147456,
+        "profiled_DRAM_total_TB_s": 1.299911111111111,
+        "SQ_wait_ANY_pct": 49.92427849551889,
+        "SQ_issue_ANY_pct": 42.80324971570645,
+        "SQ_active_ANY_pct": 7.420760955771543,
+        "TCP_TA_stall_pct_of_unwindowed_gate": 20.480273720472557,
+        "TCP_TCR_stall_pct_of_unwindowed_gate": 0.001411583258854591
+      },
+      "layer_questions": [
+        {
+          "layer": "CU/dispatch",
+          "question": "K-wave分工和分布式FP32归约中，wave issue与依赖各承担什么？",
+          "next_evidence": "当前SQ比率49.92% wait /42.80% issue /7.42% active，仅ANY线索；没有VMEM细分。需ISA/相同分支可比较counter解释，不由低util确认dispatchbound。"
+        },
+        {
+          "layer": "TA/TCP/GL2",
+          "question": "TCP→TA比例较高而TCR比例极低，停顿来自TCP内部、地址/翻译还是其他回压？",
+          "next_evidence": "ta_lds和utcl1_credits，l2_tagmap配合；不能凭一个TCP比例确认TA根因。"
+        }
+      ],
+      "bound_classification": "notestablished_bytheseaggregatecountersonly"
+    },
+    {
+      "collection": "target26_kid9042_sq_ea",
+      "shape": [
+        192,
+        768,
+        7168
+      ],
+      "parent": 9042,
+      "actual_configuration": 9071,
+      "selected_dispatches": 51,
+      "count_evidence": {
+        "workgroups": 192,
+        "waves": 768,
+        "F8_operations": 2113929216,
+        "MFMA_count": 32256,
+        "all51_grid_waves_F8_exact": true
+      },
+      "limited_observations": {
+        "profiled_median_us": 10.36,
+        "DRAM_read_MB": 16.645888,
+        "DRAM_write_MB": 0.294912,
+        "profiled_DRAM_total_TB_s": 1.6352123552123552,
+        "SQ_wait_ANY_pct": 21.38605367211195,
+        "SQ_issue_ANY_pct": 63.80739428178551,
+        "SQ_active_ANY_pct": 14.753658423286304,
+        "TCP_TA_stall_pct_of_unwindowed_gate": 21.774047625126688,
+        "TCP_TCR_stall_pct_of_unwindowed_gate": 0.11398071679834923
+      },
+      "layer_questions": [
+        {
+          "layer": "CU/归约/grid",
+          "question": "9071/9073较高ANY issue比例来自哪种指令发射或归约依赖？N32退步的具体机制是什么？",
+          "next_evidence": "当前baseline只有ANY；需要同分支ISA和受控candidate counter，不能用baseline两shape比较解释N32因果。"
+        },
+        {
+          "layer": "TA/TCP/GL2",
+          "question": "N48请求与Bcache0/3的真实路径是否受TCP内部或翻译压力限制？",
+          "next_evidence": "l2_tagmap、utcl1_credits、ta_lds；保留TCP/GATE未windowing限制。"
+        },
+        {
+          "layer": "SoC带宽/延迟",
+          "question": "约1.64/1.95profiledTB/s是否代表供给不足、延迟或下游限制？",
+          "next_evidence": "当前字节与时间不足区分；需要请求延迟/在途容量与下游回压，不能宣布HBM饱和。"
+        }
+      ],
+      "bound_classification": "notestablished_bytheseaggregatecountersonly"
+    },
+    {
+      "collection": "target27_kid9042_sq_ea",
+      "shape": [
+        384,
+        768,
+        7168
+      ],
+      "parent": 9042,
+      "actual_configuration": 9073,
+      "selected_dispatches": 51,
+      "count_evidence": {
+        "workgroups": 192,
+        "waves": 768,
+        "F8_operations": 4227858432,
+        "MFMA_count": 64512,
+        "all51_grid_waves_F8_exact": true
+      },
+      "limited_observations": {
+        "profiled_median_us": 14.56,
+        "DRAM_read_MB": 27.744,
+        "DRAM_write_MB": 0.589824,
+        "profiled_DRAM_total_TB_s": 1.9460043956043955,
+        "SQ_wait_ANY_pct": 30.55576354414524,
+        "SQ_issue_ANY_pct": 54.53253639462915,
+        "SQ_active_ANY_pct": 14.859046541843991,
+        "TCP_TA_stall_pct_of_unwindowed_gate": 30.184770057207217,
+        "TCP_TCR_stall_pct_of_unwindowed_gate": 0.7796523607541942
+      },
+      "layer_questions": [
+        {
+          "layer": "CU/归约/grid",
+          "question": "9071/9073较高ANY issue比例来自哪种指令发射或归约依赖？N32退步的具体机制是什么？",
+          "next_evidence": "当前baseline只有ANY；需要同分支ISA和受控candidate counter，不能用baseline两shape比较解释N32因果。"
+        },
+        {
+          "layer": "TA/TCP/GL2",
+          "question": "N48请求与Bcache0/3的真实路径是否受TCP内部或翻译压力限制？",
+          "next_evidence": "l2_tagmap、utcl1_credits、ta_lds；保留TCP/GATE未windowing限制。"
+        },
+        {
+          "layer": "SoC带宽/延迟",
+          "question": "约1.64/1.95profiledTB/s是否代表供给不足、延迟或下游限制？",
+          "next_evidence": "当前字节与时间不足区分；需要请求延迟/在途容量与下游回压，不能宣布HBM饱和。"
+        }
+      ],
+      "bound_classification": "notestablished_bytheseaggregatecountersonly"
+    }
+  ],
+  "GRBM_findings": {
+    "GRBM_reduction": "Custom aliases reduce(GRBM_COUNT,max) and reduce(GRBM_GUI_ACTIVE,max) match installedSDK expressions; parse_counters preserves scalarmax and does notsum itagain. Raw GRBM instance values are absent from this scalarCSV, so per-XCC dimensionality cannotbe independentlychecked here.",
+    "MFMA_formula": "100*sum(SQ_VALU_MFMA_BUSY_CYCLES)/(max(GRBM_GUI_ACTIVE)*1024) matches installedMfmaUtil; arithmetic validity doesnot establish same-clock/same-walltime denominator.",
+    "clock_window_limit": "All4collections have GRBM_COUNT/duration_ns abovetheGPU Max_Engine_Clk_Fcompute2400MHz. GRBM_COUNT=GUI_ACTIVE in every selectedsample. No fixedfactor correction or absoluteutilization/occupancy boundclassification is justified bythese samples.",
+    "SQ_units": "SQ_WAVE_CYCLES/WAIT_ANY/WAIT_INST_ANY/ACTIVE_INST_ANY arequadcycles; meanlife4*wavecycles/waves and matchedsum ratios areinternallyconsistent. SQ_BUSY_CYCLES isper-SE clockcycle, notquadwavecycles.",
+    "MFMA_busy_operations": "Inall4collections, F8ops counterisexact2MNK/512 andMFMA_BUSY isexactonequarterthatcounter. Thisisconsistent with32busy-countunits perscaled16x16x128MFMA and128F8countunits perMFMA; independentpipeline-saturation information islimited."
+  },
+  "GRBM_factor_conclusion": "SDKdescription只给GRBM TieHigh clocks和installedmaxformula；现有CSV均为scalar reductions，没有rawGRBM维度或SDK packet校准证据，不支持推断乘法因素，更不自动纠正。",
+  "next_steps": [
+    {
+      "priority": 1,
+      "action": "root先对official_characterization targets30/31做signed8rep check-only",
+      "queue": "characterization_check_queue.json",
+      "scope": "9000 8192³和9051(1,65536,1536)，完整outputguard/结果检查；未运行。"
+    },
+    {
+      "priority": 2,
+      "action": "两目标各采4coregroups，-i existinggroupfile，独立source",
+      "queue": "characterization_profile_queue.json",
+      "groups": [
+        "sq_ea",
+        "l2_tagmap",
+        "utcl1_credits",
+        "ta_lds"
+      ],
+      "output_root": "char_profiles",
+      "scope": "8profilecommands，已CPU检查definitions/staticbudget和目标支持；runtime接受和结果待root执行。"
+    },
+    {
+      "priority": 3,
+      "action": "检查每目标grid/waves/F8ops/physicalbytes和单位，不用GRBM绝对util归类",
+      "scope": "9000 expectedF8ops=2MNK；9051 M1/BM16有16倍padding，expectedexecutedF8ops3,221,225,472 vslogical201,326,592。"
+    },
+    {
+      "priority": 4,
+      "action": "逐层结合缓存命中、接收停顿、翻译和issue线索，确定下一项可检验机制",
+      "scope": "聚合counter没有instance热点证据；如需确认hotspot再准备rawinstance专门采集。"
+    }
+  ],
+  "user_document_policy": "TechnicalJSONonly; mergeimportantfindings intoexistingtwoChineseanalysisdocuments, noadditionaluser-facingdocument."
+}

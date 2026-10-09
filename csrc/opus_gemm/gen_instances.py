@@ -648,12 +648,15 @@ class opus_gemm_codegen:
     {{ {kid}, &{kernel_name}<{ctype}> }},  \\
 """
 
-        def _rows(arch, tags, ctype):
+        def _rows(arch, tags, ctype, runtime_split_k=False):
             rows = []
             for kid, k in kernels_dict.items():
                 if not isinstance(kid, int) or k.kernel_tag not in tags:
                     continue
                 if _kid_arch_common(k) != arch or ctype not in k.output_dtypes:
+                    continue
+                variant = k.bpreshuffle_variant
+                if bool(variant is not None and variant.runtime_split_k) != runtime_split_k:
                     continue
                 rows.append((kid, k.name))
             rows.sort(key=lambda row: row[0])
@@ -703,6 +706,12 @@ class opus_gemm_codegen:
                         _rows(arch, A8W8_BPRESHUFFLE_TAGS, ctype),
                         ctype,
                     )
+            _emit_map(
+                f,
+                "GENERATE_A8W8_BLOCKSCALE_BPRESHUFFLE_RUNTIME_KID_DISPATCH_GFX950_BF16",
+                _rows("gfx950", A8W8_BPRESHUFFLE_TAGS, "bf16_t", runtime_split_k=True),
+                "bf16_t",
+            )
 
     def gen_bmm_mxscale_kid_dispatch(self):
         """Emit the global exact-kid table for gfx950 MXFP8 BMM launchers."""
@@ -824,7 +833,13 @@ void
                 elif k.kernel_tag == "a8w8_scale":
                     f.write(MANIFEST_BLOCKSCALE.format(kernel_name=k.name))
                 elif k.kernel_tag in A8W8_BPRESHUFFLE_TAGS:
-                    f.write(MANIFEST_BLOCKSCALE_BPRESHUFFLE.format(kernel_name=k.name))
+                    declaration = MANIFEST_BLOCKSCALE_BPRESHUFFLE
+                    if k.bpreshuffle_variant is not None and k.bpreshuffle_variant.runtime_split_k:
+                        declaration = declaration.replace(
+                            "std::optional<aiter_tensor_t> workspace);",
+                            "std::optional<aiter_tensor_t> workspace, int split_k);",
+                        )
+                    f.write(declaration.format(kernel_name=k.name))
                 else:
                     raise ValueError(f"no manifest ABI for kernel tag {k.kernel_tag!r}")
 

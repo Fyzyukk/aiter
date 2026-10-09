@@ -1,0 +1,48 @@
+--- frozen/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh
++++ panel16/pipeline.cuh
+@@ -6,15 +6,15 @@
+ #include <cstdint>
+ 
+ #include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh"
+-#include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh"
++#include "traits.cuh"
+ 
+ #if !defined(__HIP_DEVICE_COMPILE__)
+ template<class Traits>
+-__global__ void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
++__global__ void opus_private_9030_fixed1536_panel16_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
+ #elif defined(__gfx950__)
+ template<class Traits>
+ __global__ __launch_bounds__(Traits::BLOCK_SIZE, Traits::MIN_WGS_PER_CU)
+-void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
++void opus_private_9030_fixed1536_panel16_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
+     using namespace opus;
+ 
+     using T = opus::remove_cvref_t<Traits>;
+@@ -47,7 +47,7 @@
+     const int row = block_m * T::B_M;
+     const int col = block_n * T::B_N;
+     const int batch_id = block_id_z();
+-    const int loops = kargs.k / T::B_K;
++    constexpr int loops = T::FIXED_K / T::B_K;
+ 
+     // Matrix and scale global-memory views.
+     auto g_a = make_gmem(reinterpret_cast<const D_A*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * kargs.stride_a, static_cast<unsigned>((kargs.m - row) * kargs.stride_a));
+@@ -124,7 +124,7 @@
+         async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(stage), ga_offset(tile_k));
+         async_load<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(stage), gb_offset(tile_k));
+     };
+-    const int scale_k_groups = kargs.k / T::GROUP_K;
++    constexpr int scale_k_groups = T::FIXED_K / T::GROUP_K;
+     const auto sfa_gmem_offsets = layout_to_offsets<T::VEC_SCALE_A>(u_gsfa);
+     const auto sfa_smem_offsets = layout_to_offsets<T::VEC_SCALE_A>(u_ssfa);
+     const auto sfb_gmem_offsets = layout_to_offsets<1>(u_gsfb);
+@@ -140,7 +140,7 @@
+             constexpr int pass = decltype(pass_i)::value;
+             const int smem_offset = sfa_smem_offsets[pass];
+             const int local_row = smem_offset - local_k_group * T::B_M;
+-            if (smem_offset < T::SFA_BYTES && k_group < scale_k_groups) {
++            if (local_row < T::B_M && smem_offset < T::SFA_BYTES && k_group < scale_k_groups) {
+                 vector_t<D_SF, T::VEC_SCALE_A> raw;
+                 if (row + local_row < kargs.m)
+                     raw = load<T::VEC_SCALE_A>(g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin));

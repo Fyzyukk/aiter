@@ -1,0 +1,1610 @@
+{
+  "status": "CPU_review_complete_ATT_pending_not_adopted",
+  "generated_utc": "2026-10-08T02:10:00.297275+00:00",
+  "cpu_only": true,
+  "gpu_executed": false,
+  "build_executed": false,
+  "kernel_modified": false,
+  "baseline": {
+    "official_module": "reports/opus_resume_20261008/jit_formal_selected/module_deepgemm_opus.so",
+    "sha256": "6f6a0117b122f06b4802833c020effb4b24ff9fea56f20c8c16b9ced9787173f",
+    "description": "Oct8 applied9021 + Oct7 scoped register aliases",
+    "source_head": "b152ab834e68f8fde18adbd7b200c587770b9fb5",
+    "identity_audit": "reports/opus_resume_20261008/formal_selected/identity_audit.json",
+    "current_object_vs_retained_ELF_independently_verified": true
+  },
+  "scope": {
+    "parents": [
+      9023,
+      9024
+    ],
+    "actual_winners": 13,
+    "shared_helpers_frozen": true,
+    "9000_frozen": true,
+    "completed9021_preserved": true,
+    "parent_owns_GPU": true
+  },
+  "dispatch": {
+    "9023_fixed_condition": "m >=1024 && n <=1024 && k ==7168 && ceil(m/64)*(n/128) <=256",
+    "9023_actual": "All four runtime<3,32,0>; N7168 means K7168 also runtime. Grid_n56 disables all source swizzles.",
+    "9024_fixed_condition": "1024 <=m <=2048 && n <=1024 && k ==7168",
+    "9024_actual": "All nine fixed<64,7168,4>, GroupM4. 252/264 WG same branch, tail1/2Mtiles; no256 source boundary."
+  },
+  "variants": [
+    {
+      "variant": "9023_runtime",
+      "parent_id": 9023,
+      "winner_count": 4,
+      "symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x128_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "metadata": {
+        ".agpr_count": 0,
+        ".args": [
+          {
+            ".offset": 0,
+            ".size": 96,
+            ".value_kind": "by_value"
+          }
+        ],
+        ".group_segment_fixed_size": 78112,
+        ".kernarg_segment_align": 8,
+        ".kernarg_segment_size": 96,
+        ".language": "OpenCL C",
+        ".language_version": [
+          2,
+          0
+        ],
+        ".max_flat_workgroup_size": 256,
+        ".name": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+        ".private_segment_fixed_size": 0,
+        ".sgpr_count": 106,
+        ".sgpr_spill_count": 46,
+        ".symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950.kd",
+        ".uses_dynamic_stack": false,
+        ".vgpr_count": 232,
+        ".vgpr_spill_count": 0,
+        ".wavefront_size": 64
+      },
+      "instruction_bytes": 25976,
+      "instruction_sha256": "69f2876fbfee329775fc1db049cdd0358c1265b8b0c35ae6196c233817eb0e5a",
+      "descriptor_normalized_sha256": "f5e6712a442156ee7574b628091e324342f1a3872991c1e7bc86bbe2eaabc052",
+      "current_object": "reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/build/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x128x128_2x2_16x16x128_1x128x128_tiles1_narrow_Cbf16_t.device.cuda.o",
+      "retained_disassembly": "reports/opus_bound_analysis_20261007/official_compute_metadata/kid9023.s",
+      "retained_kernel_base": "0x1f00",
+      "identity_checks": {
+        "current_object_matches_Oct8_audit_and_retained_ELF": true,
+        "retained_disassembly_bytes_match_current_instruction_sha256": true
+      },
+      "static_counts": {
+        "MFMA": 40,
+        "writelane": 46,
+        "readlane": 166,
+        "barriers": 13,
+        "matrix_directLDS_vector16": 36,
+        "scale_vector16": 10,
+        "buffer_load_ubyte": 165,
+        "DS_read_b128": 60,
+        "DS_read_u16": 5,
+        "DS_read_u8": 5,
+        "DS_write_b128": 10,
+        "DS_write_b8": 5,
+        "waitcnt": 212,
+        "scratch_load": 0,
+        "scratch_store": 0
+      },
+      "SMEM_issues": [
+        {
+          "relative_pc": "0x0",
+          "opcode": "s_load_dwordx8",
+          "operands": "s[72:79], s[0:1], 0x18"
+        },
+        {
+          "relative_pc": "0x8",
+          "opcode": "s_load_dwordx4",
+          "operands": "s[8:11], s[0:1], 0x0"
+        },
+        {
+          "relative_pc": "0x10",
+          "opcode": "s_load_dwordx2",
+          "operands": "s[26:27], s[0:1], 0x10"
+        },
+        {
+          "relative_pc": "0x18",
+          "opcode": "s_load_dwordx2",
+          "operands": "s[28:29], s[0:1], 0x38"
+        },
+        {
+          "relative_pc": "0x2e0",
+          "opcode": "s_load_dwordx8",
+          "operands": "s[80:87], s[0:1], 0x40"
+        }
+      ],
+      "barrier_relative_pcs": [
+        "0x1420",
+        "0x1b14",
+        "0x1c14",
+        "0x2a94",
+        "0x2bd0",
+        "0x2c8c",
+        "0x3b0c",
+        "0x3c50",
+        "0x3d08",
+        "0x4b88",
+        "0x508c",
+        "0x51a0",
+        "0x6024"
+      ],
+      "backward_branch_static_intervals": [
+        {
+          "target_relative_pc": "0x1b10",
+          "branch_relative_pc": "0x4c9c",
+          "opcode": "s_cbranch_scc1",
+          "static_MFMA": 24,
+          "static_readlane": 120,
+          "static_writelane": 0,
+          "static_barriers": 9
+        },
+        {
+          "target_relative_pc": "0x1b10",
+          "branch_relative_pc": "0x4ca4",
+          "opcode": "s_branch",
+          "static_MFMA": 24,
+          "static_readlane": 120,
+          "static_writelane": 0,
+          "static_barriers": 9
+        },
+        {
+          "target_relative_pc": "0x507c",
+          "branch_relative_pc": "0x6174",
+          "opcode": "s_cbranch_scc1",
+          "static_MFMA": 8,
+          "static_readlane": 40,
+          "static_writelane": 0,
+          "static_barriers": 3
+        },
+        {
+          "target_relative_pc": "0x507c",
+          "branch_relative_pc": "0x617c",
+          "opcode": "s_branch",
+          "static_MFMA": 8,
+          "static_readlane": 40,
+          "static_writelane": 0,
+          "static_barriers": 3
+        }
+      ]
+    },
+    {
+      "variant": "9023_fixed",
+      "parent_id": 9023,
+      "winner_count": 0,
+      "symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi4ELi64ELi7168EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x128_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<4, 64, 7168> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "metadata": {
+        ".agpr_count": 0,
+        ".args": [
+          {
+            ".offset": 0,
+            ".size": 96,
+            ".value_kind": "by_value"
+          }
+        ],
+        ".group_segment_fixed_size": 105536,
+        ".kernarg_segment_align": 8,
+        ".kernarg_segment_size": 96,
+        ".language": "OpenCL C",
+        ".language_version": [
+          2,
+          0
+        ],
+        ".max_flat_workgroup_size": 256,
+        ".name": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi4ELi64ELi7168EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+        ".private_segment_fixed_size": 0,
+        ".sgpr_count": 59,
+        ".sgpr_spill_count": 0,
+        ".symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi4ELi64ELi7168EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950.kd",
+        ".uses_dynamic_stack": false,
+        ".vgpr_count": 176,
+        ".vgpr_spill_count": 0,
+        ".wavefront_size": 64
+      },
+      "instruction_bytes": 8340,
+      "instruction_sha256": "56bee92f526d08a5296f174e6600f0b57fd4e26ab178d3aca0d20442088c82a7",
+      "descriptor_normalized_sha256": "29684941d6b7527c587a51b3f4ab52d835b5af3bd54e43c84cb414ee8b2c99d9",
+      "current_object": "reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/build/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x128x128_2x2_16x16x128_1x128x128_tiles1_narrow_Cbf16_t.device.cuda.o",
+      "retained_disassembly": "reports/opus_bound_analysis_20261007/official_compute_metadata/kid9023.s",
+      "retained_kernel_base": "0x8500",
+      "identity_checks": {
+        "current_object_matches_Oct8_audit_and_retained_ELF": true,
+        "retained_disassembly_bytes_match_current_instruction_sha256": true
+      },
+      "static_counts": {
+        "MFMA": 40,
+        "writelane": 0,
+        "readlane": 0,
+        "barriers": 5,
+        "matrix_directLDS_vector16": 42,
+        "scale_vector16": 2,
+        "buffer_load_ubyte": 33,
+        "DS_read_b128": 60,
+        "DS_read_u16": 5,
+        "DS_read_u8": 5,
+        "DS_write_b128": 2,
+        "DS_write_b8": 1,
+        "waitcnt": 59,
+        "scratch_load": 0,
+        "scratch_store": 0
+      },
+      "SMEM_issues": [
+        {
+          "relative_pc": "0x0",
+          "opcode": "s_load_dwordx8",
+          "operands": "s[8:15], s[0:1], 0x0"
+        },
+        {
+          "relative_pc": "0x8",
+          "opcode": "s_load_dwordx4",
+          "operands": "s[16:19], s[0:1], 0x28"
+        },
+        {
+          "relative_pc": "0x10",
+          "opcode": "s_load_dwordx2",
+          "operands": "s[6:7], s[0:1], 0x38"
+        },
+        {
+          "relative_pc": "0x18",
+          "opcode": "s_load_dwordx4",
+          "operands": "s[24:27], s[0:1], 0x50"
+        },
+        {
+          "relative_pc": "0x3fc",
+          "opcode": "s_load_dwordx4",
+          "operands": "s[28:31], s[0:1], 0x40"
+        }
+      ],
+      "barrier_relative_pcs": [
+        "0x1570",
+        "0x1848",
+        "0x1a20",
+        "0x1bd8",
+        "0x1da0"
+      ],
+      "backward_branch_static_intervals": [
+        {
+          "target_relative_pc": "0x173c",
+          "branch_relative_pc": "0x1c94",
+          "opcode": "s_cbranch_scc1",
+          "static_MFMA": 24,
+          "static_readlane": 0,
+          "static_writelane": 0,
+          "static_barriers": 3
+        },
+        {
+          "target_relative_pc": "0x1740",
+          "branch_relative_pc": "0x1e60",
+          "opcode": "s_branch",
+          "static_MFMA": 32,
+          "static_readlane": 0,
+          "static_writelane": 0,
+          "static_barriers": 4
+        }
+      ]
+    },
+    {
+      "variant": "9024_runtime",
+      "parent_id": 9024,
+      "winner_count": 0,
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi32ELi0ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x64_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<32, 0, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "metadata": {
+        ".agpr_count": 0,
+        ".args": [
+          {
+            ".offset": 0,
+            ".size": 96,
+            ".value_kind": "by_value"
+          }
+        ],
+        ".group_segment_fixed_size": 69664,
+        ".kernarg_segment_align": 8,
+        ".kernarg_segment_size": 96,
+        ".language": "OpenCL C",
+        ".language_version": [
+          2,
+          0
+        ],
+        ".max_flat_workgroup_size": 256,
+        ".name": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi32ELi0ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+        ".private_segment_fixed_size": 0,
+        ".sgpr_count": 106,
+        ".sgpr_spill_count": 44,
+        ".symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi32ELi0ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950.kd",
+        ".uses_dynamic_stack": false,
+        ".vgpr_count": 152,
+        ".vgpr_spill_count": 0,
+        ".wavefront_size": 64
+      },
+      "instruction_bytes": 21736,
+      "instruction_sha256": "52bc91c26b2f79721478ee6440e87d49266d27ef69b3f3eba13846f4fec3eb4c",
+      "descriptor_normalized_sha256": "d58d33b2d0ced0e2e94ddd800437df38d737ab0bbc34c5f2b39a6122461d71f9",
+      "current_object": "reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/build/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x64x128_2x2_16x16x128_1x128x128_tiles1_narrow_Cbf16_t.device.cuda.o",
+      "retained_disassembly": "reports/opus_bound_analysis_20261007/official_compute_metadata/kid9024.s",
+      "retained_kernel_base": "0x1f00",
+      "identity_checks": {
+        "current_object_matches_Oct8_audit_and_retained_ELF": true,
+        "retained_disassembly_bytes_match_current_instruction_sha256": true
+      },
+      "static_counts": {
+        "MFMA": 24,
+        "writelane": 44,
+        "readlane": 132,
+        "barriers": 12,
+        "matrix_directLDS_vector16": 32,
+        "scale_vector16": 8,
+        "buffer_load_ubyte": 132,
+        "DS_read_b128": 48,
+        "DS_read_u16": 6,
+        "DS_read_u8": 6,
+        "DS_write_b128": 8,
+        "DS_write_b8": 4,
+        "waitcnt": 175,
+        "scratch_load": 0,
+        "scratch_store": 0
+      },
+      "SMEM_issues": [
+        {
+          "relative_pc": "0x0",
+          "opcode": "s_load_dwordx8",
+          "operands": "s[72:79], s[0:1], 0x18"
+        },
+        {
+          "relative_pc": "0x8",
+          "opcode": "s_load_dwordx4",
+          "operands": "s[8:11], s[0:1], 0x0"
+        },
+        {
+          "relative_pc": "0x10",
+          "opcode": "s_load_dwordx2",
+          "operands": "s[12:13], s[0:1], 0x10"
+        },
+        {
+          "relative_pc": "0x18",
+          "opcode": "s_load_dwordx2",
+          "operands": "s[14:15], s[0:1], 0x38"
+        },
+        {
+          "relative_pc": "0x364",
+          "opcode": "s_load_dwordx8",
+          "operands": "s[80:87], s[0:1], 0x40"
+        },
+        {
+          "relative_pc": "0x3f14",
+          "opcode": "s_load_dwordx8",
+          "operands": "s[80:87], s[0:1], 0x40"
+        }
+      ],
+      "barrier_relative_pcs": [
+        "0x14a8",
+        "0x1a84",
+        "0x1c2c",
+        "0x1cb4",
+        "0x2b6c",
+        "0x2c80",
+        "0x2e00",
+        "0x2e84",
+        "0x3d34",
+        "0x4240",
+        "0x42fc",
+        "0x51b0"
+      ],
+      "backward_branch_static_intervals": [
+        {
+          "target_relative_pc": "0x180",
+          "branch_relative_pc": "0x1c4",
+          "opcode": "s_cbranch_scc0",
+          "static_MFMA": 0,
+          "static_readlane": 0,
+          "static_writelane": 0,
+          "static_barriers": 0
+        },
+        {
+          "target_relative_pc": "0x1a80",
+          "branch_relative_pc": "0x3e28",
+          "opcode": "s_cbranch_scc1",
+          "static_MFMA": 16,
+          "static_readlane": 88,
+          "static_writelane": 0,
+          "static_barriers": 8
+        },
+        {
+          "target_relative_pc": "0x1a80",
+          "branch_relative_pc": "0x3e30",
+          "opcode": "s_branch",
+          "static_MFMA": 16,
+          "static_readlane": 88,
+          "static_writelane": 0,
+          "static_barriers": 8
+        },
+        {
+          "target_relative_pc": "0x364",
+          "branch_relative_pc": "0x3ea4",
+          "opcode": "s_cbranch_scc1",
+          "static_MFMA": 16,
+          "static_readlane": 88,
+          "static_writelane": 44,
+          "static_barriers": 9
+        },
+        {
+          "target_relative_pc": "0x374",
+          "branch_relative_pc": "0x3f20",
+          "opcode": "s_cbranch_scc0",
+          "static_MFMA": 16,
+          "static_readlane": 88,
+          "static_writelane": 44,
+          "static_barriers": 9
+        },
+        {
+          "target_relative_pc": "0x3e0",
+          "branch_relative_pc": "0x3f24",
+          "opcode": "s_branch",
+          "static_MFMA": 16,
+          "static_readlane": 88,
+          "static_writelane": 44,
+          "static_barriers": 9
+        },
+        {
+          "target_relative_pc": "0x4230",
+          "branch_relative_pc": "0x52cc",
+          "opcode": "s_cbranch_scc1",
+          "static_MFMA": 4,
+          "static_readlane": 44,
+          "static_writelane": 0,
+          "static_barriers": 3
+        },
+        {
+          "target_relative_pc": "0x4230",
+          "branch_relative_pc": "0x52d4",
+          "opcode": "s_branch",
+          "static_MFMA": 4,
+          "static_readlane": 44,
+          "static_writelane": 0,
+          "static_barriers": 3
+        }
+      ]
+    },
+    {
+      "variant": "9024_fixed",
+      "parent_id": 9024,
+      "winner_count": 9,
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x64_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "metadata": {
+        ".agpr_count": 0,
+        ".args": [
+          {
+            ".offset": 0,
+            ".size": 96,
+            ".value_kind": "by_value"
+          }
+        ],
+        ".group_segment_fixed_size": 71744,
+        ".kernarg_segment_align": 8,
+        ".kernarg_segment_size": 96,
+        ".language": "OpenCL C",
+        ".language_version": [
+          2,
+          0
+        ],
+        ".max_flat_workgroup_size": 256,
+        ".name": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+        ".private_segment_fixed_size": 0,
+        ".sgpr_count": 58,
+        ".sgpr_spill_count": 0,
+        ".symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950.kd",
+        ".uses_dynamic_stack": false,
+        ".vgpr_count": 110,
+        ".vgpr_spill_count": 0,
+        ".wavefront_size": 64
+      },
+      "instruction_bytes": 7276,
+      "instruction_sha256": "781f9cb117f86d6685d651a7944803340c9749abb076a6ff258358711648e47f",
+      "descriptor_normalized_sha256": "0ae1b0cbd82895b8224bcb9cfb1fee2a12e884a2bad1b2f2f50b21f549b9ebc9",
+      "current_object": "reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/build/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x64x128_2x2_16x16x128_1x128x128_tiles1_narrow_Cbf16_t.device.cuda.o",
+      "retained_disassembly": "reports/opus_bound_analysis_20261007/official_compute_metadata/kid9024.s",
+      "retained_kernel_base": "0x7400",
+      "identity_checks": {
+        "current_object_matches_Oct8_audit_and_retained_ELF": true,
+        "retained_disassembly_bytes_match_current_instruction_sha256": true
+      },
+      "static_counts": {
+        "MFMA": 20,
+        "writelane": 0,
+        "readlane": 0,
+        "barriers": 5,
+        "matrix_directLDS_vector16": 28,
+        "scale_vector16": 2,
+        "buffer_load_ubyte": 33,
+        "DS_read_b128": 40,
+        "DS_read_u16": 5,
+        "DS_read_u8": 5,
+        "DS_write_b128": 2,
+        "DS_write_b8": 1,
+        "waitcnt": 56,
+        "scratch_load": 0,
+        "scratch_store": 0
+      },
+      "SMEM_issues": [
+        {
+          "relative_pc": "0x0",
+          "opcode": "s_load_dwordx8",
+          "operands": "s[8:15], s[0:1], 0x0"
+        },
+        {
+          "relative_pc": "0x8",
+          "opcode": "s_load_dwordx4",
+          "operands": "s[24:27], s[0:1], 0x28"
+        },
+        {
+          "relative_pc": "0x10",
+          "opcode": "s_load_dwordx2",
+          "operands": "s[6:7], s[0:1], 0x38"
+        },
+        {
+          "relative_pc": "0x33c",
+          "opcode": "s_load_dwordx8",
+          "operands": "s[16:23], s[0:1], 0x40"
+        }
+      ],
+      "barrier_relative_pcs": [
+        "0x14dc",
+        "0x16b8",
+        "0x1814",
+        "0x1940",
+        "0x1a88"
+      ],
+      "backward_branch_static_intervals": [
+        {
+          "target_relative_pc": "0x15f8",
+          "branch_relative_pc": "0x19cc",
+          "opcode": "s_cbranch_scc1",
+          "static_MFMA": 12,
+          "static_readlane": 0,
+          "static_writelane": 0,
+          "static_barriers": 3
+        },
+        {
+          "target_relative_pc": "0x15fc",
+          "branch_relative_pc": "0x1b18",
+          "opcode": "s_branch",
+          "static_MFMA": 16,
+          "static_readlane": 0,
+          "static_writelane": 0,
+          "static_barriers": 4
+        }
+      ]
+    }
+  ],
+  "winners": [
+    {
+      "parent_id": 9023,
+      "shape": [
+        544,
+        7168,
+        7168
+      ],
+      "variant": "9023_runtime",
+      "symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0>",
+      "actual_branch_index": 1,
+      "actual_branch_label": "_Traits",
+      "grid": [
+        56,
+        9,
+        1
+      ],
+      "workgroups": 504,
+      "waves_launched": 2016,
+      "tile_efficiency": 0.9444444444444444,
+      "M_tail_valid_rows": 32,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 32,
+      "panel_refills_per_WG": 1,
+      "MFMA_per_complete_wave": 448,
+      "MFMA_all_launched_waves_estimate": 903168,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": null
+    },
+    {
+      "parent_id": 9023,
+      "shape": [
+        544,
+        7168,
+        16384
+      ],
+      "variant": "9023_runtime",
+      "symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0>",
+      "actual_branch_index": 1,
+      "actual_branch_label": "_Traits",
+      "grid": [
+        56,
+        9,
+        1
+      ],
+      "workgroups": 504,
+      "waves_launched": 2016,
+      "tile_efficiency": 0.9444444444444444,
+      "M_tail_valid_rows": 32,
+      "K128_tiles": 128,
+      "panel_K128_tiles": 32,
+      "panel_refills_per_WG": 3,
+      "MFMA_per_complete_wave": 1024,
+      "MFMA_all_launched_waves_estimate": 2064384,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": null
+    },
+    {
+      "parent_id": 9023,
+      "shape": [
+        576,
+        7168,
+        7168
+      ],
+      "variant": "9023_runtime",
+      "symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0>",
+      "actual_branch_index": 1,
+      "actual_branch_label": "_Traits",
+      "grid": [
+        56,
+        9,
+        1
+      ],
+      "workgroups": 504,
+      "waves_launched": 2016,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 32,
+      "panel_refills_per_WG": 1,
+      "MFMA_per_complete_wave": 448,
+      "MFMA_all_launched_waves_estimate": 903168,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": null
+    },
+    {
+      "parent_id": 9023,
+      "shape": [
+        576,
+        7168,
+        16384
+      ],
+      "variant": "9023_runtime",
+      "symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0>",
+      "actual_branch_index": 1,
+      "actual_branch_label": "_Traits",
+      "grid": [
+        56,
+        9,
+        1
+      ],
+      "workgroups": 504,
+      "waves_launched": 2016,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 128,
+      "panel_K128_tiles": 32,
+      "panel_refills_per_WG": 3,
+      "MFMA_per_complete_wave": 1024,
+      "MFMA_all_launched_waves_estimate": 2064384,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": null
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1024,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        16,
+        1
+      ],
+      "workgroups": 192,
+      "waves_launched": 768,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 172032,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 4
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1088,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        17,
+        1
+      ],
+      "workgroups": 204,
+      "waves_launched": 816,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 182784,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 1
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1152,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        18,
+        1
+      ],
+      "workgroups": 216,
+      "waves_launched": 864,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 193536,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 2
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1216,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        19,
+        1
+      ],
+      "workgroups": 228,
+      "waves_launched": 912,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 204288,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 3
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1280,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        20,
+        1
+      ],
+      "workgroups": 240,
+      "waves_launched": 960,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 215040,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 4
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1344,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        21,
+        1
+      ],
+      "workgroups": 252,
+      "waves_launched": 1008,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 225792,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 1
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1408,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        22,
+        1
+      ],
+      "workgroups": 264,
+      "waves_launched": 1056,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 236544,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 2
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1472,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        23,
+        1
+      ],
+      "workgroups": 276,
+      "waves_launched": 1104,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 247296,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 3
+    },
+    {
+      "parent_id": 9024,
+      "shape": [
+        1536,
+        768,
+        7168
+      ],
+      "variant": "9024_fixed",
+      "symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "traits": "opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4>",
+      "actual_branch_index": 0,
+      "actual_branch_label": "_Specialization0",
+      "grid": [
+        12,
+        24,
+        1
+      ],
+      "workgroups": 288,
+      "waves_launched": 1152,
+      "tile_efficiency": 1.0,
+      "M_tail_valid_rows": 64,
+      "K128_tiles": 56,
+      "panel_K128_tiles": 64,
+      "panel_refills_per_WG": 0,
+      "MFMA_per_complete_wave": 224,
+      "MFMA_all_launched_waves_estimate": 258048,
+      "split_k": 1,
+      "workspace_bytes": 0,
+      "last_GroupM_tiles": 4
+    }
+  ],
+  "machine_PC_anchors": {
+    "9023_runtime": {
+      "startup_SMEM_waits": [
+        "0x20",
+        "0x3a4"
+      ],
+      "SFA_low_high": [
+        "0xba4",
+        "0x12fc"
+      ],
+      "SFA_pack_wait": "0x1310",
+      "SFA_LDS_publish": [
+        "0x1354",
+        "0x1388"
+      ],
+      "SFB_issue_wait_publish": [
+        "0x13f0",
+        "0x1400",
+        "0x1404"
+      ],
+      "panel_wait_barrier": [
+        "0x141c",
+        "0x1420"
+      ],
+      "initial_SFA_SFB_reads": [
+        "0x1434",
+        "0x1444"
+      ],
+      "operand_wait": "0x14e8",
+      "first_static_MFMA": "0x1b28",
+      "refill_vector16_pairs": [
+        [
+          "0x2390",
+          "0x29fc"
+        ],
+        [
+          "0x3408",
+          "0x3a74"
+        ],
+        [
+          "0x4484",
+          "0x4af0"
+        ],
+        [
+          "0x5914",
+          "0x5f80"
+        ]
+      ],
+      "refill_pack_waits": [
+        "0x2a08",
+        "0x3a80",
+        "0x4afc",
+        "0x5f94"
+      ],
+      "refill_publish_barriers": [
+        "0x2a94",
+        "0x3b0c",
+        "0x4b88",
+        "0x6024"
+      ],
+      "conditional_byte_mask_readlane": [
+        "0x1c64",
+        "0x1c6c"
+      ],
+      "remainder_control_readlane": [
+        "0x4d38",
+        "0x4d48",
+        "0x4d50"
+      ],
+      "output_address_readlane": [
+        "0x6340",
+        "0x6348",
+        "0x640c"
+      ]
+    },
+    "9024_fixed": {
+      "startup_SMEM_waits": [
+        "0x18",
+        "0x364"
+      ],
+      "SFA_low_high": [
+        "0xbc8",
+        "0x13ac"
+      ],
+      "SFA_pack_wait": "0x13c0",
+      "SFA_LDS_publish": [
+        "0x13fc",
+        "0x1424"
+      ],
+      "SFB_issue_wait_publish": [
+        "0x1494",
+        "0x14a4",
+        "0x14a8"
+      ],
+      "panel_wait_barrier": [
+        "0x14d8",
+        "0x14dc"
+      ],
+      "initial_SFA_SFB_reads": [
+        "0x14f4",
+        "0x1554"
+      ],
+      "operand_wait": "0x155c",
+      "first_static_MFMA": "0x162c",
+      "first_next_SFA_read": "0x169c",
+      "first_steady_wait_barrier": [
+        "0x16a4",
+        "0x16b8"
+      ],
+      "first_next_SFB_read": "0x1700",
+      "next_operand_wait": "0x1724"
+    }
+  },
+  "PC_policy": "All anchors are kernel relative. Subtract exactsymbol current decoder code load address; retained/private absolute placement is not transferable.",
+  "scale_review": {
+    "representation": "Low/high SFA vector16 -> eight v_perm -> u16 pairs -> two DSb128 perproducerlane -> one u16 consumer/K128. SFBbyte -> DSb8 -> DSu8. Keep existingu16 layout; completed9021 raw layout differs.",
+    "guard": "Shared helper unchanged: valid_rows>=16 && offset%16==0 usesvector16; otherwise each byte defaults0x7f and loads only if byte<valid_rows.",
+    "alignment": "Host stride_sfa=M, all actualM16aligned, row64aligned, chunks0/16/32/48 aligned.",
+    "M544_tail": "LastWG32validrows: lowchunks full16, highchunks0valid; no1..15validvector. Highdefaultpath no byteVMEM but may execute pack/readlane/EXECcontrol. Need actualtailWG capture.",
+    "producer_partition": "SFAgroup=thread_id/2: panel32 first64threads(wave0), partial24 first48; fixed56 first112(wave0+wave1first48lanes). SFBguards first32/24/56threads.",
+    "panel_counts": "K7168 runtime56tiles:32+24 two panels. K16384runtime128: four full panels/refill32/64/96. Fixed9024 56<panel64: no refill.",
+    "count_limit": "Static byte/vector counts include guarded fallback and duplicated refills, not dynamic requests/HBMtraffic."
+  },
+  "machine_clues": {
+    "scalar_spill": "9023 runtime has SGPR spill46, static lane46/166 and no scratch. Many120 readlane in the three-tile static interval are guarded SFA byte/default refill control. Full vector paths can skip them. Example0x1c64/0x1c6c restores v83 lanes3/4 to s46/s47, then masks EXEC before guarded byte loads. Count actual ATT readlane and dependencies before naming a steady tile spill bottleneck.",
+    "fixed9024": "Fixed9024 spill0 and lane0; runtime9024 spill44 does not explain nine fixed winners. Focus startup SMEM, producer serialization, ring VMEM/LDS readiness, barrier and MFMA schedule.",
+    "SMEM": "96B kernargs; +0x40 scale pointers/strides runtimeissue0x2e0/fixed0x33c. LGKMwait may include SMEM orDS; classify queues.",
+    "resources": "Actual VGPR totals232 for runtime9023 and110 for fixed9024, AGPR0; LDS78112/71744. Two WGs fit160KiB LDS-only including1280B rounding model. Full residency needs descriptor allocation, other resources and dynamic evidence; this is not absolute occupancy.",
+    "static_intervals": "9023main24MFMA/120readlane,remainder8/40 are staticranges including guardedrefill. fixed9024 ranges12/16MFMA no laneops. Never blindly multiply staticranges."
+  },
+  "rejected_unroll1": {
+    "status": "globally rejected; do not restore without a newly measured mechanism",
+    "only_runtime_changed": true,
+    "fixed_entries_unchanged": true,
+    "static_reduction": {
+      "9023runtime": {
+        "VGPR": [
+          232,
+          121
+        ],
+        "SGPR_spill": [
+          46,
+          21
+        ],
+        "writelane": [
+          46,
+          21
+        ],
+        "readlane": [
+          166,
+          21
+        ],
+        "instruction_bytes": [
+          25976,
+          10928
+        ]
+      },
+      "9024runtime": {
+        "VGPR": [
+          152,
+          87
+        ],
+        "SGPR_spill": [
+          44,
+          22
+        ],
+        "writelane": [
+          44,
+          22
+        ],
+        "readlane": [
+          132,
+          22
+        ],
+        "instruction_bytes": [
+          21736,
+          10776
+        ]
+      }
+    },
+    "Event_rows": [
+      {
+        "parent_id": 9023,
+        "shape": [
+          544,
+          7168,
+          7168
+        ],
+        "role": "current745 actual winner runtime branch",
+        "baseline_us": 47.536901399201035,
+        "candidate_us": 47.72278374316645,
+        "Event_change_percent": -0.38950440310815404,
+        "paired_median_change_percent": -0.38708064559779265,
+        "faster_rounds": 1,
+        "rounds": 5,
+        "correctness": {
+          "status": "passed",
+          "rounds": 5,
+          "rotation_count": 51,
+          "checks_count": 510,
+          "all_output_repeatable": true,
+          "all_output_guards": true,
+          "all_errRatio_zero": true,
+          "workspace": "none; workspace_repeatable false is inapplicable"
+        },
+        "source_result": "reports/opus_bound_analysis_20261007/results/narrow_current_winners_0_kid9023.json"
+      },
+      {
+        "parent_id": 9023,
+        "shape": [
+          544,
+          7168,
+          16384
+        ],
+        "role": "current745 actual winner runtime branch",
+        "baseline_us": 99.3185510822371,
+        "candidate_us": 99.0299243553012,
+        "Event_change_percent": 0.29145405170698524,
+        "paired_median_change_percent": 0.9408858107195162,
+        "faster_rounds": 4,
+        "rounds": 5,
+        "correctness": {
+          "status": "passed",
+          "rounds": 5,
+          "rotation_count": 51,
+          "checks_count": 510,
+          "all_output_repeatable": true,
+          "all_output_guards": true,
+          "all_errRatio_zero": true,
+          "workspace": "none; workspace_repeatable false is inapplicable"
+        },
+        "source_result": "reports/opus_bound_analysis_20261007/results/narrow_current_winners_1_kid9023.json"
+      },
+      {
+        "parent_id": 9023,
+        "shape": [
+          576,
+          7168,
+          7168
+        ],
+        "role": "current745 actual winner runtime branch",
+        "baseline_us": 48.257687512566065,
+        "candidate_us": 48.223962970808444,
+        "Event_change_percent": 0.06993316119214832,
+        "paired_median_change_percent": -0.3735003091033806,
+        "faster_rounds": 2,
+        "rounds": 5,
+        "correctness": {
+          "status": "passed",
+          "rounds": 5,
+          "rotation_count": 51,
+          "checks_count": 510,
+          "all_output_repeatable": true,
+          "all_output_guards": true,
+          "all_errRatio_zero": true,
+          "workspace": "none; workspace_repeatable false is inapplicable"
+        },
+        "source_result": "reports/opus_bound_analysis_20261007/results/narrow_current_winners_2_kid9023.json"
+      },
+      {
+        "parent_id": 9023,
+        "shape": [
+          576,
+          7168,
+          16384
+        ],
+        "role": "current745 actual winner runtime branch",
+        "baseline_us": 99.05735651652019,
+        "candidate_us": 100.2205119413488,
+        "Event_change_percent": -1.160596171679229,
+        "paired_median_change_percent": -1.1571307711296441,
+        "faster_rounds": 1,
+        "rounds": 5,
+        "correctness": {
+          "status": "passed",
+          "rounds": 5,
+          "rotation_count": 51,
+          "checks_count": 510,
+          "all_output_repeatable": true,
+          "all_output_guards": true,
+          "all_errRatio_zero": true,
+          "workspace": "none; workspace_repeatable false is inapplicable"
+        },
+        "source_result": "reports/opus_bound_analysis_20261007/results/narrow_current_winners_3_kid9023.json"
+      },
+      {
+        "parent_id": 9024,
+        "shape": [
+          608,
+          768,
+          7168
+        ],
+        "role": "runtime guard: K7168 outside fixed specialization; 120 WG",
+        "baseline_us": 20.909980231640386,
+        "candidate_us": 20.887234631706686,
+        "Event_change_percent": 0.10889713422939096,
+        "paired_median_change_percent": 0.10889713422939096,
+        "faster_rounds": 4,
+        "rounds": 5,
+        "correctness": {
+          "status": "passed",
+          "rounds": 5,
+          "rotation_count": 51,
+          "checks_count": 510,
+          "all_output_repeatable": true,
+          "all_output_guards": true,
+          "all_errRatio_zero": true,
+          "workspace": "none; workspace_repeatable false is inapplicable"
+        },
+        "source_result": "reports/opus_bound_analysis_20261007/results/narrow_current_winners_4_kid9024.json"
+      },
+      {
+        "parent_id": 9024,
+        "shape": [
+          1536,
+          768,
+          16384
+        ],
+        "role": "runtime guard: maximum K and multiple scale refills; 288 WG",
+        "baseline_us": 62.52603904873717,
+        "candidate_us": 63.35664730446011,
+        "Event_change_percent": -1.3110041188440058,
+        "paired_median_change_percent": -1.392847165351374,
+        "faster_rounds": 0,
+        "rounds": 5,
+        "correctness": {
+          "status": "passed",
+          "rounds": 5,
+          "rotation_count": 51,
+          "checks_count": 510,
+          "all_output_repeatable": true,
+          "all_output_guards": true,
+          "all_errRatio_zero": true,
+          "workspace": "none; workspace_repeatable false is inapplicable"
+        },
+        "source_result": "reports/opus_bound_analysis_20261007/results/narrow_current_winners_5_kid9024.json"
+      }
+    ],
+    "protocol": "Oct7 PCI85 clean process window; shared51 address pool; five AB/BA Event rounds; numerical/guard passed. Other cards busy, clocks not locked;52 mechanism targets and718 runtime support domain incomplete. No ATT/counter.",
+    "conclusion": "Four9023 actualwinners nearzero/mixed incl~1.16%regression;9024runtimemaxK5/5slow~1.31%. Spill/code reduction didnotprovefull-timegain; profiletime cannotreplaceEvent."
+  },
+  "finite_ATT_representatives": [
+    {
+      "priority": 1,
+      "parent_id": 9023,
+      "shape": [
+        544,
+        7168,
+        16384
+      ],
+      "phase": "primary",
+      "reason": "LongK three refills, tail whole invalid high vectors",
+      "exact_symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x128_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "grid": [
+        56,
+        9,
+        1
+      ],
+      "workgroups": 504,
+      "waves_launched": 2016,
+      "expected_MFMA_per_complete_wave": 1024,
+      "expected_MFMA_four_complete_waves": 4096,
+      "panel_refills_per_WG": 3,
+      "GPU_executed_by_review": false
+    },
+    {
+      "priority": 2,
+      "parent_id": 9023,
+      "shape": [
+        576,
+        7168,
+        7168
+      ],
+      "phase": "primary",
+      "reason": "FullM aligned vector, one refill",
+      "exact_symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x128_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "grid": [
+        56,
+        9,
+        1
+      ],
+      "workgroups": 504,
+      "waves_launched": 2016,
+      "expected_MFMA_per_complete_wave": 448,
+      "expected_MFMA_four_complete_waves": 1792,
+      "panel_refills_per_WG": 1,
+      "GPU_executed_by_review": false
+    },
+    {
+      "priority": 3,
+      "parent_id": 9024,
+      "shape": [
+        1344,
+        768,
+        7168
+      ],
+      "phase": "primary",
+      "reason": "252WG fixed GroupM4 tail1Mtile",
+      "exact_symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x64_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "grid": [
+        12,
+        21,
+        1
+      ],
+      "workgroups": 252,
+      "waves_launched": 1008,
+      "expected_MFMA_per_complete_wave": 224,
+      "expected_MFMA_four_complete_waves": 896,
+      "panel_refills_per_WG": 0,
+      "GPU_executed_by_review": false
+    },
+    {
+      "priority": 4,
+      "parent_id": 9024,
+      "shape": [
+        1408,
+        768,
+        7168
+      ],
+      "phase": "primary",
+      "reason": "264WG same fixed branch tail2Mtiles",
+      "exact_symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x64_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "grid": [
+        12,
+        22,
+        1
+      ],
+      "workgroups": 264,
+      "waves_launched": 1056,
+      "expected_MFMA_per_complete_wave": 224,
+      "expected_MFMA_four_complete_waves": 896,
+      "panel_refills_per_WG": 0,
+      "GPU_executed_by_review": false
+    },
+    {
+      "priority": 5,
+      "parent_id": 9024,
+      "shape": [
+        1024,
+        768,
+        7168
+      ],
+      "phase": "optional",
+      "reason": "192WG lower grid, full GroupM4",
+      "exact_symbol": "_Z40gemm_a8w8_mxfp8_scale_4wave_64x64_kernelI60opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950ILi64ELi7168ELi4EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x64_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "grid": [
+        12,
+        16,
+        1
+      ],
+      "workgroups": 192,
+      "waves_launched": 768,
+      "expected_MFMA_per_complete_wave": 224,
+      "expected_MFMA_four_complete_waves": 896,
+      "panel_refills_per_WG": 0,
+      "GPU_executed_by_review": false
+    },
+    {
+      "priority": 6,
+      "parent_id": 9023,
+      "shape": [
+        544,
+        7168,
+        7168
+      ],
+      "phase": "conditional_second_round",
+      "reason": "SameK tail/full match if unresolved",
+      "exact_symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x128_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "grid": [
+        56,
+        9,
+        1
+      ],
+      "workgroups": 504,
+      "waves_launched": 2016,
+      "expected_MFMA_per_complete_wave": 448,
+      "expected_MFMA_four_complete_waves": 1792,
+      "panel_refills_per_WG": 1,
+      "GPU_executed_by_review": false
+    },
+    {
+      "priority": 7,
+      "parent_id": 9023,
+      "shape": [
+        576,
+        7168,
+        16384
+      ],
+      "phase": "conditional_second_round",
+      "reason": "Same longK tail/full match if unresolved",
+      "exact_symbol": "_Z41gemm_a8w8_mxfp8_scale_4wave_64x128_kernelI61opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950ILi3ELi32ELi0EEEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+      "demangled": "void gemm_a8w8_mxfp8_scale_4wave_64x128_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x128_traits_base_gfx950<3, 32, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "grid": [
+        56,
+        9,
+        1
+      ],
+      "workgroups": 504,
+      "waves_launched": 2016,
+      "expected_MFMA_per_complete_wave": 1024,
+      "expected_MFMA_four_complete_waves": 4096,
+      "panel_refills_per_WG": 3,
+      "GPU_executed_by_review": false
+    }
+  ],
+  "ATT_contract": {
+    "budget": "Fourprimary plusoptional192WGfixed; other9023sameKmatches only to resolve stateduncertainty. Diagnosticset, notadoptiondomain.",
+    "identity": "Exactcapturedsymbol,currentcodeID/loadaddress/instructionSHA,grid,completewaves andexpectedMFMA. SDKmayfilterdemangledfunction; actualcapturedentry identity decides.",
+    "finite_scope": "SE0/CU0 finite waves. Report complete/truncated waves and WGIDs when available. First CU waves can miss M544 tail or fixed grouped-M tail; absence is not a tail-path test.",
+    "time": "Shader clocks. gfx9 event=[time,type,stall,duration,code_line]; duration includes stall, successful issue=time+stall. Clip4clock quantization at wave end. No conversion from unresolved GRBM cycles to ns or absolute MFMA utilization.",
+    "wait": "Queue dependency membership is not an individual return timestamp. VMEM can contain matrix/scales, LGKM can contain SMEM/DS, and empty waits may be omitted.",
+    "questions": [
+      "StartupSMEM/groupaddressarithmetic/matrixproducerissue/publishbarrier/operandreadiness beforefirstdynamicMFMA.",
+      "SFAwaitpackpublish thenSFBissue: measurecriticalproducerinterval andotherwavebarrierarrival; no invented individualrequestlatency.",
+      "9023ordinarytile vsrefill32/64/96 bydynamicMFMAordinal; actualreadlane/default/EXEC/addresscontrol, tailonlyifcaptured.",
+      "9024fixedno refill: vmcnt8/4/0drain,LGKMdependence,u16/u8consumer,barrier,fourMFMA/K128gaps.",
+      "252/264WGlocalsequence limiteddispatchclue; whole256CUfill/SPIallocation/gridtail needsmatchedSQ/SPI orbroadercoverage."
+    ],
+    "layered_followup": "DispatchCPC/SPI -> SQ/TA -> TCP/UTCL1 -> GL2/SoC -> return -> compute. LDSlocalbranch,SMEMstartupseparate. VMEMwait/logicalbytes notHBMsaturationproof.",
+    "adoption": "Latercandidate currentofficialidentity+numericalguard+matchedaddressABBAEvent forallaffectedwinners andcallablefallback/dispatchguards. ATTgap/profiletime alone cannotadopt."
+  },
+  "candidate_hypotheses": [
+    {
+      "target": "9023runtime",
+      "direction": "Ifcriticaldynamiccontrolconfirmed,isolateruntime/remainderoruniformaddresses; ifguardeddefaultpathcritical,isolatefastvector/fallback. Preservestages3/panel32/helperguards; neverblindunroll1."
+    },
+    {
+      "target": "local9023/9024producer",
+      "direction": "IfSFBserializationcritical,explorelow/high/SFBissue thenu16packpublish preservingguards/EXEC/layout/sharedhelper. No candidatecreatedhere."
+    },
+    {
+      "target": "9024fixed",
+      "direction": "Ifoperand/barriercritical,targetfixedfourstage schedule; elsegroupaddress/dispatch/locality. Runtime spillreduction irrelevantto9winners."
+    }
+  ],
+  "inputs": [
+    {
+      "path": "reports/opus_resume_20261008/jit_formal_selected/module_deepgemm_opus.so",
+      "sha256": "6f6a0117b122f06b4802833c020effb4b24ff9fea56f20c8c16b9ced9787173f"
+    },
+    {
+      "path": "reports/opus_resume_20261008/formal_selected/identity_audit.json",
+      "sha256": "ec08a1773e85af717c06589ba19cbf21d43b4da38a5f773443b0bd91ab52e091"
+    },
+    {
+      "path": "reports/opus_remaining_20261008/inventory.json",
+      "sha256": "1144b4750389fe5381cfc7318e52f87009e26c2cc715105f2bae2967e957ba7b"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/shape_inventory.json",
+      "sha256": "05b90ec1ef450a45ed17af9bb0b3099460f475f8c1e917295648fed911260113"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/results/narrow_runtime_window_analysis.json",
+      "sha256": "dadd833df5cfc1971c7c6476e01a66baeb583c582232a33d3400335efe53d03c"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/narrow_unroll/isa_comparison.json",
+      "sha256": "e969091949ff6dea2684b03b184de7602b78039e4581d6bbc6f3846f88ff8f57"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/COMPUTE_BOUND_ANALYSIS_AND_OPTIMIZATION.md",
+      "sha256": "61fda2bbf7b19d8b7dbf72c0100bc4463d76f0788c665136bd9fcfd66849eb5e"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/MEMORY_BOUND_ANALYSIS_AND_OPTIMIZATION.md",
+      "sha256": "628839c8e71e4c09ea10f43b3ce48952ce06a2643b1cb27ba39c02e056fa9d59"
+    },
+    {
+      "path": "/root/workspace/trans_github/mi300_gpu_bandwidth_chapters3_4_5_notes.md",
+      "sha256": "f10ce1bb823eda95d63de5cb378b97b0891170c32730cfa99ae1921f00a6905d"
+    },
+    {
+      "path": "reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/build/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x128x128_2x2_16x16x128_1x128x128_tiles1_narrow_Cbf16_t.device.cuda.o",
+      "sha256": "a19adb82033987239eff4ab3d86a77658c5c1200ebb9b476743509cbb11344a1"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/official_compute_metadata/kid9023.s",
+      "sha256": "55177e33675f14608ff6621347edb62bcc12e61acbd83c38d58727975b54c15a"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/official_compute_metadata/kid9023.co",
+      "sha256": "6a6efcd0b79142961663c59f3e6e21d75dd9b33c28ce5df87a1865d09f4332c1"
+    },
+    {
+      "path": "reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/build/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x64x128_2x2_16x16x128_1x128x128_tiles1_narrow_Cbf16_t.device.cuda.o",
+      "sha256": "46bba4197788fb7f19d36b5ba40220919ea85d7251e2ffa29cae9cfe03f3aa74"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/official_compute_metadata/kid9024.s",
+      "sha256": "705b09424617844bf6c482f26b18bc01c46da8ee62792ba3e73e93c66ff436a3"
+    },
+    {
+      "path": "reports/opus_bound_analysis_20261007/official_compute_metadata/kid9024.co",
+      "sha256": "d30ff07cfcf9d5284c14d6b2c99a707a574323c7545db4fa653fa928f79b938b"
+    },
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh",
+      "sha256": "9981710c6c7cee6f8958bf25db2ed817fe15a0aae36cec7ec50f95873610f585"
+    },
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh",
+      "sha256": "4989f127cdad5d791b519535e9a56d0d58aa80c06c0761737e1ddb0545087265"
+    },
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh",
+      "sha256": "80ffa1052f151390e2bf27f5f5f78f1b7baf3c5e6579a791c775b0ec9bdb9332"
+    },
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh",
+      "sha256": "853b88dc8fab7d9d0464acf445afc7f1986f420067fbedb498ff71d8f5984d7a"
+    },
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh",
+      "sha256": "2ff8cf90368c6945d3394fe11075c2336e6f8f99888c7167d3eb550045009bfa"
+    },
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh",
+      "sha256": "a74c625c7fc524ce5a4b8b8386cc2d4527e0e8268529bb85296bf3fd2251cacf"
+    }
+  ],
+  "limits": [
+    "No kernel edit/build/HIPimport/GPUprofile/timing byreview.",
+    "Allanchors validatedagainstbyte-matchedcurrententry; decoderneedsfreshrelocation.",
+    "Staticcounts/resources/finiteCU0 cannotestablishwholedeviceHBMsaturation,absoluteMFMAutilization ordynamicoccupancy."
+  ]
+}

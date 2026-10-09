@@ -6,6 +6,11 @@ import os
 import sys
 from dataclasses import dataclass, field
 
+try:
+    from .opus_gemm_bpreshuffle_variants import BpreshuffleVariant, NEW_BPRESHUFFLE_VARIANTS, NEW_BPRESHUFFLE_VARIANTS_BY_KID
+except ImportError:  # gen_instances.py is also invoked directly from this directory.
+    from opus_gemm_bpreshuffle_variants import BpreshuffleVariant, NEW_BPRESHUFFLE_VARIANTS, NEW_BPRESHUFFLE_VARIANTS_BY_KID
+
 _A16W16_CO_TAGS = frozenset(
     {"a16w16_4wave_co", "a16w16_4wave_wl_co", "a16w16_4wave_wlr_co"}
 )
@@ -152,9 +157,13 @@ class OpusGemmInstance:
     bpreshuffle_register_prefetch: int = 0
     bpreshuffle_fixed_k: int = 0
     bpreshuffle_pad_n: bool = False
+    bpreshuffle_loop_unroll: int = 2
+    bpreshuffle_scale_reset: bool = False
     # Ordered host-side choices: (C++ scalar condition, private configuration ID).
     # Every choice keeps the public shape and workspace contract of this ID.
     bpreshuffle_dispatch: tuple[tuple[str, int], ...] = ()
+    # Exact parameter-table variants share one emitter and pipeline bodies.
+    bpreshuffle_variant: BpreshuffleVariant | None = None
 
     @property
     def name(self) -> str:
@@ -172,6 +181,12 @@ class OpusGemmInstance:
         if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle":
             parts.insert(tag_at, self.kernel_tag)
             parts.append(f"tiles{self.output_tiles_per_wg}")
+            if self.bpreshuffle_variant is not None:
+                parts.append(self.bpreshuffle_variant.label)
+            if self.bpreshuffle_loop_unroll != 2:
+                parts.append(f"unroll{self.bpreshuffle_loop_unroll}")
+            if self.bpreshuffle_scale_reset:
+                parts.append("scale_reset")
             if self.name_tag in {
                 "main", "small", "narrow", "tiny", "small_register", "small_lds",
                 "small_regscale", "small_regscale_xor",
@@ -302,6 +317,8 @@ class OpusGemmInstance:
     @property
     def m_align(self) -> int:
         """M multiple enforced by the generated launcher (1 means tail-safe)."""
+        if self.bpreshuffle_variant is not None:
+            return self.bpreshuffle_variant.m_align
         if self.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle" and self.pad_m:
             if self.name_tag in {
                 "narrow", "tiny", "small_register", "small_lds",
@@ -1763,14 +1780,20 @@ a8w8_mxscale_bmm_kernels_list = {
 }
 
 
-def _a8w8_mxscale_gemm_bpreshuffle(b_m=256, b_n=256, *, pad_m=False):
+def _a8w8_mxscale_gemm_bpreshuffle(b_m=256, b_n=256, *, pad_m=False, loop_unroll=2, scale_reset=False):
+    assert loop_unroll in (2, 4)
+    assert not scale_reset or (not pad_m and loop_unroll == 2)
+    tag = "padm" if pad_m else ""
+    if loop_unroll != 2:
+        tag = f"{tag}_unroll{loop_unroll}" if tag else f"unroll{loop_unroll}"
     return OpusGemmInstance(
         256, b_m, b_n, 128, 2, 2, 16, 16, 128, 16, 16, 4,
         1, 128, 128, "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
         WG_PER_CU=1, has_oob=pad_m, arch_prefix="gfx950", direct_only=True,
         output_tiles_per_wg=1, scale_dtype="e8m0",
         max_tensor_bytes=2**31 - 1, pad_m=pad_m,
-        name_tag="padm" if pad_m else "",
+        name_tag=tag, bpreshuffle_loop_unroll=loop_unroll,
+        bpreshuffle_scale_reset=scale_reset,
     )
 
 
@@ -1862,7 +1885,9 @@ def _a8w8_mxscale_gemm_bpreshuffle_register_tail(
 # of the default subset-compile floor.
 a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
     9000: _a8w8_mxscale_gemm_bpreshuffle(),
+    9001: _a8w8_mxscale_gemm_bpreshuffle(scale_reset=True),
     9010: _a8w8_mxscale_gemm_bpreshuffle(pad_m=True),
+    9011: _a8w8_mxscale_gemm_bpreshuffle(pad_m=True, loop_unroll=4),
     # The merged runtime-K families follow the original and padded-M kernels.
     9020: _a8w8_mxscale_gemm_bpreshuffle_merged("main", 192, 256),
     9021: _a8w8_mxscale_gemm_bpreshuffle_merged("small", 128, 128),
@@ -1916,6 +1941,30 @@ a8w8_mxscale_gemm_bpreshuffle_kernels_list = {
 }
 
 
+def _a8w8_mxscale_bpreshuffle_variant(variant):
+    """Register one table entry through the existing exact-kid tensor ABI."""
+    split = variant.split_k
+    return OpusGemmInstance(
+        variant.wave_m * variant.wave_n * variant.wave_k * 64,
+        variant.tile_m, variant.tile_n, 128, variant.wave_m, variant.wave_n,
+        16, 16, 128, 16, 16, 4, 1, 128, 128,
+        "a8w8_mxscale_gemm_bpreshuffle", ["bf16_t"],
+        WG_PER_CU=1, has_oob=variant.m_align < variant.tile_m,
+        arch_prefix="gfx950", direct_only=split == 1, output_tiles_per_wg=1,
+        scale_dtype="e8m0", splitk_workspace_dtype="fp32_t" if split > 1 else None,
+        max_tensor_bytes=2**63 - 1 if variant.family == "large_output" else 2**31 - 1,
+        pad_m=variant.m_align < variant.tile_m, max_k=16384, max_m=variant.max_m,
+        bpreshuffle_split_k=split, bpreshuffle_fixed_k=variant.fixed_k,
+        bpreshuffle_reduce_vec=variant.reduce_vec, bpreshuffle_reduce_block=variant.reduce_block,
+        bpreshuffle_variant=variant,
+    )
+
+
+for _variant in NEW_BPRESHUFFLE_VARIANTS:
+    assert _variant.kid not in a8w8_mxscale_gemm_bpreshuffle_kernels_list
+    a8w8_mxscale_gemm_bpreshuffle_kernels_list[_variant.kid] = _a8w8_mxscale_bpreshuffle_variant(_variant)
+
+
 # Keep historical IDs/names callable for saved tuned tables. Normal tuning
 # enumerates the consolidated families below; explicit --opus_kids can still
 # select any historical configuration. Device variants share the register or
@@ -1934,10 +1983,61 @@ A8W8_BPRESHUFFLE_LEGACY_KIDS = {
     9071: 9042,
     9072: 9053,
     9073: 9042,
+    # Split-only siblings remain callable for previously saved exact-ID rows.
+    92411: 92410,
+    92421: 92420,
+    92431: 92430,
 }
 A8W8_BPRESHUFFLE_TUNING_KIDS = frozenset(
     a8w8_mxscale_gemm_bpreshuffle_kernels_list
 ).difference(A8W8_BPRESHUFFLE_LEGACY_KIDS)
+
+# These kernels execute explicit statement-level AGPR placement attributes.
+# Other candidates use ordinary allocation, including LLVM-chosen AGPRs.
+A8W8_BPRESHUFFLE_PIN_AGPR_KIDS = frozenset({9000, 9001, 9010, 9011}) | frozenset(
+    variant.kid for variant in NEW_BPRESHUFFLE_VARIANTS if variant.pin_agpr
+)
+
+# Family labels describe pipeline bodies, while exact IDs describe configurations.
+# This keeps the active tuning pool navigable without deleting parameter axes.
+_BPRESHUFFLE_ORIGINAL_FAMILIES = {
+    9000: "pin", 9001: "pin", 9010: "padded_pin", 9011: "padded_pin",
+    9020: "main", 9021: "small_main", 9022: "small_main",
+    9023: "narrow", 9024: "narrow", 9030: "large_output",
+    **{kid: "register" for kid in (9040, 9041, 9042, 9051, 9052, 9053, 9054)},
+    **{kid: "small_lds" for kid in (9043, 9044, 9045, 9046, 9047, 9049, 9055)},
+    **{kid: "fine_lds" for kid in (9060, 9061, 9062, 9063)},
+}
+A8W8_BPRESHUFFLE_FAMILY_BY_KID = {
+    **_BPRESHUFFLE_ORIGINAL_FAMILIES,
+    **{variant.kid: variant.family for variant in NEW_BPRESHUFFLE_VARIANTS},
+    **{kid: (_BPRESHUFFLE_ORIGINAL_FAMILIES.get(parent)
+             or NEW_BPRESHUFFLE_VARIANTS_BY_KID[parent].family)
+       for kid, parent in A8W8_BPRESHUFFLE_LEGACY_KIDS.items()},
+}
+A8W8_BPRESHUFFLE_FAMILIES = frozenset(A8W8_BPRESHUFFLE_FAMILY_BY_KID.values())
+
+
+def a8w8_mxscale_bpreshuffle_candidate_kids(
+    gfx, m, n, k, outdtype="bf16", *, include_legacy=False, families=None,
+):
+    """Scalar-only selection by shape and optional pipeline family names."""
+    if min(m, n, k) <= 0:
+        return []
+    selected_families = None if families is None else frozenset(families)
+    if selected_families is not None:
+        unknown = selected_families - A8W8_BPRESHUFFLE_FAMILIES
+        if unknown:
+            raise ValueError(f"unknown MXFP8 B-preshuffle families: {sorted(unknown)}")
+    dtype = canonical_output_dtype(outdtype)
+    return [
+        kid for kid, instance in sorted(a8w8_mxscale_gemm_bpreshuffle_kernels_list.items())
+        if (include_legacy or kid in A8W8_BPRESHUFFLE_TUNING_KIDS)
+        and gfx == (instance.arch_prefix or "gfx950")
+        and dtype in instance.output_dtypes
+        and (selected_families is None or A8W8_BPRESHUFFLE_FAMILY_BY_KID[kid] in selected_families)
+        and a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k)
+    ]
 
 _bpreshuffle_dispatch = {
     # Deeper register prefetch helps long K or grids smaller than one CU round.
@@ -1982,7 +2082,10 @@ def a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
         or (instance.bpreshuffle_fixed_k and k != instance.bpreshuffle_fixed_k)
     ):
         return False
-    if instance.name_tag == "large_output":
+    if instance.name_tag == "large_output" or (
+        instance.bpreshuffle_variant is not None
+        and instance.bpreshuffle_variant.family == "large_output"
+    ):
         # A/B and tile-local offsets keep their signed-int byte contract.
         # Only C's global base uses 64-bit addressing and a per-tile resource.
         input_byte_limit = 2**31 - 1
@@ -1992,8 +2095,92 @@ def a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
             max(m * k, n * k, tile_bytes) <= input_byte_limit
             and input_byte_limit < output_bytes <= instance.max_tensor_bytes
         )
+    if instance.bpreshuffle_variant is not None and instance.bpreshuffle_variant.runtime_split_k:
+        # Direct output only needs BF16 bytes. Runtime workspace plane limits
+        # are checked for the requested split in the scalar launch planner.
+        return max(m * k, n * k, 2 * m * n) <= 2**31 - 1
     # The original families retain their signed-int total byte extents.
     return max(m * k, n * k, (4 if instance.bpreshuffle_split_k > 1 else 2) * m * n) <= instance.max_tensor_bytes
+
+
+@dataclass(frozen=True)
+class BpreshuffleLaunchPlan:
+    """Shape-dependent launch state; global split count is not a kernel ID."""
+
+    split_k: int
+    grid: tuple[int, int, int]
+    lds_bytes: int
+    workspace_elements: int
+    workspace_bytes: int
+
+
+def bpreshuffle_launch_plan(instance, m, n, k, split_k=0, cu_num=256):
+    """Plan native-E8M0 runtime split-K without device queries.
+
+    Runtime IDs accept literal partition counts 1..16. Zero retains their
+    historical default, including empty short-K register partitions. Minus one
+    requests a grid/CU heuristic; the caller must supply the device CU count.
+    Tuning records the resulting positive count for exact replay.
+    """
+    if not a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
+        raise ValueError("unsupported OPUS bpreshuffle shape")
+    if type(split_k) is not int or split_k < -1 or type(cu_num) is not int or cu_num <= 0:
+        raise ValueError("split_k must be an integer >= -1 and cu_num must be positive")
+    variant = instance.bpreshuffle_variant
+    runtime = variant is not None and variant.runtime_split_k
+    grid_x = (n + instance.B_N - 1) // instance.B_N
+    grid_y = (m + instance.B_M - 1) // instance.B_M
+    if not runtime:
+        if split_k != 0:
+            raise ValueError("this OPUS bpreshuffle kid has fixed split-K")
+        effective = instance.bpreshuffle_split_k
+        workspace_elements = effective * m * n if effective > 1 else 0
+        return BpreshuffleLaunchPlan(effective, (grid_x, grid_y, effective), 0,
+                                    workspace_elements, workspace_elements * 4)
+    if split_k == -1:
+        effective = min(16, k // 128, max(1, (cu_num + grid_x * grid_y - 1) // (grid_x * grid_y)))
+        # The grid heuristic is a starting choice, subject to the same memory
+        # limits as an explicit launch. It does not predict the fastest split.
+        if effective > 1 and 4 * m * n > 2**31 - 1:
+            effective = 1
+    else:
+        effective = variant.split_k if split_k == 0 else split_k
+    if effective < 1 or effective > 16 or (split_k > 0 and effective > k // 128):
+        raise ValueError("runtime split_k must be 1..min(16, K/128)")
+    workspace_elements = effective * m * n if effective > 1 else 0
+    if workspace_elements and (4 * m * n > 2**31 - 1 or 4 * workspace_elements > 2**63 - 1):
+        raise ValueError("OPUS bpreshuffle workspace byte extent is unsupported")
+    lds_bytes = 0
+    if variant.family == "fine_lds":
+        loops = (k // 128 + effective - 1) // effective
+        stages = min(loops, 4)
+        lds_bytes = stages * ((instance.B_M + instance.B_N) // 8) * 1056
+        lds_bytes += (instance.B_M + (instance.B_N + 127) // 128) * loops
+        if lds_bytes > 160 * 1024:
+            raise ValueError("OPUS bpreshuffle dynamic LDS exceeds 160 KiB")
+    return BpreshuffleLaunchPlan(effective, (grid_x, grid_y, effective), lds_bytes,
+                                workspace_elements, workspace_elements * 4)
+
+
+def bpreshuffle_candidate_split_k(instance, m, n, k, cu_num=256, requested=None):
+    """Enumerate literal runtime splits independently of static kernel IDs."""
+    if not a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
+        return []
+    variant = instance.bpreshuffle_variant
+    if variant is None or not variant.runtime_split_k:
+        if requested not in (None, 0):
+            raise ValueError("this OPUS bpreshuffle kid has fixed split-K")
+        return [0]
+    if requested is not None:
+        return [bpreshuffle_launch_plan(instance, m, n, k, requested, cu_num).split_k]
+    candidates = []
+    for split in range(1, min(16, k // 128) + 1):
+        try:
+            bpreshuffle_launch_plan(instance, m, n, k, split, cu_num)
+        except ValueError:
+            continue
+        candidates.append(split)
+    return candidates
 
 
 # combined list (used by production gen_instances / dispatch)
@@ -2337,13 +2524,13 @@ def get_kernel_instance(
     return instance
 
 
-def kernel_needs_external_workspace(arch: str, family: str, kid: int) -> bool:
+def kernel_needs_external_workspace(arch: str, family: str, kid: int, *, split_k: int | None = None) -> bool:
     """Return whether a registered kernel requires caller-owned workspace.
 
     Unknown logical keys are errors rather than ``False``: treating an unknown
     kid as a non-workspace kernel would let a caller launch it without the
-    allocation required for memory safety.  Capability comes from the existing
-    ``SPLITK_KIDS`` registry, never from a numeric kid range or tag substring.
+    allocation required for memory safety. Capability comes from registered
+    split-K metadata, never from a numeric kid range or tag substring.
     The registry includes all enabled two-stage reducers. If the experimental
     gfx1250 fused family is re-enabled, its first SplitK-1 WGs also publish
     external partial tiles and therefore enter this same capability set.
@@ -2353,7 +2540,18 @@ def kernel_needs_external_workspace(arch: str, family: str, kid: int) -> bool:
         raise KeyError(
             f"unknown OPUS kernel (arch={arch!r}, family={family!r}, kid={kid!r})"
         )
-    return int(kid) in SPLITK_KIDS
+    if instance.bpreshuffle_variant is not None and instance.bpreshuffle_variant.runtime_split_k:
+        if split_k is None or split_k == -1:
+            # A kid-only capability query must conservatively include runtime
+            # workspace users; an exact launch queries its effective split.
+            return True
+        if type(split_k) is not int or split_k < 0 or split_k > 16:
+            raise ValueError("runtime split_k must be 0..16 or -1 for auto")
+        return (instance.bpreshuffle_variant.split_k if split_k == 0 else split_k) > 1
+    return int(kid) in SPLITK_KIDS or (
+        instance.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle"
+        and instance.bpreshuffle_split_k > 1
+    )
 
 
 def _opus_sidecar_path():

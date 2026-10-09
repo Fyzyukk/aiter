@@ -1,0 +1,33 @@
+#include <hip/hip_runtime.h>
+#include <cstdint>
+#define __HIPCC_RTC__ 1
+#include "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_runtime_gfx950.cuh"
+#include "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_register_runtime_gfx950.cuh"
+#include "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh"
+#include "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_register_split_gfx950.cuh"
+using F0=opus_gemm_mxscale_bpreshuffle_narrow_fine_runtime_traits<48,64,1,4>;
+static_assert(F0::lds_bytes(16384,1)==F0::MAX_LDS_BYTES);
+template __global__ void gemm_a8w8_mxfp8_scale_small_lds_runtime_kernel<F0,false>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+template __global__ void gemm_a8w8_mxfp8_scale_small_lds_runtime_kernel<F0,true>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+using F1=opus_gemm_mxscale_bpreshuffle_narrow_fine_runtime_traits<64,128,2,2>;
+static_assert(F1::lds_bytes(16384,1)==F1::MAX_LDS_BYTES);
+template __global__ void gemm_a8w8_mxfp8_scale_small_lds_runtime_kernel<F1,false>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+template __global__ void gemm_a8w8_mxfp8_scale_small_lds_runtime_kernel<F1,true>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+using F2=opus_gemm_mxscale_bpreshuffle_narrow_fine_runtime_traits<96,128,2,2>;
+static_assert(F2::lds_bytes(16384,1)==F2::MAX_LDS_BYTES);
+template __global__ void gemm_a8w8_mxfp8_scale_small_lds_runtime_kernel<F2,false>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+template __global__ void gemm_a8w8_mxfp8_scale_small_lds_runtime_kernel<F2,true>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+using R0=opus_gemm_mxscale_bpreshuffle_register_runtime_traits<16,16,1>;
+template __global__ void opus_gemm_mxscale_bpreshuffle_register_runtime_kernel<R0>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+using R1=opus_gemm_mxscale_bpreshuffle_register_runtime_traits<16,16,2>;
+template __global__ void opus_gemm_mxscale_bpreshuffle_register_runtime_kernel<R1>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+using R2=opus_gemm_mxscale_bpreshuffle_register_runtime_traits<16,32,1>;
+template __global__ void opus_gemm_mxscale_bpreshuffle_register_runtime_kernel<R2>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+using R3=opus_gemm_mxscale_bpreshuffle_register_runtime_traits<16,32,2>;
+template __global__ void opus_gemm_mxscale_bpreshuffle_register_runtime_kernel<R3>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+using R4=opus_gemm_mxscale_bpreshuffle_register_runtime_traits<32,32,1>;
+template __global__ void opus_gemm_mxscale_bpreshuffle_register_runtime_kernel<R4>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+using R5=opus_gemm_mxscale_bpreshuffle_register_runtime_traits<32,64,1>;
+template __global__ void opus_gemm_mxscale_bpreshuffle_register_runtime_kernel<R5>(opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950);
+template __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel<4,128>(const float*,opus::bf16_t*,int,int);
+template __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel<16,128>(const float*,opus::bf16_t*,int,int);

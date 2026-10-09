@@ -1,0 +1,3034 @@
+{
+  "status": "completed",
+  "started_unix": 1791451835.2253642,
+  "gpu_bdf": "0000:75:00.0",
+  "gpu_properties": "_CudaDeviceProperties(name='AMD Instinct MI355X', major=9, minor=5, gcnArchName='gfx950:sramecc+:xnack-', total_memory=294896MB, multi_processor_count=256, uuid=33643764-3064-3463-3464-613336643163, pci_bus_id=117, pci_device_id=0, pci_domain_id=0, L2_cache_size=4MB)",
+  "owner_host_pid": null,
+  "script_sha256": "503141d879a77192254390d86f47cf08264fca17fa1d1479465534c1c60a108f",
+  "plan_sha256": "3778e429093d32b9bf552dba99422cbe48c41255d4336760ff0978cb74fed146",
+  "library_sha256": {
+    "module_gemm_a8w8_blockscale_bpreshuffle_tune": "14360dbea94f3e5609f53659f8f96b3f1a289c1c86681ca19bc27b743338f9c0",
+    "module_gemm_a8w8_blockscale_bpreshuffle_asm": "73f2d89ada539b2ff2ccbc2893feecbbee6ac1c26cb9c41886bf7cfbf837f7a6"
+  },
+  "mapped_libraries": [
+    "7fc4bcd49000-7fc4bcd4c000 r--p 00000000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7fc4bcd4c000-7fc4bcd59000 r-xp 00003000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7fc4bcd59000-7fc4bcd5c000 r--p 00010000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7fc4bcd5c000-7fc4bcd5d000 r--p 00012000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7fc4bcd5d000-7fc4bcd5e000 rw-p 00013000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7fc4bcd5e000-7fc4bcd5f000 r--p 00013000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7fc4bcd5f000-7fc4bcd94000 r--p 00000000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7fc4bcd94000-7fc4bce46000 r-xp 00035000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7fc4bce46000-7fc4bcfea000 r--p 000e7000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7fc4bcfea000-7fc4bcfee000 r--p 0028a000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7fc4bcfee000-7fc4bcfef000 rw-p 0028e000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7fc4bcfef000-7fc4bd02c000 r--p 0028e000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7fc4bd02c000-7fc4bd02d000 rw-p 002ca000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so"
+  ],
+  "method": "same candidate and binary, per shape same GPU/data; 7 randomized forward/reverse protocol blocks (14 samples); 5/51 vs50/200, automatic rotation vs single-address reuse. Controlled ring pool1/4/16/64 separately tests sensitivity with constant128warmup/256iterations, 3balancedforward/reverse blocks (6samples). All timing via original torch profiler; original FP32-scale inputs/reference/accuracy gate.",
+  "rows": [
+    {
+      "case": {
+        "M": 96,
+        "N": 7168,
+        "K": 7168,
+        "libtype": "ck",
+        "kernelId_upstream": 17,
+        "splitK_upstream": 0,
+        "kernelId_new": 17.0,
+        "splitK_new": 0.0,
+        "kernelName": "a8w8_blockscale_bpreshuffle_1x128x128_256x64x64x256_16x16_16x16_16x16x1_16x16x1_1x32x1x8_8_2x1_intrawave_v1",
+        "us_upstream": 23.2427,
+        "us_new": 31.3888,
+        "new_latency_change_pct": 35.047993563570515
+      },
+      "initial_errRatio": 0.0,
+      "protocol_records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.44246938775511,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.105963157894763,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.79879899497488,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.803688888888896,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.619697674418592,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.692070351758783,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.12201075268817,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.405599999999996,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.026908108108113,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.701316582914558,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.695244444444445,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.459632653061238,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.36455555555555,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.82111904761904,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.768256281407066,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.080089947089974,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.389408163265305,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.116915343915323,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.781581395348848,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.744336683417092,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.691271356783933,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.600133333333336,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.08436898395726,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.372285714285724,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.36321999999999,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.746522727272705,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.165303664921453,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.622444444444465,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.733353535353505,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.121574468085115,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.62834090909092,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.307,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.323306122448976,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.72013333333335,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.12451578947374,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.639638190954784,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.677829145728623,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.147835978835975,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.76672093023257,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.369660000000003,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.112898936170204,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.396060000000002,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.722898989899,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.775681818181816,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.895311111111116,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.68489447236179,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.257244897959183,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.073132978723383,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.737160804020107,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.107191489361732,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.217244897959194,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.621136363636364,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 31.777088888888894,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 28.42427083333334,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 31.157392473118286,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 27.71968844221105,
+          "errRatio": 0.0
+        }
+      ],
+      "ring_records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 4,
+          "pool_bytes": 213914624,
+          "input_bytes": 208409600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.40086956521737,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 16,
+          "pool_bytes": 855658496,
+          "input_bytes": 833638400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.99396341463414,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 1,
+          "pool_bytes": 53478656,
+          "input_bytes": 52102400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.39495582329317,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 64,
+          "pool_bytes": 3422633984,
+          "input_bytes": 3334553600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.919842975206624,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 64,
+          "pool_bytes": 3422633984,
+          "input_bytes": 3334553600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.942681632653077,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 1,
+          "pool_bytes": 53478656,
+          "input_bytes": 52102400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.410262096774176,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 16,
+          "pool_bytes": 855658496,
+          "input_bytes": 833638400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.96031707317076,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 4,
+          "pool_bytes": 213914624,
+          "input_bytes": 208409600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.39422222222222,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 64,
+          "pool_bytes": 3422633984,
+          "input_bytes": 3334553600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.913917695473238,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 1,
+          "pool_bytes": 53478656,
+          "input_bytes": 52102400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.414861111111097,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 213914624,
+          "input_bytes": 208409600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.42794800000002,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 16,
+          "pool_bytes": 855658496,
+          "input_bytes": 833638400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.983836734693895,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 16,
+          "pool_bytes": 855658496,
+          "input_bytes": 833638400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.942971887550236,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 213914624,
+          "input_bytes": 208409600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.413498007968116,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 1,
+          "pool_bytes": 53478656,
+          "input_bytes": 52102400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.382245059288532,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 64,
+          "pool_bytes": 3422633984,
+          "input_bytes": 3334553600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.931886178861816,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 16,
+          "pool_bytes": 855658496,
+          "input_bytes": 833638400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.99452822580644,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 64,
+          "pool_bytes": 3422633984,
+          "input_bytes": 3334553600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.910093495934973,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 213914624,
+          "input_bytes": 208409600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.390070588235275,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 53478656,
+          "input_bytes": 52102400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.39916929133856,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 53478656,
+          "input_bytes": 52102400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.379326771653528,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 213914624,
+          "input_bytes": 208409600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 27.38442352941175,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 64,
+          "pool_bytes": 3422633984,
+          "input_bytes": 3334553600,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.944840816326533,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 16,
+          "pool_bytes": 855658496,
+          "input_bytes": 833638400,
+          "warmup": 128,
+          "iters": 256,
+          "us": 30.960191836734726,
+          "errRatio": 0.0
+        }
+      ],
+      "protocol_summary": {
+        "rotate_5_51": {
+          "median_us": 31.756621828752635,
+          "samples": [
+            31.803688888888896,
+            31.619697674418592,
+            31.695244444444445,
+            31.82111904761904,
+            31.781581395348848,
+            31.600133333333336,
+            31.746522727272705,
+            31.62834090909092,
+            31.72013333333335,
+            31.76672093023257,
+            31.775681818181816,
+            31.895311111111116,
+            31.621136363636364,
+            31.777088888888894
+          ]
+        },
+        "reuse_5_51": {
+          "median_us": 28.370972857142863,
+          "samples": [
+            28.44246938775511,
+            28.405599999999996,
+            28.459632653061238,
+            28.36455555555555,
+            28.389408163265305,
+            28.372285714285724,
+            28.36321999999999,
+            28.307,
+            28.323306122448976,
+            28.369660000000003,
+            28.396060000000002,
+            28.257244897959183,
+            28.217244897959194,
+            28.42427083333334
+          ]
+        },
+        "rotate_50_200": {
+          "median_us": 31.114907140042764,
+          "samples": [
+            31.105963157894763,
+            31.12201075268817,
+            31.026908108108113,
+            31.080089947089974,
+            31.116915343915323,
+            31.08436898395726,
+            31.165303664921453,
+            31.121574468085115,
+            31.12451578947374,
+            31.147835978835975,
+            31.112898936170204,
+            31.073132978723383,
+            31.107191489361732,
+            31.157392473118286
+          ]
+        },
+        "reuse_50_200": {
+          "median_us": 27.710502512562805,
+          "samples": [
+            27.79879899497488,
+            27.692070351758783,
+            27.701316582914558,
+            27.768256281407066,
+            27.744336683417092,
+            27.691271356783933,
+            27.622444444444465,
+            27.733353535353505,
+            27.639638190954784,
+            27.677829145728623,
+            27.722898989899,
+            27.68489447236179,
+            27.737160804020107,
+            27.71968844221105
+          ]
+        }
+      },
+      "ring_pool_bytes_per_copy": 53478656,
+      "ring_input_bytes_per_copy": 52102400,
+      "ring_input_addresses": [
+        [
+          140207405924352,
+          140207344058368,
+          140207406646784,
+          140207406633984,
+          140448477741056
+        ],
+        [
+          140207406696960,
+          140207116517376,
+          140207407385088,
+          140207407406592,
+          140448479117312
+        ],
+        [
+          140207112323072,
+          140207057797120,
+          140207407419392,
+          140207407440896,
+          140448480493568
+        ],
+        [
+          140207113011200,
+          140207003271168,
+          140207407453696,
+          140207407475200,
+          140448481869824
+        ],
+        [
+          140207113699328,
+          140206890024960,
+          140207114387456,
+          140207407488000,
+          140448483246080
+        ],
+        [
+          140206999076864,
+          140206835499008,
+          140207407500800,
+          140207407522304,
+          140448485998592
+        ],
+        [
+          140206999764992,
+          140206780973056,
+          140207407535104,
+          140207407556608,
+          140448487374848
+        ],
+        [
+          140207000453120,
+          140206726447104,
+          140207001141248,
+          140207407569408,
+          140448488751104
+        ],
+        [
+          140206994882560,
+          140206671921152,
+          140207407582208,
+          140207407603712,
+          140448490127360
+        ],
+        [
+          140206995570688,
+          140206617395200,
+          140207407616512,
+          140207407638016,
+          140448491503616
+        ],
+        [
+          140206996258816,
+          140206562869248,
+          140206996946944,
+          140207407650816,
+          140448492879872
+        ],
+        [
+          140206990688256,
+          140206258782208,
+          140207407663616,
+          140207407685120,
+          140448494256128
+        ],
+        [
+          140206991376384,
+          140206065844224,
+          140207407697920,
+          140207407719424,
+          140448495632384
+        ],
+        [
+          140206992064512,
+          140206011318272,
+          140206992752640,
+          140207407732224,
+          140448497008640
+        ],
+        [
+          140206986493952,
+          140205956792320,
+          140207407745024,
+          140207407766528,
+          140207267512320
+        ],
+        [
+          140206987182080,
+          140205902266368,
+          140207407779328,
+          140207407800832,
+          140207268888576
+        ],
+        [
+          140206987870208,
+          140205847740416,
+          140206988558336,
+          140207407813632,
+          140207270264832
+        ],
+        [
+          140206982299648,
+          140205793214464,
+          140207407826432,
+          140207407847936,
+          140207271641088
+        ],
+        [
+          140206982987776,
+          140205738688512,
+          140207407860736,
+          140207407882240,
+          140207273017344
+        ],
+        [
+          140206983675904,
+          140205684162560,
+          140206984364032,
+          140207407895040,
+          140207274393600
+        ],
+        [
+          140206978105344,
+          140205629636608,
+          140207407907840,
+          140207407929344,
+          140207275769856
+        ],
+        [
+          140206978793472,
+          140205575110656,
+          140207407942144,
+          140207407963648,
+          140207277146112
+        ],
+        [
+          140206979481600,
+          140205520584704,
+          140206980169728,
+          140207407976448,
+          140207278522368
+        ],
+        [
+          140206973911040,
+          140205466058752,
+          140207407989248,
+          140206974599168,
+          140207279898624
+        ],
+        [
+          140206974611968,
+          140205411532800,
+          140206975300096,
+          140206975321600,
+          140207281274880
+        ],
+        [
+          140206969716736,
+          140205357006848,
+          140206975334400,
+          140206975355904,
+          140207282651136
+        ],
+        [
+          140206970404864,
+          140205302480896,
+          140206975368704,
+          140206975390208,
+          140207284027392
+        ],
+        [
+          140206971092992,
+          140205247954944,
+          140206971781120,
+          140206975403008,
+          140207285403648
+        ],
+        [
+          140206965522432,
+          140205193428992,
+          140206975415808,
+          140206975437312,
+          140207286779904
+        ],
+        [
+          140206966210560,
+          140205138903040,
+          140206975450112,
+          140206975471616,
+          140207288156160
+        ],
+        [
+          140206966898688,
+          140205084377088,
+          140206967586816,
+          140206975484416,
+          140205061308416
+        ],
+        [
+          140206961328128,
+          140205006782464,
+          140206975497216,
+          140206975518720,
+          140205062684672
+        ],
+        [
+          140206962016256,
+          140204952256512,
+          140206975531520,
+          140206975553024,
+          140205064060928
+        ],
+        [
+          140206962704384,
+          140204897730560,
+          140206963392512,
+          140206975565824,
+          140205065437184
+        ],
+        [
+          140206957133824,
+          140204843204608,
+          140206975578624,
+          140206975600128,
+          140205066813440
+        ],
+        [
+          140206957821952,
+          140204788678656,
+          140206975612928,
+          140206975634432,
+          140205068189696
+        ],
+        [
+          140206958510080,
+          140204734152704,
+          140206959198208,
+          140206975647232,
+          140205069565952
+        ],
+        [
+          140206952939520,
+          140204679626752,
+          140206975660032,
+          140206975681536,
+          140205070942208
+        ],
+        [
+          140206953627648,
+          140204625100800,
+          140206975694336,
+          140206975715840,
+          140205072318464
+        ],
+        [
+          140206954315776,
+          140204570574848,
+          140206955003904,
+          140206975728640,
+          140205073694720
+        ],
+        [
+          140206558674944,
+          140204516048896,
+          140206975741440,
+          140206975762944,
+          140205075070976
+        ],
+        [
+          140206559363072,
+          140204461522944,
+          140206975775744,
+          140206975797248,
+          140205076447232
+        ],
+        [
+          140206560051200,
+          140204406996992,
+          140206560739328,
+          140206975810048,
+          140205077823488
+        ],
+        [
+          140206426554368,
+          140204352471040,
+          140206975822848,
+          140206975844352,
+          140205079199744
+        ],
+        [
+          140206427242496,
+          140204297945088,
+          140206975857152,
+          140206975878656,
+          140205080576000
+        ],
+        [
+          140206427930624,
+          140204243419136,
+          140206428618752,
+          140206975891456,
+          140204220350464
+        ],
+        [
+          140204216156160,
+          140204161630208,
+          140206975904256,
+          140206975925760,
+          140204221726720
+        ],
+        [
+          140204216844288,
+          140204107104256,
+          140206975938560,
+          140206975960064,
+          140204223102976
+        ],
+        [
+          140204217532416,
+          140204052578304,
+          140204218220544,
+          140206975972864,
+          140204224479232
+        ],
+        [
+          140204048384000,
+          140203993858048,
+          140206975985664,
+          140204049072128,
+          140204225855488
+        ],
+        [
+          140204049084928,
+          140203939332096,
+          140204049773056,
+          140204049794560,
+          140204227231744
+        ],
+        [
+          140203935137792,
+          140203880611840,
+          140204049807360,
+          140204049828864,
+          140204228608000
+        ],
+        [
+          140203935825920,
+          140203826085888,
+          140204049841664,
+          140204049863168,
+          140204229984256
+        ],
+        [
+          140203936514048,
+          140203771559936,
+          140203937202176,
+          140204049875968,
+          140204231360512
+        ],
+        [
+          140203767365632,
+          140203712839680,
+          140204049888768,
+          140204049910272,
+          140204232736768
+        ],
+        [
+          140203768053760,
+          140203658313728,
+          140204049923072,
+          140204049944576,
+          140204234113024
+        ],
+        [
+          140203768741888,
+          140203603787776,
+          140203769430016,
+          140204049957376,
+          140204235489280
+        ],
+        [
+          140203599593472,
+          140203545067520,
+          140204049970176,
+          140204049991680,
+          140204236865536
+        ],
+        [
+          140203600281600,
+          140203490541568,
+          140204050004480,
+          140204050025984,
+          140204238241792
+        ],
+        [
+          140203600969728,
+          140203436015616,
+          140203601657856,
+          140204050038784,
+          140204239618048
+        ],
+        [
+          140203431821312,
+          140203377295360,
+          140204050051584,
+          140204050073088,
+          140203354226688
+        ],
+        [
+          140203432509440,
+          140203299700736,
+          140204050085888,
+          140204050107392,
+          140203355602944
+        ],
+        [
+          140203433197568,
+          140203245174784,
+          140203433885696,
+          140204050120192,
+          140203356979200
+        ],
+        [
+          140203240980480,
+          140203186454528,
+          140204050132992,
+          140204050154496,
+          140203358355456
+        ]
+      ],
+      "ring_summary": {
+        "1": {
+          "median_us": 27.397062557315863,
+          "samples": [
+            27.39495582329317,
+            27.410262096774176,
+            27.414861111111097,
+            27.382245059288532,
+            27.39916929133856,
+            27.379326771653528
+          ]
+        },
+        "4": {
+          "median_us": 27.397545893719794,
+          "samples": [
+            27.40086956521737,
+            27.39422222222222,
+            27.42794800000002,
+            27.413498007968116,
+            27.390070588235275,
+            27.38442352941175
+          ]
+        },
+        "16": {
+          "median_us": 30.972076903932326,
+          "samples": [
+            30.99396341463414,
+            30.96031707317076,
+            30.983836734693895,
+            30.942971887550236,
+            30.99452822580644,
+            30.960191836734726
+          ]
+        },
+        "64": {
+          "median_us": 30.92586457703422,
+          "samples": [
+            30.919842975206624,
+            30.942681632653077,
+            30.913917695473238,
+            30.931886178861816,
+            30.910093495934973,
+            30.944840816326533
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "M": 608,
+        "N": 7168,
+        "K": 768,
+        "libtype": "ck",
+        "kernelId_upstream": 16,
+        "splitK_upstream": 0,
+        "kernelId_new": 16.0,
+        "splitK_new": 0.0,
+        "kernelName": "a8w8_blockscale_bpreshuffle_1x128x128_256x64x128x256_16x16_16x16_16x16x1_16x16x1_1x32x1x8_8_2x1_intrawave_v1",
+        "us_upstream": 36.0123,
+        "us_new": 16.2975,
+        "new_latency_change_pct": -54.74462891845286
+      },
+      "initial_errRatio": 0.0,
+      "protocol_records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.053580000000004,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.909748717948718,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.972036269430074,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.296708333333335,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.29226530612245,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.960642487046643,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.91276041666668,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.057914893617019,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.099166666666667,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.960190954773882,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.229600000000012,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.968528497409324,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.975928571428565,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.20080000000001,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.885102040816342,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.125714285714285,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.922531249999986,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.90974358974359,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.22285714285714,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.098354166666672,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.139591836734706,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.27500000000001,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.935025380710666,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.975644670050754,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.220041666666663,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.889055555555558,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.123980000000003,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.985461538461534,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.92570652173913,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.123521739130434,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.935025380710666,
+          "errRatio": 0.0
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.22777551020408,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.131199999999994,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.936358585858585,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.98365803108809,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.254714285714282,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.26672916666667,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.931692708333339,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.902419191919202,
+          "errRatio": 0.0
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.065822222222227,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.12504166666667,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.95858375634518,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.180799999999987,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.956570707070716,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.921409090909092,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.252800000000004,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.988685567010297,
+          "errRatio": 0.0
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.07,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.937683417085431,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 16.012746031746044,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.146959183673472,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.221600000000002,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.268375,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.133081632653067,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.989456852791896,
+          "errRatio": 0.0
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.899994949494957,
+          "errRatio": 0.0
+        }
+      ],
+      "ring_records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 16,
+          "pool_bytes": 235267072,
+          "input_bytes": 95806464,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.217937007874012,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 58816768,
+          "input_bytes": 23951616,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.215732283464572,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 64,
+          "pool_bytes": 941068288,
+          "input_bytes": 383225856,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.826567999999988,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 14704192,
+          "input_bytes": 5987904,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.79109126984127,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 14704192,
+          "input_bytes": 5987904,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.79119200000001,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 64,
+          "pool_bytes": 941068288,
+          "input_bytes": 383225856,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.804176706827297,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 58816768,
+          "input_bytes": 23951616,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.204436507936501,
+          "errRatio": 0.0
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 16,
+          "pool_bytes": 235267072,
+          "input_bytes": 95806464,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.211007874015746,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 64,
+          "pool_bytes": 941068288,
+          "input_bytes": 383225856,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.828680161943328,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 16,
+          "pool_bytes": 235267072,
+          "input_bytes": 95806464,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.220929133858284,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 58816768,
+          "input_bytes": 23951616,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.196204724409439,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 14704192,
+          "input_bytes": 5987904,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.794383999999983,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 14704192,
+          "input_bytes": 5987904,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.800803212851395,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 58816768,
+          "input_bytes": 23951616,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.15604149377593,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 16,
+          "pool_bytes": 235267072,
+          "input_bytes": 95806464,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.206283464566935,
+          "errRatio": 0.0
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 64,
+          "pool_bytes": 941068288,
+          "input_bytes": 383225856,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.828529880478092,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 16,
+          "pool_bytes": 235267072,
+          "input_bytes": 95806464,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.220614173228338,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 64,
+          "pool_bytes": 941068288,
+          "input_bytes": 383225856,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.848167999999989,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 58816768,
+          "input_bytes": 23951616,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.183896414342641,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 14704192,
+          "input_bytes": 5987904,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.769470355731217,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 14704192,
+          "input_bytes": 5987904,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.813480158730151,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 58816768,
+          "input_bytes": 23951616,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.18765612648221,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 64,
+          "pool_bytes": 941068288,
+          "input_bytes": 383225856,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.823360000000019,
+          "errRatio": 0.0
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 16,
+          "pool_bytes": 235267072,
+          "input_bytes": 95806464,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.21872440944884,
+          "errRatio": 0.0
+        }
+      ],
+      "protocol_summary": {
+        "rotate_5_51": {
+          "median_us": 16.241200000000006,
+          "samples": [
+            16.296708333333335,
+            16.29226530612245,
+            16.229600000000012,
+            16.20080000000001,
+            16.22285714285714,
+            16.27500000000001,
+            16.220041666666663,
+            16.22777551020408,
+            16.254714285714282,
+            16.26672916666667,
+            16.180799999999987,
+            16.252800000000004,
+            16.221600000000002,
+            16.268375
+          ]
+        },
+        "reuse_5_51": {
+          "median_us": 15.123750869565217,
+          "samples": [
+            15.053580000000004,
+            15.057914893617019,
+            15.099166666666667,
+            15.125714285714285,
+            15.098354166666672,
+            15.139591836734706,
+            15.123980000000003,
+            15.123521739130434,
+            15.131199999999994,
+            15.065822222222227,
+            15.12504166666667,
+            15.07,
+            15.146959183673472,
+            15.133081632653067
+          ]
+        },
+        "rotate_50_200": {
+          "median_us": 15.973840469740413,
+          "samples": [
+            15.972036269430074,
+            15.960642487046643,
+            15.968528497409324,
+            15.975928571428565,
+            15.922531249999986,
+            15.975644670050754,
+            15.985461538461534,
+            15.92570652173913,
+            15.98365803108809,
+            15.931692708333339,
+            15.95858375634518,
+            15.988685567010297,
+            16.012746031746044,
+            15.989456852791896
+          ]
+        },
+        "reuse_50_200": {
+          "median_us": 14.917084753787886,
+          "samples": [
+            14.909748717948718,
+            14.91276041666668,
+            14.960190954773882,
+            14.885102040816342,
+            14.90974358974359,
+            14.935025380710666,
+            14.889055555555558,
+            14.935025380710666,
+            14.936358585858585,
+            14.902419191919202,
+            14.956570707070716,
+            14.921409090909092,
+            14.937683417085431,
+            14.899994949494957
+          ]
+        }
+      },
+      "ring_pool_bytes_per_copy": 14704192,
+      "ring_input_bytes_per_copy": 5987904,
+      "ring_input_addresses": [
+        [
+          140448494518272,
+          140207273017344,
+          140448495001600,
+          140448495000064,
+          140207278522368
+        ],
+        [
+          140448495045120,
+          140207358017536,
+          140448495512064,
+          140448495526912,
+          140207363522560
+        ],
+        [
+          140448495528448,
+          140207374467072,
+          140448495995392,
+          140448496010240,
+          140207379972096
+        ],
+        [
+          140448496011776,
+          140207388688384,
+          140448496478720,
+          140448496493568,
+          140207326232576
+        ],
+        [
+          140448490323968,
+          140207334948864,
+          140448496495104,
+          140448496509952,
+          140207298969600
+        ],
+        [
+          140448490790912,
+          140207340453888,
+          140448496511488,
+          140448496526336,
+          140207307685888
+        ],
+        [
+          140448491257856,
+          140207156363264,
+          140448496527872,
+          140448496542720,
+          140207161868288
+        ],
+        [
+          140448491724800,
+          140207170584576,
+          140448496544256,
+          140448496559104,
+          140207133294592
+        ],
+        [
+          140448486129664,
+          140207142010880,
+          140448496560640,
+          140448496575488,
+          140207110225920
+        ],
+        [
+          140448486596608,
+          140207147515904,
+          140448496577024,
+          140448496591872,
+          140207118942208
+        ],
+        [
+          140448487063552,
+          140207087157248,
+          140448496593408,
+          140448496608256,
+          140207092662272
+        ],
+        [
+          140448487530496,
+          140207101378560,
+          140448487997440,
+          140448496609792,
+          140207064088576
+        ],
+        [
+          140448481935360,
+          140207072804864,
+          140448488012288,
+          140448496611328,
+          140207036825600
+        ],
+        [
+          140448482402304,
+          140207078309888,
+          140448488027136,
+          140448496612864,
+          140207045541888
+        ],
+        [
+          140448482869248,
+          140207013756928,
+          140448488041984,
+          140448488056832,
+          140207019261952
+        ],
+        [
+          140448483336192,
+          140207027978240,
+          140448488058368,
+          140448488073216,
+          140206990688256
+        ],
+        [
+          140207405924352,
+          140206999404544,
+          140448488074752,
+          140448488089600,
+          140206963425280
+        ],
+        [
+          140207406391296,
+          140207004909568,
+          140448488091136,
+          140448488105984,
+          140206972141568
+        ],
+        [
+          140207406858240,
+          140206940356608,
+          140448488107520,
+          140448488122368,
+          140206945861632
+        ],
+        [
+          140207407325184,
+          140206954577920,
+          140448488123904,
+          140448488138752,
+          140206917287936
+        ],
+        [
+          140206913093632,
+          140206926004224,
+          140448488140288,
+          140448488155136,
+          140206890024960
+        ],
+        [
+          140206913560576,
+          140206931509248,
+          140448488156672,
+          140448488171520,
+          140206898741248
+        ],
+        [
+          140206914027520,
+          140206866956288,
+          140448488173056,
+          140448488187904,
+          140206872461312
+        ],
+        [
+          140206914494464,
+          140206881177600,
+          140448488189440,
+          140448488204288,
+          140206843887616
+        ],
+        [
+          140206839693312,
+          140206852603904,
+          140448488205824,
+          140448488220672,
+          140206816624640
+        ],
+        [
+          140206840160256,
+          140206858108928,
+          140206914961408,
+          140448488222208,
+          140206825340928
+        ],
+        [
+          140206840627200,
+          140206793555968,
+          140206914976256,
+          140448488223744,
+          140206799060992
+        ],
+        [
+          140206841094144,
+          140206807777280,
+          140206914991104,
+          140448488225280,
+          140206770487296
+        ],
+        [
+          140206766292992,
+          140206779203584,
+          140206915005952,
+          140206915020800,
+          140206743224320
+        ],
+        [
+          140206766759936,
+          140206784708608,
+          140206915022336,
+          140206915037184,
+          140206751940608
+        ],
+        [
+          140206767226880,
+          140206720155648,
+          140206915038720,
+          140206915053568,
+          140206725660672
+        ],
+        [
+          140206767693824,
+          140206734376960,
+          140206915055104,
+          140206915069952,
+          140206697086976
+        ],
+        [
+          140206692892672,
+          140206705803264,
+          140206915071488,
+          140206915086336,
+          140206669824000
+        ],
+        [
+          140206693359616,
+          140206711308288,
+          140206915087872,
+          140206915102720,
+          140206678540288
+        ],
+        [
+          140206693826560,
+          140206646755328,
+          140206915104256,
+          140206915119104,
+          140206652260352
+        ],
+        [
+          140206694293504,
+          140206660976640,
+          140206915120640,
+          140206915135488,
+          140206623686656
+        ],
+        [
+          140206619492352,
+          140206632402944,
+          140206915137024,
+          140206915151872,
+          140206596423680
+        ],
+        [
+          140206619959296,
+          140206637907968,
+          140206915153408,
+          140206915168256,
+          140206605139968
+        ],
+        [
+          140206620426240,
+          140206573355008,
+          140206915169792,
+          140206915184640,
+          140206578860032
+        ],
+        [
+          140206620893184,
+          140206587576320,
+          140206621360128,
+          140206915186176,
+          140206290239488
+        ],
+        [
+          140206569160704,
+          140206298955776,
+          140206621374976,
+          140206915187712,
+          140206267170816
+        ],
+        [
+          140206569627648,
+          140206304460800,
+          140206621389824,
+          140206915189248,
+          140206275887104
+        ],
+        [
+          140206570094592,
+          140206097301504,
+          140206621404672,
+          140206621419520,
+          140206102806528
+        ],
+        [
+          140206570561536,
+          140206111522816,
+          140206621421056,
+          140206621435904,
+          140206074232832
+        ],
+        [
+          140206564966400,
+          140206082949120,
+          140206621437440,
+          140206621452288,
+          140206051164160
+        ],
+        [
+          140206565433344,
+          140206088454144,
+          140206621453824,
+          140206621468672,
+          140206059880448
+        ],
+        [
+          140206565900288,
+          140206028095488,
+          140206621470208,
+          140206621485056,
+          140206033600512
+        ],
+        [
+          140206566367232,
+          140206042316800,
+          140206621486592,
+          140206621501440,
+          140206005026816
+        ],
+        [
+          140206560772096,
+          140206013743104,
+          140206621502976,
+          140206621517824,
+          140205981958144
+        ],
+        [
+          140206561239040,
+          140206019248128,
+          140206621519360,
+          140206621534208,
+          140205990674432
+        ],
+        [
+          140206561705984,
+          140205958889472,
+          140206621535744,
+          140206621550592,
+          140205964394496
+        ],
+        [
+          140206562172928,
+          140205973110784,
+          140206621552128,
+          140206621566976,
+          140205935820800
+        ],
+        [
+          140206556577792,
+          140205944537088,
+          140206621568512,
+          140206621583360,
+          140205912752128
+        ],
+        [
+          140206557044736,
+          140205950042112,
+          140206562639872,
+          140206621584896,
+          140205921468416
+        ],
+        [
+          140206557511680,
+          140205889683456,
+          140206562654720,
+          140206621586432,
+          140205895188480
+        ],
+        [
+          140206557978624,
+          140205903904768,
+          140206562669568,
+          140206621587968,
+          140205866614784
+        ],
+        [
+          140206426554368,
+          140205875331072,
+          140206562684416,
+          140206562699264,
+          140205843546112
+        ],
+        [
+          140206427021312,
+          140205880836096,
+          140206562700800,
+          140206562715648,
+          140205852262400
+        ],
+        [
+          140206427488256,
+          140205820477440,
+          140206562717184,
+          140206562732032,
+          140205825982464
+        ],
+        [
+          140206427955200,
+          140205834698752,
+          140206562733568,
+          140206562748416,
+          140205797408768
+        ],
+        [
+          140206262976512,
+          140205806125056,
+          140206562749952,
+          140206562764800,
+          140205774340096
+        ],
+        [
+          140206263443456,
+          140205811630080,
+          140206562766336,
+          140206562781184,
+          140205783056384
+        ],
+        [
+          140206263910400,
+          140205751271424,
+          140206562782720,
+          140206562797568,
+          140205756776448
+        ],
+        [
+          140206264377344,
+          140205765492736,
+          140206562799104,
+          140206562813952,
+          140205728202752
+        ]
+      ],
+      "ring_summary": {
+        "1": {
+          "median_us": 14.792787999999996,
+          "samples": [
+            14.79109126984127,
+            14.79119200000001,
+            14.794383999999983,
+            14.800803212851395,
+            14.769470355731217,
+            14.813480158730151
+          ]
+        },
+        "4": {
+          "median_us": 15.191930425445825,
+          "samples": [
+            15.215732283464572,
+            15.204436507936501,
+            15.196204724409439,
+            15.15604149377593,
+            15.183896414342641,
+            15.18765612648221
+          ]
+        },
+        "16": {
+          "median_us": 15.218330708661426,
+          "samples": [
+            15.217937007874012,
+            15.211007874015746,
+            15.220929133858284,
+            15.206283464566935,
+            15.220614173228338,
+            15.21872440944884
+          ]
+        },
+        "64": {
+          "median_us": 15.82754894023904,
+          "samples": [
+            15.826567999999988,
+            15.804176706827297,
+            15.828680161943328,
+            15.828529880478092,
+            15.848167999999989,
+            15.823360000000019
+          ]
+        }
+      }
+    }
+  ],
+  "ended_unix": 1791451856.1040049
+}

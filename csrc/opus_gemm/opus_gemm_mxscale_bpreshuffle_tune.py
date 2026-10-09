@@ -10,7 +10,10 @@ blockscale tuner's random FP32 scales, reference and accuracy checks.
 import argparse
 import math
 import os
+import re
+import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import ClassVar
 
@@ -36,9 +39,13 @@ from aiter.ops.opus import opus_gemm
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.base_tuner import GemmCommonTuner
 from csrc.opus_gemm.opus_gemm_common import (
+    A8W8_BPRESHUFFLE_FAMILIES,
+    a8w8_mxscale_bpreshuffle_candidate_kids,
     A8W8_BPRESHUFFLE_TUNING_KIDS,
     a8w8_mxscale_bpreshuffle_supports_shape,
     a8w8_mxscale_gemm_bpreshuffle_kernels_list,
+    bpreshuffle_candidate_split_k,
+    bpreshuffle_launch_plan,
     canonical_output_dtype,
 )
 
@@ -55,7 +62,7 @@ from csrc.ck_gemm_a8w8_blockscale import (
 _TAG = "a8w8_mxscale_gemm_bpreshuffle"
 # yuyzhang512/llvm-project, amdgpu-pin-op-dst at 49c418896816.
 # The imported pipeline requires statement-level destination pinning.
-_DEFAULT_HIP_CLANG_PATH = "/root/toolchains/llvm-amdgpu-pin-op-dst-49c41889-build/bin"
+_DEFAULT_HIP_CLANG_PATH = "/root/toolchains/yuyzhang512-amdgpu-pin-op-dst-build/bin"
 _BENCH_KEYS = ("x", "w", "out", "x_scale", "w_scale")
 _REF_KEYS = ("x", "w_reference", "x_scale", "w_scale")
 _CK_REF_KEYS = ("x", "weight", "x_scale", "w_scale")
@@ -105,20 +112,94 @@ def cktile_bench_keys(kid):
     return _CK_BENCH_KEYS
 
 
-def _ensure_kids_compiled(candidate_kids):
-    """Reuse the OPUS subset builder with the amdgpu-pin-op-dst compiler."""
-    candidate_kids = frozenset(int(kid) for kid in candidate_kids)
-    if not candidate_kids:
-        return False
+@contextmanager
+def _opus_compiler_environment():
+    """Build OPUS with its pin LLVM, optionally mixing a baseline LLVM."""
+    from aiter.jit import core
+    from cpp_extension import ROCM_HOME
 
     compiler_path = os.environ.get("OPUS_HIP_CLANG_PATH", _DEFAULT_HIP_CLANG_PATH)
-    if not Path(compiler_path).is_dir():
+    compiler = Path(compiler_path) / "clang++"
+    if not compiler.is_file():
         raise FileNotFoundError(
             "The 4-wave MXFP8 kernel requires the yuyzhang512/llvm-project "
             "amdgpu-pin-op-dst toolchain; "
             f"directory not found: {compiler_path}. Set OPUS_HIP_CLANG_PATH "
             "to its bin directory."
         )
+    version = subprocess.check_output([str(compiler), "--version"], text=True)
+    match = re.search(r"clang version (\d+)", version)
+    if match is None:
+        raise RuntimeError(f"Cannot identify the selected LLVM: {compiler}")
+    resource_dir = os.environ.get("OPUS_HIP_RESOURCE_DIR") or os.environ.get(
+        "AITER_HIP_RESOURCE_DIR"
+    )
+    if not resource_dir and int(match[1]) >= 24 and core.get_hip_version().startswith("7.0."):
+        # LLVM 24 removed half OCML declarations that ROCm 7.0 HIP headers use.
+        candidates = [Path(ROCM_HOME) / suffix for suffix in (
+            "lib/llvm/lib/clang/20", "llvm/lib/clang/20",
+        )] if ROCM_HOME else []
+        resource_dir = next((str(path) for path in candidates if path.is_dir()), None)
+        if resource_dir is None:
+            raise RuntimeError(
+                "LLVM 24 with ROCm 7.0 requires OPUS_HIP_RESOURCE_DIR pointing "
+                "to the ROCm clang resource headers"
+            )
+    if resource_dir:
+        if not Path(resource_dir, "include").is_dir():
+            raise FileNotFoundError(f"Invalid OPUS HIP resource directory: {resource_dir}")
+
+    baseline_path = os.environ.get("OPUS_BASELINE_HIP_CLANG_PATH")
+    build_compiler = compiler_path
+    build_resources = resource_dir
+    if baseline_path:
+        if not Path(baseline_path, "clang++").is_file():
+            raise FileNotFoundError(f"Invalid OPUS_BASELINE_HIP_CLANG_PATH: {baseline_path}")
+        build_compiler = baseline_path
+        build_resources = os.environ.get("OPUS_BASELINE_HIP_RESOURCE_DIR")
+        if build_resources and not Path(build_resources, "include").is_dir():
+            raise FileNotFoundError(f"Invalid OPUS baseline resources: {build_resources}")
+
+    previous = {
+        key: os.environ.get(key) for key in (
+            "HIP_CLANG_PATH", "AITER_HIP_RESOURCE_DIR", "OPUS_HIP_CLANG_PATH",
+            "OPUS_HIP_RESOURCE_DIR",
+        )
+    }
+    try:
+        os.environ["OPUS_HIP_CLANG_PATH"] = compiler_path
+        if resource_dir:
+            os.environ["OPUS_HIP_RESOURCE_DIR"] = resource_dir
+        os.environ["HIP_CLANG_PATH"] = build_compiler
+        if build_resources:
+            os.environ["AITER_HIP_RESOURCE_DIR"] = build_resources
+        else:
+            os.environ.pop("AITER_HIP_RESOURCE_DIR", None)
+        core.hip_flag_checker.cache_clear()
+        core.check_LLVM_MAIN_REVISION.cache_clear()
+        logger.info(
+            "MXFP8 OPUS pin compiler: "
+            f"{version.splitlines()[0]}; baseline={baseline_path or 'same compiler'}; "
+            f"pin resources={resource_dir or 'compiler default'}"
+        )
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        # The probes are cached without a compiler key. Do not let results
+        # from the pin branch affect subsequent CK/CKTile/ASM wrapper builds.
+        core.hip_flag_checker.cache_clear()
+        core.check_LLVM_MAIN_REVISION.cache_clear()
+
+
+def _ensure_kids_compiled(candidate_kids):
+    """Reuse the OPUS subset builder with the amdgpu-pin-op-dst compiler."""
+    candidate_kids = frozenset(int(kid) for kid in candidate_kids)
+    if not candidate_kids:
+        return False
 
     # opus_gemm_tune.py is also a directly executable script and therefore
     # uses sibling absolute imports. Load it lazily only when tuning/replaying,
@@ -130,42 +211,18 @@ def _ensure_kids_compiled(candidate_kids):
     try:
         from opus_gemm_tune import _ensure_kids_compiled as ensure_existing_opus_kids
 
-        previous_hip_clang_path = os.environ.get("HIP_CLANG_PATH")
-        os.environ["HIP_CLANG_PATH"] = compiler_path
-        try:
+        with _opus_compiler_environment():
             return ensure_existing_opus_kids(candidate_kids)
-        finally:
-            if previous_hip_clang_path is None:
-                os.environ.pop("HIP_CLANG_PATH", None)
-            else:
-                os.environ["HIP_CLANG_PATH"] = previous_hip_clang_path
     finally:
         if added_path:
             sys.path.remove(opus_dir)
 
 
-def candidate_kids_for_shape(gfx, m, n, k, outdtype="bf16", *, include_legacy=False):
+def candidate_kids_for_shape(gfx, m, n, k, outdtype="bf16", *, include_legacy=False, families=None):
     """Use registry tiling and byte limits before allocating tuning inputs."""
-    if min(m, n, k) <= 0:
-        return []
-    canonical_out = canonical_output_dtype(outdtype)
-    out_bytes = {"bf16_t": 2, "fp32_t": 4}.get(canonical_out)
-    if out_bytes is None:
-        return []
-    candidates = []
-    for kid, instance in sorted(a8w8_mxscale_gemm_bpreshuffle_kernels_list.items()):
-        if not include_legacy and kid not in A8W8_BPRESHUFFLE_TUNING_KIDS:
-            continue
-        if (
-            gfx != (instance.arch_prefix or "gfx950")
-            or instance.kernel_tag != _TAG
-            or canonical_out not in instance.output_dtypes
-        ):
-            continue
-        if not a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k):
-            continue
-        candidates.append(kid)
-    return candidates
+    return a8w8_mxscale_bpreshuffle_candidate_kids(
+        gfx, m, n, k, outdtype, include_legacy=include_legacy, families=families,
+    )
 
 
 def generate_data(m, n, k, seed=0, *, device):
@@ -234,7 +291,7 @@ def run_torch(x, w, x_scale, w_scale, *, with_bounds=False):
     return ref
 
 
-def run_bench(x, w, out, x_scale, w_scale, kid):
+def run_bench(x, w, out, x_scale, w_scale, kid, split_k=0):
     opus_gemm(
         x,
         w,
@@ -243,6 +300,7 @@ def run_bench(x, w, out, x_scale, w_scale, kid):
         layout="bpreshuffle",
         x_scale=x_scale,
         w_scale=w_scale,
+        split_k=split_k,
     )
     return out
 
@@ -320,7 +378,14 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             "--opus-kids",
             type=parse_opus_kids,
             default=None,
-            help="comma-separated registered OPUS IDs to tune; default: all legal OPUS; ignored for --run_config",
+            help=("comma-separated registered OPUS IDs to tune; default: 89 active IDs filtered by shape. "
+                  "Runtime IDs search all legal literal split counts; ignored for --run_config"),
+        )
+        self.parser.add_argument(
+            "--opus-families",
+            default=None,
+            help="comma-separated OPUS pipeline families to tune; available: "
+                 + ",".join(sorted(A8W8_BPRESHUFFLE_FAMILIES)) + "; default: all 89 active configurations",
         )
         # This adapter is B-preshuffle-only.  Keep the generic flag accepted so
         # existing tune commands remain valid, but make it true by default.
@@ -340,8 +405,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 )
             elif action.dest == "splitK":
                 action.help = (
-                    "include supported ASM split-K candidates; CK, CKTile and "
-                    "OPUS B-preshuffle candidates use splitK=0"
+                    "include supported ASM split-K candidates; CK/CKTile use splitK=0. "
+                    "OPUS runtime IDs always enumerate legal literal split counts; fixed IDs use zero"
                 )
             elif action.dest == "errRatio":
                 action.help = (
@@ -450,6 +515,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             )
         args.preshuffle = True
         self.opus_kids = None
+        self.opus_families = None
         if args.compare or args.update_improved:
             self.parser.error(
                 "Use direct GEMM tuning or --run_config; production compare/update "
@@ -470,6 +536,17 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         if not args.untune_file:
             self.parser.error("--input_file/-i is required")
         self.opus_kids = getattr(args, "opus_kids", None)
+        requested_families = getattr(args, "opus_families", None)
+        if requested_families is not None:
+            self.opus_families = frozenset(
+                value.strip() for value in requested_families.split(",") if value.strip()
+            )
+            unknown = self.opus_families.difference(A8W8_BPRESHUFFLE_FAMILIES)
+            if unknown or not self.opus_families:
+                self.parser.error(
+                    f"Invalid OPUS pipeline families: {sorted(unknown)}; "
+                    f"available: {sorted(A8W8_BPRESHUFFLE_FAMILIES)}"
+                )
         if self.opus_kids is not None:
             unknown = self.opus_kids.difference(
                 a8w8_mxscale_gemm_bpreshuffle_kernels_list
@@ -503,6 +580,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def _candidate_kids(self, gfx, m, n, k):
         kids = candidate_kids_for_shape(
             gfx, m, n, k, include_legacy=self.opus_kids is not None,
+            families=getattr(self, "opus_families", None),
         )
         return (
             kids
@@ -594,26 +672,27 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def get_gemm_a8w8_blockscale_opus_tune_task(
         self, info_keys, seed, preshuffleB, run_kwargs
     ):
-        gfx, _cu_num, m, n, k = info_keys
+        gfx, cu_num, m, n, k = info_keys
         if not preshuffleB:
             return []
         tasks = []
         for kid in self._candidate_kids(gfx, m, n, k):
             kernel = a8w8_mxscale_gemm_bpreshuffle_kernels_list[kid]
-            info = (info_keys, kid, 0, kernel.name, "opus", True)
-            tasks.append(
-                self._make_task(
-                    info,
-                    m,
-                    n,
-                    k,
-                    seed,
-                    run_bench,
-                    _BENCH_KEYS,
-                    (kid,),
-                    run_kwargs,
+            for split_k in bpreshuffle_candidate_split_k(kernel, m, n, k, cu_num):
+                info = (info_keys, kid, split_k, kernel.name, "opus", True)
+                tasks.append(
+                    self._make_task(
+                        info,
+                        m,
+                        n,
+                        k,
+                        seed,
+                        run_bench,
+                        _BENCH_KEYS,
+                        (kid, split_k),
+                        run_kwargs,
+                    )
                 )
-            )
         return tasks
 
     def tune(self, untunedf, tunedf, args):
@@ -728,16 +807,22 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 raise ValueError(
                     "Saved row does not match the current GPU's gfx/cu_num"
                 )
-            if row.libtype == "opus" and (
-                row.splitK != 0
-                or row.kernelId
-                not in candidate_kids_for_shape(
+            if row.libtype == "opus":
+                if row.kernelId not in candidate_kids_for_shape(
                     row.gfx, row.M, row.N, row.K, row.outdtype, include_legacy=True,
-                )
-            ):
-                raise ValueError(
-                    f"Saved OPUS kid {row.kernelId} is incompatible with {row}"
-                )
+                ):
+                    raise ValueError(f"Saved OPUS kid {row.kernelId} is incompatible with {row}")
+                try:
+                    if row.splitK < 0:
+                        raise ValueError("saved splitK must be an exact count or historical zero")
+                    bpreshuffle_launch_plan(
+                        a8w8_mxscale_gemm_bpreshuffle_kernels_list[row.kernelId],
+                        row.M, row.N, row.K, int(row.splitK), int(row.cu_num),
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Saved OPUS kid {row.kernelId} / splitK={row.splitK} is incompatible with {row}"
+                    ) from exc
             if (
                 row.libtype == "ck"
                 and row.kernelId not in generic_tune.candidate_kernels_bpreshuffle_dict
@@ -792,6 +877,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 bench, bench_args = run_bench, (
                     *(data[key] for key in _BENCH_KEYS),
                     kid,
+                    row.splitK,
                 )
             elif row.libtype == "ck":
                 bench, bench_args = generic_tune.run_gemm_a8w8_blockscale, (
@@ -842,7 +928,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 {
                     "shape": (
                         f"M={row.M},N={row.N},K={row.K},"
-                        f"libtype={row.libtype},kid={kid}"
+                        f"libtype={row.libtype},kid={kid},splitK={row.splitK}"
                     ),
                     "e2e_us": us,
                     "errRatio": error,

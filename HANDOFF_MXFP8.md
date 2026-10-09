@@ -1,5 +1,291 @@
 # MXFP8 B-preshuffle 优化交接
 
+## 2026-10-09：global split-K 改为框架启动参数
+
+当前默认调优集合为 **89 个静态配置**，完整注册仍为 **105 个 ID**，其中
+16 个历史兼容/内部 ID 保持可调用。最新入口见
+[runtime split-K 报告](reports/opus_runtime_splitk_20261009/README.md)、
+[89 个调优配置](reports/opus_runtime_splitk_20261009/registry89.csv)和
+[105 个注册 ID](reports/opus_runtime_splitk_20261009/registry105.csv)。
+下方92候选注册报告保留为上一阶段冻结记录，不用当前源码重新生成它。
+
+9 个配置使用 runtime global split-K：register
+92310/92311/92320/92321/92330/92340，以及 fine 92410/92420/92430。
+每个 ID 表示静态 tile、wave 和计算流程；split 数由框架按 M/N/K 与请求值计算，
+同一启动计划确定 producer grid、dynamic LDS、FP32 workspace 和 reducer 参数。
+MFMA geometry、寄存器队列和 local WaveK 保持编译期参数；6 个 register ID
+原本都使用 global split4，它们的差别是 tile/local WaveK，不能仅因 split-K 通用化再合并。
+fine 92411/92421/92431 从默认候选移为兼容入口，分别指向相同 geometry 的
+92410/92420/92430，保留历史固定 split2 行为；显式旧 ID 和旧 splitK=0 表仍可回放。
+
+这9个 runtime ID 的 `split_k` / CSV `splitK` 语义如下：
+
+| 请求值 | 行为 |
+|---|---|
+| `1..16` | literal partition 数，必须不超过 `K/128`，并通过 shape、字节范围和 workspace 检查 |
+| `0` | 历史默认：fine 为1，register 为4；短K register 可保留空的全局/局部 partition |
+| `-1` | 可选 M/N/K 加调用方 CU 数的 grid heuristic；这是启动选择策略，未经 tune 证明最快 |
+
+split1 直接写 BF16；split>1 每个 global partition 先完成 local WaveK 的 FP32 求和，
+写 FP32 workspace 后由 shared runtime reducer 做一次 BF16 转换。fine 只编译
+direct/partial 两种输出模式，register 每个 geometry 一个 producer；不按每个 split 数生成 kernel。
+tuner 对 runtime ID 保留 `(kid, splitK)`，枚举全部合法 positive split；它仍比较不同启动参数，
+只是不为每个 split 数注册单独 ID。保存实际正数便于精确回放；其余固定 split ID 仍要求 CSV splitK=0。
+
+新增5个C++头、14个入口的离线 aggregate 编译及 host syntax 已通过，scratch/spill均0；
+actual C++ partition/layout/LDS 检查通过，见
+[冻结 headers 收据](reports/opus_runtime_splitk_20261009/headers/receipt.json)。
+完整105个 generated HIP TU 已全部 fresh 编译通过（90 baseline23、15 pin24）；fused host、实际 router 和完整 pybind TU 编译通过。router/fused host/105对象的 `--no-undefined` 离线链接及127个launch引用闭合通过，见新报告 full_build/verification_scope.json。9个runtime配置共12个producer实例和1个shared reducer，scratch/spill均0。96个旧配置的生成源码、kernel指令与metadata保持一致；整个ELF含路径等元数据，不宣称字节一致。
+本轮一次初始CPU检查误用HIP driver直接链接并加载libamdhip64，已披露；后续改为
+compile-only HIP parser 加 plain C++ link，执行前 readelf 检查无HIP/HSA依赖。
+GPU停止要求持续有效：未进行新kernel数值或性能测试，不更新745性能结论或正式选型。
+
+## 2026-10-09：92候选注册与模板参数整理（历史阶段）
+
+用户要求将92个保留配置全部注册并整理重复模板，已把64新配置加入正式OPUS exact-kid注册/代码生成。
+当前默认调优集合92=原28+全系列62+前shortK2，完整注册105含13历史兼容/内部ID。
+新参数表：[opus_gemm_bpreshuffle_variants.py](csrc/opus_gemm/opus_gemm_bpreshuffle_variants.py)；
+注册清单与检查：[92候选整理报告](reports/opus_register92_20261009/README.md)。
+main参数ID保留92000–92012/92100–92104/92110–92114/92120，shortK92020/21；
+hybrid92200–92223；register92310/11/20/21/30/40；fine92410/11/20/21/30/31；large92500/01。
+全部92配置共用18个GEMM主模板加1个shared reducer；其中64新配置使用10个主模板
+（8新增pipeline、2复用既有），新增4个分组traits头和统一generic emitter；
+原41ID注册字段/name/生成代码保持不变，旧profile/正式745 CSV及正式.so仍保留原SHA。
+增加--opus-families系列筛选，按shape/K/bytes/contracts过滤后再调优；默认仍包含全部92合法配置。
+mixed compiler自动覆盖15个pin配置（原4+新11），其余77用baseline23。
+105个正式generated device TU完整HIP对象与fused host离线链接通过，123个launch stub引用全部闭合；
+64新配置逐ID ELF检查scratch/VGPRspill/SGPRspill均0，18项CPU测试通过，结果见新报告。
+GPU测试仍停止：本次注册不触发GPU查询、numerics或benchmark，未更新745性能选型。
+此前all/gap报告是当时冻结产物及源码快照，本次明确授权注册改变common/codegen与交接后，
+其external-source hash已成为历史值；不要将旧manifest当前源码不匹配误当成实验产物被改写。
+
+## 2026-10-09：全部落后系列第一轮独立优化实现与离线复核
+
+新入口：[全系列优化汇总](reports/opus_flydsl_all_20261009/README.md)。
+原294个正式OPUS落后shape已按main109/hybrid85/small90/large9030共10项精确分组，
+62个新候选覆盖26个公开parent，共1,280个shape/candidate组合；没有遗漏或跨包重复。
+已实现BM64/96/128与短K面板/pin fixedK、hybrid B寄存器ahead1/2/3、
+register splitK4完整FP32 reducer、fine新tile/splitK1/2、9030 directB/A3/两段chunk96输出。
+所有离线编译、最终CPU布局/契约与独立源码/ELF复核通过；114个最终kernel含baseline/reducer/compiler controls，
+scratch、VGPR/SGPR spill全部0。源码和编译产物/正式输入SHA一致。
+另外从最快合法OPUS历史profile核验334个纯OPUS落后项，除原294外还有ASM32/CK8正式选型的40项；
+全部有同系列现成编译候选172组合，完整覆盖334项/1,452组合，仍为62个新实现。
+见[294清单](reports/opus_flydsl_all_20261009/coverage294.csv)、
+[完整334清单](reports/opus_flydsl_all_20261009/coverage334.csv)与
+[额外40项检查](reports/opus_flydsl_all_20261009/additional40_audit.json)。
+所有候选保留reports内独立ABI、源码/冻结依赖、build receipt、CPU audit与manifest；未注册到正式路由。
+局部baseline重编译不宣称与历史正式module机器码相同；静态资源减少不能当作已提速。
+早期large/small host-only直接HIP链接曾加载libamdhip64，无HIP调用/kernel/计时；已改object/plainlink，
+最终全部host executable在执行前readelf确认无HIP/HSA依赖，失效/有spill尝试独立保留并排除。
+用户停止GPU测试的要求仍有效，未启动GPU查询、数值测试、benchmark或自动等待；
+恢复测试后还需signed/reference、边界/循环调用、完整同卡OPUS/FlyDSL成本及745回归，才能报告新胜负。
+
+## 2026-10-09：FlyDSL落后294项完整清单与继续优化入口
+
+当前分析入口：[294项清单与优化方向](reports/opus_flydsl_gap_20261009/README.md)。
+693个当前全后端OPUS赢家历史对比399快/294慢；294项分26个公开parent，
+small/register/LDS/fine175项、其他119项。9022占72、9044占26、9041占23，9030全10项落后。
+294项均已是本轮13,027合法OPUS配置的最快值，现有候选重选不能直接消除差距。
+已导出全部M/N/K、公开到实际ID/fixedK路径、FlyDSL配置和差距，并按parent/actual/NK分组。
+若要求全部745项纯OPUS超过FlyDSL，历史OPUS-only为411快/334慢，另52非OPUS选型里有40项OPUS落后。
+已隔离实现[短K9022原型](reports/opus_flydsl_gap_20261009/shortk9022/README.md)，fixed384/768、panel8、3/6步。
+离线Clang23编译/链接和CPU实际scale布局及launcher检查通过，独立源码/数据/ELF审查通过。
+当前runtime重编译对照194VGPR/62SGPR/81,184B LDS；两个特化176/46/77,320，均无scratch/spill。
+该对照不等同于历史正式库；无GPU数值/性能结果，不推断静态资源减少已带来提速。
+后续direct-B/tile/splitK/9030分块输出方案及全部294项实际候选路径已保存；未改正式选型或启动GPU测试。
+用户停止GPU测试的要求继续有效，所有新性能收益仍待干净同卡验证。
+
+## 2026-10-09：恢复最新 FlyDSL 比较记录，准备前四卡续跑
+
+用户随后要求停止测试，已确认无测试或等待进程，不自动重启。
+
+续跑入口：[四卡恢复记录](reports/opus_flydsl_resume_20261009/README.md)。
+正式745项选择仍为OPUS693/ASM34/CKTile10/CK8，CSV与正式OPUS库SHA均匹配10月8日plan。
+待完成693shape/793FlyDSL配置同卡比较，先执行原8shape smoke。
+准备独立四卡分片及输出，仅允许物理SMI0–3，保留独占检查、物理锁和KFD归属监控。
+2026-10-09 02:50:49 UTC连续5次采样中，前4卡计算峰值70/65/68/61%，
+显存约102/102/102/118GiB且均有外部owner；后4卡99–100%忙。
+随后02:54:39 UTC检查前四卡均0%、进程为空、显存0.285GiB，尝试四卡smoke。
+首轮AOT导入缺失dtypes已修复；第二轮8shape初次数值检查均errRatio0，
+但4卡出现外部owner，所有receipt均标记无效，不采用其计时。
+02:56:04 UTC最新检查峰值74/63/79/76%、外部PID1134540/1135339/1134927/1134252，
+已释放我们全部GPU进程和锁，无后台等待；693全量未启动，需空卡重跑smoke。
+最新入口queue_smoke_v3.json，状态见新目录README及preflight_latest.jsonl；旧记录完整保留。
+
+## 2026-10-08：本次OPUS赢家与上游FlyDSL mxscale历史比较完成，同卡复测未启动
+
+报告：[OPUS / FlyDSL比较](reports/opus_flydsl_comparison_20261008/README.md)。
+上游main6264f8f5的mxscale CSV冻结保存；1357行中1176gfx950、181gfx1250排除。
+本次745选择里的693个OPUS shape全部有gfx950 BMM行，其中100个还对应mxpsh行。
+相同二维raw E8M0 scale契约BMM比较：OPUS416胜/277负，GM1.050869x。
+mxpsh子集100项70胜/30负，GM1.068807x；每shape取两条FlyDSL路径最快值：
+OPUS399胜/294负，GM1.040823x，311项OPUS快>1.05倍/191项FlyDSL快>1.05倍/191项接近。
+M<=128有114项，18/96、GM0.914297；128<M<=1024有292项149/143、GM1.013956；
+M>1024有287项232/55、GM1.125361。都是不同历史CSV时间，不能声称同卡复测胜率。
+
+两边逻辑FP8+E8M0 A1x128/B128x128相同；OPUS/BMM二维raw尺度布局相同，
+mxpsh需caller提前将scale重排为compact一维。预处理不在GEMM保存时间内。
+此前745 full tune环境FlyDSL0.2.2导入关闭，693赢家只对CK/CKTile/ASM有效，不能外推FlyDSL。
+新FlyDSL0.3.4.1已隔离安装reports目录，无原环境包替换；CPU模块导入通过。
+已准备693shape/793FlyDSL配置8卡paired脚本、signed共同输入/reference、reuse1/pool8及6轮正反序，
+固定正式OPUS库及混合Clang策略，GPU脚本尚未经smoke验证。
+尝试启动8shape smoke时外部host PID1193783持有所有8卡（GPU0约33GiB，其余有context，利用率0），
+严格owner机制未启动任何GPU任务；等待约3分钟后停止等待队列，未留后台任务。
+queue_smoke.json、queue_eight.json、准确候选与历史逐shape数据均保存，待GPU释放后先smoke再全量。
+正式745选择、raw/profile、路由未动。
+
+## 2026-10-08：CK同ID历史子模块A/B与ASM清零/提交节奏归因完成
+
+新报告：[CK / ASM慢例归因](reports/opus_external_residual_diagnosis_20261008/README.md)。
+表中慢例均为原候选重测：CK96×7168×7168及112×7168×3072均ID17/split0，
+ASM240×768×7168为ID31/80×128/split8，ASM64×6144×7168为ID20/64×128/split5。
+新tune最终winner可能是不同候选，不能与这些同候选时间混用。
+
+CK基线微秒值写入时子模块是33b62ed/83566ed，当前是af9e1d1f；common wrapper相同。
+隔离同ID17生成TU、相同Clang23/SDK/flags、同卡同输入池，当前正式host及固定IDhost指令相同。
+96×7168×7168复用时间当前27.45us、旧CK23.75us（33b62为23.74），上游23.24；
+112×7168×3072当前12.98、旧CK11.03，上游12.13。16地址池版本退化分别+9.71%/+7.75%，
+M128轮换下仅+0.57%/+0.78%，但其复用路径版本差距仍显著，不是仅padding。
+第二轮确认该变化；关闭当前CK builtin BF16未恢复重点慢例。已实证CK revision变量，未二分单行修改。
+当前CK/Clang20诊断615/263us并有scratch/spill，正式Clang23无spill，不能用它解释正式几十us慢例。
+
+ASM wrapper及6个.co与原us提交字节相同。240×768×7168同GPU同库两轮复用总时间10.37/12.59us，
+清零2.57/4.31us、GEMM7.81/8.30us，基线10.81；64×6144×7168复用14.99可对齐14.99。
+8卡同输入/同.co完整CABI vs官方提交及增加20us主机间隔对照证明提交节奏改变device事件求和，
+清零贡献明显；不能推断上游省略清零，也不能把CPU idle gap加进device us。
+同候选同代码可复现接近基线的完整调用，旧+19%不是稳定ASM代码退化，原历史时钟/协议仍未知。
+
+完成1600条有效计时/正确性复查，maxerrRatio0.014812<0.05；物理锁/KFD归属无外部污染。
+初始import/参数适配及graph trace失败另存排除；graph事件缺失并一次进程崩溃，无graph数据用于结论。
+最终普通host两轮及8卡提交节奏实验完成，所有GPU已释放；正式745选型、profile及上游CSV SHA未变。
+CK版本效应只验证8shape/ID17，不能将旧CK时延插入完整745行的新结果。
+
+## 2026-10-08：CK/ASM缓存诊断与上游机器型号出处补充
+
+新报告：[缓存与编译器建议](reports/opus_external_cache_policy_20261008/README.md)，
+[上游设备出处](reports/opus_external_cache_policy_20261008/MACHINE_PROVENANCE.md)。
+CK8/ASM8固定本轮二进制和候选在8卡上完成4计时协议及1/4/16/64地址池测试，
+再补64/128/256地址池，各shape均同卡；共1568条计时及输出复查通过、归属干净。
+缓存影响也存在CK/ASM：ASM64x6144x7168复用50/200为14.84us，上游14.99；
+CK96x7168x7168复用后仍27.71vs23.24，ASM240x768x7168仍12.87vs10.81，
+两项仍约+19%，不能将全部历史差距归因缓存。
+硬件AMD-SMI确认4MiBL2之外还有256MiBL3，不能以8个地址假定完全冷缓存；
+64/128/256池扩展中15/16项128到256变化在±2%内，ASM64x6144x7168尚有约-6.6%变化。
+建议使用统一平衡地址池、声明缓存/预热协议、扩大池确认平台；推理另测B固定/Aout轮换，
+allocator empty_cache不是硬件cache flush。
+
+编译器建议默认23、4pin候选24；9042/9052已有稳定局部A/B收益，建议单独用24。
+尚未变更现有路由或745行配置，以免把固定589winner预测当新完整tune结果。
+复查10个原us提交PR，704行明确MI355X、33行写MI355、8行型号未确认，
+没有找到MI350X出处；#5283的CKTile62/121.6/186.44us明确在MI355X测。
+gfx950本身不能区分MI350X/MI355X。同型号不同机器环境仍可能影响残差，原收据未知。
+
+## 2026-10-08：745行基线复核、OPUS编译器A/B与CKTile计时诊断已完成
+
+最新配置仍为 `aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv`，
+745行全后端最优（OPUS693/ASM34/CKTile10/CK8），与混合工具链完整tune输出逐字节一致。
+本次追加诊断没有替换原始tune/profile或配置选择，报告见
+[基线与编译器对照](reports/opus_compiler_ab_baseline_review_20261008/README.md)。
+
+上游CK409/CKTile178/ASM133的720个实际执行候选均有本轮有效测量。
+延迟GM变化CK-0.057%、CKTile-5.680%、ASM-0.189%，但分别有150/51/22项慢超过5%；
+整体接近不等于每行对齐。原上游工具链、二进制及地址轮换策略仍未知。
+CKTile严重Clang20 spill已修复。当前Clang23二进制8项同卡计时对照完成：
+ID27 M4096/N2048/K7168，轮换5/51为79.23µs，地址复用5/51为60.81µs、
+复用50/200为58.71µs，上游62µs。另4个选取的慢例复用后也接近或快于上游。
+这证明计时/缓存因素足以解释这些慢例，不能外推为全部178行或断言上游用了热缓存。
+
+OPUS589个当前无pin winner固定相同ID，8卡同进程/同共享地址池6轮A/B完成，
+另外16项pin机器码不变参照；1210次signed输出校验通过、7260条计时、归属监控干净。
+23相对24延迟GM+0.131%、中位+0.033%；未改代码参照GM+0.190%，整体无明显23变慢证据。
+局部9042有3项慢约38%，9052有9项慢超过5%，这12项全部6轮均23更慢。
+24个无pin设备TU重编；181个object包括host dispatch和4pin TU字节相同；
+pybind wrapper仍同Clang23/source/flags，仅模块名宏改变以规避CPython扩展缓存。
+23用resource23、24用resource20/同ROCm7.0 SDK，这是具体工具链配置对照。
+没有改编译器路由或针对各编译器独立重新选型；156个当前OPUS-only winner原本仍为pin24。
+
+## 2026-10-08：Clang 23 / pin LLVM 分流全量重测已完成
+
+745/745 shape、28个OPUS候选、13,027个合法OPUS配置全部完成且errRatio0；
+全后端共79,504条raw，8张物理卡同时运行，同shape全候选同卡，实际加载库SHA和KFD归属均通过。
+本轮最优后端 `{'opus': 693, 'ck': 8, 'asm': 34, 'cktile': 10}`；OPUS相对同轮外部最优GM 1.139670×，693项更快、52项更慢。
+
+CK、CKTile、ASM主机封装及24个无pin的OPUS候选用最小Clang23
+`/opt/rocm-llvm23-46fcb339/bin`（46fcb339fb61119b337f973c7ca9e710a319fdd0）；
+仅9000/9001/9010/9011用pin24
+`/root/toolchains/yuyzhang512-amdgpu-pin-op-dst-build/bin`
+（49c41889681640665400cb01c9fbb4c0a024cde4）。ASM设备保持预编译.co。
+原上游tune编译器仍未确认，新Clang23测量建立新基线。
+使用混合构建时设置`HIP_CLANG_PATH`和`OPUS_BASELINE_HIP_CLANG_PATH`为Clang23 bin、
+`OPUS_HIP_CLANG_PATH`为pin bin，并使用全新`AITER_JIT_DIR`。
+4个pin候选机器码与上轮相同；60个CPU/JIT、10个编译环境检查和66次signed/tail输出检查通过。
+
+完整报告：[README](reports/opus_clang23_mixed_retune_20261008/README.md)。
+已将`tuned_all_config.csv`写入`aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv`；
+`tuned_opus.csv`和`tuned_external.csv`另存。旧raw和旧发布表保留。
+CKTile全后端选型已恢复有效竞争。CK B-preshuffle的splitK参数实际被忽略：
+原4行CSV splitK不同也对应同kernel执行，上游409CK/178CKTile/133ASM共720执行均有对应；
+25Triton未测。历史时间变化不是编译器单因素A/B；bound分类需要原ATT/counter证据。
+本节取代下文旧策略和旧发布表统计。
+
+## 2026-10-08：CK尚未排除编译器影响，上游基线Clang版本未知
+
+本轮CK/CKTile保存SO均为Clang20。405个相同CK调用相对上游时间GM+0.0292%，但中位数+2.2809%；184项在±5%内、141项慢超过5%、80项快超过5%。尚未做CK同源码Clang20/23 A/B，不能由整体平均接近认定Clang20没有影响，也不能把逐项差异全部归因于编译器。上游745行来自多次文件提交（含单位调整），已查PR记录没有明确Clang版本收据；上游原始二进制未取得，版本目前未知。本地9月25日构建收据的CK/CKTile/ASM为Clang23、OPUS为pin Clang24，此信息不能替代上游来源证明。分析见 `/root/workspace/aiter-local-backups/upstream_external_baseline_review_20261008_073349/CK_compiler_baseline_provenance_20261008.md`。最新OPUS独立pin工具链口径继续保持，没有新增GPU测量或修改结果CSV。
+
+## 2026-10-08：按最新要求，OPUS使用pin LLVM，其他后端保留原工具链和分析
+
+用户最新指定只让OPUS系列使用带pin-AGPR的新LLVM，CK/CKTile/ASM保留原来的分析。当前OPUS工具链为 `yuyzhang512/llvm-project` 的 `49c41889681640665400cb01c9fbb4c0a024cde4`（Clang24），本机路径 `/root/toolchains/yuyzhang512-amdgpu-pin-op-dst-build/bin`。tuner只在同步构建OPUS期间切换 `HIP_CLANG_PATH`；结束或失败都会恢复原值、resource-header配置并清除编译器探测缓存。CK/CKTile和ASM主机封装继续使用传入工具链或系统ROCm，ASM设备机器码保持原预编译产物。这是各后端采用各自工具链的性能对照，文档需注明编译器来源。
+
+已停止CKTile切换pin Clang24的编译实验，兼容性修改和日志已备份，CK submodule恢复原头文件；没有重跑745个shape，没有改已发布选型CSV或冻结报告。Clang20/23的同源码GPU诊断证据和原CK/CKTile/ASM核对结论保留。11项编译器配置/精度契约CPU检查与53项JIT事务检查通过，包含OPUS构建成功/失败及默认/显式外部编译器的恢复路径。下面“统一LLVM实验”段落记录先前要求，已由本段取代。
+
+## 2026-10-08：CKTile异常已复现并确认编译器差异（先前统一LLVM实验）
+
+同卡直接回放保存的CKTile二进制，4096×2048×7168 / ID27 / splitK0：本轮Clang20产物约3190µs，9月25日Clang23产物约57.7µs，上游保存值62µs。同一份合并前wrapper和BPC2实例重新编译，Clang20约3186µs、Clang23约57.8µs，原候选、数据和调用不变。基线该行提交7b481fbc与本轮b152ab83的CK gitlink都是af9e1d1f，wrapper blob也相同。GPU trace确认慢调用本体约3.2ms，实际hot-loop特化的ELF metadata为256 VGPR、1208B/thread scratch、604 VGPR spill；旧Clang23同特化234 VGPR、0 scratch、0 spill。新增诊断保存在 `/root/workspace/aiter-local-backups/upstream_external_baseline_review_20261008_073349/cktile_diagnosis_20261008/`。该对照说明本轮系统Clang20重建导致严重spill，不能用本轮慢CKTile产物认定OPUS胜过完整上游基线。
+
+先前按统一LLVM要求曾修改tuner，让OPUS/CK/CKTile及ASM主机封装均选择pin LLVM；此行为已按最新要求撤回。Clang24搭配ROCm7.0需要clang20 resource headers，旧CK头文件还需int8 MFMA参数类型兼容。完整hot-loop编译出现巨大IR和耗时优化；关闭earlyinline后的诊断产物数值通过，但4096×2048×7168约677–703µs，仍未恢复基线性能，因此未用于正式CKTile结果。该兼容性修改已移出工作树，实验日志保留；部分编译由人工终止，日志中的SIGABRT是主动抓取栈，不代表自发编译器崩溃。没有进行745项统一LLVM重测。
+
+## 2026-10-08：全后端结果尚未复现上游 CKTile 基线
+
+对上游 `dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv` 的 gfx950/256-CU 745 行按实际调用核对，本轮716个原CK/CKTile/ASM配置匹配，只有4个原CK配置未枚举，25个原Triton未测。ASM实际按 `kernelName` 和 `splitK` 调用，数字 `kernelId` 是tuner枚举序号；133个原ASM配置全部测到，其中91个ID不变、42个ID改变但名称和split-K相同。之前“ASM只匹配91个、外部合计674个”的判断错误，已更正。133个ASM基线shape的本轮外部最优中，87个仍用原ASM配置、45个改用其他ASM名称和/或split-K、1个用CK。
+
+相同调用的CK405项时间几何平均变化+0.0292%、ASM133项−1.09834%；CKTile178项约慢29.1464倍，异常集中于173个192×256/8-wave配置。本轮已保存编译object的部分相关特化存在大量VGPR spill，但尚未进行GPU归因或恢复基线性能。当前仓库CSV保留本轮观测选型；720个OPUS赢家/1.2551×只代表对本轮外部产物的比较，不能声称已复现上游完整基线。更正后的调用核对见 `/root/workspace/aiter-local-backups/upstream_external_baseline_review_20261008_073349/corrected_call_summary.json`，逐shape明细、42项ASM编号映射和metadata在同目录。原严格ID匹配文件保留为被更正的历史记录。本次分析未改冻结报告、未进行GPU重测。
+
+## 2026-10-08：最新全后端选型导出到仓库 CSV
+
+按用户明确要求，[仓库调优表](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)已更新为本轮 OPUS/CK/CKTile/ASM 比较后的 [复测选型结果](reports/opus_retune28_20261008/tuned_all_rechecked_config.csv)：745 个 shape 各保留最快有效后端，OPUS 720 行、ASM 24 行、CK 1 行、CKTile 0 行。纯 OPUS 最优表仍独立保存在 [tuned_opus28_rechecked_config.csv](reports/opus_retune28_20261008/tuned_opus28_rechecked_config.csv)。保留 13 列格式和全部原始选型、时间；导出时仅将报告的 `bw` 从 GB/s 转为仓库表使用的 TB/s，保留五位小数。78 项来自五轮复测中位数，其余 667 项来自全量筛选，不能用混合时间计算新的全集合性能结论。[shape_comparison.csv](reports/opus_retune28_20261008/shape_comparison.csv)保留逐 shape 同轮比较，[profile.csv](reports/opus_retune28_20261008/profile.csv)保留四个后端的全部 79,504 条原始记录。
+
+旧表为 9 月 30 日全后端最优结果（OPUS 725、ASM 12、CK 5、CKTile 3），已保存至 `/root/workspace/aiter-local-backups/publish_opus_retune28_20261008_072158/before/`；本次全后端导出来源和哈希见 `/root/workspace/aiter-local-backups/publish_all_retune28_20261008_072427/publish_manifest.json`。原始 retune 报告及冻结 manifest 保留。该表可作为正式 OPUS tuner 的 shape 输入或显式 `--run_config` 回放输入；回放时 OPUS 使用原生 E8M0，CK/CKTile/ASM 使用 FP32 scale。FP32-scale 自动生产调度尚不支持这张混合结果表中的 OPUS E8M0 行。未新增 GPU 测量，没有提交或推送。下方记录中的“未覆盖仓库表”描述其历史时点。
+
+## 2026-10-08：28候选全745shape retune完成（8卡）
+
+最新入口为[完整retune报告](reports/opus_retune28_20261008/README.md)，状态`completed_verified_not_committed`。原9000/9010与新增9001/9011及全部9020+/9030/9040+共28公开候选都纳入；745shape、13,027合法OPUS配置全部errRatio=0，79,504全后端raw。用户要求8卡后595shape并行，已完成150shape保持，同shape全部候选同卡计时；8卡KFD owner/物理锁/严格PID审计通过。
+
+同轮原26最优vs完整28最优，9001选59、9011选19；全集合GM+0.036518%，合成单次时间和−0.039968%，大部分微小收益有选型噪声。78项五轮复测原选项9001有29/59继续胜、9011有12/19继续胜，5/5快仅2/3项；复测重选数量30/12含一个9011转9001。OPUS对同轮外部最快者720快/25慢、GM1.255110×。Sep30旧时间GM1.041807×仅描述跨轮，不能因果归于两新ID。
+
+[筛选OPUS CSV](reports/opus_retune28_20261008/tuned_opus28.csv)、[全后端CSV](reports/opus_retune28_20261008/tuned_all.csv)、[复测选型config](reports/opus_retune28_20261008/tuned_all_rechecked_config.csv)均独立保存；混合来源复测CSV不能用于新的全集合GM。原默认生产配置未覆盖，正式SO SHA不变。Compute/Memory追加第14节保留旧字节，分类没有新ATT证明。见[最终审核](reports/opus_retune28_20261008/final_review.json)，没有commit/push，待实验0。
+
+## 2026-10-08：9000/9010少量独立候选及全系列bound分类
+
+最新入口为[9000/9010与完整bound分类记录](reports/opus_9000_9010_bound_20261008/README.md)，状态`applied_verified_not_committed`。按用户最终要求，原9000/9010各保留，新增9001（SFA raw清零减少VGPR）与9011（padded-M unroll4），总四项，不加尺寸硬编码dispatch。9001全129 GM−0.0487%，仅作为证据较弱的可选tuner候选；两原正样本新seed仍微正但3/5轮。9011全38 GM+0.2808%、34正median、0个5/5 loser，四negative median由原版回选。9000 unroll4全129偏慢已淘汰。保存的旧tuning CSV未改，需重新tune或显式ID才使用新增候选。
+
+最终28公开parent/58entry，204linked bundle/265entry；原263 linked entry机器身份全部保持，新增两entry精确匹配已测private。14official target/112次数值调用通过signed8/reference/repeat/guards、实际SO SHA与严格owner；最终SO SHA`e18fe59bf6b06ddc53349df5eaa5a3f5d31d3b00b75627705c26477d09db00eb`，见[正式集成](reports/opus_9000_9010_bound_20261008/split_formal_scale_reset/integration_manifest.json)。此前9020/9021/9023/9024和small alias保持，无commit/push，待实验0。
+
+[完整分类](reports/opus_9000_9010_bound_20261008/BOUND_CLASSIFICATION.md)覆盖9020–9024、9030及所有公开9040+的实际body，small33个winner配置均有自身ATT（旧7＋补26）。长K大tile偏compute/issue＋供数，register偏VMEM请求/依赖，LDS/fine偏local LDS依赖/同步，短K常有startup/output固定成本。未证明整系列纯HBM bandwidth或dispatch；四support和五reducer、新候选post-change主瓶颈明确未确认。原Compute/Memory新增第13节，历史字节前缀保持；最终[manifest](reports/opus_9000_9010_bound_20261008/final_manifest.json)记录哈希。下方各节仍描述各自历史时点，中间9010本体替换由最终独立9011方案取代。
+
+## 2026-10-08：剩余23个parent已定位、验证并收口
+
+当前入口为[剩余系列记录](reports/opus_remaining_20261008/README.md)，状态`applied_verified_not_committed`。9020、9022、9023、9024、9030及全部公开9040+共23个parent/44个实际历史winner配置已逐项记录限制与取舍。新增精确采用9020已有fixed384、9023 runtime、9024 fixed7168，全部赢家geomean分别+2.571542%/+1.117277%/+1.274511%；保留9020一次明显单轮退步和9023资源/有限代价。9022全159项虽总体微正但六项5/5退步，9030全十项及9051全17项不支持全局替换；9046/9055/9062候选也拒绝，其余配置明确keep并区分性能、ATT和数值证据范围。
+
+正式26parent/56entry核对仅三处改变，其他53处精确保持；44项API/472次数值调用和实际module SHA通过，生产2691个构建输入逐字匹配正式树。9000/共享helper、已完成9021与原三个small alias保留。原Compute/Memory第12节已追加全部机制和决定，旧第12前字节及4972份冻结证据保持；文档最终SHA见[final_manifest](reports/opus_remaining_20261008/final_manifest.json)，源码/模块身份见[集成记录](reports/opus_remaining_20261008/formal_selected/integration_manifest.json)。没有commit/push，不宣称536winner或745shape全部新性能覆盖。
+
+## 2026-10-08：按最新总结恢复、定位并应用优化
+
+当前入口为 [10月8日恢复与优化记录](reports/opus_resume_20261008/README.md)，状态 `applied_verified_not_committed`。恢复Oct7 selected后按最新合并总结完成counter和短/长K ATT，短K定位到scale请求串行与LDS发布barrier；依据实际等待位置，让9021先发两侧scale请求、再publish。长K普通tile边界与scale panel reload分开分析，GRBM窗口仍不支持绝对利用率。
+
+新实现相对昨晚selected完成42/42实际赢家Event：41项median更快，geomean加速1.575621%，合成median时间和加速0.997733%；两个极小M非赢家用例有复现代价。正式26parent/56entry身份确认仅9021一个entry改变、其余55个保留；八项API、128次数值/重复/guard调用和实际加载module身份通过。已应用唯一9021 header，保留Oct7的9042/9053/9054 B-scale复用；未提交或推送，见[集成记录](reports/opus_resume_20261008/formal_selected/integration_manifest.json)。
+
+SFA packed scatter已测退步关闭，DPP无候选。重要证据和取舍已回填既有Compute/Memory第11节。下方保留各日期交接快照，旧Oct7 manifest的文档SHA描述历史时点；当前状态以本节链接为准。
+
 ## 2026-09-29：最新分支迁移与重新 tune
 
 分支为 `Fyzyukk/aiter:aiter-opus-mxfp8-bpreshuffle`。本节是最新测试入口；
@@ -57,9 +343,11 @@ set -o pipefail
 支持 `clang::amdgpu_pin_agpr` 的编译器；已用版本是
 [`yuyzhang512/llvm-project`](https://github.com/yuyzhang512/llvm-project)
 的 `49c41889681640665400cb01c9fbb4c0a024cde4`。下方历史“新服务器准备”一节
-保留了该工具链的构建命令。专用 tuner 只在 OPUS 编译期间切换此编译器，
-CK/CKTile/ASM 沿用环境的 ROCm 编译器。新的 `AITER_JIT_DIR` 用于在目标机重新构建，
-首次运行包含 JIT 构建时间。
+保留了该工具链的构建命令。专用tuner仅用此编译器构建OPUS；CK/CKTile及ASM主机封装
+保留传入的 `HIP_CLANG_PATH` 或系统ROCm编译器，ASM预编译kernel机器码沿用原产物。
+ROCm7.0搭配Clang24时，OPUS构建自动选择安装的ROCm clang20 resource headers，
+也可显式设置 `OPUS_HIP_RESOURCE_DIR`；构建完成或失败后恢复外部后端环境。
+切换某后端编译器时使用新的 `AITER_JIT_DIR` 重新构建；首次运行包含JIT构建时间。
 
 ### 全量重新 tune：745 个 gfx950 shape
 

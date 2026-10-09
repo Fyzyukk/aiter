@@ -49,8 +49,9 @@ For `opus_gemm` and `opus_bmm`, `kid` is mandatory. `Y` is caller-owned and is
 returned unchanged after the launch. The selected exact function determines
 the logical rank, while the resolved family must support that operation;
 dtype does not determine it.
-Among A8 families, no-scale, blockscale and blockscale-bpreshuffle are
-GEMM-only, while MXFP8 is BMM-only. The disjoint architecture id bands and the
+Among A8 families, no-scale, blockscale, and both FP32-scale/native-E8M0
+bpreshuffle families are GEMM-only, while `a8w8_mxscale_bmm` is BMM-only.
+The disjoint architecture id bands and the
 merged `kernels_list` form the canonical registry. Both entries call
 `kernels_list.get(kid)`; they do not introduce or renumber ids. The returned
 instance tag plus the dtype/layout arguments determine the private family
@@ -77,9 +78,12 @@ adapter alone converts activation/output tensors to the raw kernel's existing
 M-major views with `transpose(0, 1)`, which does not copy storage. The physical
 3D raw ABI used by a non-MX A8 GEMM is not exposed as public BMM.
 
-There is no tuned-CSV lookup, architecture heuristic, redirect, or framework
-fallback inside either exact public path. The two shape-driven A16 callers
-remain intentionally different:
+Kernel-ID selection inside either exact public path has no tuned-CSV lookup,
+architecture heuristic, redirect, or framework fallback: the caller supplies
+the exact `kid`. Runtime split-K for nine gfx950 native-E8M0 bpreshuffle kids
+can use a separate optional shape/CU heuristic to choose the partition count
+within that selected kid. The two shape-driven A16 callers remain intentionally
+different:
 
 ```text
 aiter.gemm_a16w16
@@ -118,6 +122,7 @@ to the same `_execute_a16w16` planner/executor used by A16W16 GEMM.
 | `a8w8` | gfx950 kid 2 | GEMM only; FP8 `XQ/WQ`, FP32 `Y`, plain WQ, no scales |
 | `a8w8_blockscale` | gfx950 kid 1 | GEMM only; FP8 `XQ/WQ`, FP32 `Y`, plain WQ, two FP32 scales |
 | `a8w8_blockscale_bpreshuffle` | gfx942 kid 11000 | GEMM only; FP8 `XQ/WQ`, BF16 `Y`, pre-shuffled WQ, two FP32 scales |
+| `a8w8_mxscale_gemm_bpreshuffle` | gfx950, 105 registered IDs / 89 default tuning configurations | GEMM only; FP8 E4M3FN inputs, BF16 `Y`, pre-shuffled WQ, native E8M0 scales; nine IDs accept runtime global split-K and optional FP32 workspace |
 | `a8w8_mxscale_bmm` | gfx950 global kids 8000--8653 (45 registered ids) | BMM only; batch-first FP8 inputs, E8M0 scales, BF16 or FP32 output, optional split-K Torch workspace |
 
 Empty family tables on another architecture are valid capability states. A
@@ -187,6 +192,60 @@ The group contract is 1x128x128. GEMM scales are contiguous FP32
 BF16/FP16 CK/CKTile/ASM/Triton API; FP32 output is available only through the
 explicit OPUS exact-kid call above.
 
+### gfx950 native-E8M0 MXFP8 bpreshuffle GEMM
+
+The caller selects an exact registered kid and supplies already shuffled FP8
+weights. This family uses logical 2D tensors and `layout="bpreshuffle"`.
+A scales have logical shape `[M,K/128]` with dense column-major strides
+`(1,M)`; B scales are contiguous `[N/128,K/128]`. Both are one-byte E8M0.
+Inputs and BF16 output are contiguous and on the same device. Kid-specific
+shape, alignment, and byte limits still apply.
+
+```python
+from aiter.ops.opus import opus_gemm
+from aiter.ops.shuffle import shuffle_weight
+
+# Existing gfx950 tensors: XQ [M,K], WQ [N,K], native E8M0 x_scale/w_scale.
+# Kid 92310 requires M <= 512, N divisible by 128, and K divisible by 128.
+WQ_shuffled = shuffle_weight(WQ, layout=(16, 16))
+Y = torch.empty((M, N), device=XQ.device, dtype=torch.bfloat16)
+
+# Literal global split count three; K must contain at least three K128 tiles.
+opus_gemm(
+    XQ, WQ_shuffled, Y, kid=92310, layout="bpreshuffle",
+    x_scale=x_scale, w_scale=w_scale, split_k=3,
+)
+
+# The exact kid stays 92310; only its split count uses the shape/CU heuristic.
+opus_gemm(
+    XQ, WQ_shuffled, Y, kid=92310, layout="bpreshuffle",
+    x_scale=x_scale, w_scale=w_scale, split_k=-1,
+)
+```
+
+Runtime split-K is supported by register IDs 92310/92311/92320/92321/92330/92340
+and fine LDS IDs 92410/92420/92430. Positive `split_k` values are literal counts
+in `1..min(16,K/128)`. Zero preserves the historical default: register four,
+fine one; the register default may include empty partitions for short K.
+Minus one chooses an optional grid/CU heuristic using M/N/K and the input
+device CU count. It has not been measured as the fastest split. Tile geometry
+and local WaveK remain static, and `kid` is always mandatory.
+
+Split one writes BF16 directly and requires `workspace=None`. Larger splits
+use `split_k * M * N` FP32 workspace elements and a shared reducer. Python
+allocates call-scoped storage if omitted, or validates caller-owned contiguous,
+same-device, 16-byte-aligned FP32 storage that is large enough and disjoint
+from input/output. Fine IDs 92411/92421/92431 retain their fixed-split-two
+compatibility paths and require public `split_k=0`, as do other fixed-split
+bpreshuffle IDs.
+
+The [runtime split-K report](../../../reports/opus_runtime_splitk_20261009/README.md)
+records the 89 active configurations and 105 registered IDs. New runtime
+paths have offline header and CPU layout checks; complete runtime integration
+verification passed there. GPU numerical and performance tests remain
+stopped. The examples describe future calls and were not executed during this
+documentation update.
+
 ### gfx950 MXFP8 BMM
 
 ```python
@@ -247,6 +306,13 @@ The exact public APIs execute a caller-selected kid. A16 production tuning
 continues through `csrc/gemm_a16w16/gemm_a16w16_tune.py`; plain A8W8 and
 MXFP8 BMM use `csrc/opus_gemm/opus_gemm_a8w8_tune.py` and
 `csrc/opus_gemm/opus_bmm_mxscale_tune.py`, respectively.
+
+Native-E8M0 gfx950 bpreshuffle GEMM uses
+`csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py`. Its default set contains
+89 static configurations. For each supported runtime kid, tuning enumerates
+every legal positive split and saves `(kernelId, splitK)` for exact replay;
+the runtime split count does not require another registered kid. The sixteen
+historical compatibility/internal IDs remain callable when explicitly selected.
 
 The CK-owned blockscale tuner remains unchanged. Its legacy
 `opus_gemm_a8w8_blockscale_bpreshuffle_tune(...)` import is retained in
@@ -376,8 +442,9 @@ failure. Its direct BF16/FP32 `split_k == 1` specializations keep
 
 ## A8 pybind backend
 
-All three non-MX A8 GEMM adapters and the MXFP8 BMM executor enter one
-low-level facade:
+The original A8 GEMM adapters and the MXFP8 BMM executor use the shared
+low-level facade. The native-E8M0 bpreshuffle adapter adds a checked runtime
+split entry for its nine runtime kids:
 
 ```text
 validated family + resolved kid + physical Tensor views
@@ -386,6 +453,8 @@ validated family + resolved kid + physical Tensor views
        -> plain blockscale pybind raw launcher
        -> blockscale-bpreshuffle pybind raw launcher
        -> MXFP8 BMM pybind raw launcher
+native-E8M0 bpreshuffle runtime plan
+  -> checked bpreshuffle runtime split pybind raw launcher
 ```
 
 ## Graphs and streams
@@ -469,7 +538,7 @@ skip on another architecture is not a pass for that target.
 | `_arch.py` | per-explicit-device architecture/CU scalar cache |
 | `policy.py` | A16 tuned/heuristic candidate selection plus MXFP8 tuned CSV discovery, padded-M lookup, local-to-global kid normalization and heuristic fallback |
 | `launch_plan.py` | shared `WorkspaceSpec`, A16 exact-kid/split-K planning, and A8 family contract/MXFP8 BMM planning |
-| `gemm_op_a8w8.py` | three non-MX A8 GEMM adapters, the legacy bpreshuffle tuner compatibility entry, MXFP8 BMM workspace materialization, and the unified `_launch_a8w8_backend` over four pybind raw bindings |
+| `gemm_op_a8w8.py` | A8 GEMM adapters including native-E8M0 runtime bpreshuffle plan/workspace materialization, the legacy tuner compatibility entry, MXFP8 BMM execution, and shared raw-binding facade |
 | `csrc/opus_gemm/opus_gemm_a8w8_tune.py` | plain A8W8 no-scale/blockscale tuner and saved-kid CSV replay |
 | `moe_stage1_a8w4.py` | A8W4 MoE stage-1 runtime binding and launcher |
 | `moe_stage2_a8w4.py` | A8W4 MoE stage-2 runtime bindings and launchers |

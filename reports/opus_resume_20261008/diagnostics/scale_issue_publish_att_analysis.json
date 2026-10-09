@@ -1,0 +1,3288 @@
+{
+  "status": "passed",
+  "cpu_only": true,
+  "gpu_executed": false,
+  "build_executed": false,
+  "analysis_script_sha256": "c5fa64f1981e51f861ef70d914cd1948060a746da149585c3c68c95e4912cf3e",
+  "baseline_analysis_sha256": "4cc649a371e69bad40b27184e594c44069c8b0459658752edabd7eeddc796c7c",
+  "timing_contract": "gfx9 decoder event = [time, type, stall, duration, code_line]; successful MFMA issue = time + stall; duration includes stall; issue duration = duration - stall. All times are shader clocks. Wait duration is not an individual memory-return latency.",
+  "scope": "One baseline and one candidate capture, one stitched CU0 workgroup with four Wave64 timelines per capture, same K384 shape/224-WG grid/SE0/SIMD15 settings. Waves are correlated; capture timing differs and includes profiler perturbation. Absolute local-clock differences do not establish all-CU latency, throughput or a benchmark speedup.",
+  "candidate_minus_baseline_mean_shader_clocks": {
+    "duration": -347,
+    "prologue_to_first_MFMA": -279,
+    "first_to_last_MFMA": 42,
+    "last_MFMA_to_wave_end": -110,
+    "prologue_share_percent": -1.2149347725891744
+  },
+  "candidate_minus_baseline_phase_mean_shader_clocks": {
+    "startup_kernargs": -48,
+    "K0_matrix_issue_and_scale_kernargs": 8,
+    "scale_producer_K1_prefetch_and_publish_barrier": -336,
+    "scale_and_K0_matrix_LDS_reads": 55,
+    "runtime_setup_clear_K2_prefetch": 42
+  },
+  "serial_scale_VMEM_wait_event_duration_sum": {
+    "baseline": 588,
+    "candidate": 188,
+    "candidate_minus_baseline": -400,
+    "interpretation": "Baseline waits depend first on K0 matrix VMEM plus SFA, then SFB. Candidate wait0x2a50 lists K0 matrix+SFA+SFB; wait0x2a70 is empty and4 clocks. These are queue-wait events, not individual load return latencies."
+  },
+  "publish_barrier_duration_sum": {
+    "baseline": 1992,
+    "candidate": 704,
+    "candidate_minus_baseline": -1288
+  },
+  "captures": [
+    {
+      "label": "baseline",
+      "capture": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/current9021_k384_att",
+      "ui": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/current9021_k384_att/ui_output_agent_35104_dispatch_29",
+      "identity": {
+        "library_sha256": "15b080345c90be001ef9881a44c7e5b590032af4324e5e5b4157b226d3e7b49d",
+        "device_sha256": "55906577884b376f892d8c960acdf9c2a937710f20bfc8fb98aca044a7ebe710",
+        "kernel_instruction_sha256": "9450c93608d08fefe797c46af50ea2a2f54ec7804d36bb70bbd9c5385dd642e4",
+        "kernel_instruction_bytes": 8588,
+        "PC_instruction_matches": 1498,
+        "code_json_sha256": "e1b8734b2ffee39cfdffcac152504bfe940808b9ca95c70071a661dcaf85d092",
+        "wave_hit_duration_stall_aggregates_match_all_code_rows": true,
+        "stats_csv_matches_code_json": true,
+        "code_idle_equals_wave_lead_and_interevent_gaps": true,
+        "timeline_endpoints_match_within_one_4_clock_quantum": true,
+        "complete_waves": 4,
+        "scaled_MFMA_each_wave": 48
+      },
+      "summary": {
+        "duration": {
+          "samples": 4,
+          "mean": 9100,
+          "median": 9104.0,
+          "p90": 9108,
+          "min": 9076,
+          "max": 9116
+        },
+        "prologue_to_first_MFMA": {
+          "samples": 4,
+          "mean": 4523,
+          "median": 4564.0,
+          "p90": 4576,
+          "min": 4376,
+          "max": 4588
+        },
+        "first_to_last_MFMA": {
+          "samples": 4,
+          "mean": 2807,
+          "median": 2772.0,
+          "p90": 2780,
+          "min": 2748,
+          "max": 2936
+        },
+        "last_MFMA_to_wave_end": {
+          "samples": 4,
+          "mean": 1770,
+          "median": 1766.0,
+          "p90": 1768,
+          "min": 1764,
+          "max": 1784
+        },
+        "prologue_share_percent": {
+          "samples": 4,
+          "mean": 49.701922085461604,
+          "median": 50.131761957848916,
+          "p90": 50.24154589371981,
+          "min": 48.21507271925959,
+          "max": 50.32909170688899
+        }
+      },
+      "phase_mean_clocks": {
+        "startup_kernargs": 725,
+        "K0_matrix_issue_and_scale_kernargs": 1077,
+        "scale_producer_K1_prefetch_and_publish_barrier": 1249,
+        "scale_and_K0_matrix_LDS_reads": 585,
+        "runtime_setup_clear_K2_prefetch": 887
+      },
+      "roles": {
+        "first_kernarg_wait": {
+          "pc": "0x1f58",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x1f58",
+              "code_line": 14,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 61076,
+              "time_from_wave_begin": 100,
+              "stall": 624,
+              "duration": 624,
+              "successful_issue": 61700,
+              "event_end": 61700
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x1f58",
+              "code_line": 14,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 61100,
+              "time_from_wave_begin": 120,
+              "stall": 604,
+              "duration": 604,
+              "successful_issue": 61704,
+              "event_end": 61704
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x1f58",
+              "code_line": 14,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 61072,
+              "time_from_wave_begin": 96,
+              "stall": 632,
+              "duration": 632,
+              "successful_issue": 61704,
+              "event_end": 61704
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x1f58",
+              "code_line": 14,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 61088,
+              "time_from_wave_begin": 100,
+              "stall": 624,
+              "duration": 624,
+              "successful_issue": 61712,
+              "event_end": 61712
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 621,
+            "median": 624.0,
+            "p90": 624,
+            "min": 604,
+            "max": 632
+          },
+          "duration_sum": 2484
+        },
+        "scale_kernarg_wait": {
+          "pc": "0x2150",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2150",
+              "code_line": 107,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62224,
+              "time_from_wave_begin": 1248,
+              "stall": 552,
+              "duration": 552,
+              "successful_issue": 62776,
+              "event_end": 62776
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2150",
+              "code_line": 107,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62272,
+              "time_from_wave_begin": 1292,
+              "stall": 524,
+              "duration": 524,
+              "successful_issue": 62796,
+              "event_end": 62796
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2150",
+              "code_line": 107,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62244,
+              "time_from_wave_begin": 1268,
+              "stall": 544,
+              "duration": 544,
+              "successful_issue": 62788,
+              "event_end": 62788
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2150",
+              "code_line": 107,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62212,
+              "time_from_wave_begin": 1224,
+              "stall": 556,
+              "duration": 556,
+              "successful_issue": 62768,
+              "event_end": 62768
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 544,
+            "median": 548.0,
+            "p90": 552,
+            "min": 524,
+            "max": 556
+          },
+          "duration_sum": 2176
+        },
+        "SFA_issue": {
+          "pc": "0x29e4",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x29e4",
+              "code_line": 513,
+              "instruction": "buffer_load_dwordx4 v[6:9], v21, s[60:63], 0 offen",
+              "time": 63056,
+              "time_from_wave_begin": 2080,
+              "stall": 8,
+              "duration": 12,
+              "successful_issue": 63064,
+              "event_end": 63068
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 12,
+            "median": 12,
+            "p90": 12,
+            "min": 12,
+            "max": 12
+          },
+          "duration_sum": 12
+        },
+        "SFA_wait": {
+          "pc": "0x29f8",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x29f8",
+              "code_line": 516,
+              "instruction": "s_waitcnt vmcnt(0)",
+              "time": 63076,
+              "time_from_wave_begin": 2100,
+              "stall": 196,
+              "duration": 196,
+              "successful_issue": 63272,
+              "event_end": 63272
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 196,
+            "median": 196,
+            "p90": 196,
+            "min": 196,
+            "max": 196
+          },
+          "duration_sum": 196
+        },
+        "SFA_publish": {
+          "pc": "0x29fc",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x29fc",
+              "code_line": 517,
+              "instruction": "ds_write_b128 v2, v[6:9]",
+              "time": 63272,
+              "time_from_wave_begin": 2296,
+              "stall": 0,
+              "duration": 20,
+              "successful_issue": 63272,
+              "event_end": 63292
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 20,
+            "median": 20,
+            "p90": 20,
+            "min": 20,
+            "max": 20
+          },
+          "duration_sum": 20
+        },
+        "SFB_issue": {
+          "pc": "0x2a64",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2a64",
+              "code_line": 538,
+              "instruction": "buffer_load_ubyte v4, v2, s[40:43], 0 offen",
+              "time": 63392,
+              "time_from_wave_begin": 2416,
+              "stall": 0,
+              "duration": 4,
+              "successful_issue": 63392,
+              "event_end": 63396
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 4,
+            "median": 4,
+            "p90": 4,
+            "min": 4,
+            "max": 4
+          },
+          "duration_sum": 4
+        },
+        "SFB_wait": {
+          "pc": "0x2a74",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2a74",
+              "code_line": 540,
+              "instruction": "s_waitcnt vmcnt(0)",
+              "time": 63400,
+              "time_from_wave_begin": 2424,
+              "stall": 392,
+              "duration": 392,
+              "successful_issue": 63792,
+              "event_end": 63792
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 392,
+            "median": 392,
+            "p90": 392,
+            "min": 392,
+            "max": 392
+          },
+          "duration_sum": 392
+        },
+        "SFB_publish": {
+          "pc": "0x2a78",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2a78",
+              "code_line": 541,
+              "instruction": "ds_write_b8 v3, v4",
+              "time": 63792,
+              "time_from_wave_begin": 2816,
+              "stall": 0,
+              "duration": 8,
+              "successful_issue": 63792,
+              "event_end": 63800
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 8,
+            "median": 8,
+            "p90": 8,
+            "min": 8,
+            "max": 8
+          },
+          "duration_sum": 8
+        },
+        "publish_LGKM_wait": {
+          "pc": "0x2b58",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2b58",
+              "code_line": 580,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64020,
+              "time_from_wave_begin": 3044,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 64024,
+              "event_end": 64024
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2b58",
+              "code_line": 580,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 63356,
+              "time_from_wave_begin": 2376,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 63360,
+              "event_end": 63360
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2b58",
+              "code_line": 580,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 63392,
+              "time_from_wave_begin": 2416,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 63396,
+              "event_end": 63396
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2b58",
+              "code_line": 580,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 63348,
+              "time_from_wave_begin": 2360,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 63352,
+              "event_end": 63352
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 4,
+            "median": 4.0,
+            "p90": 4,
+            "min": 4,
+            "max": 4
+          },
+          "duration_sum": 16
+        },
+        "publish_barrier": {
+          "pc": "0x2b5c",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2b5c",
+              "code_line": 581,
+              "instruction": "s_barrier",
+              "time": 64024,
+              "time_from_wave_begin": 3048,
+              "stall": 8,
+              "duration": 8,
+              "successful_issue": 64032,
+              "event_end": 64032
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2b5c",
+              "code_line": 581,
+              "instruction": "s_barrier",
+              "time": 63360,
+              "time_from_wave_begin": 2380,
+              "stall": 668,
+              "duration": 668,
+              "successful_issue": 64028,
+              "event_end": 64028
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2b5c",
+              "code_line": 581,
+              "instruction": "s_barrier",
+              "time": 63396,
+              "time_from_wave_begin": 2420,
+              "stall": 636,
+              "duration": 636,
+              "successful_issue": 64032,
+              "event_end": 64032
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2b5c",
+              "code_line": 581,
+              "instruction": "s_barrier",
+              "time": 63352,
+              "time_from_wave_begin": 2364,
+              "stall": 680,
+              "duration": 680,
+              "successful_issue": 64032,
+              "event_end": 64032
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 498,
+            "median": 652.0,
+            "p90": 668,
+            "min": 8,
+            "max": 680
+          },
+          "duration_sum": 1992
+        },
+        "scale_LDS_wait1": {
+          "pc": "0x2bb0",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2bb0",
+              "code_line": 592,
+              "instruction": "s_waitcnt lgkmcnt(1)",
+              "time": 64120,
+              "time_from_wave_begin": 3144,
+              "stall": 40,
+              "duration": 40,
+              "successful_issue": 64160,
+              "event_end": 64160
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2bb0",
+              "code_line": 592,
+              "instruction": "s_waitcnt lgkmcnt(1)",
+              "time": 64136,
+              "time_from_wave_begin": 3156,
+              "stall": 36,
+              "duration": 36,
+              "successful_issue": 64172,
+              "event_end": 64172
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2bb0",
+              "code_line": 592,
+              "instruction": "s_waitcnt lgkmcnt(1)",
+              "time": 64084,
+              "time_from_wave_begin": 3108,
+              "stall": 36,
+              "duration": 36,
+              "successful_issue": 64120,
+              "event_end": 64120
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2bb0",
+              "code_line": 592,
+              "instruction": "s_waitcnt lgkmcnt(1)",
+              "time": 64100,
+              "time_from_wave_begin": 3112,
+              "stall": 36,
+              "duration": 36,
+              "successful_issue": 64136,
+              "event_end": 64136
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 37,
+            "median": 36.0,
+            "p90": 36,
+            "min": 36,
+            "max": 40
+          },
+          "duration_sum": 148
+        },
+        "scale_LDS_wait0": {
+          "pc": "0x2bbc",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2bbc",
+              "code_line": 594,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64164,
+              "time_from_wave_begin": 3188,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 64168,
+              "event_end": 64168
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2bbc",
+              "code_line": 594,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64204,
+              "time_from_wave_begin": 3224,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 64208,
+              "event_end": 64208
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2bbc",
+              "code_line": 594,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64124,
+              "time_from_wave_begin": 3148,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 64128,
+              "event_end": 64128
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2bbc",
+              "code_line": 594,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64140,
+              "time_from_wave_begin": 3152,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 64144,
+              "event_end": 64144
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 4,
+            "median": 4.0,
+            "p90": 4,
+            "min": 4,
+            "max": 4
+          },
+          "duration_sum": 16
+        },
+        "K0_matrix_SFB_LDS_wait": {
+          "pc": "0x2ca4",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2ca4",
+              "code_line": 627,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64548,
+              "time_from_wave_begin": 3572,
+              "stall": 88,
+              "duration": 88,
+              "successful_issue": 64636,
+              "event_end": 64636
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2ca4",
+              "code_line": 627,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64588,
+              "time_from_wave_begin": 3608,
+              "stall": 88,
+              "duration": 88,
+              "successful_issue": 64676,
+              "event_end": 64676
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2ca4",
+              "code_line": 627,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64424,
+              "time_from_wave_begin": 3448,
+              "stall": 120,
+              "duration": 120,
+              "successful_issue": 64544,
+              "event_end": 64544
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2ca4",
+              "code_line": 627,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 64512,
+              "time_from_wave_begin": 3524,
+              "stall": 96,
+              "duration": 96,
+              "successful_issue": 64608,
+              "event_end": 64608
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 98,
+            "median": 92.0,
+            "p90": 96,
+            "min": 88,
+            "max": 120
+          },
+          "duration_sum": 392
+        }
+      },
+      "publish_barrier": {
+        "attempt_spread": 672,
+        "release_spread": 4,
+        "duration_sum": 1992,
+        "waves": [
+          {
+            "wave": "se0_sm0_sl0_wv0.json",
+            "simd": 0,
+            "pc": "0x2b5c",
+            "code_line": 581,
+            "instruction": "s_barrier",
+            "time": 64024,
+            "time_from_wave_begin": 3048,
+            "stall": 8,
+            "duration": 8,
+            "successful_issue": 64032,
+            "event_end": 64032
+          },
+          {
+            "wave": "se0_sm1_sl0_wv0.json",
+            "simd": 1,
+            "pc": "0x2b5c",
+            "code_line": 581,
+            "instruction": "s_barrier",
+            "time": 63360,
+            "time_from_wave_begin": 2380,
+            "stall": 668,
+            "duration": 668,
+            "successful_issue": 64028,
+            "event_end": 64028
+          },
+          {
+            "wave": "se0_sm2_sl0_wv0.json",
+            "simd": 2,
+            "pc": "0x2b5c",
+            "code_line": 581,
+            "instruction": "s_barrier",
+            "time": 63396,
+            "time_from_wave_begin": 2420,
+            "stall": 636,
+            "duration": 636,
+            "successful_issue": 64032,
+            "event_end": 64032
+          },
+          {
+            "wave": "se0_sm3_sl0_wv0.json",
+            "simd": 3,
+            "pc": "0x2b5c",
+            "code_line": 581,
+            "instruction": "s_barrier",
+            "time": 63352,
+            "time_from_wave_begin": 2364,
+            "stall": 680,
+            "duration": 680,
+            "successful_issue": 64032,
+            "event_end": 64032
+          }
+        ]
+      },
+      "wait_dependency_sets": {
+        "0x1f58": [
+          [
+            {
+              "pc": "0x1f00",
+              "instruction": "s_load_dwordx4 s[8:11], s[0:1], 0x0"
+            },
+            {
+              "pc": "0x1f08",
+              "instruction": "s_load_dwordx2 s[64:65], s[0:1], 0x10"
+            },
+            {
+              "pc": "0x1f10",
+              "instruction": "s_load_dword s12, s[0:1], 0x18"
+            },
+            {
+              "pc": "0x1f18",
+              "instruction": "s_load_dword s15, s[0:1], 0x20"
+            },
+            {
+              "pc": "0x1f20",
+              "instruction": "s_load_dwordx4 s[48:51], s[0:1], 0x28"
+            },
+            {
+              "pc": "0x1f28",
+              "instruction": "s_load_dword s6, s[0:1], 0x38"
+            }
+          ]
+        ],
+        "0x2150": [
+          [
+            {
+              "pc": "0x213c",
+              "instruction": "s_load_dwordx8 s[40:47], s[0:1], 0x40"
+            },
+            {
+              "pc": "0x2144",
+              "instruction": "s_load_dword s3, s[0:1], 0x58"
+            }
+          ]
+        ],
+        "0x29f8": [
+          [
+            {
+              "pc": "0x2038",
+              "instruction": "buffer_load_dwordx4 v78, s[52:55], 0 offen lds"
+            },
+            {
+              "pc": "0x204c",
+              "instruction": "buffer_load_dwordx4 v79, s[52:55], 0 offen lds"
+            },
+            {
+              "pc": "0x2060",
+              "instruction": "buffer_load_dwordx4 v80, s[52:55], 0 offen lds"
+            },
+            {
+              "pc": "0x2074",
+              "instruction": "buffer_load_dwordx4 v81, s[52:55], 0 offen lds"
+            },
+            {
+              "pc": "0x2104",
+              "instruction": "buffer_load_dwordx4 v82, s[8:11], 0 offen lds"
+            },
+            {
+              "pc": "0x2114",
+              "instruction": "buffer_load_dwordx4 v83, s[8:11], 0 offen lds"
+            },
+            {
+              "pc": "0x2124",
+              "instruction": "buffer_load_dwordx4 v84, s[8:11], 0 offen lds"
+            },
+            {
+              "pc": "0x2134",
+              "instruction": "buffer_load_dwordx4 v85, s[8:11], 0 offen lds"
+            },
+            {
+              "pc": "0x29e4",
+              "instruction": "buffer_load_dwordx4 v[6:9], v21, s[60:63], 0 offen"
+            }
+          ]
+        ],
+        "0x2a74": [
+          [
+            {
+              "pc": "0x2a64",
+              "instruction": "buffer_load_ubyte v4, v2, s[40:43], 0 offen"
+            }
+          ]
+        ],
+        "0x2b58": [
+          [
+            {
+              "pc": "0x29fc",
+              "instruction": "ds_write_b128 v2, v[6:9]"
+            },
+            {
+              "pc": "0x2a08",
+              "instruction": "s_load_dword s78, s[0:1], 0x3c"
+            },
+            {
+              "pc": "0x2a78",
+              "instruction": "ds_write_b8 v3, v4"
+            }
+          ],
+          [
+            {
+              "pc": "0x2a08",
+              "instruction": "s_load_dword s78, s[0:1], 0x3c"
+            }
+          ]
+        ],
+        "0x2bb0": [
+          [
+            {
+              "pc": "0x2b88",
+              "instruction": "ds_read_u8 v4, v4"
+            },
+            {
+              "pc": "0x2b90",
+              "instruction": "ds_read_u8 v5, v5"
+            },
+            {
+              "pc": "0x2b98",
+              "instruction": "ds_read_u8 v6, v89"
+            }
+          ]
+        ],
+        "0x2bbc": [
+          [
+            {
+              "pc": "0x2ba0",
+              "instruction": "ds_read_u8 v3, v3"
+            }
+          ]
+        ],
+        "0x2ca4": [
+          [
+            {
+              "pc": "0x2bd8",
+              "instruction": "ds_read_u8 v87, v3"
+            },
+            {
+              "pc": "0x2c20",
+              "instruction": "ds_read_b128 v[156:159], v90"
+            },
+            {
+              "pc": "0x2c28",
+              "instruction": "ds_read_b128 v[160:163], v90 offset:64"
+            },
+            {
+              "pc": "0x2c30",
+              "instruction": "ds_read_b128 v[148:151], v90 offset:4224"
+            },
+            {
+              "pc": "0x2c38",
+              "instruction": "ds_read_b128 v[152:155], v90 offset:4288"
+            },
+            {
+              "pc": "0x2c40",
+              "instruction": "ds_read_b128 v[116:119], v90 offset:8448"
+            },
+            {
+              "pc": "0x2c48",
+              "instruction": "ds_read_b128 v[120:123], v90 offset:8512"
+            },
+            {
+              "pc": "0x2c50",
+              "instruction": "ds_read_b128 v[100:103], v90 offset:12672"
+            },
+            {
+              "pc": "0x2c58",
+              "instruction": "ds_read_b128 v[104:107], v90 offset:12736"
+            },
+            {
+              "pc": "0x2c64",
+              "instruction": "ds_read_b128 v[124:127], v3 offset:50688"
+            },
+            {
+              "pc": "0x2c6c",
+              "instruction": "ds_read_b128 v[128:131], v3 offset:51744"
+            },
+            {
+              "pc": "0x2c74",
+              "instruction": "ds_read_b128 v[132:135], v3 offset:54912"
+            },
+            {
+              "pc": "0x2c7c",
+              "instruction": "ds_read_b128 v[136:139], v3 offset:55968"
+            },
+            {
+              "pc": "0x2c84",
+              "instruction": "ds_read_b128 v[140:143], v3 offset:59136"
+            },
+            {
+              "pc": "0x2c8c",
+              "instruction": "ds_read_b128 v[144:147], v3 offset:60192"
+            },
+            {
+              "pc": "0x2c94",
+              "instruction": "ds_read_b128 v[108:111], v3 offset:63360"
+            },
+            {
+              "pc": "0x2c9c",
+              "instruction": "ds_read_b128 v[112:115], v3 offset:64416"
+            }
+          ]
+        ]
+      },
+      "waves": [
+        {
+          "wave": "se0_sm0_sl0_wv0.json",
+          "simd": 0,
+          "begin": 60976,
+          "end": 70084,
+          "duration": 9108,
+          "scaled_MFMA": 48,
+          "prologue_to_first_MFMA": 4576,
+          "first_to_last_MFMA": 2748,
+          "last_MFMA_to_wave_end": 1784,
+          "prologue_share_percent": 50.24154589371981,
+          "phase_clocks": {
+            "startup_kernargs": 724,
+            "K0_matrix_issue_and_scale_kernargs": 1076,
+            "scale_producer_K1_prefetch_and_publish_barrier": 1256,
+            "scale_and_K0_matrix_LDS_reads": 604,
+            "runtime_setup_clear_K2_prefetch": 916
+          },
+          "timeline_sum_minus_wave_duration": 4,
+          "role_events": {
+            "first_kernarg_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x1f58",
+                "code_line": 14,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 61076,
+                "time_from_wave_begin": 100,
+                "stall": 624,
+                "duration": 624,
+                "successful_issue": 61700,
+                "event_end": 61700
+              }
+            ],
+            "scale_kernarg_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2150",
+                "code_line": 107,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62224,
+                "time_from_wave_begin": 1248,
+                "stall": 552,
+                "duration": 552,
+                "successful_issue": 62776,
+                "event_end": 62776
+              }
+            ],
+            "SFA_issue": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x29e4",
+                "code_line": 513,
+                "instruction": "buffer_load_dwordx4 v[6:9], v21, s[60:63], 0 offen",
+                "time": 63056,
+                "time_from_wave_begin": 2080,
+                "stall": 8,
+                "duration": 12,
+                "successful_issue": 63064,
+                "event_end": 63068
+              }
+            ],
+            "SFA_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x29f8",
+                "code_line": 516,
+                "instruction": "s_waitcnt vmcnt(0)",
+                "time": 63076,
+                "time_from_wave_begin": 2100,
+                "stall": 196,
+                "duration": 196,
+                "successful_issue": 63272,
+                "event_end": 63272
+              }
+            ],
+            "SFA_publish": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x29fc",
+                "code_line": 517,
+                "instruction": "ds_write_b128 v2, v[6:9]",
+                "time": 63272,
+                "time_from_wave_begin": 2296,
+                "stall": 0,
+                "duration": 20,
+                "successful_issue": 63272,
+                "event_end": 63292
+              }
+            ],
+            "SFB_issue": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2a64",
+                "code_line": 538,
+                "instruction": "buffer_load_ubyte v4, v2, s[40:43], 0 offen",
+                "time": 63392,
+                "time_from_wave_begin": 2416,
+                "stall": 0,
+                "duration": 4,
+                "successful_issue": 63392,
+                "event_end": 63396
+              }
+            ],
+            "SFB_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2a74",
+                "code_line": 540,
+                "instruction": "s_waitcnt vmcnt(0)",
+                "time": 63400,
+                "time_from_wave_begin": 2424,
+                "stall": 392,
+                "duration": 392,
+                "successful_issue": 63792,
+                "event_end": 63792
+              }
+            ],
+            "SFB_publish": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2a78",
+                "code_line": 541,
+                "instruction": "ds_write_b8 v3, v4",
+                "time": 63792,
+                "time_from_wave_begin": 2816,
+                "stall": 0,
+                "duration": 8,
+                "successful_issue": 63792,
+                "event_end": 63800
+              }
+            ],
+            "publish_LGKM_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2b58",
+                "code_line": 580,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64020,
+                "time_from_wave_begin": 3044,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 64024,
+                "event_end": 64024
+              }
+            ],
+            "publish_barrier": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2b5c",
+                "code_line": 581,
+                "instruction": "s_barrier",
+                "time": 64024,
+                "time_from_wave_begin": 3048,
+                "stall": 8,
+                "duration": 8,
+                "successful_issue": 64032,
+                "event_end": 64032
+              }
+            ],
+            "scale_LDS_wait1": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2bb0",
+                "code_line": 592,
+                "instruction": "s_waitcnt lgkmcnt(1)",
+                "time": 64120,
+                "time_from_wave_begin": 3144,
+                "stall": 40,
+                "duration": 40,
+                "successful_issue": 64160,
+                "event_end": 64160
+              }
+            ],
+            "scale_LDS_wait0": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2bbc",
+                "code_line": 594,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64164,
+                "time_from_wave_begin": 3188,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 64168,
+                "event_end": 64168
+              }
+            ],
+            "K0_matrix_SFB_LDS_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2ca4",
+                "code_line": 627,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64548,
+                "time_from_wave_begin": 3572,
+                "stall": 88,
+                "duration": 88,
+                "successful_issue": 64636,
+                "event_end": 64636
+              }
+            ]
+          },
+          "producer_window": {
+            "SFA_to_SFB_successful_issue": 328,
+            "SFA_successful_issue_to_both_publish_event_end": 736,
+            "SFA_successful_issue_to_publish_barrier_release": 968
+          }
+        },
+        {
+          "wave": "se0_sm1_sl0_wv0.json",
+          "simd": 1,
+          "begin": 60980,
+          "end": 70096,
+          "duration": 9116,
+          "scaled_MFMA": 48,
+          "prologue_to_first_MFMA": 4588,
+          "first_to_last_MFMA": 2764,
+          "last_MFMA_to_wave_end": 1764,
+          "prologue_share_percent": 50.32909170688899,
+          "phase_clocks": {
+            "startup_kernargs": 724,
+            "K0_matrix_issue_and_scale_kernargs": 1092,
+            "scale_producer_K1_prefetch_and_publish_barrier": 1232,
+            "scale_and_K0_matrix_LDS_reads": 648,
+            "runtime_setup_clear_K2_prefetch": 892
+          },
+          "timeline_sum_minus_wave_duration": 0,
+          "role_events": {
+            "first_kernarg_wait": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x1f58",
+                "code_line": 14,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 61100,
+                "time_from_wave_begin": 120,
+                "stall": 604,
+                "duration": 604,
+                "successful_issue": 61704,
+                "event_end": 61704
+              }
+            ],
+            "scale_kernarg_wait": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2150",
+                "code_line": 107,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62272,
+                "time_from_wave_begin": 1292,
+                "stall": 524,
+                "duration": 524,
+                "successful_issue": 62796,
+                "event_end": 62796
+              }
+            ],
+            "SFA_issue": [],
+            "SFA_wait": [],
+            "SFA_publish": [],
+            "SFB_issue": [],
+            "SFB_wait": [],
+            "SFB_publish": [],
+            "publish_LGKM_wait": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2b58",
+                "code_line": 580,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 63356,
+                "time_from_wave_begin": 2376,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 63360,
+                "event_end": 63360
+              }
+            ],
+            "publish_barrier": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2b5c",
+                "code_line": 581,
+                "instruction": "s_barrier",
+                "time": 63360,
+                "time_from_wave_begin": 2380,
+                "stall": 668,
+                "duration": 668,
+                "successful_issue": 64028,
+                "event_end": 64028
+              }
+            ],
+            "scale_LDS_wait1": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2bb0",
+                "code_line": 592,
+                "instruction": "s_waitcnt lgkmcnt(1)",
+                "time": 64136,
+                "time_from_wave_begin": 3156,
+                "stall": 36,
+                "duration": 36,
+                "successful_issue": 64172,
+                "event_end": 64172
+              }
+            ],
+            "scale_LDS_wait0": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2bbc",
+                "code_line": 594,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64204,
+                "time_from_wave_begin": 3224,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 64208,
+                "event_end": 64208
+              }
+            ],
+            "K0_matrix_SFB_LDS_wait": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2ca4",
+                "code_line": 627,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64588,
+                "time_from_wave_begin": 3608,
+                "stall": 88,
+                "duration": 88,
+                "successful_issue": 64676,
+                "event_end": 64676
+              }
+            ]
+          }
+        },
+        {
+          "wave": "se0_sm2_sl0_wv0.json",
+          "simd": 2,
+          "begin": 60976,
+          "end": 70052,
+          "duration": 9076,
+          "scaled_MFMA": 48,
+          "prologue_to_first_MFMA": 4376,
+          "first_to_last_MFMA": 2936,
+          "last_MFMA_to_wave_end": 1764,
+          "prologue_share_percent": 48.21507271925959,
+          "phase_clocks": {
+            "startup_kernargs": 728,
+            "K0_matrix_issue_and_scale_kernargs": 1084,
+            "scale_producer_K1_prefetch_and_publish_barrier": 1244,
+            "scale_and_K0_matrix_LDS_reads": 512,
+            "runtime_setup_clear_K2_prefetch": 808
+          },
+          "timeline_sum_minus_wave_duration": 4,
+          "role_events": {
+            "first_kernarg_wait": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x1f58",
+                "code_line": 14,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 61072,
+                "time_from_wave_begin": 96,
+                "stall": 632,
+                "duration": 632,
+                "successful_issue": 61704,
+                "event_end": 61704
+              }
+            ],
+            "scale_kernarg_wait": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2150",
+                "code_line": 107,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62244,
+                "time_from_wave_begin": 1268,
+                "stall": 544,
+                "duration": 544,
+                "successful_issue": 62788,
+                "event_end": 62788
+              }
+            ],
+            "SFA_issue": [],
+            "SFA_wait": [],
+            "SFA_publish": [],
+            "SFB_issue": [],
+            "SFB_wait": [],
+            "SFB_publish": [],
+            "publish_LGKM_wait": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2b58",
+                "code_line": 580,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 63392,
+                "time_from_wave_begin": 2416,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 63396,
+                "event_end": 63396
+              }
+            ],
+            "publish_barrier": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2b5c",
+                "code_line": 581,
+                "instruction": "s_barrier",
+                "time": 63396,
+                "time_from_wave_begin": 2420,
+                "stall": 636,
+                "duration": 636,
+                "successful_issue": 64032,
+                "event_end": 64032
+              }
+            ],
+            "scale_LDS_wait1": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2bb0",
+                "code_line": 592,
+                "instruction": "s_waitcnt lgkmcnt(1)",
+                "time": 64084,
+                "time_from_wave_begin": 3108,
+                "stall": 36,
+                "duration": 36,
+                "successful_issue": 64120,
+                "event_end": 64120
+              }
+            ],
+            "scale_LDS_wait0": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2bbc",
+                "code_line": 594,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64124,
+                "time_from_wave_begin": 3148,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 64128,
+                "event_end": 64128
+              }
+            ],
+            "K0_matrix_SFB_LDS_wait": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2ca4",
+                "code_line": 627,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64424,
+                "time_from_wave_begin": 3448,
+                "stall": 120,
+                "duration": 120,
+                "successful_issue": 64544,
+                "event_end": 64544
+              }
+            ]
+          }
+        },
+        {
+          "wave": "se0_sm3_sl0_wv0.json",
+          "simd": 3,
+          "begin": 60988,
+          "end": 70088,
+          "duration": 9100,
+          "scaled_MFMA": 48,
+          "prologue_to_first_MFMA": 4552,
+          "first_to_last_MFMA": 2780,
+          "last_MFMA_to_wave_end": 1768,
+          "prologue_share_percent": 50.02197802197802,
+          "phase_clocks": {
+            "startup_kernargs": 724,
+            "K0_matrix_issue_and_scale_kernargs": 1056,
+            "scale_producer_K1_prefetch_and_publish_barrier": 1264,
+            "scale_and_K0_matrix_LDS_reads": 576,
+            "runtime_setup_clear_K2_prefetch": 932
+          },
+          "timeline_sum_minus_wave_duration": 4,
+          "role_events": {
+            "first_kernarg_wait": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x1f58",
+                "code_line": 14,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 61088,
+                "time_from_wave_begin": 100,
+                "stall": 624,
+                "duration": 624,
+                "successful_issue": 61712,
+                "event_end": 61712
+              }
+            ],
+            "scale_kernarg_wait": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2150",
+                "code_line": 107,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62212,
+                "time_from_wave_begin": 1224,
+                "stall": 556,
+                "duration": 556,
+                "successful_issue": 62768,
+                "event_end": 62768
+              }
+            ],
+            "SFA_issue": [],
+            "SFA_wait": [],
+            "SFA_publish": [],
+            "SFB_issue": [],
+            "SFB_wait": [],
+            "SFB_publish": [],
+            "publish_LGKM_wait": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2b58",
+                "code_line": 580,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 63348,
+                "time_from_wave_begin": 2360,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 63352,
+                "event_end": 63352
+              }
+            ],
+            "publish_barrier": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2b5c",
+                "code_line": 581,
+                "instruction": "s_barrier",
+                "time": 63352,
+                "time_from_wave_begin": 2364,
+                "stall": 680,
+                "duration": 680,
+                "successful_issue": 64032,
+                "event_end": 64032
+              }
+            ],
+            "scale_LDS_wait1": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2bb0",
+                "code_line": 592,
+                "instruction": "s_waitcnt lgkmcnt(1)",
+                "time": 64100,
+                "time_from_wave_begin": 3112,
+                "stall": 36,
+                "duration": 36,
+                "successful_issue": 64136,
+                "event_end": 64136
+              }
+            ],
+            "scale_LDS_wait0": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2bbc",
+                "code_line": 594,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64140,
+                "time_from_wave_begin": 3152,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 64144,
+                "event_end": 64144
+              }
+            ],
+            "K0_matrix_SFB_LDS_wait": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2ca4",
+                "code_line": 627,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 64512,
+                "time_from_wave_begin": 3524,
+                "stall": 96,
+                "duration": 96,
+                "successful_issue": 64608,
+                "event_end": 64608
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "label": "candidate",
+      "capture": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/scale_issue_publish_k384_att",
+      "ui": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/scale_issue_publish_k384_att/ui_output_agent_41905_dispatch_29",
+      "identity": {
+        "library_sha256": "9c008d08484da919f8254d7d67c3fdc1b2605b327e8ce56a4f5f744bfc2affd2",
+        "device_sha256": "f9efa19573bbcf01acc4420b1e161773632e3f3fc469aba6bca14a07ac00b1c8",
+        "kernel_instruction_sha256": "06c557cd5a4f4e8b698c6a127460f0a48b302b48dbdb0f80da22427d72940759",
+        "kernel_instruction_bytes": 8660,
+        "PC_instruction_matches": 1515,
+        "code_json_sha256": "1c7bc5d82c8fe5a6604ea104d7bbf0986791bc4fe3f3bbecc19d9735faf472e6",
+        "wave_hit_duration_stall_aggregates_match_all_code_rows": true,
+        "stats_csv_matches_code_json": true,
+        "code_idle_equals_wave_lead_and_interevent_gaps": true,
+        "timeline_endpoints_match_within_one_4_clock_quantum": true,
+        "complete_waves": 4,
+        "scaled_MFMA_each_wave": 48
+      },
+      "summary": {
+        "duration": {
+          "samples": 4,
+          "mean": 8753,
+          "median": 8764.0,
+          "p90": 8772,
+          "min": 8704,
+          "max": 8780
+        },
+        "prologue_to_first_MFMA": {
+          "samples": 4,
+          "mean": 4244,
+          "median": 4238.0,
+          "p90": 4252,
+          "min": 4196,
+          "max": 4304
+        },
+        "first_to_last_MFMA": {
+          "samples": 4,
+          "mean": 2849,
+          "median": 2840.0,
+          "p90": 2840,
+          "min": 2792,
+          "max": 2924
+        },
+        "last_MFMA_to_wave_end": {
+          "samples": 4,
+          "mean": 1660,
+          "median": 1668.0,
+          "p90": 1676,
+          "min": 1612,
+          "max": 1692
+        },
+        "prologue_share_percent": {
+          "samples": 4,
+          "mean": 48.48698731287243,
+          "median": 48.546154485663614,
+          "p90": 48.85110294117647,
+          "min": 47.79043280182233,
+          "max": 49.06520747834017
+        }
+      },
+      "phase_mean_clocks": {
+        "startup_kernargs": 677,
+        "K0_matrix_issue_and_scale_kernargs": 1085,
+        "scale_producer_K1_prefetch_and_publish_barrier": 913,
+        "scale_and_K0_matrix_LDS_reads": 640,
+        "runtime_setup_clear_K2_prefetch": 929
+      },
+      "roles": {
+        "first_kernarg_wait": {
+          "pc": "0x1f50",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x1f50",
+              "code_line": 13,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 59400,
+              "time_from_wave_begin": 100,
+              "stall": 580,
+              "duration": 580,
+              "successful_issue": 59980,
+              "event_end": 59980
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x1f50",
+              "code_line": 13,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 59424,
+              "time_from_wave_begin": 116,
+              "stall": 560,
+              "duration": 560,
+              "successful_issue": 59984,
+              "event_end": 59984
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x1f50",
+              "code_line": 13,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 59392,
+              "time_from_wave_begin": 88,
+              "stall": 588,
+              "duration": 588,
+              "successful_issue": 59980,
+              "event_end": 59980
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x1f50",
+              "code_line": 13,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 59408,
+              "time_from_wave_begin": 96,
+              "stall": 580,
+              "duration": 580,
+              "successful_issue": 59988,
+              "event_end": 59988
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 577,
+            "median": 580.0,
+            "p90": 580,
+            "min": 560,
+            "max": 588
+          },
+          "duration_sum": 2308
+        },
+        "scale_kernarg_wait": {
+          "pc": "0x2148",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2148",
+              "code_line": 106,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 60444,
+              "time_from_wave_begin": 1144,
+              "stall": 612,
+              "duration": 612,
+              "successful_issue": 61056,
+              "event_end": 61056
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2148",
+              "code_line": 106,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 60508,
+              "time_from_wave_begin": 1200,
+              "stall": 556,
+              "duration": 556,
+              "successful_issue": 61064,
+              "event_end": 61064
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2148",
+              "code_line": 106,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 60524,
+              "time_from_wave_begin": 1220,
+              "stall": 548,
+              "duration": 548,
+              "successful_issue": 61072,
+              "event_end": 61072
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2148",
+              "code_line": 106,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 60556,
+              "time_from_wave_begin": 1244,
+              "stall": 524,
+              "duration": 524,
+              "successful_issue": 61080,
+              "event_end": 61080
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 560,
+            "median": 552.0,
+            "p90": 556,
+            "min": 524,
+            "max": 612
+          },
+          "duration_sum": 2240
+        },
+        "SFA_issue": {
+          "pc": "0x29ec",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x29ec",
+              "code_line": 516,
+              "instruction": "buffer_load_dwordx4 v[66:69], v21, s[64:67], 0 offen",
+              "time": 61356,
+              "time_from_wave_begin": 2056,
+              "stall": 8,
+              "duration": 12,
+              "successful_issue": 61364,
+              "event_end": 61368
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 12,
+            "median": 12,
+            "p90": 12,
+            "min": 12,
+            "max": 12
+          },
+          "duration_sum": 12
+        },
+        "SFB_issue": {
+          "pc": "0x2a48",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2a48",
+              "code_line": 536,
+              "instruction": "buffer_load_ubyte v3, v2, s[44:47], 0 offen",
+              "time": 61484,
+              "time_from_wave_begin": 2184,
+              "stall": 0,
+              "duration": 4,
+              "successful_issue": 61484,
+              "event_end": 61488
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 4,
+            "median": 4,
+            "p90": 4,
+            "min": 4,
+            "max": 4
+          },
+          "duration_sum": 4
+        },
+        "both_scale_and_K0_VMEM_wait": {
+          "pc": "0x2a50",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2a50",
+              "code_line": 537,
+              "instruction": "s_waitcnt vmcnt(0)",
+              "time": 61488,
+              "time_from_wave_begin": 2188,
+              "stall": 184,
+              "duration": 184,
+              "successful_issue": 61672,
+              "event_end": 61672
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 184,
+            "median": 184,
+            "p90": 184,
+            "min": 184,
+            "max": 184
+          },
+          "duration_sum": 184
+        },
+        "SFA_wait": {
+          "pc": "0x2a70",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2a70",
+              "code_line": 543,
+              "instruction": "s_waitcnt vmcnt(0)",
+              "time": 61696,
+              "time_from_wave_begin": 2396,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 61700,
+              "event_end": 61700
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 4,
+            "median": 4,
+            "p90": 4,
+            "min": 4,
+            "max": 4
+          },
+          "duration_sum": 4
+        },
+        "SFA_publish": {
+          "pc": "0x2a74",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2a74",
+              "code_line": 544,
+              "instruction": "ds_write_b128 v3, v[66:69]",
+              "time": 61704,
+              "time_from_wave_begin": 2404,
+              "stall": 0,
+              "duration": 20,
+              "successful_issue": 61704,
+              "event_end": 61724
+            }
+          ],
+          "duration": {
+            "samples": 1,
+            "mean": 20,
+            "median": 20,
+            "p90": 20,
+            "min": 20,
+            "max": 20
+          },
+          "duration_sum": 20
+        },
+        "SFB_publish": {
+          "pc": "0x2a8c",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2a8c",
+              "code_line": 548,
+              "instruction": "ds_write_b8 v3, v89",
+              "time": 61744,
+              "time_from_wave_begin": 2444,
+              "stall": 0,
+              "duration": 8,
+              "successful_issue": 61744,
+              "event_end": 61752
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2a8c",
+              "code_line": 548,
+              "instruction": "ds_write_b8 v3, v89",
+              "time": 61444,
+              "time_from_wave_begin": 2136,
+              "stall": 0,
+              "duration": 8,
+              "successful_issue": 61444,
+              "event_end": 61452
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2a8c",
+              "code_line": 548,
+              "instruction": "ds_write_b8 v3, v89",
+              "time": 61480,
+              "time_from_wave_begin": 2176,
+              "stall": 0,
+              "duration": 8,
+              "successful_issue": 61480,
+              "event_end": 61488
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2a8c",
+              "code_line": 548,
+              "instruction": "ds_write_b8 v3, v89",
+              "time": 61488,
+              "time_from_wave_begin": 2176,
+              "stall": 0,
+              "duration": 8,
+              "successful_issue": 61488,
+              "event_end": 61496
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 8,
+            "median": 8.0,
+            "p90": 8,
+            "min": 8,
+            "max": 8
+          },
+          "duration_sum": 32
+        },
+        "publish_LGKM_wait": {
+          "pc": "0x2b74",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2b74",
+              "code_line": 588,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 61972,
+              "time_from_wave_begin": 2672,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 61976,
+              "event_end": 61976
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2b74",
+              "code_line": 588,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 61708,
+              "time_from_wave_begin": 2400,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 61712,
+              "event_end": 61712
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2b74",
+              "code_line": 588,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 61756,
+              "time_from_wave_begin": 2452,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 61760,
+              "event_end": 61760
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2b74",
+              "code_line": 588,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 61768,
+              "time_from_wave_begin": 2456,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 61772,
+              "event_end": 61772
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 4,
+            "median": 4.0,
+            "p90": 4,
+            "min": 4,
+            "max": 4
+          },
+          "duration_sum": 16
+        },
+        "publish_barrier": {
+          "pc": "0x2b78",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2b78",
+              "code_line": 589,
+              "instruction": "s_barrier",
+              "time": 61976,
+              "time_from_wave_begin": 2676,
+              "stall": 8,
+              "duration": 8,
+              "successful_issue": 61984,
+              "event_end": 61984
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2b78",
+              "code_line": 589,
+              "instruction": "s_barrier",
+              "time": 61712,
+              "time_from_wave_begin": 2404,
+              "stall": 268,
+              "duration": 268,
+              "successful_issue": 61980,
+              "event_end": 61980
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2b78",
+              "code_line": 589,
+              "instruction": "s_barrier",
+              "time": 61760,
+              "time_from_wave_begin": 2456,
+              "stall": 220,
+              "duration": 220,
+              "successful_issue": 61980,
+              "event_end": 61980
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2b78",
+              "code_line": 589,
+              "instruction": "s_barrier",
+              "time": 61772,
+              "time_from_wave_begin": 2460,
+              "stall": 208,
+              "duration": 208,
+              "successful_issue": 61980,
+              "event_end": 61980
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 176,
+            "median": 214.0,
+            "p90": 220,
+            "min": 8,
+            "max": 268
+          },
+          "duration_sum": 704
+        },
+        "scale_LDS_wait1": {
+          "pc": "0x2bcc",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2bcc",
+              "code_line": 600,
+              "instruction": "s_waitcnt lgkmcnt(1)",
+              "time": 62052,
+              "time_from_wave_begin": 2752,
+              "stall": 40,
+              "duration": 40,
+              "successful_issue": 62092,
+              "event_end": 62092
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2bcc",
+              "code_line": 600,
+              "instruction": "s_waitcnt lgkmcnt(1)",
+              "time": 62068,
+              "time_from_wave_begin": 2760,
+              "stall": 36,
+              "duration": 36,
+              "successful_issue": 62104,
+              "event_end": 62104
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2bcc",
+              "code_line": 600,
+              "instruction": "s_waitcnt lgkmcnt(1)",
+              "time": 62088,
+              "time_from_wave_begin": 2784,
+              "stall": 36,
+              "duration": 36,
+              "successful_issue": 62124,
+              "event_end": 62124
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2bcc",
+              "code_line": 600,
+              "instruction": "s_waitcnt lgkmcnt(1)",
+              "time": 62096,
+              "time_from_wave_begin": 2784,
+              "stall": 36,
+              "duration": 36,
+              "successful_issue": 62132,
+              "event_end": 62132
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 37,
+            "median": 36.0,
+            "p90": 36,
+            "min": 36,
+            "max": 40
+          },
+          "duration_sum": 148
+        },
+        "scale_LDS_wait0": {
+          "pc": "0x2bd8",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2bd8",
+              "code_line": 602,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62096,
+              "time_from_wave_begin": 2796,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 62100,
+              "event_end": 62100
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2bd8",
+              "code_line": 602,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62108,
+              "time_from_wave_begin": 2800,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 62112,
+              "event_end": 62112
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2bd8",
+              "code_line": 602,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62128,
+              "time_from_wave_begin": 2824,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 62132,
+              "event_end": 62132
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2bd8",
+              "code_line": 602,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62180,
+              "time_from_wave_begin": 2868,
+              "stall": 4,
+              "duration": 4,
+              "successful_issue": 62184,
+              "event_end": 62184
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 4,
+            "median": 4.0,
+            "p90": 4,
+            "min": 4,
+            "max": 4
+          },
+          "duration_sum": 16
+        },
+        "K0_matrix_SFB_LDS_wait": {
+          "pc": "0x2cc0",
+          "events": [
+            {
+              "wave": "se0_sm0_sl0_wv0.json",
+              "simd": 0,
+              "pc": "0x2cc0",
+              "code_line": 635,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62508,
+              "time_from_wave_begin": 3208,
+              "stall": 92,
+              "duration": 92,
+              "successful_issue": 62600,
+              "event_end": 62600
+            },
+            {
+              "wave": "se0_sm1_sl0_wv0.json",
+              "simd": 1,
+              "pc": "0x2cc0",
+              "code_line": 635,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62524,
+              "time_from_wave_begin": 3216,
+              "stall": 92,
+              "duration": 92,
+              "successful_issue": 62616,
+              "event_end": 62616
+            },
+            {
+              "wave": "se0_sm2_sl0_wv0.json",
+              "simd": 2,
+              "pc": "0x2cc0",
+              "code_line": 635,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62516,
+              "time_from_wave_begin": 3212,
+              "stall": 96,
+              "duration": 96,
+              "successful_issue": 62612,
+              "event_end": 62612
+            },
+            {
+              "wave": "se0_sm3_sl0_wv0.json",
+              "simd": 3,
+              "pc": "0x2cc0",
+              "code_line": 635,
+              "instruction": "s_waitcnt lgkmcnt(0)",
+              "time": 62572,
+              "time_from_wave_begin": 3260,
+              "stall": 84,
+              "duration": 84,
+              "successful_issue": 62656,
+              "event_end": 62656
+            }
+          ],
+          "duration": {
+            "samples": 4,
+            "mean": 91,
+            "median": 92.0,
+            "p90": 92,
+            "min": 84,
+            "max": 96
+          },
+          "duration_sum": 364
+        }
+      },
+      "publish_barrier": {
+        "attempt_spread": 264,
+        "release_spread": 4,
+        "duration_sum": 704,
+        "waves": [
+          {
+            "wave": "se0_sm0_sl0_wv0.json",
+            "simd": 0,
+            "pc": "0x2b78",
+            "code_line": 589,
+            "instruction": "s_barrier",
+            "time": 61976,
+            "time_from_wave_begin": 2676,
+            "stall": 8,
+            "duration": 8,
+            "successful_issue": 61984,
+            "event_end": 61984
+          },
+          {
+            "wave": "se0_sm1_sl0_wv0.json",
+            "simd": 1,
+            "pc": "0x2b78",
+            "code_line": 589,
+            "instruction": "s_barrier",
+            "time": 61712,
+            "time_from_wave_begin": 2404,
+            "stall": 268,
+            "duration": 268,
+            "successful_issue": 61980,
+            "event_end": 61980
+          },
+          {
+            "wave": "se0_sm2_sl0_wv0.json",
+            "simd": 2,
+            "pc": "0x2b78",
+            "code_line": 589,
+            "instruction": "s_barrier",
+            "time": 61760,
+            "time_from_wave_begin": 2456,
+            "stall": 220,
+            "duration": 220,
+            "successful_issue": 61980,
+            "event_end": 61980
+          },
+          {
+            "wave": "se0_sm3_sl0_wv0.json",
+            "simd": 3,
+            "pc": "0x2b78",
+            "code_line": 589,
+            "instruction": "s_barrier",
+            "time": 61772,
+            "time_from_wave_begin": 2460,
+            "stall": 208,
+            "duration": 208,
+            "successful_issue": 61980,
+            "event_end": 61980
+          }
+        ]
+      },
+      "wait_dependency_sets": {
+        "0x1f50": [
+          [
+            {
+              "pc": "0x1f00",
+              "instruction": "s_load_dwordx4 s[8:11], s[0:1], 0x0"
+            },
+            {
+              "pc": "0x1f08",
+              "instruction": "s_load_dword s6, s[0:1], 0x18"
+            },
+            {
+              "pc": "0x1f10",
+              "instruction": "s_load_dword s17, s[0:1], 0x20"
+            },
+            {
+              "pc": "0x1f18",
+              "instruction": "s_load_dwordx4 s[52:55], s[0:1], 0x28"
+            },
+            {
+              "pc": "0x1f20",
+              "instruction": "s_load_dword s7, s[0:1], 0x38"
+            }
+          ]
+        ],
+        "0x2148": [
+          [
+            {
+              "pc": "0x2134",
+              "instruction": "s_load_dwordx8 s[44:51], s[0:1], 0x40"
+            },
+            {
+              "pc": "0x213c",
+              "instruction": "s_load_dword s3, s[0:1], 0x58"
+            }
+          ]
+        ],
+        "0x2a50": [
+          [
+            {
+              "pc": "0x2030",
+              "instruction": "buffer_load_dwordx4 v78, s[56:59], 0 offen lds"
+            },
+            {
+              "pc": "0x2044",
+              "instruction": "buffer_load_dwordx4 v79, s[56:59], 0 offen lds"
+            },
+            {
+              "pc": "0x2058",
+              "instruction": "buffer_load_dwordx4 v80, s[56:59], 0 offen lds"
+            },
+            {
+              "pc": "0x206c",
+              "instruction": "buffer_load_dwordx4 v81, s[56:59], 0 offen lds"
+            },
+            {
+              "pc": "0x20fc",
+              "instruction": "buffer_load_dwordx4 v82, s[8:11], 0 offen lds"
+            },
+            {
+              "pc": "0x210c",
+              "instruction": "buffer_load_dwordx4 v83, s[8:11], 0 offen lds"
+            },
+            {
+              "pc": "0x211c",
+              "instruction": "buffer_load_dwordx4 v84, s[8:11], 0 offen lds"
+            },
+            {
+              "pc": "0x212c",
+              "instruction": "buffer_load_dwordx4 v85, s[8:11], 0 offen lds"
+            },
+            {
+              "pc": "0x29ec",
+              "instruction": "buffer_load_dwordx4 v[66:69], v21, s[64:67], 0 offen"
+            },
+            {
+              "pc": "0x2a48",
+              "instruction": "buffer_load_ubyte v3, v2, s[44:47], 0 offen"
+            }
+          ]
+        ],
+        "0x2b74": [
+          [
+            {
+              "pc": "0x2a74",
+              "instruction": "ds_write_b128 v3, v[66:69]"
+            },
+            {
+              "pc": "0x2a8c",
+              "instruction": "ds_write_b8 v3, v89"
+            },
+            {
+              "pc": "0x2ab4",
+              "instruction": "s_load_dwordx2 s[50:51], s[0:1], 0x10"
+            }
+          ],
+          [
+            {
+              "pc": "0x2a8c",
+              "instruction": "ds_write_b8 v3, v89"
+            },
+            {
+              "pc": "0x2ab4",
+              "instruction": "s_load_dwordx2 s[50:51], s[0:1], 0x10"
+            }
+          ]
+        ],
+        "0x2bcc": [
+          [
+            {
+              "pc": "0x2ba4",
+              "instruction": "ds_read_u8 v4, v4"
+            },
+            {
+              "pc": "0x2bac",
+              "instruction": "ds_read_u8 v5, v5"
+            },
+            {
+              "pc": "0x2bb4",
+              "instruction": "ds_read_u8 v6, v90"
+            }
+          ]
+        ],
+        "0x2bd8": [
+          [
+            {
+              "pc": "0x2bbc",
+              "instruction": "ds_read_u8 v3, v3"
+            }
+          ]
+        ],
+        "0x2cc0": [
+          [
+            {
+              "pc": "0x2bf4",
+              "instruction": "ds_read_u8 v87, v3"
+            },
+            {
+              "pc": "0x2c3c",
+              "instruction": "ds_read_b128 v[156:159], v91"
+            },
+            {
+              "pc": "0x2c44",
+              "instruction": "ds_read_b128 v[160:163], v91 offset:64"
+            },
+            {
+              "pc": "0x2c4c",
+              "instruction": "ds_read_b128 v[148:151], v91 offset:4224"
+            },
+            {
+              "pc": "0x2c54",
+              "instruction": "ds_read_b128 v[152:155], v91 offset:4288"
+            },
+            {
+              "pc": "0x2c5c",
+              "instruction": "ds_read_b128 v[116:119], v91 offset:8448"
+            },
+            {
+              "pc": "0x2c64",
+              "instruction": "ds_read_b128 v[120:123], v91 offset:8512"
+            },
+            {
+              "pc": "0x2c6c",
+              "instruction": "ds_read_b128 v[100:103], v91 offset:12672"
+            },
+            {
+              "pc": "0x2c74",
+              "instruction": "ds_read_b128 v[104:107], v91 offset:12736"
+            },
+            {
+              "pc": "0x2c80",
+              "instruction": "ds_read_b128 v[124:127], v3 offset:50688"
+            },
+            {
+              "pc": "0x2c88",
+              "instruction": "ds_read_b128 v[128:131], v3 offset:51744"
+            },
+            {
+              "pc": "0x2c90",
+              "instruction": "ds_read_b128 v[132:135], v3 offset:54912"
+            },
+            {
+              "pc": "0x2c98",
+              "instruction": "ds_read_b128 v[136:139], v3 offset:55968"
+            },
+            {
+              "pc": "0x2ca0",
+              "instruction": "ds_read_b128 v[140:143], v3 offset:59136"
+            },
+            {
+              "pc": "0x2ca8",
+              "instruction": "ds_read_b128 v[144:147], v3 offset:60192"
+            },
+            {
+              "pc": "0x2cb0",
+              "instruction": "ds_read_b128 v[108:111], v3 offset:63360"
+            },
+            {
+              "pc": "0x2cb8",
+              "instruction": "ds_read_b128 v[112:115], v3 offset:64416"
+            }
+          ]
+        ]
+      },
+      "waves": [
+        {
+          "wave": "se0_sm0_sl0_wv0.json",
+          "simd": 0,
+          "begin": 59300,
+          "end": 68080,
+          "duration": 8780,
+          "scaled_MFMA": 48,
+          "prologue_to_first_MFMA": 4196,
+          "first_to_last_MFMA": 2924,
+          "last_MFMA_to_wave_end": 1660,
+          "prologue_share_percent": 47.79043280182233,
+          "phase_clocks": {
+            "startup_kernargs": 680,
+            "K0_matrix_issue_and_scale_kernargs": 1076,
+            "scale_producer_K1_prefetch_and_publish_barrier": 928,
+            "scale_and_K0_matrix_LDS_reads": 616,
+            "runtime_setup_clear_K2_prefetch": 896
+          },
+          "timeline_sum_minus_wave_duration": 4,
+          "role_events": {
+            "first_kernarg_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x1f50",
+                "code_line": 13,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 59400,
+                "time_from_wave_begin": 100,
+                "stall": 580,
+                "duration": 580,
+                "successful_issue": 59980,
+                "event_end": 59980
+              }
+            ],
+            "scale_kernarg_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2148",
+                "code_line": 106,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 60444,
+                "time_from_wave_begin": 1144,
+                "stall": 612,
+                "duration": 612,
+                "successful_issue": 61056,
+                "event_end": 61056
+              }
+            ],
+            "SFA_issue": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x29ec",
+                "code_line": 516,
+                "instruction": "buffer_load_dwordx4 v[66:69], v21, s[64:67], 0 offen",
+                "time": 61356,
+                "time_from_wave_begin": 2056,
+                "stall": 8,
+                "duration": 12,
+                "successful_issue": 61364,
+                "event_end": 61368
+              }
+            ],
+            "SFB_issue": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2a48",
+                "code_line": 536,
+                "instruction": "buffer_load_ubyte v3, v2, s[44:47], 0 offen",
+                "time": 61484,
+                "time_from_wave_begin": 2184,
+                "stall": 0,
+                "duration": 4,
+                "successful_issue": 61484,
+                "event_end": 61488
+              }
+            ],
+            "both_scale_and_K0_VMEM_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2a50",
+                "code_line": 537,
+                "instruction": "s_waitcnt vmcnt(0)",
+                "time": 61488,
+                "time_from_wave_begin": 2188,
+                "stall": 184,
+                "duration": 184,
+                "successful_issue": 61672,
+                "event_end": 61672
+              }
+            ],
+            "SFA_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2a70",
+                "code_line": 543,
+                "instruction": "s_waitcnt vmcnt(0)",
+                "time": 61696,
+                "time_from_wave_begin": 2396,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 61700,
+                "event_end": 61700
+              }
+            ],
+            "SFA_publish": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2a74",
+                "code_line": 544,
+                "instruction": "ds_write_b128 v3, v[66:69]",
+                "time": 61704,
+                "time_from_wave_begin": 2404,
+                "stall": 0,
+                "duration": 20,
+                "successful_issue": 61704,
+                "event_end": 61724
+              }
+            ],
+            "SFB_publish": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2a8c",
+                "code_line": 548,
+                "instruction": "ds_write_b8 v3, v89",
+                "time": 61744,
+                "time_from_wave_begin": 2444,
+                "stall": 0,
+                "duration": 8,
+                "successful_issue": 61744,
+                "event_end": 61752
+              }
+            ],
+            "publish_LGKM_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2b74",
+                "code_line": 588,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 61972,
+                "time_from_wave_begin": 2672,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 61976,
+                "event_end": 61976
+              }
+            ],
+            "publish_barrier": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2b78",
+                "code_line": 589,
+                "instruction": "s_barrier",
+                "time": 61976,
+                "time_from_wave_begin": 2676,
+                "stall": 8,
+                "duration": 8,
+                "successful_issue": 61984,
+                "event_end": 61984
+              }
+            ],
+            "scale_LDS_wait1": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2bcc",
+                "code_line": 600,
+                "instruction": "s_waitcnt lgkmcnt(1)",
+                "time": 62052,
+                "time_from_wave_begin": 2752,
+                "stall": 40,
+                "duration": 40,
+                "successful_issue": 62092,
+                "event_end": 62092
+              }
+            ],
+            "scale_LDS_wait0": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2bd8",
+                "code_line": 602,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62096,
+                "time_from_wave_begin": 2796,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 62100,
+                "event_end": 62100
+              }
+            ],
+            "K0_matrix_SFB_LDS_wait": [
+              {
+                "wave": "se0_sm0_sl0_wv0.json",
+                "simd": 0,
+                "pc": "0x2cc0",
+                "code_line": 635,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62508,
+                "time_from_wave_begin": 3208,
+                "stall": 92,
+                "duration": 92,
+                "successful_issue": 62600,
+                "event_end": 62600
+              }
+            ]
+          },
+          "producer_window": {
+            "SFA_to_SFB_successful_issue": 120,
+            "SFA_successful_issue_to_both_publish_event_end": 388,
+            "SFA_successful_issue_to_publish_barrier_release": 620
+          }
+        },
+        {
+          "wave": "se0_sm1_sl0_wv0.json",
+          "simd": 1,
+          "begin": 59308,
+          "end": 68012,
+          "duration": 8704,
+          "scaled_MFMA": 48,
+          "prologue_to_first_MFMA": 4252,
+          "first_to_last_MFMA": 2840,
+          "last_MFMA_to_wave_end": 1612,
+          "prologue_share_percent": 48.85110294117647,
+          "phase_clocks": {
+            "startup_kernargs": 676,
+            "K0_matrix_issue_and_scale_kernargs": 1080,
+            "scale_producer_K1_prefetch_and_publish_barrier": 916,
+            "scale_and_K0_matrix_LDS_reads": 636,
+            "runtime_setup_clear_K2_prefetch": 944
+          },
+          "timeline_sum_minus_wave_duration": 4,
+          "role_events": {
+            "first_kernarg_wait": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x1f50",
+                "code_line": 13,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 59424,
+                "time_from_wave_begin": 116,
+                "stall": 560,
+                "duration": 560,
+                "successful_issue": 59984,
+                "event_end": 59984
+              }
+            ],
+            "scale_kernarg_wait": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2148",
+                "code_line": 106,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 60508,
+                "time_from_wave_begin": 1200,
+                "stall": 556,
+                "duration": 556,
+                "successful_issue": 61064,
+                "event_end": 61064
+              }
+            ],
+            "SFA_issue": [],
+            "SFB_issue": [],
+            "both_scale_and_K0_VMEM_wait": [],
+            "SFA_wait": [],
+            "SFA_publish": [],
+            "SFB_publish": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2a8c",
+                "code_line": 548,
+                "instruction": "ds_write_b8 v3, v89",
+                "time": 61444,
+                "time_from_wave_begin": 2136,
+                "stall": 0,
+                "duration": 8,
+                "successful_issue": 61444,
+                "event_end": 61452
+              }
+            ],
+            "publish_LGKM_wait": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2b74",
+                "code_line": 588,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 61708,
+                "time_from_wave_begin": 2400,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 61712,
+                "event_end": 61712
+              }
+            ],
+            "publish_barrier": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2b78",
+                "code_line": 589,
+                "instruction": "s_barrier",
+                "time": 61712,
+                "time_from_wave_begin": 2404,
+                "stall": 268,
+                "duration": 268,
+                "successful_issue": 61980,
+                "event_end": 61980
+              }
+            ],
+            "scale_LDS_wait1": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2bcc",
+                "code_line": 600,
+                "instruction": "s_waitcnt lgkmcnt(1)",
+                "time": 62068,
+                "time_from_wave_begin": 2760,
+                "stall": 36,
+                "duration": 36,
+                "successful_issue": 62104,
+                "event_end": 62104
+              }
+            ],
+            "scale_LDS_wait0": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2bd8",
+                "code_line": 602,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62108,
+                "time_from_wave_begin": 2800,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 62112,
+                "event_end": 62112
+              }
+            ],
+            "K0_matrix_SFB_LDS_wait": [
+              {
+                "wave": "se0_sm1_sl0_wv0.json",
+                "simd": 1,
+                "pc": "0x2cc0",
+                "code_line": 635,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62524,
+                "time_from_wave_begin": 3216,
+                "stall": 92,
+                "duration": 92,
+                "successful_issue": 62616,
+                "event_end": 62616
+              }
+            ]
+          }
+        },
+        {
+          "wave": "se0_sm2_sl0_wv0.json",
+          "simd": 2,
+          "begin": 59304,
+          "end": 68060,
+          "duration": 8756,
+          "scaled_MFMA": 48,
+          "prologue_to_first_MFMA": 4224,
+          "first_to_last_MFMA": 2840,
+          "last_MFMA_to_wave_end": 1692,
+          "prologue_share_percent": 48.24120603015076,
+          "phase_clocks": {
+            "startup_kernargs": 676,
+            "K0_matrix_issue_and_scale_kernargs": 1092,
+            "scale_producer_K1_prefetch_and_publish_barrier": 908,
+            "scale_and_K0_matrix_LDS_reads": 632,
+            "runtime_setup_clear_K2_prefetch": 916
+          },
+          "timeline_sum_minus_wave_duration": 4,
+          "role_events": {
+            "first_kernarg_wait": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x1f50",
+                "code_line": 13,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 59392,
+                "time_from_wave_begin": 88,
+                "stall": 588,
+                "duration": 588,
+                "successful_issue": 59980,
+                "event_end": 59980
+              }
+            ],
+            "scale_kernarg_wait": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2148",
+                "code_line": 106,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 60524,
+                "time_from_wave_begin": 1220,
+                "stall": 548,
+                "duration": 548,
+                "successful_issue": 61072,
+                "event_end": 61072
+              }
+            ],
+            "SFA_issue": [],
+            "SFB_issue": [],
+            "both_scale_and_K0_VMEM_wait": [],
+            "SFA_wait": [],
+            "SFA_publish": [],
+            "SFB_publish": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2a8c",
+                "code_line": 548,
+                "instruction": "ds_write_b8 v3, v89",
+                "time": 61480,
+                "time_from_wave_begin": 2176,
+                "stall": 0,
+                "duration": 8,
+                "successful_issue": 61480,
+                "event_end": 61488
+              }
+            ],
+            "publish_LGKM_wait": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2b74",
+                "code_line": 588,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 61756,
+                "time_from_wave_begin": 2452,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 61760,
+                "event_end": 61760
+              }
+            ],
+            "publish_barrier": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2b78",
+                "code_line": 589,
+                "instruction": "s_barrier",
+                "time": 61760,
+                "time_from_wave_begin": 2456,
+                "stall": 220,
+                "duration": 220,
+                "successful_issue": 61980,
+                "event_end": 61980
+              }
+            ],
+            "scale_LDS_wait1": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2bcc",
+                "code_line": 600,
+                "instruction": "s_waitcnt lgkmcnt(1)",
+                "time": 62088,
+                "time_from_wave_begin": 2784,
+                "stall": 36,
+                "duration": 36,
+                "successful_issue": 62124,
+                "event_end": 62124
+              }
+            ],
+            "scale_LDS_wait0": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2bd8",
+                "code_line": 602,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62128,
+                "time_from_wave_begin": 2824,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 62132,
+                "event_end": 62132
+              }
+            ],
+            "K0_matrix_SFB_LDS_wait": [
+              {
+                "wave": "se0_sm2_sl0_wv0.json",
+                "simd": 2,
+                "pc": "0x2cc0",
+                "code_line": 635,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62516,
+                "time_from_wave_begin": 3212,
+                "stall": 96,
+                "duration": 96,
+                "successful_issue": 62612,
+                "event_end": 62612
+              }
+            ]
+          }
+        },
+        {
+          "wave": "se0_sm3_sl0_wv0.json",
+          "simd": 3,
+          "begin": 59312,
+          "end": 68084,
+          "duration": 8772,
+          "scaled_MFMA": 48,
+          "prologue_to_first_MFMA": 4304,
+          "first_to_last_MFMA": 2792,
+          "last_MFMA_to_wave_end": 1676,
+          "prologue_share_percent": 49.06520747834017,
+          "phase_clocks": {
+            "startup_kernargs": 676,
+            "K0_matrix_issue_and_scale_kernargs": 1092,
+            "scale_producer_K1_prefetch_and_publish_barrier": 900,
+            "scale_and_K0_matrix_LDS_reads": 676,
+            "runtime_setup_clear_K2_prefetch": 960
+          },
+          "timeline_sum_minus_wave_duration": 0,
+          "role_events": {
+            "first_kernarg_wait": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x1f50",
+                "code_line": 13,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 59408,
+                "time_from_wave_begin": 96,
+                "stall": 580,
+                "duration": 580,
+                "successful_issue": 59988,
+                "event_end": 59988
+              }
+            ],
+            "scale_kernarg_wait": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2148",
+                "code_line": 106,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 60556,
+                "time_from_wave_begin": 1244,
+                "stall": 524,
+                "duration": 524,
+                "successful_issue": 61080,
+                "event_end": 61080
+              }
+            ],
+            "SFA_issue": [],
+            "SFB_issue": [],
+            "both_scale_and_K0_VMEM_wait": [],
+            "SFA_wait": [],
+            "SFA_publish": [],
+            "SFB_publish": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2a8c",
+                "code_line": 548,
+                "instruction": "ds_write_b8 v3, v89",
+                "time": 61488,
+                "time_from_wave_begin": 2176,
+                "stall": 0,
+                "duration": 8,
+                "successful_issue": 61488,
+                "event_end": 61496
+              }
+            ],
+            "publish_LGKM_wait": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2b74",
+                "code_line": 588,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 61768,
+                "time_from_wave_begin": 2456,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 61772,
+                "event_end": 61772
+              }
+            ],
+            "publish_barrier": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2b78",
+                "code_line": 589,
+                "instruction": "s_barrier",
+                "time": 61772,
+                "time_from_wave_begin": 2460,
+                "stall": 208,
+                "duration": 208,
+                "successful_issue": 61980,
+                "event_end": 61980
+              }
+            ],
+            "scale_LDS_wait1": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2bcc",
+                "code_line": 600,
+                "instruction": "s_waitcnt lgkmcnt(1)",
+                "time": 62096,
+                "time_from_wave_begin": 2784,
+                "stall": 36,
+                "duration": 36,
+                "successful_issue": 62132,
+                "event_end": 62132
+              }
+            ],
+            "scale_LDS_wait0": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2bd8",
+                "code_line": 602,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62180,
+                "time_from_wave_begin": 2868,
+                "stall": 4,
+                "duration": 4,
+                "successful_issue": 62184,
+                "event_end": 62184
+              }
+            ],
+            "K0_matrix_SFB_LDS_wait": [
+              {
+                "wave": "se0_sm3_sl0_wv0.json",
+                "simd": 3,
+                "pc": "0x2cc0",
+                "code_line": 635,
+                "instruction": "s_waitcnt lgkmcnt(0)",
+                "time": 62572,
+                "time_from_wave_begin": 3260,
+                "stall": 84,
+                "duration": 84,
+                "successful_issue": 62656,
+                "event_end": 62656
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "findings": [
+    "The candidate's traced producer issues both SFA and SFB VMEM before either SFA/SFB LDS publish. Baseline issues SFB after SFA VMEM wait and publish. This confirms the intended issue-order mechanism in the executed full-vector path.",
+    "Candidate shared VMEM wait and earlier publish-barrier convergence are smaller in this finite capture; first-MFMA prologue also shortens. Separate leading SMEM and post-prologue changes must remain visible rather than assigning the entire total-wave difference to the scale change.",
+    "Candidate nonproducer waves export a ds_write_b8 event at0x2a8c without an SFB VMEM event. ATT instruction events do not reveal active-lane memory transactions; no transfer-volume, guard correctness or active-lane count is inferred from those events. Guards and correctness require source review and separate validated tests.",
+    "Compare each binary with its own ISA PCs: candidate0x2a74 is ds_write_b128, whereas baseline0x2a74 is the SFB vmcnt wait. Reusing baseline PC meanings for candidate would give an incorrect conclusion."
+  ]
+}

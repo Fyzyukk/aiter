@@ -1,0 +1,423 @@
+{
+  "status": "completed",
+  "started_unix": 1791514544.050279,
+  "gpu_bdf": "0000:75:00.0",
+  "gpu": "_CudaDeviceProperties(name='AMD Instinct MI355X', major=9, minor=5, gcnArchName='gfx950:sramecc+:xnack-', total_memory=294896MB, multi_processor_count=256, uuid=33643764-3064-3463-3464-613336643163, pci_bus_id=117, pci_device_id=0, pci_domain_id=0, L2_cache_size=4MB)",
+  "pid": 1756650,
+  "script_sha256": "90ca522ce8c8383975f81b043ec2d1a74e8bfafe5082bcd8baaee5120807de1c",
+  "plan_sha256": "2698452d96e53e06f56dc798e281bec93339d4d31f12f3b20a1e12e6741ba7d2",
+  "cases_sha256": "49af5b5ff6409857b0c2c97a30d7f98df3cc30ed0e57a6ff3c3aa9971887bc01",
+  "opus_sha256": "08201bc0f5c76b6d0449492661479bfae5e5d456bc967d2f09abcb1c0a6dc7c0",
+  "flydsl_version": "0.3.4.1",
+  "flydsl_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_comparison_20261008/python_packages/flydsl/__init__.py",
+  "method": "Fixed current all-backend OPUS selections and every matching upstream FlyDSL row. Same signed FP8 operands, exact logical E8M0 A1x128/B128x128 scale values; layout transforms prepared outside timing. Same GPU per shape, shared cloned pool8 plus reuse1, 3 randomized forward/reverse blocks/6 samples, original profiler 5warmup/51iterations. OPUS fixed workspace, FlyDSL official host API (including split-K reduction/counters/allocator GPU activities). Correctness against same independent FP32 reference, common external tolerance plus strict OPUS accumulation gate. Reference/shuffle never timed.",
+  "rows": [
+    {
+      "case": {
+        "M": 4096,
+        "N": 2048,
+        "K": 7168,
+        "opus_kid": 9022,
+        "opus_tune_us": 73.5048,
+        "flydsl": [
+          {
+            "kind": "bmm",
+            "kernelId": "bmm",
+            "splitK": 1,
+            "kernelName": "flydsl_bmm_mxfp8_mfma_t128x256x128_w1x4_nb4_sk1_bd3_xcd",
+            "us_upstream": 66.366,
+            "errRatio_upstream": 0.0009
+          },
+          {
+            "kind": "mxpsh",
+            "kernelId": "25632",
+            "splitK": 1,
+            "kernelName": "flydsl_mxpsh_128x128x256_F8_F8_B16_w0_x4_sk1",
+            "us_upstream": 65.6712,
+            "errRatio_upstream": 0.0
+          }
+        ]
+      },
+      "checks": {
+        "opus": {
+          "errRatio": 0.0,
+          "accumulation_bound_errRatio": 0.0,
+          "signed": true,
+          "seed": 29
+        },
+        "flydsl_0_bmm": {
+          "errRatio": 0.0,
+          "accumulation_bound_errRatio": 0.0,
+          "signed": true,
+          "seed": 29
+        },
+        "flydsl_1_mxpsh": {
+          "errRatio": 0.0,
+          "accumulation_bound_errRatio": 0.0,
+          "signed": true,
+          "seed": 29
+        }
+      },
+      "invalid_flydsl": [],
+      "pool_count": 8,
+      "bytes_per_copy": 61278848,
+      "shared_addresses": [
+        [
+          139431958806528,
+          139431944126464,
+          139431707148288,
+          139431707377664,
+          139431373701120,
+          139431707608064,
+          139431707378688
+        ],
+        [
+          139431390478336,
+          139430622920704,
+          139431707837440,
+          139431707380736,
+          139430637600768,
+          139431708066816,
+          139431707381760
+        ],
+        [
+          139430780207104,
+          139430654377984,
+          139431708296192,
+          139431707383808,
+          139430809567232,
+          139431708525568,
+          139431707384832
+        ],
+        [
+          139430918619136,
+          139430947979264,
+          139431708754944,
+          139431707386880,
+          139430962659328,
+          139431708984320,
+          139431709213696
+        ],
+        [
+          139430979436544,
+          139431254163456,
+          139431686176768,
+          139431709215744,
+          139431268843520,
+          139431686406144,
+          139431709216768
+        ],
+        [
+          139431285620736,
+          139431314980864,
+          139431686635520,
+          139431709218816,
+          139431329660928,
+          139431686864896,
+          139431709219840
+        ],
+        [
+          139431017185280,
+          139431346438144,
+          139431687094272,
+          139431709221888,
+          139431046545408,
+          139431687323648,
+          139431709222912
+        ],
+        [
+          139431063322624,
+          139431092682752,
+          139431687553024,
+          139431709224960,
+          139431107362816,
+          139431687782400,
+          139431709225984
+        ]
+      ],
+      "records": [
+        {
+          "round": 0,
+          "order": 0,
+          "variant": "opus",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 68.10920000000002
+        },
+        {
+          "round": 0,
+          "order": 1,
+          "variant": "opus",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 74.60366000000003
+        },
+        {
+          "round": 0,
+          "order": 2,
+          "variant": "flydsl_1_mxpsh",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 65.21078000000001
+        },
+        {
+          "round": 0,
+          "order": 3,
+          "variant": "flydsl_1_mxpsh",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 59.89473999999999
+        },
+        {
+          "round": 0,
+          "order": 4,
+          "variant": "flydsl_0_bmm",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 55.255499999999984
+        },
+        {
+          "round": 0,
+          "order": 5,
+          "variant": "flydsl_0_bmm",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 58.23199999999999
+        },
+        {
+          "round": 1,
+          "order": 0,
+          "variant": "flydsl_0_bmm",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 59.62113999999999
+        },
+        {
+          "round": 1,
+          "order": 1,
+          "variant": "flydsl_0_bmm",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 55.18827999999999
+        },
+        {
+          "round": 1,
+          "order": 2,
+          "variant": "flydsl_1_mxpsh",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 61.288340000000005
+        },
+        {
+          "round": 1,
+          "order": 3,
+          "variant": "flydsl_1_mxpsh",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 66.30839999999998
+        },
+        {
+          "round": 1,
+          "order": 4,
+          "variant": "opus",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 73.85725999999998
+        },
+        {
+          "round": 1,
+          "order": 5,
+          "variant": "opus",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 66.29717999999998
+        }
+      ],
+      "medians": {
+        "reuse1": {
+          "opus": 67.20319,
+          "flydsl_0_bmm": 55.22188999999999,
+          "flydsl_1_mxpsh": 60.591539999999995
+        },
+        "pool8": {
+          "opus": 74.23046000000001,
+          "flydsl_0_bmm": 58.92656999999999,
+          "flydsl_1_mxpsh": 65.75959
+        }
+      },
+      "seconds": 2.1928330273367465
+    },
+    {
+      "case": {
+        "M": 32768,
+        "N": 16384,
+        "K": 1536,
+        "opus_kid": 9001,
+        "opus_tune_us": 751.8549,
+        "flydsl": [
+          {
+            "kind": "bmm",
+            "kernelId": "bmm",
+            "splitK": 1,
+            "kernelName": "flydsl_bmm_mxfp8_mfma_t112x256x128_w1x2_nb2_sk1_bd1",
+            "us_upstream": 883.829,
+            "errRatio_upstream": 0.0007
+          }
+        ]
+      },
+      "checks": {
+        "opus": {
+          "errRatio": 0.0,
+          "accumulation_bound_errRatio": 0.0,
+          "signed": true,
+          "seed": 29
+        },
+        "flydsl_0_bmm": {
+          "errRatio": 0.0,
+          "accumulation_bound_errRatio": 0.0,
+          "signed": true,
+          "seed": 29
+        }
+      },
+      "invalid_flydsl": [],
+      "pool_count": 8,
+      "bytes_per_copy": 1149634048,
+      "shared_addresses": [
+        [
+          139431228997632,
+          139431279329280,
+          139431986069504,
+          139431986462720,
+          139428930519040
+        ],
+        [
+          139430918619136,
+          139431304495104,
+          139431986464256,
+          139431986857472,
+          139422748114944
+        ],
+        [
+          139431331758080,
+          139430805372928,
+          139431986859008,
+          139431987252224,
+          139421672275968
+        ],
+        [
+          139431382089728,
+          139430968950784,
+          139431987253760,
+          139431987646976,
+          139420596436992
+        ],
+        [
+          139431025573888,
+          139431075905536,
+          139431987648512,
+          139431988041728,
+          139419520598016
+        ],
+        [
+          139431101071360,
+          139431151403008,
+          139431981875200,
+          139431988043264,
+          139418444759040
+        ],
+        [
+          139431176568832,
+          139428121018368,
+          139431982268416,
+          139431988044800,
+          139417368920064
+        ],
+        [
+          139428146184192,
+          139428196515840,
+          139431982661632,
+          139431988046336,
+          139416293081088
+        ]
+      ],
+      "records": [
+        {
+          "round": 0,
+          "order": 0,
+          "variant": "flydsl_0_bmm",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 848.3600816326527
+        },
+        {
+          "round": 0,
+          "order": 1,
+          "variant": "flydsl_0_bmm",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 861.5190851063825
+        },
+        {
+          "round": 0,
+          "order": 2,
+          "variant": "opus",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 711.9614
+        },
+        {
+          "round": 0,
+          "order": 3,
+          "variant": "opus",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 772.8563399999998
+        },
+        {
+          "round": 1,
+          "order": 0,
+          "variant": "opus",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 775.5341428571429
+        },
+        {
+          "round": 1,
+          "order": 1,
+          "variant": "opus",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 692.908840909091
+        },
+        {
+          "round": 1,
+          "order": 2,
+          "variant": "flydsl_0_bmm",
+          "protocol": "pool8",
+          "pool_count": 8,
+          "us": 863.7327234042552
+        },
+        {
+          "round": 1,
+          "order": 3,
+          "variant": "flydsl_0_bmm",
+          "protocol": "reuse1",
+          "pool_count": 1,
+          "us": 864.0549387755101
+        }
+      ],
+      "medians": {
+        "reuse1": {
+          "opus": 702.4351204545455,
+          "flydsl_0_bmm": 856.2075102040815
+        },
+        "pool8": {
+          "opus": 774.1952414285713,
+          "flydsl_0_bmm": 862.6259042553188
+        }
+      },
+      "seconds": 1.965350397862494
+    }
+  ],
+  "ended_unix": 1791514548.709338
+}

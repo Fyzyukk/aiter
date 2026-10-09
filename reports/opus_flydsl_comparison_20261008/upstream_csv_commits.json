@@ -1,0 +1,248 @@
+[
+  {
+    "sha": "5b2f7d1d19313dee58f8858da95ea18c46dc696c",
+    "node_id": "C_kwDONNkFidoAKDViMmY3ZDFkMTkzMTNkZWU1OGY4ODU4ZGE5NWVhMThjNDZkYzY5NmM",
+    "commit": {
+      "author": {
+        "name": "Lingpeng Jin",
+        "email": "103567126+valarLip@users.noreply.github.com",
+        "date": "2026-10-06T03:52:10Z"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "date": "2026-10-06T03:52:10Z"
+      },
+      "message": "[HIP] [FlyDSL] feat(flydsl): row-group FP4 paged MQA logits for 8- and 64-row pages (#6145)\n\n* feat(flydsl): row-group FP4 paged MQA logits for 8- and 64-row pages\n\nAdd pa_mqa_logits_fp4_rowgroup, an FP4 paged MQA logits kernel in which a\nwave scores a group of a sequence's query rows off each key load (the\nexisting kernel reads every key once per row), and route\nflydsl_pa_mqa_logits_fp4 to it for kv_block_size 8 and 64.\n\n- Page 64 keeps the existing preshuffled cache layout and its writers;\n  page 8 (DeepSeek-V4.1's indexer pages) has its own layout\n  (pack_kv_cache), so a candidate layer's kept blocks are its block table\n  with no gather.\n- Work is shared out by each sequence's real length inside the kernel\n  (static split, or a length-balanced share when that walks shorter); the\n  grid depends on the batch and max_seq_len only, so a captured graph keeps\n  it. No schedule launch; cta_info / block_k / num_warps /\n  parallel_unit_num do not apply on this path.\n- Keys and scales are read through 64-bit addresses (pools past 4 GiB);\n  sequences are handled in runtime chunks of 64 (one build per shape for\n  any batch).\n- A given `out` is left as it was past each row's bound (no -inf fill).\n- compute_varctx_schedule moves to pa_mqa_logits_fp4_common.\n\nCold, MI355X, against the original FlyDSL kernel (its schedule prebuilt):\npage 64 1.07-3.0x (B = 64, H 32/64, next_n 1/2/6, up to 100K keys) and\n1.25-2.9x at B = 1-16; page 8 V4.1 full layers 1.5-3.4x (T = 6-768, 200K\ncontext). Against aiter's Triton paged_mxfp4_mqa_logits: page 8 1.03-1.5x\non every T; page 64 ahead or level on most shapes.\n\nAlso: rope_rotate_activation (fp4) gains round_rope, rounding the rotated\nvalues to the input dtype before quantizing them, as a model whose RoPE\nwrites its output back in that dtype (DeepSeek-V4.1's index query) does;\nwith a bit-exact test (op_tests/test_dsv4_rotate_quant.py --round-rope).\n\n* feat(flydsl): ragged query rows in the row-group FP4 MQA logits kernel\n\nflydsl_pa_mqa_logits_fp4_rowgroup takes query_start_loc [B + 1] and\nmax_query_len: sequence b's rows are the flattened rows\nquery_start_loc[b] .. query_start_loc[b + 1] - 1, any count up to\nmax_query_len (0 included, as cudagraph padding has). q_fp4 is\n[rows, 1, H, D / 2]; q_scale, weights, row_ends and out go by flattened\nrow. Without row_ends, row n of a count-row sequence sees\ncontext - count + n + 1 keys.\n\nA sequence's rows still share each key load, so a batch whose requests\ncarry different numbers of query rows no longer has to be scored one row a\nsequence. Rows past a sequence's count read row 0 and get bound 0: no keys\nwalked, no stores. One build flag (ragged); counts and batch stay runtime\nvalues. The rectangular [B, NEXT_N] call is unchanged.\n\nV4.1 full layers (page 8, 200K context, T = 6..768, cold, MI355X): the\nragged call runs 1.0-2.35x faster than scoring each row as its own\nsequence (T = 48: 24.8 vs 43.4 us, T = 768: 246 vs 580 us), and within\n-4.5..+1.6% of the rectangular call; uniform counts give the rectangular\ncall's logits bit for bit.\n\n* feat(flydsl): ragged row-group MQA logits take their lengths from row_ends\n\nRagged rows (query_start_loc) now require row_ends and take no\ncontext_lens: a sequence's length, which the kernel shares its workgroups\nout by, is its last row's bound, read in the kernel. A caller with per-row\nbounds no longer builds a per-sequence length.\n\npages_per_block: a block-table entry may name that many consecutive pages\n(its first page's id / pages_per_block), expanded in the kernel where the\npage is used, so a caller whose pages are a multiple of the kernel's page\nsize (DeepSeek-V4.1: 16 pages of 8 rows a 128-row PAGE) passes its own\ntable as is.\n\nflydsl_pa_mqa_logits_fp4 forwards row_ends, query_start_loc,\nmax_query_len and pages_per_block to the row-group kernel (page 8 / 64) and\nrefuses them on its other pages.\n\nUniform per-row bounds and pages_per_block = 1 build the same kernel as\nbefore; op_tests/test_flydsl_pa_mqa_logits_fp4.py passes at page 64 and 8.\n\n* feat(configs): DeepSeek-V4-Pro TP8 wo_b in the dsv4 mxscale bmm table\n\nN=7168, K=2048 (128x128 blocks), M 1..65536: the attention output\nprojection at TP8, which had no row and took the heuristic kernel. Rows\ntuned on gfx950 as the table's others were; errRatio <= 0.0009 against the\ndequantized reference. Against the heuristic pick, same operands, cold:\n1.01-1.03x at most M, 1.22x at M = 256. Only rows added.\n\n* feat(flydsl): M-tile FP4 MQA row-group kernel with a shape-only launch plan\n\nThe row-group kernel scores MQA as a GEMM: M a sequence's query rows times\nthe heads, cut into tiles of whole rows (tile_m, a row's head sum stays in\nits tile), N its keys. Prefill and decode are the same ragged rows\n(query_start_loc, row_ends); next_n is gone from the kernel. Work is shared\nout over M tiles by real length inside the kernel, so a long sequence's\ntiles get more workgroups.\n\n- make_fp4_mqa_plan / Fp4MqaPlan: the launch (tile from TILE_ROWS, rows a\n  wave, warps, workgroups, depth, nontemporal loads) from the batch's shape\n  alone, so a captured graph keeps it; lru_cached.\n- flydsl_pa_mqa_logits_fp4_rowgroup(plan, ...) takes ragged rows only.\n- Page 8 compiles a single depth-2 walk: the two walks in one kernel spilled\n  40 VGPRs at 6 rows of 32 heads; one walk is as fast or faster on every\n  shape measured (B=64 6 rows at 131K keys 185 -> 157 us, per-row tables\n  T=3072 954 -> 838 us). Page 64 keeps both walks.\n- Launch through a cached CompiledFunction (tensor_shim._run_compiled):\n  host cost per call 87 -> 16 us (FlyDSL rebuilt the cache key from every\n  argument on each call).\n- flydsl_pa_mqa_logits_fp4: ragged rows (query_start_loc + row_ends, an\n  optional plan) run the row-group kernel; a rectangular call runs the\n  varctx kernel as before rowgroup existed, no silent conversion. The page-8\n  op test passes its rows as ragged rows.\n\nPrefill (V4.1 geometry) 1.9-13x faster than scoring each row as its own\nsequence; decode on par with the previous row-group kernel; outputs\nbit-exact against it.\n\n* update\n\n* style: black-format the row-group FP4 MQA kernel",
+      "tree": {
+        "sha": "010194fea3da0aa230edeb0916eb555a2d097bcd",
+        "url": "https://api.github.com/repos/ROCm/aiter/git/trees/010194fea3da0aa230edeb0916eb555a2d097bcd"
+      },
+      "url": "https://api.github.com/repos/ROCm/aiter/git/commits/5b2f7d1d19313dee58f8858da95ea18c46dc696c",
+      "comment_count": 0,
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqxHBqCRC1aQ7uu5UhlAAAuY4QACrq5W0EtTSi3fJJo9fbx0/A\nOOB4sQ0E+2V4UtSI4kZc0o4WzRDdsHyOjLgfQEjBxIPDm/ShFBmaY9cXWPBP5ANQ\nkrIEr63jtz1hmOCTW3z2f+KXrQ+yhQPlD7P2xLzcFylSbkwxJNAf1MMvGmLATdLV\ntllz0Pk3amtBL208ceR7CV0PWWURRzFePeHJA9DgwXC03BTWPBuLtSaHXqQsVYii\nn2RJRiRUL3WdXUHYmizhofzLwGQnWPb70GCMLsL+1SHGppNosGIGl6ReqlOs5Owp\nbbEsegJgY2MlxDoORawQfdSOoCPhH73b5Ae01zvNy1o1dqVxgrGfWJ95s+AGuTdP\nAigy+BpfjQ8bfc8YbQdSV/QJJG/sAwQXarelj6EZRHdpHE49Mm598U6zm7g0mMQr\nkAatvRxr/0YrSajuQvvhLnwmflxnVYUMIeu2ViOjjn8f/mywDv4rG9l/Cd7IyEIM\nFihA6gdXN9cBT6VC8VkI9q2kky4F12RL8N8/PEdO0hNkYsR/yOdZGn3Tl6cvKhlF\n/9OledcMm3KHg+AZ6IHafKs9Ka5vVv/vP0QLB01jfKZFeGOX21/c33xrEgVa0IZI\nF+LEL2xaQj1YGJ9hjo0gfNUZzDXqKwBAJguh8f5RQ76lRCBytYhtALou8oIDXoC0\n3VuNraEM4E7HjOSrIEU5\n=J/Oe\n-----END PGP SIGNATURE-----\n",
+        "payload": "tree 010194fea3da0aa230edeb0916eb555a2d097bcd\nparent 6a5ac94e096d0506d5cdbb0dc97942701044900e\nauthor Lingpeng Jin <103567126+valarLip@users.noreply.github.com> 1791258730 +0800\ncommitter GitHub <noreply@github.com> 1791258730 +0800\n\n[HIP] [FlyDSL] feat(flydsl): row-group FP4 paged MQA logits for 8- and 64-row pages (#6145)\n\n* feat(flydsl): row-group FP4 paged MQA logits for 8- and 64-row pages\n\nAdd pa_mqa_logits_fp4_rowgroup, an FP4 paged MQA logits kernel in which a\nwave scores a group of a sequence's query rows off each key load (the\nexisting kernel reads every key once per row), and route\nflydsl_pa_mqa_logits_fp4 to it for kv_block_size 8 and 64.\n\n- Page 64 keeps the existing preshuffled cache layout and its writers;\n  page 8 (DeepSeek-V4.1's indexer pages) has its own layout\n  (pack_kv_cache), so a candidate layer's kept blocks are its block table\n  with no gather.\n- Work is shared out by each sequence's real length inside the kernel\n  (static split, or a length-balanced share when that walks shorter); the\n  grid depends on the batch and max_seq_len only, so a captured graph keeps\n  it. No schedule launch; cta_info / block_k / num_warps /\n  parallel_unit_num do not apply on this path.\n- Keys and scales are read through 64-bit addresses (pools past 4 GiB);\n  sequences are handled in runtime chunks of 64 (one build per shape for\n  any batch).\n- A given `out` is left as it was past each row's bound (no -inf fill).\n- compute_varctx_schedule moves to pa_mqa_logits_fp4_common.\n\nCold, MI355X, against the original FlyDSL kernel (its schedule prebuilt):\npage 64 1.07-3.0x (B = 64, H 32/64, next_n 1/2/6, up to 100K keys) and\n1.25-2.9x at B = 1-16; page 8 V4.1 full layers 1.5-3.4x (T = 6-768, 200K\ncontext). Against aiter's Triton paged_mxfp4_mqa_logits: page 8 1.03-1.5x\non every T; page 64 ahead or level on most shapes.\n\nAlso: rope_rotate_activation (fp4) gains round_rope, rounding the rotated\nvalues to the input dtype before quantizing them, as a model whose RoPE\nwrites its output back in that dtype (DeepSeek-V4.1's index query) does;\nwith a bit-exact test (op_tests/test_dsv4_rotate_quant.py --round-rope).\n\n* feat(flydsl): ragged query rows in the row-group FP4 MQA logits kernel\n\nflydsl_pa_mqa_logits_fp4_rowgroup takes query_start_loc [B + 1] and\nmax_query_len: sequence b's rows are the flattened rows\nquery_start_loc[b] .. query_start_loc[b + 1] - 1, any count up to\nmax_query_len (0 included, as cudagraph padding has). q_fp4 is\n[rows, 1, H, D / 2]; q_scale, weights, row_ends and out go by flattened\nrow. Without row_ends, row n of a count-row sequence sees\ncontext - count + n + 1 keys.\n\nA sequence's rows still share each key load, so a batch whose requests\ncarry different numbers of query rows no longer has to be scored one row a\nsequence. Rows past a sequence's count read row 0 and get bound 0: no keys\nwalked, no stores. One build flag (ragged); counts and batch stay runtime\nvalues. The rectangular [B, NEXT_N] call is unchanged.\n\nV4.1 full layers (page 8, 200K context, T = 6..768, cold, MI355X): the\nragged call runs 1.0-2.35x faster than scoring each row as its own\nsequence (T = 48: 24.8 vs 43.4 us, T = 768: 246 vs 580 us), and within\n-4.5..+1.6% of the rectangular call; uniform counts give the rectangular\ncall's logits bit for bit.\n\n* feat(flydsl): ragged row-group MQA logits take their lengths from row_ends\n\nRagged rows (query_start_loc) now require row_ends and take no\ncontext_lens: a sequence's length, which the kernel shares its workgroups\nout by, is its last row's bound, read in the kernel. A caller with per-row\nbounds no longer builds a per-sequence length.\n\npages_per_block: a block-table entry may name that many consecutive pages\n(its first page's id / pages_per_block), expanded in the kernel where the\npage is used, so a caller whose pages are a multiple of the kernel's page\nsize (DeepSeek-V4.1: 16 pages of 8 rows a 128-row PAGE) passes its own\ntable as is.\n\nflydsl_pa_mqa_logits_fp4 forwards row_ends, query_start_loc,\nmax_query_len and pages_per_block to the row-group kernel (page 8 / 64) and\nrefuses them on its other pages.\n\nUniform per-row bounds and pages_per_block = 1 build the same kernel as\nbefore; op_tests/test_flydsl_pa_mqa_logits_fp4.py passes at page 64 and 8.\n\n* feat(configs): DeepSeek-V4-Pro TP8 wo_b in the dsv4 mxscale bmm table\n\nN=7168, K=2048 (128x128 blocks), M 1..65536: the attention output\nprojection at TP8, which had no row and took the heuristic kernel. Rows\ntuned on gfx950 as the table's others were; errRatio <= 0.0009 against the\ndequantized reference. Against the heuristic pick, same operands, cold:\n1.01-1.03x at most M, 1.22x at M = 256. Only rows added.\n\n* feat(flydsl): M-tile FP4 MQA row-group kernel with a shape-only launch plan\n\nThe row-group kernel scores MQA as a GEMM: M a sequence's query rows times\nthe heads, cut into tiles of whole rows (tile_m, a row's head sum stays in\nits tile), N its keys. Prefill and decode are the same ragged rows\n(query_start_loc, row_ends); next_n is gone from the kernel. Work is shared\nout over M tiles by real length inside the kernel, so a long sequence's\ntiles get more workgroups.\n\n- make_fp4_mqa_plan / Fp4MqaPlan: the launch (tile from TILE_ROWS, rows a\n  wave, warps, workgroups, depth, nontemporal loads) from the batch's shape\n  alone, so a captured graph keeps it; lru_cached.\n- flydsl_pa_mqa_logits_fp4_rowgroup(plan, ...) takes ragged rows only.\n- Page 8 compiles a single depth-2 walk: the two walks in one kernel spilled\n  40 VGPRs at 6 rows of 32 heads; one walk is as fast or faster on every\n  shape measured (B=64 6 rows at 131K keys 185 -> 157 us, per-row tables\n  T=3072 954 -> 838 us). Page 64 keeps both walks.\n- Launch through a cached CompiledFunction (tensor_shim._run_compiled):\n  host cost per call 87 -> 16 us (FlyDSL rebuilt the cache key from every\n  argument on each call).\n- flydsl_pa_mqa_logits_fp4: ragged rows (query_start_loc + row_ends, an\n  optional plan) run the row-group kernel; a rectangular call runs the\n  varctx kernel as before rowgroup existed, no silent conversion. The page-8\n  op test passes its rows as ragged rows.\n\nPrefill (V4.1 geometry) 1.9-13x faster than scoring each row as its own\nsequence; decode on par with the previous row-group kernel; outputs\nbit-exact against it.\n\n* update\n\n* style: black-format the row-group FP4 MQA kernel",
+        "verified_at": "2026-10-06T03:52:10Z"
+      }
+    },
+    "url": "https://api.github.com/repos/ROCm/aiter/commits/5b2f7d1d19313dee58f8858da95ea18c46dc696c",
+    "html_url": "https://github.com/ROCm/aiter/commit/5b2f7d1d19313dee58f8858da95ea18c46dc696c",
+    "comments_url": "https://api.github.com/repos/ROCm/aiter/commits/5b2f7d1d19313dee58f8858da95ea18c46dc696c/comments",
+    "author": {
+      "login": "valarLip",
+      "id": 103567126,
+      "node_id": "U_kgDOBixPFg",
+      "avatar_url": "https://avatars.githubusercontent.com/u/103567126?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/valarLip",
+      "html_url": "https://github.com/valarLip",
+      "followers_url": "https://api.github.com/users/valarLip/followers",
+      "following_url": "https://api.github.com/users/valarLip/following{/other_user}",
+      "gists_url": "https://api.github.com/users/valarLip/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/valarLip/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/valarLip/subscriptions",
+      "organizations_url": "https://api.github.com/users/valarLip/orgs",
+      "repos_url": "https://api.github.com/users/valarLip/repos",
+      "events_url": "https://api.github.com/users/valarLip/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/valarLip/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "web-flow",
+      "id": 19864447,
+      "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+      "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/web-flow",
+      "html_url": "https://github.com/web-flow",
+      "followers_url": "https://api.github.com/users/web-flow/followers",
+      "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+      "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+      "organizations_url": "https://api.github.com/users/web-flow/orgs",
+      "repos_url": "https://api.github.com/users/web-flow/repos",
+      "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/web-flow/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "parents": [
+      {
+        "sha": "6a5ac94e096d0506d5cdbb0dc97942701044900e",
+        "url": "https://api.github.com/repos/ROCm/aiter/commits/6a5ac94e096d0506d5cdbb0dc97942701044900e",
+        "html_url": "https://github.com/ROCm/aiter/commit/6a5ac94e096d0506d5cdbb0dc97942701044900e"
+      }
+    ]
+  },
+  {
+    "sha": "a1455f1c43a3465854d14425823c8673e09ba32b",
+    "node_id": "C_kwDONNkFidoAKGExNDU1ZjFjNDNhMzQ2NTg1NGQxNDQyNTgyM2M4NjczZTA5YmEzMmI",
+    "commit": {
+      "author": {
+        "name": "BingYuan.Zhou",
+        "email": "BingYuan.Zhou@amd.com",
+        "date": "2026-10-02T08:05:18Z"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "date": "2026-10-02T08:05:18Z"
+      },
+      "message": "[CK] [FlyDSL] add mxfp8 a8w8 blockscale for gfx950 (#4951)\n\n* add mxfp8 a8w8 blockscale for gfx950\n\n* [FlyDSL] Optimize gfx950 M=1 MXFP8 blockscale GEMM (#5497)\n\n* [FlyDSL] Optimize gfx950 M=1 MXFP8 blockscale GEMM\n\n* [FlyDSL] Fuse BF16 workspace split-K reduction\n\n* Avoid mxscale preshuffle launch regressions\n\n* Optimize fused MXFP8 split-K epilogue\n\n* Extend fused MXFP8 split-K to small M\n\n* Use padded M config for small MXFP8 shapes\n\n* Drop redundant M1 MXFP8 tuning row\n\n* Format mxscale preshuffle kernel for Black\n\nCo-authored-by: solinzby1 <174623473+solinzby1@users.noreply.github.com>\n\n* fix ci fail\n\n* refine\n\n* refine code\n\n* fix as suggestion of copilot\n\n* Enhance dimension check for tensor contiguity\n\nAdded check for contiguous tensor in mxscale_preshuffle_kernels.py.\n\nCo-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>\n\n---------\n\nCo-authored-by: solin <bingzhou@amd.com>\nCo-authored-by: Felix Li <felix.li@amd.com>\nCo-authored-by: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>\nCo-authored-by: solinzby1 <174623473+solinzby1@users.noreply.github.com>\nCo-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>",
+      "tree": {
+        "sha": "a3bbcf7a32c2d0bc46933d7b05e7a299b8b3ab61",
+        "url": "https://api.github.com/repos/ROCm/aiter/git/trees/a3bbcf7a32c2d0bc46933d7b05e7a299b8b3ab61"
+      },
+      "url": "https://api.github.com/repos/ROCm/aiter/git/commits/a1455f1c43a3465854d14425823c8673e09ba32b",
+      "comment_count": 0,
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqv2W+CRC1aQ7uu5UhlAAA/AEQAJN11VG6Wkv4Yg/sEF8Wj+6U\nbz4cq9G71yM19vvBrzxZPVgVhohY40yr8aUdK/YNkDrFibYxsQ0XngsE9m6hKiYN\ndsstpZPuzCuIm0mmV1APWEoeNyaopPMIdG8HC4gzp0SsHXrK/M1k08n8wM2Y4Ten\n4j9strk1+g7JoYvweNfelBl6Z2m1kKZjnmyad96q8LlY++aaKzLYEMIOdBVx3CO+\nyPLniIl91eFajLyFRwNUfSNpj+KCoq/9pZqPP6Dm2SotzTvC5ar8ApOXwmjDEJfn\n5znrp4R/XVJXfxVObcH0DFRCrv7novYPnjMuzwgpemqN2c4buVTBDF4wbzlDKBw9\n35wzoXPaoBUKr9eipsz/kWYytSHUi5mgITt2wy+QD3Amy2i+i4JKrgD43lxRGyUe\nmmC/Qy776RQhES98D8vyinL4N9fcEayG4V6u703uCHqoAI6ZEk1V2RsE2ldgxy79\niR3aJ95UEWtYimBOfUzTEy91n+jEgAKNUmOBczncnMk9HN5RsQIpGqOW3zKHrHmz\nEwfm+tGt+Vjo3dpBl3gbXhvlhqMp1F03lBTPqwyuFNJ3uxNQEvWoFFrJ/m+GSgcW\nVfJQYkQrz7OpAecB4s6Pb+vkwt7iseQjzL7CdLG7QMutvi6Ih4SZjxQbi5b/1UBg\nu0jkjBwNQFSNegyIsUYn\n=8rMl\n-----END PGP SIGNATURE-----\n",
+        "payload": "tree a3bbcf7a32c2d0bc46933d7b05e7a299b8b3ab61\nparent 332b34fba6ca0370e04ce4c14e31be5c43d3e6cd\nauthor BingYuan.Zhou <BingYuan.Zhou@amd.com> 1790928318 +0800\ncommitter GitHub <noreply@github.com> 1790928318 +0800\n\n[CK] [FlyDSL] add mxfp8 a8w8 blockscale for gfx950 (#4951)\n\n* add mxfp8 a8w8 blockscale for gfx950\n\n* [FlyDSL] Optimize gfx950 M=1 MXFP8 blockscale GEMM (#5497)\n\n* [FlyDSL] Optimize gfx950 M=1 MXFP8 blockscale GEMM\n\n* [FlyDSL] Fuse BF16 workspace split-K reduction\n\n* Avoid mxscale preshuffle launch regressions\n\n* Optimize fused MXFP8 split-K epilogue\n\n* Extend fused MXFP8 split-K to small M\n\n* Use padded M config for small MXFP8 shapes\n\n* Drop redundant M1 MXFP8 tuning row\n\n* Format mxscale preshuffle kernel for Black\n\nCo-authored-by: solinzby1 <174623473+solinzby1@users.noreply.github.com>\n\n* fix ci fail\n\n* refine\n\n* refine code\n\n* fix as suggestion of copilot\n\n* Enhance dimension check for tensor contiguity\n\nAdded check for contiguous tensor in mxscale_preshuffle_kernels.py.\n\nCo-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>\n\n---------\n\nCo-authored-by: solin <bingzhou@amd.com>\nCo-authored-by: Felix Li <felix.li@amd.com>\nCo-authored-by: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>\nCo-authored-by: solinzby1 <174623473+solinzby1@users.noreply.github.com>\nCo-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>",
+        "verified_at": "2026-10-02T08:05:19Z"
+      }
+    },
+    "url": "https://api.github.com/repos/ROCm/aiter/commits/a1455f1c43a3465854d14425823c8673e09ba32b",
+    "html_url": "https://github.com/ROCm/aiter/commit/a1455f1c43a3465854d14425823c8673e09ba32b",
+    "comments_url": "https://api.github.com/repos/ROCm/aiter/commits/a1455f1c43a3465854d14425823c8673e09ba32b/comments",
+    "author": {
+      "login": "solinzby1",
+      "id": 174623473,
+      "node_id": "U_kgDOCmiK8Q",
+      "avatar_url": "https://avatars.githubusercontent.com/u/174623473?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/solinzby1",
+      "html_url": "https://github.com/solinzby1",
+      "followers_url": "https://api.github.com/users/solinzby1/followers",
+      "following_url": "https://api.github.com/users/solinzby1/following{/other_user}",
+      "gists_url": "https://api.github.com/users/solinzby1/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/solinzby1/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/solinzby1/subscriptions",
+      "organizations_url": "https://api.github.com/users/solinzby1/orgs",
+      "repos_url": "https://api.github.com/users/solinzby1/repos",
+      "events_url": "https://api.github.com/users/solinzby1/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/solinzby1/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "web-flow",
+      "id": 19864447,
+      "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+      "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/web-flow",
+      "html_url": "https://github.com/web-flow",
+      "followers_url": "https://api.github.com/users/web-flow/followers",
+      "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+      "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+      "organizations_url": "https://api.github.com/users/web-flow/orgs",
+      "repos_url": "https://api.github.com/users/web-flow/repos",
+      "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/web-flow/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "parents": [
+      {
+        "sha": "332b34fba6ca0370e04ce4c14e31be5c43d3e6cd",
+        "url": "https://api.github.com/repos/ROCm/aiter/commits/332b34fba6ca0370e04ce4c14e31be5c43d3e6cd",
+        "html_url": "https://github.com/ROCm/aiter/commit/332b34fba6ca0370e04ce4c14e31be5c43d3e6cd"
+      }
+    ]
+  },
+  {
+    "sha": "40d524b615af873d18fc6d1c8f56502adcb58662",
+    "node_id": "C_kwDONNkFidoAKDQwZDUyNGI2MTVhZjg3M2QxOGZjNmQxYzhmNTY1MDJhZGNiNTg2NjI",
+    "commit": {
+      "author": {
+        "name": "Lingpeng Jin",
+        "email": "103567126+valarLip@users.noreply.github.com",
+        "date": "2026-09-28T07:48:47Z"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "date": "2026-09-28T07:48:47Z"
+      },
+      "message": "[HIP] [OPUS] [FlyDSL] gfx950 MXFP8 e8m0 GEMM + DeepSeek-V4/V4.1 tuned configs (#5896)\n\n* feat(flydsl): gfx950 MXFP8 e8m0 GEMM on FlyDSL + DeepSeek-V4/V4.1 configs\n\n- New FlyDSL gfx950 MXFP8 batched GEMM (bmm_a8w8_mxscale_gfx950): scaled\n  MFMA 16x16x128, async LDS DMA pipeline, 32x32 / 128x128 e8m0 blocks,\n  split-K with same-XCD last-arrival reduction, B direct to registers, XCD\n  tile order, non-temporal B, per-stage or preloaded scale panels, K % 64\n  tail, column-major (blockscale) x_scale. Scale rows that are not whole\n  dwords (e.g. 128-wide blocks at K = 384 / 768) are copied a byte per LDS\n  slot with exact buffer bounds. check_bmm_config is the single legality\n  source.\n- Arch-neutral front door flydsl.batched_gemm_a8w8 dispatching by (arch,\n  w_scale block, x_scale layout); gfx950 module with kernelName parsing,\n  untuned-shape heuristic and a compiled-launcher cache (host 71 -> 21 us).\n- gemm_a8w8_blockscale_bpreshuffle on gfx950 routes e8m0 x_scale + w_scale\n  to it through the tuned table AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_MXSCALE_\n  BPRESHUFFLE; FP32 scales keep CK / asm. gemm_a8w8_blockscale with\n  isBpreshuffled forwards native group32 operands there. The V4 wo_a\n  batched GEMM uses the same kernel.\n- AOT precompiles kernelId=bmm rows (both x_scale layouts for 128x128).\n- Tuned gfx950 configs: DeepSeek-V4-Pro 128x128 linears (980 rows, TP1/4/8,\n  1.30x vs CK/asm), DeepSeek-V4.1 group32 (1224 rows, 1.22x vs Triton),\n  V4 wo_a batched (680 rows).\n- Also carries the other local changes in the tree: inverse_rope_group_quant,\n  opus policy / bmm tune, gfx1250 bmm wrapper, tensor_shim helpers.\n\n* refactor(flydsl): tidy gfx950 MXFP8 bmm kernel per FlyDSL cleanup guide\n\n- Use fx.copy instead of fx.copy_atom_call for the single-atom copies.\n- Build the async-LDS DMA destination from the LDS pointer with\n  fx.add_offset + fx.to_llvm_ptr instead of ptrtoint/inttoptr with a\n  hand-picked address space. The raw buffer_load_async_lds stays: the\n  BufferLoadAsyncLDS atom has no 1-byte size and no cache-policy operand.\n- Factor the compile-and-run + leaked ir.Context recovery out of\n  tensor_shim._run_compiled into _compile_and_run, and use it for the\n  bmm wrapper's per-config compile cache too.\n\nGenerated ISA is byte-identical on 9 reference configs.",
+      "tree": {
+        "sha": "2794cf0f83ec8f7b8eaf59f96ee4c75af5562573",
+        "url": "https://api.github.com/repos/ROCm/aiter/git/trees/2794cf0f83ec8f7b8eaf59f96ee4c75af5562573"
+      },
+      "url": "https://api.github.com/repos/ROCm/aiter/git/commits/40d524b615af873d18fc6d1c8f56502adcb58662",
+      "comment_count": 0,
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJquhvfCRC1aQ7uu5UhlAAAKxwQAIdTY7vM0olktlkD0RTST3Rj\nnOQz25ORtooofHLGs9yQRI5wiXxxF+7Z1bRbAv+vq7S9adZvE24rzVdOQ7LAMChA\n4hsi45MaDziCzq9dEU9E1IRgRQK+AozNRWY8+SmwQqq6L+FNpR2r6Arefh8XYhqa\nJOu1MWGBXamzQmHKGgw10HpjHv4TnkIZqY36a1hWZXAXtDmvVF0nKubXepxw2yfw\nL4SgZqSvfxpHrLYKoebYIRyUJ+LYQ/36+9rEW6sWA33KS/j2MpQdEtFsru3GcYKV\nMqCTaq9Ggg99xlycWZq+BqjB5WHg/Z2boAyZB0Qi6DNw6qYf30eGojHr1ocag2gX\n1vo+VKRmEeXW25HAqqZt/bROykf8nzEXQ4paAUnpkpsMd6u1Y46p2ARak05pwTWr\nKYQI74zmbi8/ExuTpqIi0qw2zVQjO8hoamtBEM2oe0aGHi42dbbBPmXSOrbqJaKh\n2VuNpFyd9kNwAFIoya3D9g3+lWv5cEBQEuOfBn0YvQSxdgJc05TnxkRJ33/4AWwO\nF8kKZsjnepOOKl10aA4NmZBrZsvvoNRK/eoIlqrN4DGZDYNGN2wlVIxS4pz2T93K\nZfecUIN2nG1oAwIx7I6P8ba0VOooTVPx4Irhl8X6uGRUSlcsQjsNa/tjhOS+poKn\n6hqieC0gdjalbLf0VI0y\n=Xgxp\n-----END PGP SIGNATURE-----\n",
+        "payload": "tree 2794cf0f83ec8f7b8eaf59f96ee4c75af5562573\nparent 8260de6d6de7620048720c94d5aac107a8ab47cf\nauthor Lingpeng Jin <103567126+valarLip@users.noreply.github.com> 1790581727 +0800\ncommitter GitHub <noreply@github.com> 1790581727 +0800\n\n[HIP] [OPUS] [FlyDSL] gfx950 MXFP8 e8m0 GEMM + DeepSeek-V4/V4.1 tuned configs (#5896)\n\n* feat(flydsl): gfx950 MXFP8 e8m0 GEMM on FlyDSL + DeepSeek-V4/V4.1 configs\n\n- New FlyDSL gfx950 MXFP8 batched GEMM (bmm_a8w8_mxscale_gfx950): scaled\n  MFMA 16x16x128, async LDS DMA pipeline, 32x32 / 128x128 e8m0 blocks,\n  split-K with same-XCD last-arrival reduction, B direct to registers, XCD\n  tile order, non-temporal B, per-stage or preloaded scale panels, K % 64\n  tail, column-major (blockscale) x_scale. Scale rows that are not whole\n  dwords (e.g. 128-wide blocks at K = 384 / 768) are copied a byte per LDS\n  slot with exact buffer bounds. check_bmm_config is the single legality\n  source.\n- Arch-neutral front door flydsl.batched_gemm_a8w8 dispatching by (arch,\n  w_scale block, x_scale layout); gfx950 module with kernelName parsing,\n  untuned-shape heuristic and a compiled-launcher cache (host 71 -> 21 us).\n- gemm_a8w8_blockscale_bpreshuffle on gfx950 routes e8m0 x_scale + w_scale\n  to it through the tuned table AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_MXSCALE_\n  BPRESHUFFLE; FP32 scales keep CK / asm. gemm_a8w8_blockscale with\n  isBpreshuffled forwards native group32 operands there. The V4 wo_a\n  batched GEMM uses the same kernel.\n- AOT precompiles kernelId=bmm rows (both x_scale layouts for 128x128).\n- Tuned gfx950 configs: DeepSeek-V4-Pro 128x128 linears (980 rows, TP1/4/8,\n  1.30x vs CK/asm), DeepSeek-V4.1 group32 (1224 rows, 1.22x vs Triton),\n  V4 wo_a batched (680 rows).\n- Also carries the other local changes in the tree: inverse_rope_group_quant,\n  opus policy / bmm tune, gfx1250 bmm wrapper, tensor_shim helpers.\n\n* refactor(flydsl): tidy gfx950 MXFP8 bmm kernel per FlyDSL cleanup guide\n\n- Use fx.copy instead of fx.copy_atom_call for the single-atom copies.\n- Build the async-LDS DMA destination from the LDS pointer with\n  fx.add_offset + fx.to_llvm_ptr instead of ptrtoint/inttoptr with a\n  hand-picked address space. The raw buffer_load_async_lds stays: the\n  BufferLoadAsyncLDS atom has no 1-byte size and no cache-policy operand.\n- Factor the compile-and-run + leaked ir.Context recovery out of\n  tensor_shim._run_compiled into _compile_and_run, and use it for the\n  bmm wrapper's per-config compile cache too.\n\nGenerated ISA is byte-identical on 9 reference configs.",
+        "verified_at": "2026-09-28T07:48:47Z"
+      }
+    },
+    "url": "https://api.github.com/repos/ROCm/aiter/commits/40d524b615af873d18fc6d1c8f56502adcb58662",
+    "html_url": "https://github.com/ROCm/aiter/commit/40d524b615af873d18fc6d1c8f56502adcb58662",
+    "comments_url": "https://api.github.com/repos/ROCm/aiter/commits/40d524b615af873d18fc6d1c8f56502adcb58662/comments",
+    "author": {
+      "login": "valarLip",
+      "id": 103567126,
+      "node_id": "U_kgDOBixPFg",
+      "avatar_url": "https://avatars.githubusercontent.com/u/103567126?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/valarLip",
+      "html_url": "https://github.com/valarLip",
+      "followers_url": "https://api.github.com/users/valarLip/followers",
+      "following_url": "https://api.github.com/users/valarLip/following{/other_user}",
+      "gists_url": "https://api.github.com/users/valarLip/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/valarLip/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/valarLip/subscriptions",
+      "organizations_url": "https://api.github.com/users/valarLip/orgs",
+      "repos_url": "https://api.github.com/users/valarLip/repos",
+      "events_url": "https://api.github.com/users/valarLip/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/valarLip/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "web-flow",
+      "id": 19864447,
+      "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+      "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/web-flow",
+      "html_url": "https://github.com/web-flow",
+      "followers_url": "https://api.github.com/users/web-flow/followers",
+      "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+      "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+      "organizations_url": "https://api.github.com/users/web-flow/orgs",
+      "repos_url": "https://api.github.com/users/web-flow/repos",
+      "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/web-flow/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "parents": [
+      {
+        "sha": "8260de6d6de7620048720c94d5aac107a8ab47cf",
+        "url": "https://api.github.com/repos/ROCm/aiter/commits/8260de6d6de7620048720c94d5aac107a8ab47cf",
+        "html_url": "https://github.com/ROCm/aiter/commit/8260de6d6de7620048720c94d5aac107a8ab47cf"
+      }
+    ]
+  }
+]

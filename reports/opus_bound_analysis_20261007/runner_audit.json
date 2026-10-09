@@ -1,0 +1,100 @@
+{
+  "status": "cpu_static_passed_no_gpu_execution",
+  "plans": {
+    "compute_pilot.json": {
+      "targets": 2,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "compute_timing.json": {
+      "targets": 6,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "compute_validation.json": {
+      "targets": 45,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "fine_pilot.json": {
+      "targets": 5,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "fine_timing.json": {
+      "targets": 9,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "fine_validation.json": {
+      "targets": 48,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "n64_pilot.json": {
+      "targets": 2,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "n64_timing.json": {
+      "targets": 8,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "n64_validation.json": {
+      "targets": 7,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "register_pilot.json": {
+      "targets": 6,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "register_timing.json": {
+      "targets": 6,
+      "static_supported_domain": true,
+      "problems": []
+    },
+    "register_validation.json": {
+      "targets": 42,
+      "static_supported_domain": true,
+      "problems": []
+    }
+  },
+  "runner": {
+    "syntax": "passed",
+    "bf16_fp32_deepcopy_backing_storage_offset_and_guards": "cpu_passed",
+    "abi": "A,B,SFA,SFB,C,(workspace),M,N,K,stream verified all private launchers",
+    "runtime_guards": "output +/-128 BF16 elements, split>1 workspace +/-128 FP32 elements",
+    "correctness": "signed native FP8, native E8M0, interval bounds=1e-4+5e-5*sum(abs(A_i B_i)), BF16 endpoint rounding",
+    "timing": "automatic physical input/output/workspace rotation, per-round numbers and medians, AB/BA order",
+    "physical_identity": "HIP device0 PCI verified via hipDeviceGetPCIBusId if OPUS_EXPECTED_GPU_BDF provided",
+    "optional_event_confirmation": "--event-confirm: 5 AB/BA rounds, shared automatic-size rotation pool, complete private-launch graph batch including split-K reduce; event_total_ms/iters; all pool outputs and partials NaN initialized and checked per round against same-label expected.",
+    "official_actual_module": "OfficialRunner first actual call checks get_module(module_deepgemm_opus).__file__ and SHA against plan; saves actual_official_module."
+  },
+  "limits": [
+    "GPU correctness/timing not performed by this agent.",
+    "register private9042/9052/9053 K7168 fallback differs from official dispatch.",
+    "fine_n64 private9062 alwaysM80; officialM96 branch for ceil(M/96)<ceil(M/80).",
+    "Each timed round validates returned rotated output/workspace only; all repeated correctness launches use guarded original buffers.",
+    "Profiler run is profiling_only; require separate unprofiled correctness pass.",
+    "Caller owns physical idle-device lock and external-work monitoring."
+  ],
+  "artifacts": {
+    "experiment_runner.py": "a2bc29d2d5dd75959ae9529f53297defd135e3746d065398bc74fe14e1f55310",
+    "official_smoke.py": "4cf3190dd1bb54f24d9497a17447afae1c1e5909a38bf8b4cf324cedc8239051",
+    "prepare_official_smoke.py": "4f805a4e90f953a6892e61975a092250fd3950e4b9493f6935985b8286792dbe",
+    "prepare_counters.py": "224ef2cde1e02d12b508daa3c3088654cac5e3c3c5012c50a46f7499184e1685",
+    "prepare_profile_queue.py": "2fead5e512dff713f6116a7363a28e53b993312cc89ec94b1fdf5bf68332845b",
+    "parse_counters.py": "fa0dfc1ad39cdb7949530ef0a59298e1687370021e5bd061832789bce22d0a1e",
+    "gfx950_extra_counters.yaml": "3e1c69e2d4316d1941d421879d604e5e50bf16bd8fd32fb9e8a3945ef49f1b14",
+    "counter_evidence.json": "57faac584275f77830528e87973729056d3a31ee4c8328f1b94e1a2c2a0f8da3",
+    "profile_queue.json": "16ce6e8d15c400793a70d2e047c652bca34f6493ba147f52f7e8ad5136a513c7",
+    "test_event_orchestration.py": "2af9a6b0ac0675722499366e807bd1843aa1364bdb3fae5071daee908ef82e5e",
+    "event_orchestration_cpu_validation.json": "11b927c85f2e3c7ef98da7146aafb4a8109ea256dfacd5f51168451b9e1bc8a5"
+  },
+  "profile_parser_fixtures": "passed",
+  "gpu_initialized_or_executed_by_evidence_agent": false,
+  "event_confirmation_cpu_validation": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/event_orchestration_cpu_validation.json"
+}

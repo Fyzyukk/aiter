@@ -1,0 +1,243 @@
+--- frozen/gemm_include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh
++++ candidate/pipeline.cuh
+@@ -3,16 +3,16 @@
+ #include <type_traits>
+ #include <cstdint>
+ #include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh"
+-#include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh"
++#include "traits.cuh"
+ #include "opus_gemm_mxscale_bpreshuffle_small_output_gfx950.cuh"
+ 
+ #if !defined(__HIP_DEVICE_COMPILE__)
+ template<class T>
+-__global__ void gemm_a8w8_mxfp8_scale_small_lds_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
++__global__ void opus_private_small_a_lds_direct_b_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
+ #elif defined(__gfx950__)
+ template<class T>
+ __global__ __launch_bounds__(T::BLOCK_SIZE, 1)
+-void gemm_a8w8_mxfp8_scale_small_lds_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 args) {
++void opus_private_small_a_lds_direct_b_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 args) {
+     using namespace opus;
+     constexpr int SplitK = T::SPLIT_K;
+     using D_C = std::conditional_t<SplitK == 1, bf16_t, float>;
+@@ -26,7 +26,7 @@
+     const int loops = per_split + (split < extra);
+     const int tile_begin = split * per_split + (split < extra ? split : extra);
+     const int active_stages = loops < T::NUM_STAGES ? loops : T::NUM_STAGES;
+-    const int matrix_bytes = active_stages * (T::A_STAGE + T::B_STAGE);
++    const int matrix_bytes = active_stages * T::A_STAGE;
+     const int scale_bytes = T::B_M * loops;
+     auto ga = make_gmem(reinterpret_cast<const fp8_t*>(args.ptr_a) + row * args.stride_a + tile_begin * 128,
+                         static_cast<unsigned>((args.m - row) * args.stride_a - tile_begin * 128));
+@@ -38,16 +38,9 @@
+                         static_cast<unsigned>(((args.m - row) * args.stride_c - col) * sizeof(D_C)));
+     extern __shared__ __attribute__((aligned(16))) char lds[];
+     auto sa = make_smem(reinterpret_cast<fp8_t*>(lds));
+-    auto sb = make_smem(reinterpret_cast<fp8_t*>(lds + active_stages * T::A_STAGE));
+     auto ssa = make_smem(reinterpret_cast<unsigned char*>(lds + matrix_bytes));
+     auto ssb = make_smem(reinterpret_cast<unsigned char*>(lds + matrix_bytes + scale_bytes));
+     const int load_lane = T::XOR_LDS ? lane ^ ((wave % 4) * 2) : lane;
+-    const auto ugb = make_layout_gb_scale<T>(lane, wm, wn, args.stride_b);
+-    const auto usb = make_layout_sb_scale<T>(wm, wn);
+-    const auto urb = make_layout_rb_scale<T>(lane, wn);
+-    const auto g_b_offsets = layout_to_offsets<16>(ugb);
+-    const auto s_b_offsets = layout_to_offsets<16>(usb);
+-    const auto r_b_offsets = layout_to_offsets<16>(urb);
+     auto lds_offset = [](int offset) {
+         if constexpr (T::XOR_LDS) return offset ^ (((offset >> 10) & 3) << 5);
+         else return offset;
+@@ -56,9 +49,11 @@
+         seq<T::T_M, T::T_N, 1>{}, seq<16, 16, 128>{}, mfma_adaptor_swap_ab{});
+     using Base = typename decltype(mma)::MMA;
+     array<typename Base::vtype_c, T::E_M * T::E_N> c{};
++    // B has its own compile-time VGPR ring. It never enters matrix LDS.
++    array<typename decltype(mma)::vtype_b, T::B_SLOTS> qb;
+     array<array<unsigned, (T::E_M + 3) / 4>, T::NUM_STAGES> qsa;
+     array<array<unsigned, T::B_GROUPS>, T::NUM_STAGES> qsb;
+-    auto prefetch = [&](auto slot, int kt) {
++    auto prefetch_a = [&](auto slot, int kt) {
+         constexpr int stage = decltype(slot)::value;
+         if constexpr (T::REGISTER_SCALES) {
+             qsa[stage] = {};
+@@ -88,20 +83,21 @@
+             const auto usa = make_layout_sa_scale<T>(wm, wn);
+             async_load<16>(ga, sa.ptr, uga, usa + stage * T::A_STAGE, kt * 128);
+         }
+-        if constexpr (T::XOR_LDS) {
+-            // Each B copy covers a different 1024-byte group, unlike A's per-wave groups.
+-            static_for<T::B_N * T::B_K / (T::BLOCK_SIZE * 16)>([&](auto i) {
+-                constexpr int idx = decltype(i)::value;
+-                const int mask = ((s_b_offsets[idx] >> 10) & 3) << 5;
+-                async_load<16>(gb, sb.ptr + s_b_offsets[idx] + stage * T::B_STAGE,
+-                               g_b_offsets[idx] ^ mask, kt * 2048);
+-            });
+-        } else {
+-            async_load<16>(gb, sb.ptr, ugb, usb + stage * T::B_STAGE, kt * 2048);
+-        }
+-    };
+-    constexpr int distance = T::NUM_STAGES - T::CLUSTER;
+-    const int initial_tiles = loops <= T::NUM_STAGES ? loops : distance;
++    };
++    auto prefetch_b = [&](auto slot, int kt) {
++        auto& target = qb[decltype(slot)::value];
++        // Standard N16/K16 preshuffle: one K128 tile occupies 2048 bytes
++        // per N16 group. wm is deliberately absent: M waves duplicate B reads.
++        static_for<T::E_N>([&](auto ni) {
++            constexpr int n = decltype(ni)::value;
++            const int nr = (n * T::T_N + wn) * 16;
++            const int offset = nr * args.stride_b + lane * 16;
++            set_slice(target, load<16>(gb, offset, kt * 2048),
++                      number<n * 32>{}, number<n * 32 + 16>{});
++            set_slice(target, load<16>(gb, offset + 1024, kt * 2048),
++                      number<n * 32 + 16>{}, number<(n + 1) * 32>{});
++        });
++    };
+     auto load_scales = [&] {
+         static_for<(T::MAX_SFA_BYTES + T::BLOCK_SIZE * 16 - 1) / (T::BLOCK_SIZE * 16)>([&](auto pass) {
+             const int index = (thread_id_x() + decltype(pass)::value * T::BLOCK_SIZE) * 16;
+@@ -121,27 +117,22 @@
+         load_scales();
+         __builtin_amdgcn_sched_barrier(0);
+     }
++    // Fill each independent queue only with valid K128 tiles.
+     static_for<T::NUM_STAGES>([&](auto i) {
+-        if (decltype(i)::value < initial_tiles) prefetch(i, decltype(i)::value);
++        if (decltype(i)::value < loops) prefetch_a(i, decltype(i)::value);
++    });
++    static_for<T::B_SLOTS>([&](auto i) {
++        if (decltype(i)::value < loops) prefetch_b(i, decltype(i)::value);
+     });
+     if constexpr (!T::REGISTER_SCALES && !T::EARLY_SCALE_LOADS) load_scales();
+-    if (loops <= T::NUM_STAGES || (!T::REGISTER_SCALES && !T::EARLY_SCALE_LOADS)) {
++    auto step = [&](auto si, auto bi, int kt) {
++        constexpr int stage = decltype(si)::value;
++        constexpr int bstage = decltype(bi)::value;
++        // Mixed VMEM-to-LDS A and VMEM-to-VGPR B queues use a conservative
++        // completion fence. Later timing work may refine the wait count.
+         s_waitcnt_vmcnt(0_I);
+         s_waitcnt_lgkmcnt(0_I);
+-        if (loops <= T::NUM_STAGES) __builtin_amdgcn_s_barrier();
+-    }
+-    auto step = [&](auto si, int kt, auto ring) {
+-        constexpr int stage = decltype(si)::value;
+-        if constexpr (decltype(ring)::value && T::CLUSTER == 1 && !T::READ_ONLY_DRAIN) {
+-            if (kt + distance <= loops)
+-                s_waitcnt_vmcnt(number<(T::NUM_STAGES - 2) * T::VMEM_TILE>{});
+-            else s_waitcnt_vmcnt(0_I);
+-            s_waitcnt_lgkmcnt(0_I);
+-            __builtin_amdgcn_s_barrier();
+-        }
+-        if constexpr (decltype(ring)::value && T::PREFETCH_BEFORE_READ) {
+-            if (kt + distance < loops) prefetch(number<(stage + distance) % T::NUM_STAGES>{}, kt + distance);
+-        }
++        __builtin_amdgcn_s_barrier();
+         typename decltype(mma)::vtype_a a;
+         static_for<T::E_M>([&](auto mi) {
+             constexpr int m = decltype(mi)::value;
+@@ -151,16 +142,7 @@
+             set_slice(a, load<16>(sa, lds_offset(offset)), number<m * 32>{}, number<m * 32 + 16>{});
+             set_slice(a, load<16>(sa, lds_offset(offset + 64)), number<m * 32 + 16>{}, number<(m + 1) * 32>{});
+         });
+-        typename decltype(mma)::vtype_b b;
+-        if constexpr (T::XOR_LDS) {
+-            static_for<T::E_N * 2>([&](auto i) {
+-                constexpr int idx = decltype(i)::value;
+-                set_slice(b, load<16>(sb, lds_offset(r_b_offsets[idx] + stage * T::B_STAGE)),
+-                          number<idx * 16>{}, number<(idx + 1) * 16>{});
+-            });
+-        } else {
+-            b = load<16>(sb, urb + stage * T::B_STAGE);
+-        }
++        typename decltype(mma)::vtype_b b = qb[bstage];
+         array<unsigned, (T::E_M + 3) / 4> sfa{};
+         array<unsigned, T::B_GROUPS> sfb;
+         if constexpr (T::REGISTER_SCALES) {
+@@ -175,9 +157,13 @@
+                 sfb[decltype(ni)::value] = load<1>(ssb, decltype(ni)::value * loops + kt)[0];
+             });
+         }
+-        if constexpr (decltype(ring)::value && !T::PREFETCH_BEFORE_READ) {
+-            if (kt + distance < loops) prefetch(number<(stage + distance) % T::NUM_STAGES>{}, kt + distance);
+-        }
++        // Complete A/scale LDS reads in every wave before reusing an A slot.
++        s_waitcnt_lgkmcnt(0_I);
++        __builtin_amdgcn_s_barrier();
++        if (kt + T::NUM_STAGES < loops) prefetch_a(si, kt + T::NUM_STAGES);
++        // Copying qb into b before overwriting this B slot preserves the
++        // currently consumed fragment while future direct loads are in flight.
++        if (kt + T::B_SLOTS < loops) prefetch_b(bi, kt + T::B_SLOTS);
+         static_for<T::E_M>([&](auto mi) {
+             constexpr int m = decltype(mi)::value;
+             static_for<T::E_N>([&](auto ni) {
+@@ -189,63 +175,14 @@
+             });
+         });
+     };
+-    if (loops <= T::NUM_STAGES) {
+-        // Short K: the prologue has already loaded every matrix tile.
+-        static_for<T::NUM_STAGES>([&](auto i) {
+-            if (decltype(i)::value < loops) step(i, decltype(i)::value, 0_I);
+-        });
+-    } else if constexpr (T::CLUSTER == 1 && T::READ_ONLY_DRAIN) {
+-        const int drain_begin = loops - distance;
+-        for (int base = 0; base < drain_begin; base += T::NUM_STAGES) {
+-            static_for<T::NUM_STAGES>([&](auto i) {
+-                if (base + decltype(i)::value < drain_begin) {
+-                    s_waitcnt_vmcnt(number<(T::NUM_STAGES - 2) * T::VMEM_TILE>{});
+-                    s_waitcnt_lgkmcnt(0_I);
+-                    __builtin_amdgcn_s_barrier();
+-                    step(i, base + decltype(i)::value, 1_I);
+-                }
+-            });
+-        }
+-        // No ring slot is overwritten after this wait; the whole drain is read-only.
+-        s_waitcnt_vmcnt(0_I);
+-        s_waitcnt_lgkmcnt(0_I);
+-        __builtin_amdgcn_s_barrier();
+-        for (int base = (drain_begin / T::NUM_STAGES) * T::NUM_STAGES;
+-             base < loops; base += T::NUM_STAGES) {
+-            static_for<T::NUM_STAGES>([&](auto i) {
+-                const int kt = base + decltype(i)::value;
+-                if (kt >= drain_begin && kt < loops) step(i, kt, 0_I);
+-            });
+-        }
+-    } else if constexpr (T::CLUSTER == 1) {
+-        for (int base = 0; base < loops; base += T::NUM_STAGES) {
+-            static_for<T::NUM_STAGES>([&](auto i) {
+-                if (base + decltype(i)::value < loops)
+-                    step(i, base + decltype(i)::value, 1_I);
+-            });
+-        }
+-    } else {
+-        // Each barrier makes a whole K group visible and protects its ring slots
+-        // from overwrite. The wait count leaves later groups in flight.
+-        for (int base = 0; base < loops; base += T::NUM_STAGES) {
+-            static_for<T::NUM_STAGES / T::CLUSTER>([&](auto group) {
+-                constexpr int stage = decltype(group)::value * T::CLUSTER;
+-                if (base + stage < loops) {
+-                    // Only leave a full future group in flight. A partial K
+-                    // tail may have fewer pending loads than the steady state.
+-                    if (base + stage + distance <= loops)
+-                        s_waitcnt_vmcnt(number<(T::NUM_STAGES - 2 * T::CLUSTER) * T::VMEM_TILE>{});
+-                    else s_waitcnt_vmcnt(0_I);
+-                    s_waitcnt_lgkmcnt(0_I);
+-                    __builtin_amdgcn_s_barrier();
+-                    static_for<T::CLUSTER>([&](auto i) {
+-                        if (base + stage + decltype(i)::value < loops)
+-                            step(number<stage + decltype(i)::value>{},
+-                                 base + stage + decltype(i)::value, 1_I);
+-                    });
+-                }
+-            });
+-        }
++    // Unroll only one common ring period. Runtime K keeps code growth bounded.
++    #pragma clang loop unroll(disable)
++    for (int base = 0; base < loops; base += T::RING_PERIOD) {
++        static_for<T::RING_PERIOD>([&](auto i) {
++            constexpr int index = decltype(i)::value;
++            if (base + index < loops)
++                step(number<index % T::NUM_STAGES>{}, number<index % T::B_SLOTS>{}, base + index);
++        });
+     }
+     if constexpr (SplitK > 1) {
+         const auto pc = opus::make_tuple(wm, lane % mma.grpn_c, wn, lane / mma.grpn_c);

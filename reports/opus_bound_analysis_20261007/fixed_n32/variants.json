@@ -1,0 +1,68 @@
+{
+  "abi": "launch(variant,a,b,sfa,sfb,c,m,n,k,stream)",
+  "contract": "K=7168;1<=M<=512;N>0,N%128=0;M*K,N*K,2*M*N<=INT32_MAX;contiguous native scale/preshuffled B;batch1;matrix/output16aligned",
+  "production_dispatch_bypassed": true,
+  "mutation": "BN48 N-tail -> BN32 no-tail only; explicit ReuseBScale=false on both sides; other traits same",
+  "variants": [
+    {
+      "variant": 9071,
+      "side": "baseline",
+      "B_M": 16,
+      "B_N": 48,
+      "T_M": 1,
+      "T_N": 1,
+      "prefetch": 4,
+      "wave_k": 4,
+      "output": 4,
+      "B_cache": 3,
+      "FIXED_K": 7168,
+      "N_TAIL": true,
+      "ReuseBScale": false
+    },
+    {
+      "variant": 9071,
+      "side": "candidate",
+      "B_M": 16,
+      "B_N": 32,
+      "T_M": 1,
+      "T_N": 1,
+      "prefetch": 4,
+      "wave_k": 4,
+      "output": 4,
+      "B_cache": 3,
+      "FIXED_K": 7168,
+      "N_TAIL": false,
+      "ReuseBScale": false
+    },
+    {
+      "variant": 9073,
+      "side": "baseline",
+      "B_M": 32,
+      "B_N": 48,
+      "T_M": 1,
+      "T_N": 1,
+      "prefetch": 3,
+      "wave_k": 4,
+      "output": 4,
+      "B_cache": 0,
+      "FIXED_K": 7168,
+      "N_TAIL": true,
+      "ReuseBScale": false
+    },
+    {
+      "variant": 9073,
+      "side": "candidate",
+      "B_M": 32,
+      "B_N": 32,
+      "T_M": 1,
+      "T_N": 1,
+      "prefetch": 3,
+      "wave_k": 4,
+      "output": 4,
+      "B_cache": 0,
+      "FIXED_K": 7168,
+      "N_TAIL": false,
+      "ReuseBScale": false
+    }
+  ]
+}

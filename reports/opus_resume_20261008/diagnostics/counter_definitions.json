@@ -1,0 +1,134 @@
+{
+  "TCC_EA0_RDREQ_LEVEL": {
+    "description": "The sum of the number of TCC/EA read requests in flight. This is primarily meant for measure average EA read latency. Average read latency = TCC_PERF_SEL_EA_RDREQ_LEVEL/TCC_PERF_SEL_EA_RDREQ.",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "TCC",
+    "event": 50
+  },
+  "TCC_EA0_RDREQ": {
+    "description": "Number of TCC/EA read requests (either 32-byte or 64-byte)",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "TCC",
+    "event": 42
+  },
+  "TCP_TCC_READ_REQ_LATENCY": {
+    "description": "Total TCP->TCC request latency for reads and atomics with return. Not Windowed.",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "TCP",
+    "event": 65
+  },
+  "TCP_TCC_READ_REQ": {
+    "description": "Total read requests from TCP to all TCCs",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "TCP",
+    "event": 68
+  },
+  "TCP_UTCL1_STALL_LFIFO_NOT_RES": {
+    "description": "Total utcl1 stalls due to utcl2 latency hiding fifo output not resident",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "TCP",
+    "event": 53
+  },
+  "TCP_CLIENT_UTCL1_INFLIGHT": {
+    "description": "The sum of inflight client to UTCL1 requests per cycle",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "TCP",
+    "event": 55
+  },
+  "SQ_WAVE_CYCLES": {
+    "description": "The cycles spent executing waves in the CUs. This value is reported per-SE (aggregates of SIMD values) and is nondeterministic. Units are in quad-cycles (4 cycles). Useful for determining how much time is spent executing wave code vs overhead/waiting. Low cycle count relative to actual number of cycles processed by the CU can indicate that the CU is stalling or is overloaded.",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "SQ",
+    "event": 95
+  },
+  "SQ_WAVES": {
+    "description": "Count number of waves sent to distributed sequencers (SQs). This value represents the number of waves that are sent to each SQ. This only counts new waves sent since the start of collection (for dispatch profiling this is the timeframe of kernel execution, for agent profiling it is the timeframe between start_context and read counter data). A sum of all SQ_WAVES values will give the total number of waves started by the application during the collection timeframe. Returns one value per-SE (aggregates of SIMD values).",
+    "architectures": [
+      "gfx10",
+      "gfx1010",
+      "gfx1030",
+      "gfx1031",
+      "gfx1032",
+      "gfx11",
+      "gfx1100",
+      "gfx1101",
+      "gfx1102",
+      "gfx12",
+      "gfx1200",
+      "gfx1201",
+      "gfx9",
+      "gfx900",
+      "gfx906",
+      "gfx908",
+      "gfx90a",
+      "gfx940",
+      "gfx941",
+      "gfx942",
+      "gfx950"
+    ],
+    "block": "SQ",
+    "event": 4
+  },
+  "SQ_WAIT_ANY": {
+    "description": "Number of wave-cycles spent waiting for anything (per-simd, nondeterministic). Units in quad-cycles(4 cycles)",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "SQ",
+    "event": 106
+  },
+  "SQ_WAIT_INST_ANY": {
+    "description": "Number of wave-cycles spent waiting for any instruction issue. Units in quad-cycles(4 cycles).",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "SQ",
+    "event": 109
+  },
+  "SQ_WAIT_INST_LDS": {
+    "description": "Number of wave-cycles spent waiting for LDS instruction issue. In units of 4 cycles. (per-simd, nondeterministic)",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "SQ",
+    "event": 112
+  },
+  "SQ_ACTIVE_INST_LDS": {
+    "description": "Number of cycles each wave spends working on LDS instructions. This value represents the number of cycles each wave spends executing instructions accessing the local data store (data shared between SIMDs on the same CU). High values indicates a large amount of reading/writing to this shared memory space. This value is returned on a per-SE (aggregate of values in SIMDs in the SE) basis with units in quad-cycles(4 cycles). See AMD ISAs for more information on LDS instructions.",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "SQ",
+    "event": 119
+  },
+  "SQ_INSTS_LDS": {
+    "description": "Total number of LDS instructions issued (including FLAT). This value is returned per-SE (aggregate of values in SIMDs in the SE). See AMD ISAs for more information on LDS instructions.",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "SQ",
+    "event": 67
+  },
+  "SQ_LDS_BANK_CONFLICT": {
+    "description": "The number of cycles LDS (local data store) is stalled by bank conflicts. This value is returned on a per-SE (aggregate of values in SIMDs in the SE) basis.",
+    "architectures": [
+      "gfx950"
+    ],
+    "block": "SQ",
+    "event": 142
+  }
+}

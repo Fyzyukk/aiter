@@ -1,0 +1,267 @@
+{
+  "status": "cpu_counter_consistency_review_with_normalization_limit",
+  "gpu_imported_or_initialized": false,
+  "counter_definitions_sha256": "02792ef1df4227167696c0bc417cca13bd563ae3417a7e7913a59b67e53dac39",
+  "collection_aliases_sha256": "3e1c69e2d4316d1941d421879d604e5e50bf16bd8fd32fb9e8a3945ef49f1b14",
+  "normalization_findings": {
+    "GRBM_reduction": "Custom aliases reduce(GRBM_COUNT,max) and reduce(GRBM_GUI_ACTIVE,max) match installedSDK expressions; parse_counters preserves scalarmax and does notsum itagain. Raw GRBM instance values are absent from this scalarCSV, so per-XCC dimensionality cannotbe independentlychecked here.",
+    "MFMA_formula": "100*sum(SQ_VALU_MFMA_BUSY_CYCLES)/(max(GRBM_GUI_ACTIVE)*1024) matches installedMfmaUtil; arithmetic validity doesnot establish same-clock/same-walltime denominator.",
+    "clock_window_limit": "All4collections have GRBM_COUNT/duration_ns abovetheGPU Max_Engine_Clk_Fcompute2400MHz. GRBM_COUNT=GUI_ACTIVE in every selectedsample. No fixedfactor correction or absoluteutilization/occupancy boundclassification is justified bythese samples.",
+    "SQ_units": "SQ_WAVE_CYCLES/WAIT_ANY/WAIT_INST_ANY/ACTIVE_INST_ANY arequadcycles; meanlife4*wavecycles/waves and matchedsum ratios areinternallyconsistent. SQ_BUSY_CYCLES isper-SE clockcycle, notquadwavecycles.",
+    "MFMA_busy_operations": "Inall4collections, F8ops counterisexact2MNK/512 andMFMA_BUSY isexactonequarterthatcounter. Thisisconsistent with32busy-countunits perscaled16x16x128MFMA and128F8countunits perMFMA; independentpipeline-saturation information islimited."
+  },
+  "per_collection": [
+    {
+      "name": "target0_kid9000_sq_ea",
+      "shape": [
+        1792,
+        7168,
+        384
+      ],
+      "public_parent": 9000,
+      "actual_configuration": 9000,
+      "application_status": "passed",
+      "claim_clean": true,
+      "official_module": {
+        "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/jit_baseline/module_deepgemm_opus.so",
+        "sha256": "093bc9cdde5c96931007f51167880e5a6e1e8b3be2ffd9971957fa1b1bd4e9cb"
+      },
+      "agent_identity": {
+        "sdk_agent": "Agent7",
+        "logical_node": 7,
+        "location_id": 34048,
+        "pci": "0000:85:00.0",
+        "cu_count": 256,
+        "simd_count": 1024,
+        "xcc_count": 8,
+        "max_engine_fcompute_mhz": 2400
+      },
+      "source_csv": "reports/opus_bound_analysis_20261007/profiles/target0_kid9000_sq_ea/pmc_1/target0_kid9000_sq_ea_counter_collection.csv",
+      "source_csv_sha256": "7e7c7ea7c2f2a2d6560a6b4b398ea88507753e73e9b910d6bdf75bc9c8ab4dcf",
+      "dispatch_count_before_selection": 57,
+      "selected_dispatches": 51,
+      "workgroups": 196,
+      "waves_count": 784,
+      "dynamic_mfma_count": 150528,
+      "issued_f8_operations": 9865003008,
+      "wave_grid_F8_consistency": "all51exact",
+      "MFMA_BUSY_count_each_dispatch": 4816896,
+      "GRBM_count_equals_GUI_active_all": true,
+      "profiled_duration_ns": {
+        "min": 12680,
+        "median": 13720,
+        "max": 14240
+      },
+      "GRBM_implied_ghz": {
+        "min": 3.3416421234106743,
+        "median": 3.6672413793103447,
+        "max": 4.167428571428571
+      },
+      "grbm_normalized_util_estimate_pct": 9.342416238009175,
+      "normalization_usable_for_bound_decision": false,
+      "mean_wave_life_cycles_estimate": 24637.70918367347,
+      "SQ_wait_issue_active_pct_medians": {
+        "SQ_WAIT_ANY": 37.3857521796306,
+        "SQ_WAIT_INST_ANY": 32.48845436333707,
+        "SQ_ACTIVE_INST_ANY": 30.28636831172392
+      },
+      "wait_issue_active_sum100_samples": 51,
+      "DRAM_read_bytes_median": 11182080.0,
+      "DRAM_write_bytes_median": 25704448.0,
+      "DRAM_tb_s_profiled_median": 2.688876967930029,
+      "TCP_TA_stall_pct_of_interface_clock_estimate": 5.16018910193753,
+      "TCP_TCR_stall_pct_of_interface_clock_estimate": 6.4697762509858325
+    },
+    {
+      "name": "target18_kid9052_sq_ea",
+      "shape": [
+        96,
+        768,
+        7168
+      ],
+      "public_parent": 9052,
+      "actual_configuration": 9070,
+      "application_status": "passed",
+      "claim_clean": true,
+      "official_module": {
+        "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/jit_baseline/module_deepgemm_opus.so",
+        "sha256": "093bc9cdde5c96931007f51167880e5a6e1e8b3be2ffd9971957fa1b1bd4e9cb"
+      },
+      "agent_identity": {
+        "sdk_agent": "Agent7",
+        "logical_node": 7,
+        "location_id": 34048,
+        "pci": "0000:85:00.0",
+        "cu_count": 256,
+        "simd_count": 1024,
+        "xcc_count": 8,
+        "max_engine_fcompute_mhz": 2400
+      },
+      "source_csv": "reports/opus_bound_analysis_20261007/profiles/target18_kid9052_sq_ea/pmc_1/target18_kid9052_sq_ea_counter_collection.csv",
+      "source_csv_sha256": "aba164a6c5ccfe7688abb28e267655d4fb383087d45f380ef00c631b66ab871d",
+      "dispatch_count_before_selection": 57,
+      "selected_dispatches": 51,
+      "workgroups": 144,
+      "waves_count": 1152,
+      "dynamic_mfma_count": 16128,
+      "issued_f8_operations": 1056964608,
+      "wave_grid_F8_consistency": "all51exact",
+      "MFMA_BUSY_count_each_dispatch": 516096,
+      "GRBM_count_equals_GUI_active_all": true,
+      "profiled_duration_ns": {
+        "min": 7680,
+        "median": 8640,
+        "max": 9000
+      },
+      "GRBM_implied_ghz": {
+        "min": 4.255184331797235,
+        "median": 4.865162037037037,
+        "max": 6.138963963963964
+      },
+      "grbm_normalized_util_estimate_pct": 1.2265758091993186,
+      "normalization_usable_for_bound_decision": false,
+      "mean_wave_life_cycles_estimate": 16919.0,
+      "SQ_wait_issue_active_pct_medians": {
+        "SQ_WAIT_ANY": 49.92427849551889,
+        "SQ_WAIT_INST_ANY": 42.80324971570645,
+        "SQ_ACTIVE_INST_ANY": 7.420760955771543
+      },
+      "wait_issue_active_sum100_samples": 51,
+      "DRAM_read_bytes_median": 11082752.0,
+      "DRAM_write_bytes_median": 147456.0,
+      "DRAM_tb_s_profiled_median": 1.299911111111111,
+      "TCP_TA_stall_pct_of_interface_clock_estimate": 20.480273720472557,
+      "TCP_TCR_stall_pct_of_interface_clock_estimate": 0.001411583258854591
+    },
+    {
+      "name": "target26_kid9042_sq_ea",
+      "shape": [
+        192,
+        768,
+        7168
+      ],
+      "public_parent": 9042,
+      "actual_configuration": 9071,
+      "application_status": "passed",
+      "claim_clean": true,
+      "official_module": {
+        "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/jit_baseline/module_deepgemm_opus.so",
+        "sha256": "093bc9cdde5c96931007f51167880e5a6e1e8b3be2ffd9971957fa1b1bd4e9cb"
+      },
+      "agent_identity": {
+        "sdk_agent": "Agent7",
+        "logical_node": 7,
+        "location_id": 34048,
+        "pci": "0000:85:00.0",
+        "cu_count": 256,
+        "simd_count": 1024,
+        "xcc_count": 8,
+        "max_engine_fcompute_mhz": 2400
+      },
+      "source_csv": "reports/opus_bound_analysis_20261007/profiles/target26_kid9042_sq_ea/pmc_1/target26_kid9042_sq_ea_counter_collection.csv",
+      "source_csv_sha256": "f6e0b70af994f96dd6a5ea0f1cd9f9b0953318e259dff332d360ce20feb960f6",
+      "dispatch_count_before_selection": 57,
+      "selected_dispatches": 51,
+      "workgroups": 192,
+      "waves_count": 768,
+      "dynamic_mfma_count": 32256,
+      "issued_f8_operations": 2113929216,
+      "wave_grid_F8_consistency": "all51exact",
+      "MFMA_BUSY_count_each_dispatch": 1032192,
+      "GRBM_count_equals_GUI_active_all": true,
+      "profiled_duration_ns": {
+        "min": 9040,
+        "median": 10360,
+        "max": 11240
+      },
+      "GRBM_implied_ghz": {
+        "min": 3.8203971119133575,
+        "median": 4.403467153284671,
+        "max": 5.0318367346938775
+      },
+      "grbm_normalized_util_estimate_pct": 2.284108676440597,
+      "normalization_usable_for_bound_decision": false,
+      "mean_wave_life_cycles_estimate": 18612.15625,
+      "SQ_wait_issue_active_pct_medians": {
+        "SQ_WAIT_ANY": 21.38605367211195,
+        "SQ_WAIT_INST_ANY": 63.80739428178551,
+        "SQ_ACTIVE_INST_ANY": 14.753658423286304
+      },
+      "wait_issue_active_sum100_samples": 51,
+      "DRAM_read_bytes_median": 16645888.0,
+      "DRAM_write_bytes_median": 294912.0,
+      "DRAM_tb_s_profiled_median": 1.6352123552123552,
+      "TCP_TA_stall_pct_of_interface_clock_estimate": 21.774047625126688,
+      "TCP_TCR_stall_pct_of_interface_clock_estimate": 0.11398071679834923
+    },
+    {
+      "name": "target27_kid9042_sq_ea",
+      "shape": [
+        384,
+        768,
+        7168
+      ],
+      "public_parent": 9042,
+      "actual_configuration": 9073,
+      "application_status": "passed",
+      "claim_clean": true,
+      "official_module": {
+        "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/jit_baseline/module_deepgemm_opus.so",
+        "sha256": "093bc9cdde5c96931007f51167880e5a6e1e8b3be2ffd9971957fa1b1bd4e9cb"
+      },
+      "agent_identity": {
+        "sdk_agent": "Agent7",
+        "logical_node": 7,
+        "location_id": 34048,
+        "pci": "0000:85:00.0",
+        "cu_count": 256,
+        "simd_count": 1024,
+        "xcc_count": 8,
+        "max_engine_fcompute_mhz": 2400
+      },
+      "source_csv": "reports/opus_bound_analysis_20261007/profiles/target27_kid9042_sq_ea/pmc_1/target27_kid9042_sq_ea_counter_collection.csv",
+      "source_csv_sha256": "f1e80a85cb9562f84ac321b4666a830b470703de72042d2a361557088470f730",
+      "dispatch_count_before_selection": 57,
+      "selected_dispatches": 51,
+      "workgroups": 192,
+      "waves_count": 768,
+      "dynamic_mfma_count": 64512,
+      "issued_f8_operations": 4227858432,
+      "wave_grid_F8_consistency": "all51exact",
+      "MFMA_BUSY_count_each_dispatch": 2064384,
+      "GRBM_count_equals_GUI_active_all": true,
+      "profiled_duration_ns": {
+        "min": 13960,
+        "median": 14560,
+        "max": 15440
+      },
+      "GRBM_implied_ghz": {
+        "min": 3.4359806629834253,
+        "median": 3.7785340314136127,
+        "max": 4.275
+      },
+      "grbm_normalized_util_estimate_pct": 3.6758806797461894,
+      "normalization_usable_for_bound_decision": false,
+      "mean_wave_life_cycles_estimate": 29102.395833333332,
+      "SQ_wait_issue_active_pct_medians": {
+        "SQ_WAIT_ANY": 30.55576354414524,
+        "SQ_WAIT_INST_ANY": 54.53253639462915,
+        "SQ_ACTIVE_INST_ANY": 14.859046541843991
+      },
+      "wait_issue_active_sum100_samples": 51,
+      "DRAM_read_bytes_median": 27744000.0,
+      "DRAM_write_bytes_median": 589824.0,
+      "DRAM_tb_s_profiled_median": 1.9460043956043955,
+      "TCP_TA_stall_pct_of_interface_clock_estimate": 30.184770057207217,
+      "TCP_TCR_stall_pct_of_interface_clock_estimate": 0.7796523607541942
+    }
+  ],
+  "safe_use": [
+    "Actual officialmoduleSHA/profileagent/dispatch/grid/waves/F8ops checks establishthese countsscope andexecutedwork.",
+    "ReportDRAM bytes perdispatch asphysicalTCC/EA DRAMtransactions using32B-unit events; profilerbytes/time areinstrumentedobservations, notunprofiled attainablebandwidth.",
+    "ReportSQ matchedscope wait/issue/active fractions asdiagnostic data; here eachselectedsample sums exactly100%, butANY hasnoVMEM/VALU/LDS rootcause decomposition.",
+    "ReportTCPstall/GATE ratios onlywithunwindowedinterfaceclock caveat; reducedtotals do notexposechannel orset instance hotspots.",
+    "Keep GRBM-normalized MFMAutil andoccupancy asSDK-formula estimateswithuncalibratedwindowflag, or omitfromuser-facing boundclaims.",
+    "Do notinfer dispatchbound fromlowutil, HBMbound fromlowbandwidth, orTA/L1rootcause fromoneaggregate stall. Additionalcompatible interfaceandclock evidence isneeded."
+  ]
+}

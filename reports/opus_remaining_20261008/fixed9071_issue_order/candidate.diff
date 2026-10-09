@@ -1,0 +1,82 @@
+--- baseline/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh
++++ candidate/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh
+@@ -53,27 +53,59 @@
+     auto prefetch = [&](auto stage, int kt) {
+         auto& q = queue[decltype(stage)::value];
+         if constexpr (T::WAVE_K > 1) kt += tile_begin;
+-        static_for<T::E_M>([&](auto mi) {
+-            constexpr int m = decltype(mi)::value;
+-            const int r = (m * T::T_M + wm) * T::W_M + lane % T::W_M;
+-            const int offset = r * args.stride_a + (lane / T::W_M) * 16;
+-            set_slice(q.a[m], load<16>(ga, offset, kt * T::W_K), 0_I, 16_I);
+-            set_slice(q.a[m], load<16>(ga, offset + T::W_K / 2, kt * T::W_K), 16_I, 32_I);
+-            const int sf_offset = r + row < args.m ? (kt * T::W_K / 128) * args.stride_sfa + row + r : -1;
+-            q.sfa[m] = load<1>(gsa, sf_offset)[0];
+-        });
+-        static_for<T::E_N>([&](auto ni) {
+-            constexpr int n = decltype(ni)::value;
+-            const int nr = (n * T::T_N + wn) * T::W_N;
+-            const int offset = nr * args.stride_b + lane * 16;
+-            set_slice(q.b[n], load<16>(gb, offset, kt * T::W_K * 16, number<T::B_CACHE>{}), 0_I, 16_I);
+-            set_slice(q.b[n], load<16>(gb, offset + T::W_K * 8, kt * T::W_K * 16, number<T::B_CACHE>{}), 16_I, 32_I);
+-            if constexpr (!T::REUSE_B_SCALE) {
++        if constexpr (std::is_same_v<T, opus_gemm_small_register_traits_gfx950<
++                16, 48, 1, 1, 4, 4, 4, 3, 7168, true, false>>) {
++            // Issue the same raw scales first; no operand is consumed until
++            // the original compute queues/waits and K-wave reduction below.
++            static_for<T::E_M>([&](auto mi) {
++                constexpr int m = decltype(mi)::value;
++                const int r = (m * T::T_M + wm) * T::W_M + lane % T::W_M;
++                const int sf_offset = r + row < args.m ? (kt * T::W_K / 128) * args.stride_sfa + row + r : -1;
++                q.sfa[m] = load<1>(gsa, sf_offset)[0];
++            });
++            static_for<T::E_N>([&](auto ni) {
++                constexpr int n = decltype(ni)::value;
++                const int nr = (n * T::T_N + wn) * T::W_N;
+                 q.sfb[n] = load<1>(gsb, ((col + nr) / 128) * args.stride_sfb + kt * T::W_K / 128)[0];
+-            } else if constexpr (n == 0) {
+-                q.sfb[0] = load<1>(gsb, (col / 128) * args.stride_sfb + kt * T::W_K / 128)[0];
+-            }
+-        });
++            });
++            __builtin_amdgcn_sched_barrier(0);
++            static_for<T::E_M>([&](auto mi) {
++                constexpr int m = decltype(mi)::value;
++                const int r = (m * T::T_M + wm) * T::W_M + lane % T::W_M;
++                const int offset = r * args.stride_a + (lane / T::W_M) * 16;
++                set_slice(q.a[m], load<16>(ga, offset, kt * T::W_K), 0_I, 16_I);
++                set_slice(q.a[m], load<16>(ga, offset + T::W_K / 2, kt * T::W_K), 16_I, 32_I);
++            });
++            static_for<T::E_N>([&](auto ni) {
++                constexpr int n = decltype(ni)::value;
++                const int nr = (n * T::T_N + wn) * T::W_N;
++                const int offset = nr * args.stride_b + lane * 16;
++                set_slice(q.b[n], load<16>(gb, offset, kt * T::W_K * 16, number<T::B_CACHE>{}), 0_I, 16_I);
++                set_slice(q.b[n], load<16>(gb, offset + T::W_K * 8, kt * T::W_K * 16, number<T::B_CACHE>{}), 16_I, 32_I);
++            });
++        } else {
++            static_for<T::E_M>([&](auto mi) {
++                constexpr int m = decltype(mi)::value;
++                const int r = (m * T::T_M + wm) * T::W_M + lane % T::W_M;
++                const int offset = r * args.stride_a + (lane / T::W_M) * 16;
++                set_slice(q.a[m], load<16>(ga, offset, kt * T::W_K), 0_I, 16_I);
++                set_slice(q.a[m], load<16>(ga, offset + T::W_K / 2, kt * T::W_K), 16_I, 32_I);
++                const int sf_offset = r + row < args.m ? (kt * T::W_K / 128) * args.stride_sfa + row + r : -1;
++                q.sfa[m] = load<1>(gsa, sf_offset)[0];
++            });
++            static_for<T::E_N>([&](auto ni) {
++                constexpr int n = decltype(ni)::value;
++                const int nr = (n * T::T_N + wn) * T::W_N;
++                const int offset = nr * args.stride_b + lane * 16;
++                set_slice(q.b[n], load<16>(gb, offset, kt * T::W_K * 16, number<T::B_CACHE>{}), 0_I, 16_I);
++                set_slice(q.b[n], load<16>(gb, offset + T::W_K * 8, kt * T::W_K * 16, number<T::B_CACHE>{}), 16_I, 32_I);
++                if constexpr (!T::REUSE_B_SCALE) {
++                    q.sfb[n] = load<1>(gsb, ((col + nr) / 128) * args.stride_sfb + kt * T::W_K / 128)[0];
++                } else if constexpr (n == 0) {
++                    q.sfb[0] = load<1>(gsb, (col / 128) * args.stride_sfb + kt * T::W_K / 128)[0];
++                }
++            });
++        }
+     };
+     auto compute = [&](auto stage) {
+         auto& q = queue[decltype(stage)::value];

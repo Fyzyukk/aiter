@@ -1,0 +1,138 @@
+{
+  "status": "cpu_audit_passed_unvalidated_numerics",
+  "cpu_only": true,
+  "gpu_operations": 0,
+  "numerical_validation": "not_run_gpu_stopped",
+  "performance_validation": "not_run_gpu_stopped",
+  "libraries": [
+    {
+      "side": "baseline",
+      "device_sha256": "129e22bc67f0d4a286146b1efc34741d826a0fa20553ab751e54636c779a62e5",
+      "kernels": [
+        {
+          "name": "void gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel<opus_gemm_mxscale_bpreshuffle_8wave_192x256_large_output_traits_gfx950>(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+          "symbol": "_Z55gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernelI70opus_gemm_mxscale_bpreshuffle_8wave_192x256_large_output_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+          "resources": {
+            "agpr_count": 0,
+            "vgpr_count": 203,
+            "sgpr_count": 49,
+            "group_segment_fixed_size": 143360,
+            "private_segment_fixed_size": 0,
+            "vgpr_spill_count": 0,
+            "sgpr_spill_count": 0
+          },
+          "isa_bytes": 7720,
+          "isa_sha256": "7fd985557ff17e4f7ec8fcef7504757b5457a0df1dc672c356544c87c275c7c7"
+        }
+      ],
+      "isa_argv": [
+        "/opt/rocm-llvm23-46fcb339/bin/llvm-objdump",
+        "-d",
+        "--mcpu=gfx950",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/cpu_audit_no_runtime/baseline.co"
+      ]
+    },
+    {
+      "side": "panel16",
+      "device_sha256": "3ca722afd393d2d28d953d476be58cfcd747ea08a16d9c5bf940afed7411557c",
+      "kernels": [
+        {
+          "name": "void opus_private_9030_fixed1536_panel16_kernel<opus_private_9030_fixed1536_panel16_traits>(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+          "symbol": "_Z42opus_private_9030_fixed1536_panel16_kernelI42opus_private_9030_fixed1536_panel16_traitsEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+          "resources": {
+            "agpr_count": 0,
+            "vgpr_count": 203,
+            "sgpr_count": 49,
+            "group_segment_fixed_size": 121408,
+            "private_segment_fixed_size": 0,
+            "vgpr_spill_count": 0,
+            "sgpr_spill_count": 0
+          },
+          "isa_bytes": 6572,
+          "isa_sha256": "04006846d0da69117f3c6653b8674e81df3bca90c352c0ed329d62a725a09218"
+        }
+      ],
+      "isa_argv": [
+        "/opt/rocm-llvm23-46fcb339/bin/llvm-objdump",
+        "-d",
+        "--mcpu=gfx950",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/cpu_audit_no_runtime/panel16.co"
+      ]
+    },
+    {
+      "side": "directb",
+      "device_sha256": "35436f92661e4c53a22ea7ed24a41956d27a1ee208c3fafc2a6f2602eb255676",
+      "kernels": [
+        {
+          "name": "void opus_private_9030_directb_a3_chunk96_kernel<opus_private_9030_directb_a3_chunk96_traits>(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+          "symbol": "_Z43opus_private_9030_directb_a3_chunk96_kernelI43opus_private_9030_directb_a3_chunk96_traitsEv42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+          "resources": {
+            "agpr_count": 0,
+            "vgpr_count": 170,
+            "sgpr_count": 46,
+            "group_segment_fixed_size": 79168,
+            "private_segment_fixed_size": 0,
+            "vgpr_spill_count": 0,
+            "sgpr_spill_count": 0
+          },
+          "isa_bytes": 6624,
+          "isa_sha256": "e025a656b85de27fa7216aaee28e3afdc5716e4afacddcc6492e7c3ce40a9779"
+        }
+      ],
+      "isa_argv": [
+        "/opt/rocm-llvm23-46fcb339/bin/llvm-objdump",
+        "-d",
+        "--mcpu=gfx950",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/cpu_audit_no_runtime/directb.co"
+      ]
+    }
+  ],
+  "layout_guard_check": {
+    "compile_argv": [
+      "/opt/rocm-llvm23-46fcb339/bin/clang++",
+      "-x",
+      "hip",
+      "--offload-host-only",
+      "--rocm-path=/opt/rocm",
+      "--hip-path=/opt/rocm",
+      "-std=c++20",
+      "-O2",
+      "-D__HIPCC_RTC__=1",
+      "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/cpu_audit_no_runtime",
+      "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030",
+      "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/cpu_audit_no_runtime/host_include",
+      "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/frozen",
+      "-I/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/frozen/gemm_include/gfx950",
+      "-c",
+      "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/layout_guard_check.cpp",
+      "-o",
+      "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/cpu_audit_no_runtime/layout_guard_check.o"
+    ],
+    "link_argv": [
+      "/opt/rocm-llvm23-46fcb339/bin/clang++",
+      "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/cpu_audit_no_runtime/layout_guard_check.o",
+      "-o",
+      "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_flydsl_all_20261009/large9030/cpu_audit_no_runtime/layout_guard_check"
+    ],
+    "host_object_sha256": "796d20e150e390b50d435660ee81d20b644d1f4f94916f7710677ed9eca52de6",
+    "binary_sha256": "33ac9e18281b64213d50f975fe53e8f24c2929bb9107c1ca01a095fad078acb8",
+    "no_hip_or_hsa_runtime_dependency": true,
+    "source_sha256": "da51e657a9262f37fe25816fe41324e21f2271214e3e6edd938d084fa1295f6d",
+    "helper_source_sha256": "480868473e374b0c335b195cee7dc1d8284a3567b62934e32f24e1dd3628d48e",
+    "stdout": "passed: actual frozen A/B producer and fragment layouts; direct-B byte equivalence for all waves/lanes/repeats/chunks and 12 K tiles; panel16 SFA/SFB coverage and 64/128/192 row tails; actual MMA C partition with two chunk96 output passes; A3/B2 lifecycle model; all10 historical shape guards and signed32/signed64 C boundaries; no HIP runtime calls",
+    "host_attribute_adapter_sha256": "d4093e6e305577f495a7e13eaf3c1079063abfcc799dcf2be3f6a73e6d662b1e",
+    "host_attribute_diff_sha256": "0964bfdc42f2ad56d6be42c35476f9677b7c53ab20fcb52832d8fca59de4f428"
+  },
+  "production_sources_unchanged": true,
+  "formal_control_unchanged": true,
+  "compiled_source_hashes_match": true,
+  "candidate_synchronization_fragments_checked": 4,
+  "build_receipt": {
+    "path": "build_receipt_v2.json",
+    "sha256": "9ff54ade20e85ea107a7e0d75c69376673f01ca4a3fcd3236acb39805471ee3c"
+  },
+  "elf_parser_reference": {
+    "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/sfa_packed/audit_device.py",
+    "sha256": "bcbe01a491854c883f90abcacb8d2038c1216cfac2f76db3b28a2aba7fbb6079"
+  }
+}

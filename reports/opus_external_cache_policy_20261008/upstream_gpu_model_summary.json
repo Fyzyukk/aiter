@@ -1,0 +1,84 @@
+[
+  {
+    "pr": 3383,
+    "rows": 217,
+    "model_evidence_lines": [
+      "[Perf] tune a8w8_blockscale_bpreshuffle for DSv4-Pro shapes on MI355X",
+      "- 8x MI355X (`gfx950`)"
+    ],
+    "model_claim": "MI355X"
+  },
+  {
+    "pr": 4326,
+    "rows": 160,
+    "model_evidence_lines": [
+      "Tune the a8w8 blockscale **bpreshuffle** GEMM configs used by DeepSeek-V4 on gfx950 (MI355X, cu_num=256), updating `aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv`."
+    ],
+    "model_claim": "MI355X"
+  },
+  {
+    "pr": 3108,
+    "rows": 150,
+    "model_evidence_lines": [
+      "68 M values per shape (1, 2, 4, 8 + \\`getPaddedM\\` gl=0 fine-grained set covering 16..2048, plus sparse {4096, 6144, 8192, 10240, 12288, 14336, 16384, 32768}). Tuned across ck/cktile/asm backends with \\`--libtype all\\`, 204 rows, 0 failures. ~6.5 min on 8x MI355X."
+    ],
+    "model_claim": "MI355X"
+  },
+  {
+    "pr": 3238,
+    "rows": 74,
+    "model_evidence_lines": [
+      "Tuned with \\`--libtype all\\` (ck/cktile/asm), 75/75 success, ~6 min on 8x MI355X."
+    ],
+    "model_claim": "MI355X"
+  },
+  {
+    "pr": 5283,
+    "rows": 60,
+    "model_evidence_lines": [
+      "All 60 rows are in-place replacements of existing keys (no rows added). Each new kernel was chosen with the official tuner (--libtype all, --preshuffle) and kept only when a multi-run ABBA head-to-head on MI355X gfx950 (50 warmup / 200 iters / 7 groups, median) confirmed >2% speedup over the previous kernel with bit- identical output (maxdiff=0). Most are CK 256x64x256x128 -> CKTile 192x256x128."
+    ],
+    "model_claim": "MI355X"
+  },
+  {
+    "pr": 3339,
+    "rows": 33,
+    "model_evidence_lines": [
+      "Re-tuned DSv4 FP8 a8w8 blockscale bpreshuffle GEMM configs for gfx950 (MI355, 256 CUs). 43 shapes improved across all batch sizes (M=1-32768), primarily by switching from CK `intrawave_v1` to ASM splitK kernels.",
+      "## E2E Validation (DSv4-Pro, TP=8, MI355)"
+    ],
+    "model_claim": "MI355 (PR shorthand)"
+  },
+  {
+    "pr": 4264,
+    "rows": 17,
+    "model_evidence_lines": [
+      "DeepSeek MLA decode-M shapes on gfx950 (MI355X), plus a test harness that can"
+    ],
+    "model_claim": "MI355X"
+  },
+  {
+    "pr": 5279,
+    "rows": 16,
+    "model_evidence_lines": [
+      "Add MI355X (**gfx950**) tuned `a8w8` block-scale **bpreshuffle** GEMM configs for two",
+      "## Kernel result (MI355X, gfx950)",
+      "**Server (DeepSeek-V4-Pro, MI355X, TP8):**"
+    ],
+    "model_claim": "MI355X"
+  },
+  {
+    "pr": 5440,
+    "rows": 10,
+    "model_evidence_lines": [
+      "Head-to-head ABBA (7 groups × 200 iters, warmup 50, median), gfx950 MI355X /"
+    ],
+    "model_claim": "MI355X"
+  },
+  {
+    "pr": 4202,
+    "rows": 8,
+    "model_evidence_lines": [],
+    "model_claim": "unconfirmed"
+  }
+]

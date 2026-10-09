@@ -1,0 +1,20 @@
+{
+  "status": "prepared_private",
+  "baseline": {
+    "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_remaining_20261008/jit_formal_selected/module_deepgemm_opus.so",
+    "sha256": "4be55119596805e3d2967a00c3cbf70129f280094d14d43fbbb2461f91aee1bd"
+  },
+  "changes": [
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh",
+      "baseline_sha256": "b0e695e9471046f3c263ca9913421e817256ab02e7b00511808871765c9e4e55",
+      "candidate_sha256": "f7da41d1a63780f0b3a93ac369a0e80d98fd17a39464c84cec08cc33e1932445"
+    },
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh",
+      "baseline_sha256": "d1e8958d8206b731f8a6662948ae8f3b25d6b0b140c995eea9603b04d15a4148",
+      "candidate_sha256": "e21d233f1c4072a718e78b29dbe8411b7a9456dadb5b4429776ee551c38772c5"
+    }
+  ],
+  "mechanism": "Issue both K0 matrix halves before scale requests; preserve scale format, all hardware waits/barriers, K1 and steady loop."
+}

@@ -1,0 +1,146 @@
+{
+  "status": "cpu_analysis_and_private_offline_prototype_complete_gpu_tests_stopped",
+  "comparison": "saved historical CSV timings; no clean OPUS/FlyDSL full same-card A/B",
+  "selected_opus_shapes": 693,
+  "losers": 294,
+  "winners": 399,
+  "loser_parent_count": 26,
+  "small_losers": 175,
+  "main_losers": 119,
+  "slow_threshold_counts": {
+    "greater_than_0_pct": 294,
+    "greater_than_1_pct": 270,
+    "greater_than_3_pct": 225,
+    "greater_than_5_pct": 191,
+    "greater_than_10_pct": 138,
+    "greater_than_20_pct": 32,
+    "greater_than_30_pct": 6
+  },
+  "flydsl_kind_counts": {
+    "bmm": 272,
+    "mxpsh": 22
+  },
+  "M_ranges": {
+    "M_le_128": 96,
+    "M_129_to_1024": 143,
+    "M_gt_1024": 55
+  },
+  "parent_loser_counts": {
+    "9000": 5,
+    "9001": 7,
+    "9011": 1,
+    "9020": 5,
+    "9021": 13,
+    "9022": 72,
+    "9024": 6,
+    "9030": 10,
+    "9040": 4,
+    "9041": 23,
+    "9042": 1,
+    "9043": 2,
+    "9044": 26,
+    "9045": 7,
+    "9046": 17,
+    "9047": 18,
+    "9049": 3,
+    "9051": 7,
+    "9052": 9,
+    "9053": 4,
+    "9054": 4,
+    "9055": 12,
+    "9060": 5,
+    "9061": 7,
+    "9062": 7,
+    "9063": 19
+  },
+  "all_losers_are_already_fastest_measured_legal_opus_config": true,
+  "opus_legal_profile_configs": 13027,
+  "compiler24_verified_gain_overlaps": [
+    {
+      "M": 112,
+      "N": 768,
+      "K": 7168,
+      "parent": 9052,
+      "actual": 9070,
+      "clang23_over24_delta_pct": 11.874438649773733
+    },
+    {
+      "M": 16,
+      "N": 6144,
+      "K": 7168,
+      "parent": 9052,
+      "actual": 9070,
+      "clang23_over24_delta_pct": 13.991237796535195
+    },
+    {
+      "M": 16,
+      "N": 7168,
+      "K": 7168,
+      "parent": 9052,
+      "actual": 9070,
+      "clang23_over24_delta_pct": 16.056372415523647
+    }
+  ],
+  "input_sha256": {
+    "reports/opus_flydsl_comparison_20261008/historical_best_per_shape.csv": "d41bb6d1fef15f226e774448293ab41600ea6d5ff3f857d3a7899f56664e032d",
+    "reports/opus_clang23_mixed_retune_20261008/profile.csv": "f156e72850256713f0aa56b9398735300ba675c88ffa89f5977ee791e61a28a1",
+    "csrc/opus_gemm/opus_gemm_common.py": "7f9e80cfdc6d81b0f03e0e90e2b0c3da8bc09c8d11d4cb1059c3a4c8a3c31e2e",
+    "csrc/opus_gemm/codegen/gen_instances_gfx950.py": "912bece58cd99619caaf87f84abc8f887f076a04d62b628bc16639f5ae7ae59a",
+    "reports/opus_compiler_ab_baseline_review_20261008/compiler_ab_per_shape.csv": "a4f712a99a85c6239c1837acef3939d98ad398c180457bceafbcca2ba2608d10",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh": "34586b3e28cbf8d3b9bf4325d631fd0eb91d56f7ba4a1c6d9f965a041ff7b962",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh": "49eea7c7f638c656ac692be6a8060e8c740fba2a27eedb7f3f7d7462114dab35",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh": "1a173ddf9e80fd19a6a97163f4f23ed02219adb0f847f4997c78aa66c0ad20ab",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh": "6d357cbc51b89520faf3098f5c8e61a614f7b98c1b0803f209e07652de362fb4",
+    "aiter/ops/flydsl/kernels/gemm/mxscale_preshuffle.py": "21694ccdd3a92ac42b57b06fa69bf4e7997b0b1df5188abb71c3eff049c6aa10",
+    "aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv": "3c54663129807c1ff264b4be3c1265b75bc603b85f87b252897759a84b3f0f01",
+    "reports/opus_clang23_mixed_retune_20261008/jit/module_deepgemm_opus.so": "08201bc0f5c76b6d0449492661479bfae5e5d456bc967d2f09abcb1c0a6dc7c0",
+    "reports/opus_flydsl_comparison_20261008/upstream_mxscale_main.csv": "97974cf93a11b71834770acd44a2a7a3ab1342e7572f4ca45c2da989b0d883cb"
+  },
+  "actual_mapping_method": "CPU-only AST extracted registry factories and ordered dispatch; positive C++ integer division preserved. Main/narrow generated fixed-K branches resolved. No torch/aiter import, GPU query, compilation or test.",
+  "metadata_method": "Small register/LDS stages, cluster, prefetch, waveK/output/cache/reuse derived from current C++ traits alias definitions; register tail derived from current generated traits. Main/narrow branches from codegen and current C++ traits. Main wave dimensions are T_M/T_N/T_K; missing pipeline fields indicate that no equivalent scalar parameter was assigned. mxpsh WGwaves=min(4,tileN//16), separate from the name w0/w2/w4 waves_per_eu hint.",
+  "loser_actual_group_count": 36,
+  "gpu_operations_this_work": 0,
+  "independent_audit": "All 294 keys/timings, 26 parent groups, 36 actual groups, 11 N/K groups, 7 pools and source mappings reviewed independently; private prototype source/layout/guard and ELF resource audit passed.",
+  "private_prototype": {
+    "id": "shortk9022",
+    "path": "reports/opus_flydsl_gap_20261009/shortk9022/README.md",
+    "status": "offline_clang23_compile_link_and_cpu_audit_passed",
+    "losing_pool_count": 28,
+    "fixed_K": [
+      384,
+      768
+    ],
+    "registered": false,
+    "numerical_validation": "not_run_gpu_stopped",
+    "performance_validation": "not_run_gpu_stopped",
+    "local_baseline": "current runtime source frozen and recompiled with matching flags; not claimed identical to historical formal library",
+    "resources": {
+      "runtime": {
+        "VGPR": 194,
+        "SGPR": 62,
+        "LDS_bytes": 81184,
+        "scratch_bytes": 0,
+        "spill_count": 0
+      },
+      "fixed384": {
+        "VGPR": 176,
+        "SGPR": 46,
+        "LDS_bytes": 77320,
+        "scratch_bytes": 0,
+        "spill_count": 0
+      },
+      "fixed768": {
+        "VGPR": 176,
+        "SGPR": 46,
+        "LDS_bytes": 77320,
+        "scratch_bytes": 0,
+        "spill_count": 0
+      }
+    },
+    "receipts": [
+      "shortk9022/build_receipt.json",
+      "shortk9022/cpu_audit.json",
+      "shortk9022/final_manifest.json"
+    ]
+  }
+}

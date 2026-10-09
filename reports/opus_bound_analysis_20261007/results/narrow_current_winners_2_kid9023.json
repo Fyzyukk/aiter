@@ -1,0 +1,4822 @@
+{
+  "status": "passed",
+  "started": 1791399403.98944,
+  "source_head": "b152ab834e68f8fde18adbd7b200c587770b9fb5",
+  "python": "/opt/venv/bin/python3",
+  "torch": "2.9.0a0+git7bcbafe",
+  "hip": "7.0.51831-a3e329ad8",
+  "libraries": {
+    "baseline": {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/narrow_unroll/baseline/experiments.so",
+      "sha256": "925a7d04add72953681267bb0f7f72df99a53710ad56447f7cc1fdf3cb8dbff7"
+    },
+    "candidate": {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/narrow_unroll/candidate/experiments.so",
+      "sha256": "ee4ff78ab31e54c65ff8b5c7505b60307232ace403d17e9ab583faaf690baf4a"
+    }
+  },
+  "plan": {
+    "libraries": {
+      "baseline": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/narrow_unroll/baseline/experiments.so",
+      "candidate": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/narrow_unroll/candidate/experiments.so"
+    },
+    "workspace": false,
+    "targets": [
+      {
+        "kid": 9023,
+        "shape": [
+          544,
+          7168,
+          7168
+        ],
+        "seed": 17,
+        "signed": true,
+        "role": "current745 actual winner runtime branch"
+      },
+      {
+        "kid": 9023,
+        "shape": [
+          544,
+          7168,
+          16384
+        ],
+        "seed": 17,
+        "signed": true,
+        "role": "current745 actual winner runtime branch"
+      },
+      {
+        "kid": 9023,
+        "shape": [
+          576,
+          7168,
+          7168
+        ],
+        "seed": 17,
+        "signed": true,
+        "role": "current745 actual winner runtime branch"
+      },
+      {
+        "kid": 9023,
+        "shape": [
+          576,
+          7168,
+          16384
+        ],
+        "seed": 17,
+        "signed": true,
+        "role": "current745 actual winner runtime branch"
+      },
+      {
+        "kid": 9024,
+        "shape": [
+          608,
+          768,
+          7168
+        ],
+        "seed": 17,
+        "signed": true,
+        "role": "runtime guard: K7168 outside fixed specialization; 120 WG"
+      },
+      {
+        "kid": 9024,
+        "shape": [
+          1536,
+          768,
+          16384
+        ],
+        "seed": 17,
+        "signed": true,
+        "role": "runtime guard: maximum K and multiple scale refills; 288 WG"
+      }
+    ]
+  },
+  "plan_sha256": "b684aabc86afd8d62ca8c39b70d0c875829c844f3e14ad9f42cdca75c7e334e8",
+  "runner_sha256": "a2bc29d2d5dd75959ae9529f53297defd135e3746d065398bc74fe14e1f55310",
+  "rounds": 1,
+  "warmup": 5,
+  "iters": 51,
+  "profiling_only": false,
+  "label_filter": null,
+  "target_index": 2,
+  "event_confirmation_requested": true,
+  "timing": "aiter.run_perftest with automatic input/output/workspace rotation",
+  "rows": [
+    {
+      "target_index": 2,
+      "kid": 9023,
+      "shape": [
+        576,
+        7168,
+        7168
+      ],
+      "split": 1,
+      "correctness": {
+        "baseline": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        },
+        "candidate": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        }
+      },
+      "timings": [
+        {
+          "round": 0,
+          "label": "baseline",
+          "us": 47.72365957446807,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        },
+        {
+          "round": 0,
+          "label": "candidate",
+          "us": 47.19595652173912,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        }
+      ],
+      "median_us": {
+        "baseline": 47.72365957446807,
+        "candidate": 47.19595652173912
+      },
+      "median_speedup": {
+        "candidate": 1.0111811072731598
+      },
+      "event_confirmation": {
+        "status": "passed",
+        "method": "CUDA Graph batch replay timed by HIP-backed torch events",
+        "rounds": 5,
+        "iters_per_graph": 51,
+        "direct_warmup_calls": 5,
+        "graph_warmup_replays": 1,
+        "includes": "complete private launch; split-K producer and reducer",
+        "numerical_contract": "unchanged independent FP32 accumulation interval",
+        "measurements": [
+          {
+            "round": 0,
+            "label": "baseline",
+            "order": [
+              "baseline",
+              "candidate"
+            ],
+            "event_total_ms": 2.4584619998931885,
+            "iters": 51,
+            "us_per_call": 48.20513725280762,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 0,
+            "label": "candidate",
+            "order": [
+              "baseline",
+              "candidate"
+            ],
+            "event_total_ms": 2.4689419269561768,
+            "iters": 51,
+            "us_per_call": 48.410626018748566,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 1,
+            "label": "candidate",
+            "order": [
+              "candidate",
+              "baseline"
+            ],
+            "event_total_ms": 2.4524219036102295,
+            "iters": 51,
+            "us_per_call": 48.08670399235744,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 1,
+            "label": "baseline",
+            "order": [
+              "candidate",
+              "baseline"
+            ],
+            "event_total_ms": 2.4432621002197266,
+            "iters": 51,
+            "us_per_call": 47.90710000430836,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "label": "baseline",
+            "order": [
+              "baseline",
+              "candidate"
+            ],
+            "event_total_ms": 2.461142063140869,
+            "iters": 51,
+            "us_per_call": 48.257687512566065,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "label": "candidate",
+            "order": [
+              "baseline",
+              "candidate"
+            ],
+            "event_total_ms": 2.4583420753479004,
+            "iters": 51,
+            "us_per_call": 48.202785791135305,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "label": "candidate",
+            "order": [
+              "candidate",
+              "baseline"
+            ],
+            "event_total_ms": 2.4594221115112305,
+            "iters": 51,
+            "us_per_call": 48.223962970808444,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "label": "baseline",
+            "order": [
+              "candidate",
+              "baseline"
+            ],
+            "event_total_ms": 2.4755818843841553,
+            "iters": 51,
+            "us_per_call": 48.54082126243442,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 4,
+            "label": "baseline",
+            "order": [
+              "baseline",
+              "candidate"
+            ],
+            "event_total_ms": 2.468863010406494,
+            "iters": 51,
+            "us_per_call": 48.40907863542145,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          },
+          {
+            "round": 4,
+            "label": "candidate",
+            "order": [
+              "baseline",
+              "candidate"
+            ],
+            "event_total_ms": 2.4840219020843506,
+            "iters": 51,
+            "us_per_call": 48.7063118055755,
+            "rotation_count": 51,
+            "all_pool_checks": [
+              {
+                "pool_index": 0,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 1,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 2,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 3,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 4,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 5,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 6,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 7,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 8,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 9,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 10,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 11,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 12,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 13,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 14,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 15,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 16,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 17,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 18,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 19,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 20,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 21,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 22,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 23,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 24,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 25,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 26,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 27,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 28,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 29,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 30,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 31,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 32,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 33,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 34,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 35,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 36,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 37,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 38,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 39,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 40,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 41,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 42,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 43,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 44,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 45,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 46,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 47,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 48,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 49,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              },
+              {
+                "pool_index": 50,
+                "output_repeatable": true,
+                "workspace_repeatable": false,
+                "errRatio": 0,
+                "output_guards": true,
+                "workspace_guards": true
+              }
+            ]
+          }
+        ],
+        "rotation": {
+          "mode": "aiter_automatic",
+          "input_logical_bytes": 63801921,
+          "iteration_used_bytes": 63801921,
+          "free_bytes_at_sizing": 304793780224,
+          "rotation_budget_bytes": 34359738368,
+          "count": 51
+        },
+        "shared_pool": true,
+        "pool_pointers": [
+          {
+            "a": 139558865600512,
+            "b": 139555149709312,
+            "c": 139555204235520,
+            "sfa": 139559128042496,
+            "sfb": 139559128074752,
+            "workspace": 0
+          },
+          {
+            "a": 139558777651200,
+            "b": 139555227303936,
+            "c": 139555212493568,
+            "sfa": 139559128078336,
+            "sfb": 139559128110592,
+            "workspace": 0
+          },
+          {
+            "a": 139558781779968,
+            "b": 139555304898560,
+            "c": 139555281830144,
+            "sfa": 139559128114176,
+            "sfb": 139559128146432,
+            "workspace": 0
+          },
+          {
+            "a": 139555220751360,
+            "b": 139555359424512,
+            "c": 139555290088192,
+            "sfa": 139559128150016,
+            "sfb": 139559128182272,
+            "workspace": 0
+          },
+          {
+            "a": 139555298345984,
+            "b": 139555437019136,
+            "c": 139555413950720,
+            "sfa": 139559128185856,
+            "sfb": 139559128218112,
+            "workspace": 0
+          },
+          {
+            "a": 139555422208512,
+            "b": 139555491545088,
+            "c": 139555426337536,
+            "sfa": 139559128221696,
+            "sfb": 139559128253952,
+            "workspace": 0
+          },
+          {
+            "a": 139555546071040,
+            "b": 139555569139712,
+            "c": 139555550200064,
+            "sfa": 139559128257536,
+            "sfb": 139559128289792,
+            "workspace": 0
+          },
+          {
+            "a": 139555558457856,
+            "b": 139555646734336,
+            "c": 139555623665920,
+            "sfa": 139559128293376,
+            "sfb": 139559128325632,
+            "workspace": 0
+          },
+          {
+            "a": 139555562586624,
+            "b": 139555701260288,
+            "c": 139555631923968,
+            "sfa": 139559128329216,
+            "sfb": 139559128361472,
+            "workspace": 0
+          },
+          {
+            "a": 139555640181760,
+            "b": 139555778854912,
+            "c": 139555755786496,
+            "sfa": 139559128365056,
+            "sfb": 139559128397312,
+            "workspace": 0
+          },
+          {
+            "a": 139555764044288,
+            "b": 139555833380864,
+            "c": 139555768173312,
+            "sfa": 139559128400896,
+            "sfb": 139559128433152,
+            "workspace": 0
+          },
+          {
+            "a": 139555887906816,
+            "b": 139555910975488,
+            "c": 139555892035840,
+            "sfa": 139559128436736,
+            "sfb": 139559128468992,
+            "workspace": 0
+          },
+          {
+            "a": 139555900293632,
+            "b": 139555988570112,
+            "c": 139555965501696,
+            "sfa": 139559128472576,
+            "sfb": 139559128504832,
+            "workspace": 0
+          },
+          {
+            "a": 139555904422400,
+            "b": 139556043096064,
+            "c": 139555973759744,
+            "sfa": 139559128508416,
+            "sfb": 139559128540672,
+            "workspace": 0
+          },
+          {
+            "a": 139555982017536,
+            "b": 139556120690688,
+            "c": 139556097622272,
+            "sfa": 139559128544256,
+            "sfb": 139559128576512,
+            "workspace": 0
+          },
+          {
+            "a": 139556105880064,
+            "b": 139556175216640,
+            "c": 139556110009088,
+            "sfa": 139559128580096,
+            "sfb": 139559128612352,
+            "workspace": 0
+          },
+          {
+            "a": 139556229742592,
+            "b": 139556252811264,
+            "c": 139556233871616,
+            "sfa": 139559128615936,
+            "sfb": 139559128648192,
+            "workspace": 0
+          },
+          {
+            "a": 139556242129408,
+            "b": 139556330405888,
+            "c": 139556307337472,
+            "sfa": 139559128651776,
+            "sfb": 139559128684032,
+            "workspace": 0
+          },
+          {
+            "a": 139556246258176,
+            "b": 139556384931840,
+            "c": 139556315595520,
+            "sfa": 139559128687616,
+            "sfb": 139559128719872,
+            "workspace": 0
+          },
+          {
+            "a": 139556323853312,
+            "b": 139556462526464,
+            "c": 139556439458048,
+            "sfa": 139559128723456,
+            "sfb": 139559128755712,
+            "workspace": 0
+          },
+          {
+            "a": 139556447715840,
+            "b": 139556517052416,
+            "c": 139556451844864,
+            "sfa": 139559128759296,
+            "sfb": 139559128791552,
+            "workspace": 0
+          },
+          {
+            "a": 139556571578368,
+            "b": 139556594647040,
+            "c": 139556575707392,
+            "sfa": 139559128795136,
+            "sfb": 139559128827392,
+            "workspace": 0
+          },
+          {
+            "a": 139556583965184,
+            "b": 139556672241664,
+            "c": 139556649173248,
+            "sfa": 139559128830976,
+            "sfb": 139559128863232,
+            "workspace": 0
+          },
+          {
+            "a": 139556588093952,
+            "b": 139556726767616,
+            "c": 139556657431296,
+            "sfa": 139559128866816,
+            "sfb": 139559128899072,
+            "workspace": 0
+          },
+          {
+            "a": 139556665689088,
+            "b": 139556804362240,
+            "c": 139556781293824,
+            "sfa": 139559128902656,
+            "sfb": 139559128934912,
+            "workspace": 0
+          },
+          {
+            "a": 139556789551616,
+            "b": 139556858888192,
+            "c": 139556793680640,
+            "sfa": 139559128938496,
+            "sfb": 139559128970752,
+            "workspace": 0
+          },
+          {
+            "a": 139557165072384,
+            "b": 139556913414144,
+            "c": 139557169201408,
+            "sfa": 139559128974336,
+            "sfb": 139559129006592,
+            "workspace": 0
+          },
+          {
+            "a": 139557177459200,
+            "b": 139556967940096,
+            "c": 139557181588224,
+            "sfa": 139559129010176,
+            "sfb": 139559129042432,
+            "workspace": 0
+          },
+          {
+            "a": 139557189846016,
+            "b": 139557991350272,
+            "c": 139558620496128,
+            "sfa": 139559129046016,
+            "sfb": 139559129078272,
+            "workspace": 0
+          },
+          {
+            "a": 139558628753920,
+            "b": 139558042730496,
+            "c": 139558632882944,
+            "sfa": 139559129081856,
+            "sfb": 139559129114112,
+            "workspace": 0
+          },
+          {
+            "a": 139558641140736,
+            "b": 139558094110720,
+            "c": 139558645269760,
+            "sfa": 139559129117696,
+            "sfb": 139559129149952,
+            "workspace": 0
+          },
+          {
+            "a": 139558145490944,
+            "b": 139557231132672,
+            "c": 139558149619968,
+            "sfa": 139559129153536,
+            "sfb": 139559129185792,
+            "workspace": 0
+          },
+          {
+            "a": 139558157877760,
+            "b": 139557282512896,
+            "c": 139558162006784,
+            "sfa": 139559129189376,
+            "sfb": 139559129221632,
+            "workspace": 0
+          },
+          {
+            "a": 139558170264576,
+            "b": 139557333893120,
+            "c": 139558174393600,
+            "sfa": 139559129225216,
+            "sfb": 139559129257472,
+            "workspace": 0
+          },
+          {
+            "a": 139558182651392,
+            "b": 139557385273344,
+            "c": 139558186780416,
+            "sfa": 139559129261056,
+            "sfb": 139559129293312,
+            "workspace": 0
+          },
+          {
+            "a": 139557436653568,
+            "b": 139557440782336,
+            "c": 139557492162816,
+            "sfa": 139559129296896,
+            "sfb": 139559129329152,
+            "workspace": 0
+          },
+          {
+            "a": 139557500420608,
+            "b": 139557504549376,
+            "c": 139557555929856,
+            "sfa": 139559129332736,
+            "sfb": 139559129364992,
+            "workspace": 0
+          },
+          {
+            "a": 139557564187648,
+            "b": 139557578211328,
+            "c": 139557629591808,
+            "sfa": 139559129368576,
+            "sfb": 139559129400832,
+            "workspace": 0
+          },
+          {
+            "a": 139557568316416,
+            "b": 139557637849600,
+            "c": 139557689230080,
+            "sfa": 139559129404416,
+            "sfb": 139559129436672,
+            "workspace": 0
+          },
+          {
+            "a": 139557697487872,
+            "b": 139557701616640,
+            "c": 139557752997120,
+            "sfa": 139559129440256,
+            "sfb": 139559129472512,
+            "workspace": 0
+          },
+          {
+            "a": 139557761254912,
+            "b": 139557765383680,
+            "c": 139557816764160,
+            "sfa": 139559129476096,
+            "sfb": 139559129508352,
+            "workspace": 0
+          },
+          {
+            "a": 139557825021952,
+            "b": 139557829150720,
+            "c": 139557880531200,
+            "sfa": 139559129511936,
+            "sfb": 139559129544192,
+            "workspace": 0
+          },
+          {
+            "a": 139557888788992,
+            "b": 139557892917760,
+            "c": 139557944298240,
+            "sfa": 139559129547776,
+            "sfb": 139559129580032,
+            "workspace": 0
+          },
+          {
+            "a": 139557952556032,
+            "b": 139558198968320,
+            "c": 139557956685056,
+            "sfa": 139559129583616,
+            "sfb": 139559129615872,
+            "workspace": 0
+          },
+          {
+            "a": 139557964942848,
+            "b": 139558250348544,
+            "c": 139557969071872,
+            "sfa": 139559129619456,
+            "sfb": 139559129651712,
+            "workspace": 0
+          },
+          {
+            "a": 139557977329664,
+            "b": 139558301728768,
+            "c": 139558353109248,
+            "sfa": 139559129655296,
+            "sfb": 139559129687552,
+            "workspace": 0
+          },
+          {
+            "a": 139557981458432,
+            "b": 139558361367040,
+            "c": 139558412747520,
+            "sfa": 139559129691136,
+            "sfb": 139559129723392,
+            "workspace": 0
+          },
+          {
+            "a": 139558421005312,
+            "b": 139558425134080,
+            "c": 139558476514560,
+            "sfa": 139559129726976,
+            "sfb": 139559129759232,
+            "workspace": 0
+          },
+          {
+            "a": 139558484772352,
+            "b": 139558488901120,
+            "c": 139558540281600,
+            "sfa": 139559129762816,
+            "sfb": 139559129795072,
+            "workspace": 0
+          },
+          {
+            "a": 139558548539392,
+            "b": 139558552668160,
+            "c": 139555101475072,
+            "sfa": 139559129798656,
+            "sfb": 139559129830912,
+            "workspace": 0
+          },
+          {
+            "a": 139559364853760,
+            "b": 139558715916288,
+            "c": 139559368982784,
+            "sfa": 139559128006656,
+            "sfb": 139559128038912,
+            "workspace": 0
+          }
+        ],
+        "pool_storage_bytes": 3253924032,
+        "median_us": {
+          "baseline": 48.257687512566065,
+          "candidate": 48.223962970808444
+        },
+        "median_speedup": {
+          "candidate": 1.0006993316119215
+        }
+      }
+    }
+  ],
+  "gpu": {
+    "properties": "_CudaDeviceProperties(name='AMD Instinct MI355X', major=9, minor=5, gcnArchName='gfx950:sramecc+:xnack-', total_memory=294896MB, multi_processor_count=256, uuid=39623130-6466-3438-3238-303131323265, pci_bus_id=133, pci_device_id=0, pci_domain_id=0, L2_cache_size=4MB)",
+    "pci_bdf": "0000:85:00.0",
+    "expected_pci_bdf": "0000:85:00.0",
+    "HIP_VISIBLE_DEVICES": "5"
+  },
+  "finished": 1791399405.223788
+}

@@ -1,0 +1,84 @@
+--- baseline/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh
++++ candidate/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh
+@@ -242,27 +242,43 @@
+     const auto rsfa_offsets = layout_to_offsets<1>(u_rsfa);
+     const auto rsfb_offsets = layout_to_offsets<1>(u_rsfb);
+ 
+-    // Scale A global memory -> VGPR -> LDS, retaining raw E8M0 bytes.
+-    auto load_sfa_panel = [&](int panel_k_begin) {
++    // Issue both raw scale reads before publishing either panel to LDS.
++    // Unissued lanes are never published: issue and publish use identical guards.
++    array<vector_t<D_SF, T::VEC_SCALE_A>, T::SFA_PASSES> raw_sfa_panel;
++    vector_t<D_SF, 1> raw_sfb_panel;
++    auto issue_sfa_panel = [&](int panel_k_begin) {
+         static_for<T::SFA_PASSES>([&](auto pass_i) {
+             constexpr int pass = decltype(pass_i)::value;
+             const int smem_offset = sfa_smem_offsets[pass];
+             const int local_k_group = smem_offset / T::B_M;
+             const int local_row = smem_offset % T::B_M;
+             if (smem_offset < T::SFA_BYTES && panel_k_begin + local_k_group < loops) {
+-                const auto raw = layout_9021::load_sfa_vector<T>(
++                raw_sfa_panel[pass] = layout_9021::load_sfa_vector<T>(
+                     g_sfa, sfa_gmem_offsets[pass] + gsfa_offset(panel_k_begin),
+                     kargs.m - row - local_row);
+-                store<T::VEC_SCALE_A>(s_sfa, raw, smem_offset);
+             }
+         });
+     };
+-    // Scale B global memory -> VGPR -> LDS, one byte per K128 group.
+-    auto load_sfb_panel = [&](int panel_k_begin) {
++    auto issue_sfb_panel = [&](int panel_k_begin) {
+         const int local_k_group = sfb_smem_offsets[0];
+         if (local_k_group < T::SCALE_PANEL && panel_k_begin + local_k_group < loops) {
+-            store<1>(s_sfb, load<1>(g_sfb, sfb_gmem_offsets[0] + gsfb_offset(panel_k_begin)),
+-                     sfb_smem_offsets[0]);
++            raw_sfb_panel = load<1>(g_sfb, sfb_gmem_offsets[0] + gsfb_offset(panel_k_begin));
++        }
++    };
++    auto publish_sfa_panel = [&](int panel_k_begin) {
++        static_for<T::SFA_PASSES>([&](auto pass_i) {
++            constexpr int pass = decltype(pass_i)::value;
++            const int smem_offset = sfa_smem_offsets[pass];
++            const int local_k_group = smem_offset / T::B_M;
++            if (smem_offset < T::SFA_BYTES && panel_k_begin + local_k_group < loops) {
++                store<T::VEC_SCALE_A>(s_sfa, raw_sfa_panel[pass], smem_offset);
++            }
++        });
++    };
++    auto publish_sfb_panel = [&](int panel_k_begin) {
++        const int local_k_group = sfb_smem_offsets[0];
++        if (local_k_group < T::SCALE_PANEL && panel_k_begin + local_k_group < loops) {
++            store<1>(s_sfb, raw_sfb_panel, sfb_smem_offsets[0]);
+         }
+     };
+     // Scale LDS -> VGPR; pack A repeats after reading LDS.
+@@ -304,8 +320,11 @@
+     // Prologue
+     issue_matrix_prefetch(0, 0);
+     __builtin_amdgcn_sched_barrier(0);
+-    load_sfa_panel(0);
+-    load_sfb_panel(0);
++    issue_sfa_panel(0);
++    issue_sfb_panel(0);
++    __builtin_amdgcn_sched_barrier(0);
++    publish_sfa_panel(0);
++    publish_sfb_panel(0);
+     __builtin_amdgcn_sched_barrier(0);
+     if (loops > 1) {
+         issue_matrix_prefetch(1, 1);
+@@ -331,8 +350,13 @@
+         if (has_future)
+             issue_matrix_prefetch(future_stage, tile_k + 2);
+         if (((tile_k + 1) & (T::SCALE_PANEL - 1)) == 0) {
+-            load_sfa_panel(tile_k + 1);
+-            load_sfb_panel(tile_k + 1);
++            __builtin_amdgcn_sched_barrier(0);
++            issue_sfa_panel(tile_k + 1);
++            issue_sfb_panel(tile_k + 1);
++            __builtin_amdgcn_sched_barrier(0);
++            publish_sfa_panel(tile_k + 1);
++            publish_sfb_panel(tile_k + 1);
++            __builtin_amdgcn_sched_barrier(0);
+             s_waitcnt_vmcnt(0_I);
+             s_waitcnt_lgkmcnt(0_I);
+             __builtin_amdgcn_s_barrier();

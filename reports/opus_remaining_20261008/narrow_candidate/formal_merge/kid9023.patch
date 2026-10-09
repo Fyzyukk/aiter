@@ -1,0 +1,96 @@
+--- a/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh
++++ b/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh
+@@ -224,6 +224,55 @@
+                      sfb_smem_offsets[0]);
+         }
+     };
++    // Keep the existing u16 panel representation; only split issue and publish.
++    // Every publish uses exactly the same guard as its matching issue.
++    vector_t<D_SF, T::VEC_SCALE_A> raw_sfa_low;
++    vector_t<D_SF, T::VEC_SCALE_A> raw_sfa_high;
++    vector_t<D_SF, 1> raw_sfb;
++    auto issue_sfa_panel = [&](int panel_k_begin) {
++        const int local_k_group = thread_id_x() / T::SFA_PRODUCERS_PER_GROUP;
++        if (local_k_group < T::SCALE_PANEL && panel_k_begin + local_k_group < loops) {
++            const int low_row = sfa_gmem_offsets[0];
++            const int high_row = sfa_gmem_offsets[1];
++            raw_sfa_low = layout_9021::load_sfa_vector<T>(
++                g_sfa, low_row + gsfa_offset(panel_k_begin, local_k_group),
++                kargs.m - row - low_row);
++            raw_sfa_high = layout_9021::load_sfa_vector<T>(
++                g_sfa, high_row + gsfa_offset(panel_k_begin, local_k_group),
++                kargs.m - row - high_row);
++        }
++    };
++    auto issue_sfb_panel = [&](int panel_k_begin) {
++        const int local_k_group = sfb_smem_offsets[0];
++        if (local_k_group < T::SCALE_PANEL && panel_k_begin + local_k_group < loops) {
++            raw_sfb = load<1>(g_sfb, sfb_gmem_offsets[0] + gsfb_offset(panel_k_begin));
++        }
++    };
++    auto publish_sfa_panel = [&](int panel_k_begin) {
++        const int local_k_group = thread_id_x() / T::SFA_PRODUCERS_PER_GROUP;
++        if (local_k_group < T::SCALE_PANEL && panel_k_begin + local_k_group < loops) {
++            const auto low = __builtin_bit_cast(ScaleWords, raw_sfa_low);
++            const auto high = __builtin_bit_cast(ScaleWords, raw_sfa_high);
++            static_for<T::SFA_PACK_CHUNKS>([&](auto chunk_i) {
++                constexpr int chunk = decltype(chunk_i)::value;
++                ScaleWords packed;
++                static_for<T::SFA_WORDS_PER_CHUNK>([&](auto word_i) {
++                    constexpr int word = decltype(word_i)::value;
++                    constexpr int source = chunk * T::SFA_WORDS_PER_CHUNK + word;
++                    packed[word * T::E_M] = __builtin_amdgcn_perm(high[source], low[source], T::SFA_PACK_PERM_LO);
++                    packed[word * T::E_M + 1] = __builtin_amdgcn_perm(high[source], low[source], T::SFA_PACK_PERM_HI);
++                });
++                store<T::VEC_SCALE_PACK_A>(s_sfa, __builtin_bit_cast(vector_t<u16_t, T::VEC_SCALE_PACK_A>, packed),
++                                           sfa_smem_offsets[chunk] + ssfa_offset(local_k_group));
++            });
++        }
++    };
++    auto publish_sfb_panel = [&](int panel_k_begin) {
++        const int local_k_group = sfb_smem_offsets[0];
++        if (local_k_group < T::SCALE_PANEL && panel_k_begin + local_k_group < loops) {
++            store<1>(s_sfb, raw_sfb, sfb_smem_offsets[0]);
++        }
++    };
+     // Scale LDS -> VGPR; A and B reads retain their separate scheduling points.
+     auto read_scale_a = [&](int tile_k) {
+         return static_cast<D_SF_PACK>(load<1>(s_sfa, rsfa_offsets[0] + ssfa_offset(tile_k))[0]);
+@@ -263,8 +312,16 @@
+         if (decltype(stage_i)::value < loops)
+             issue_matrix_prefetch(decltype(stage_i)::value, decltype(stage_i)::value);
+     });
+-    load_sfa_panel(0);
+-    load_sfb_panel(0);
++    if constexpr (T::FIXED_K == 0) {
++        issue_sfa_panel(0);
++        issue_sfb_panel(0);
++        __builtin_amdgcn_sched_barrier(0);
++        publish_sfa_panel(0);
++        publish_sfb_panel(0);
++    } else {
++        load_sfa_panel(0);
++        load_sfb_panel(0);
++    }
+     s_waitcnt_vmcnt(0_I);
+     s_waitcnt_lgkmcnt(0_I);
+     __builtin_amdgcn_s_barrier();
+@@ -282,8 +339,16 @@
+         if (((tile_k + 1) & (T::SCALE_PANEL - 1)) == 0) {
+             s_waitcnt_lgkmcnt(0_I);
+             __builtin_amdgcn_s_barrier();
+-            load_sfa_panel(tile_k + 1);
+-            load_sfb_panel(tile_k + 1);
++            if constexpr (T::FIXED_K == 0) {
++                issue_sfa_panel(tile_k + 1);
++                issue_sfb_panel(tile_k + 1);
++                __builtin_amdgcn_sched_barrier(0);
++                publish_sfa_panel(tile_k + 1);
++                publish_sfb_panel(tile_k + 1);
++            } else {
++                load_sfa_panel(tile_k + 1);
++                load_sfb_panel(tile_k + 1);
++            }
+             s_waitcnt_vmcnt(0_I);
+             s_waitcnt_lgkmcnt(0_I);
+             __builtin_amdgcn_s_barrier();

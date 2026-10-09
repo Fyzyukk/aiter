@@ -1,0 +1,371 @@
+{
+  "status": "passed",
+  "started": 1791403673.2746868,
+  "source_head": "b152ab834e68f8fde18adbd7b200c587770b9fb5",
+  "python": "/opt/venv/bin/python3",
+  "torch": "2.9.0a0+git7bcbafe",
+  "hip": "7.0.51831-a3e329ad8",
+  "libraries": {
+    "baseline": {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/register_reuse_scoped/baseline/experiments.so",
+      "sha256": "05b6b75b46fc8d6d80afbc28190a86d339f1b74adcde87649950bc8da2bc470b"
+    },
+    "candidate": {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/register_reuse_scoped/candidate/experiments.so",
+      "sha256": "2ee9a05a2eb1944c75fec5ec39a90b3554f2cda1a31f6c36be262a7b809e1fd0"
+    }
+  },
+  "plan": {
+    "libraries": {
+      "baseline": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/register_reuse_scoped/baseline/experiments.so",
+      "candidate": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/register_reuse_scoped/candidate/experiments.so"
+    },
+    "workspace": false,
+    "targets": [
+      {
+        "kid": 9042,
+        "shape": [
+          33,
+          384,
+          1536
+        ],
+        "seed": 103,
+        "signed": true,
+        "reasons": [
+          "waveK=4, prefetch=3: exact full queue",
+          "N384 covers adjacent N128 scale groups"
+        ]
+      },
+      {
+        "kid": 9042,
+        "shape": [
+          33,
+          384,
+          1664
+        ],
+        "seed": 104,
+        "signed": true,
+        "reasons": [
+          "waveK=4, prefetch=3: first post-queue tail, uneven K-wave partition",
+          "N384 covers adjacent N128 scale groups"
+        ]
+      },
+      {
+        "kid": 9053,
+        "shape": [
+          33,
+          384,
+          2048
+        ],
+        "seed": 109,
+        "signed": true,
+        "reasons": [
+          "waveK=8, prefetch=2: exact full queue",
+          "N384 covers adjacent N128 scale groups"
+        ]
+      },
+      {
+        "kid": 9053,
+        "shape": [
+          33,
+          384,
+          2176
+        ],
+        "seed": 110,
+        "signed": true,
+        "reasons": [
+          "waveK=8, prefetch=2: first post-queue tail, uneven K-wave partition",
+          "N384 covers adjacent N128 scale groups"
+        ]
+      },
+      {
+        "kid": 9054,
+        "shape": [
+          33,
+          384,
+          1024
+        ],
+        "seed": 111,
+        "signed": true,
+        "reasons": [
+          "waveK=4, prefetch=2: exact full queue",
+          "N384 covers adjacent N128 scale groups"
+        ]
+      }
+    ]
+  },
+  "plan_sha256": "d6f8220a70e5eb5465c1f61b420e950d6c20b23c2ea9aa546bff45b7c7942636",
+  "runner_sha256": "a2bc29d2d5dd75959ae9529f53297defd135e3746d065398bc74fe14e1f55310",
+  "rounds": 1,
+  "warmup": 5,
+  "iters": 11,
+  "profiling_only": false,
+  "label_filter": null,
+  "target_index": null,
+  "event_confirmation_requested": false,
+  "timing": "aiter.run_perftest with automatic input/output/workspace rotation",
+  "rows": [
+    {
+      "target_index": 0,
+      "kid": 9042,
+      "shape": [
+        33,
+        384,
+        1536
+      ],
+      "split": 1,
+      "correctness": {
+        "baseline": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        },
+        "candidate": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        }
+      },
+      "timings": [
+        {
+          "round": 0,
+          "label": "baseline",
+          "us": 5.0311,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        },
+        {
+          "round": 0,
+          "label": "candidate",
+          "us": 3.8591000000000037,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        }
+      ],
+      "median_us": {
+        "baseline": 5.0311,
+        "candidate": 3.8591000000000037
+      },
+      "median_speedup": {
+        "candidate": 1.3036977533621816
+      }
+    },
+    {
+      "target_index": 1,
+      "kid": 9042,
+      "shape": [
+        33,
+        384,
+        1664
+      ],
+      "split": 1,
+      "correctness": {
+        "baseline": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        },
+        "candidate": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        }
+      },
+      "timings": [
+        {
+          "round": 0,
+          "label": "baseline",
+          "us": 4.379100000000004,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        },
+        {
+          "round": 0,
+          "label": "candidate",
+          "us": 4.303100000000001,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        }
+      ],
+      "median_us": {
+        "baseline": 4.379100000000004,
+        "candidate": 4.303100000000001
+      },
+      "median_speedup": {
+        "candidate": 1.0176616857614285
+      }
+    },
+    {
+      "target_index": 2,
+      "kid": 9053,
+      "shape": [
+        33,
+        384,
+        2048
+      ],
+      "split": 1,
+      "correctness": {
+        "baseline": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        },
+        "candidate": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        }
+      },
+      "timings": [
+        {
+          "round": 0,
+          "label": "baseline",
+          "us": 6.879099999999999,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        },
+        {
+          "round": 0,
+          "label": "candidate",
+          "us": 5.855000000000001,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        }
+      ],
+      "median_us": {
+        "baseline": 6.879099999999999,
+        "candidate": 5.855000000000001
+      },
+      "median_speedup": {
+        "candidate": 1.1749103330486759
+      }
+    },
+    {
+      "target_index": 3,
+      "kid": 9053,
+      "shape": [
+        33,
+        384,
+        2176
+      ],
+      "split": 1,
+      "correctness": {
+        "baseline": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        },
+        "candidate": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        }
+      },
+      "timings": [
+        {
+          "round": 0,
+          "label": "baseline",
+          "us": 6.8870000000000005,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        },
+        {
+          "round": 0,
+          "label": "candidate",
+          "us": 7.118999999999997,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        }
+      ],
+      "median_us": {
+        "baseline": 6.8870000000000005,
+        "candidate": 7.118999999999997
+      },
+      "median_speedup": {
+        "candidate": 0.9674111532518617
+      }
+    },
+    {
+      "target_index": 4,
+      "kid": 9054,
+      "shape": [
+        33,
+        384,
+        1024
+      ],
+      "split": 1,
+      "correctness": {
+        "baseline": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        },
+        "candidate": {
+          "repetitions": 8,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true,
+          "repeatable": true
+        }
+      },
+      "timings": [
+        {
+          "round": 0,
+          "label": "baseline",
+          "us": 6.003000000000003,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        },
+        {
+          "round": 0,
+          "label": "candidate",
+          "us": 5.730999999999999,
+          "errRatio": 0,
+          "output_guards": true,
+          "workspace_guards": true
+        }
+      ],
+      "median_us": {
+        "baseline": 6.003000000000003,
+        "candidate": 5.730999999999999
+      },
+      "median_speedup": {
+        "candidate": 1.0474611760600252
+      }
+    }
+  ],
+  "gpu": {
+    "properties": "_CudaDeviceProperties(name='AMD Instinct MI355X', major=9, minor=5, gcnArchName='gfx950:sramecc+:xnack-', total_memory=294896MB, multi_processor_count=256, uuid=36316533-3964-3532-3038-386636386661, pci_bus_id=21, pci_device_id=0, pci_domain_id=0, L2_cache_size=4MB)",
+    "pci_bdf": "0000:15:00.0",
+    "expected_pci_bdf": "0000:15:00.0",
+    "HIP_VISIBLE_DEVICES": "3"
+  },
+  "finished": 1791403674.1211188
+}

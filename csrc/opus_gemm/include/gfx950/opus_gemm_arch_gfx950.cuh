@@ -39,6 +39,13 @@ using OpusA8W8BlockscaleBpreshuffleKernel = void (*)(
     aiter_tensor_t&, aiter_tensor_t&, std::optional<aiter_tensor_t>);
 #endif
 
+#ifndef OPUS_A8W8_BPRESHUFFLE_RUNTIME_KERNEL_TYPE_DEFINED
+#define OPUS_A8W8_BPRESHUFFLE_RUNTIME_KERNEL_TYPE_DEFINED
+using OpusA8W8BlockscaleBpreshuffleRuntimeKernel = void (*)(
+    aiter_tensor_t&, aiter_tensor_t&, aiter_tensor_t&,
+    aiter_tensor_t&, aiter_tensor_t&, std::optional<aiter_tensor_t>, int);
+#endif
+
 namespace opus_gfx950_detail
 {
 struct OpusA16W16KidEntry
@@ -131,6 +138,21 @@ opus_a8w8_blockscale_kid_dispatch_gfx950(int id)
                 "unknown kid ", id,
                 " for OPUS a8w8_blockscale on gfx950");
     return entry->func;
+}
+
+// A null lookup lets the historical raw ABI fall through to its unchanged
+// fixed-split table. Runtime launchers use a separate signature/table.
+inline OpusA8W8BlockscaleBpreshuffleRuntimeKernel
+opus_a8w8_blockscale_bpreshuffle_runtime_kid_dispatch_gfx950(int id)
+{
+    using Entry = opus_gfx950_detail::OpusA8W8KidEntry<
+        OpusA8W8BlockscaleBpreshuffleRuntimeKernel>;
+    static constexpr std::array<
+        Entry,
+        GENERATE_A8W8_BLOCKSCALE_BPRESHUFFLE_RUNTIME_KID_DISPATCH_GFX950_BF16_SIZE>
+        kKids = {{GENERATE_A8W8_BLOCKSCALE_BPRESHUFFLE_RUNTIME_KID_DISPATCH_GFX950_BF16}};
+    const auto* entry = opus_gfx950_detail::find_kid(kKids, id);
+    return entry == nullptr ? nullptr : entry->func;
 }
 
 template <typename CDataType>

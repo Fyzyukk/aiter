@@ -5,8 +5,56 @@ The public Python contract is documented in
 Python `opus_gemm(..., kid=...)` and `opus_bmm(..., kid=...)` entries; the
 public operation split does not duplicate C++ launchers or kernels.
 
-The [latest gfx950 results](../../reports/opus_current745_tables_20260930/REPORT.md)
-list all 26 default MXFP8 B-preshuffle candidates and their win counts, with
+The current MXFP8 B-preshuffle registry exposes **89 tuning configurations**
+and preserves 16 historical compatibility/internal IDs, giving 105 registered IDs.
+Nine configurations accept runtime global split-K, so one static geometry serves
+multiple launch choices. The three fine split-two siblings remain callable for
+saved tables and are excluded from default tuning. Their parameter table is
+[opus_gemm_bpreshuffle_variants.py](opus_gemm_bpreshuffle_variants.py); the original
+41 entries and combined registry remain in `opus_gemm_common.py`. The promoted
+variants JSON records provenance for CPU checks and does not drive execution.
+The [runtime split-K report](../../reports/opus_runtime_splitk_20261009/README.md)
+lists the [89 active configurations](../../reports/opus_runtime_splitk_20261009/registry89.csv)
+and [105 registered IDs](../../reports/opus_runtime_splitk_20261009/registry105.csv).
+The earlier [92-configuration registration report](../../reports/opus_register92_20261009/README.md)
+is frozen historical evidence. GPU validation of the retained variants and new
+runtime split paths remains pending.
+
+## Runtime global split-K
+
+Register IDs 92310, 92311, 92320, 92321, 92330, and 92340, and fine LDS IDs
+92410, 92420, and 92430 use a shape-dependent launch plan. The framework resolves
+the split count once for the producer grid, dynamic LDS, workspace, and reducer.
+Tile geometry, MFMA layout, operand queues, and local WaveK remain compile-time
+parameters. The six register geometries originally all used global split four;
+their tile/local-WaveK differences remain distinct configurations.
+
+For those nine IDs, `split_k` and the tuned CSV `splitK` column have these meanings:
+
+| Value | Behavior |
+|---|---|
+| `1..16` | Literal global partition count, at most `K / 128`, subject to the shape and byte/workspace limits |
+| `0` | Historical default: one for fine LDS and four for register; short-K register defaults may include empty partitions |
+| `-1` | Optional grid/CU heuristic calculated from M/N/K and the supplied CU count; this policy is not a measured tuning result |
+
+Split one writes BF16 directly. Larger splits write one FP32 workspace plane
+per global partition after its local-wave sum, and the shared runtime reducer
+converts the final FP32 sum to BF16. The fine producer compiles two output modes;
+the register producer compiles once per static geometry. There is no producer
+specialization for each runtime split count. Fine IDs 92411, 92421, and 92431
+retain their fixed-split-two compatibility paths.
+
+The tuner enumerates every legal positive split for a runtime ID and records
+`(kid, splitK)` for exact replay. Kernel registration count and launch-parameter
+search count are different: reducing split-only IDs keeps the launch choices
+available for tuning. Other fixed-split candidates retain `splitK=0` replay.
+
+The [frozen header checks](../../reports/opus_runtime_splitk_20261009/headers/receipt.json)
+passed offline compilation and host syntax for fourteen runtime entries, with
+zero scratch/spills, and CPU partition/layout/LDS checks. All 105 actual generated HIP TUs were freshly compiled; fused host, actual router, and the complete pybind TU also compiled. The bpreshuffle shared link with `--no-undefined` and all 127 host launch references passed. The [build scope](../../reports/opus_runtime_splitk_20261009/full_build/verification_scope.json) records the separate new-binding symbol check and zero scratch/spills for the runtime kernels. GPU tests remain stopped; these checks provide no new performance result.
+
+The [historical gfx950 results](../../reports/opus_current745_tables_20260930/REPORT.md)
+list the then-current 26 default MXFP8 B-preshuffle candidates and their win counts, with
 per-shape timings in milliseconds against the original CSV. The
 [same-run comparison](../../reports/opus_current745_tables_20260930/SAME_RUN.md)
 compares OPUS with the fastest valid CK/CKTile/ASM candidate for all 745 shapes.
@@ -187,9 +235,32 @@ from the checkout root. The latest remote setup, source map, full-shape command,
 and replay instructions are at the top of [HANDOFF_MXFP8.md](../../HANDOFF_MXFP8.md).
 For all 745 gfx950/256-CU shapes:
 
+The current compiler policy uses the minimal local Clang 23 at
+`/opt/rocm-llvm23-46fcb339/bin` for CK, CKTile, the ASM host wrapper, and
+74 unpinned active OPUS configurations. Set both `HIP_CLANG_PATH` and
+`OPUS_BASELINE_HIP_CLANG_PATH` to this directory. The 15 explicit pin-AGPR
+configurations (9000/9001/9010/9011 and 92100–92104/92110–92114/92120)
+use `OPUS_HIP_CLANG_PATH`, the verified pin-AGPR branch
+`yuyzhang512/llvm-project` at `49c41889681640665400cb01c9fbb4c0a024cde4`
+(Clang 24). ASM device kernels retain their precompiled code. Compiler probes
+and resource-header settings are restored after the OPUS build, including on
+failure. With Clang 24 and ROCm 7.0, pin kernels use installed ROCm
+resource headers or `OPUS_HIP_RESOURCE_DIR`; the baseline compiler uses its
+own headers or `OPUS_BASELINE_HIP_RESOURCE_DIR`. Shared unpinned layout helpers
+are independent of pin-AGPR declarations.
+
+Use a fresh `AITER_JIT_DIR` when changing a backend's compiler; existing
+libraries are not recompiled merely by changing an environment variable.
+Without `OPUS_BASELINE_HIP_CLANG_PATH`, the previous all-OPUS pin-compiler
+build remains available. The original upstream tune compiler is unconfirmed;
+Clang 23 establishes a new measured baseline.
+
 ```bash
 ROCR_VISIBLE_DEVICES=0 \
+HIP_CLANG_PATH=/opt/rocm-llvm23-46fcb339/bin \
+OPUS_BASELINE_HIP_CLANG_PATH=/opt/rocm-llvm23-46fcb339/bin \
 OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
+AITER_JIT_DIR=/absolute/path/to/fresh-jit-dir \
 python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
   -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv \
   -o /tmp/dsv4_opus_tuned.csv -o2 /tmp/dsv4_opus_profile.csv \
@@ -197,23 +268,37 @@ python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
 ```
 
 The [complete tuned CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)
-contains the fastest valid candidate per shape, using the same 13-column format as
-the [original CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv).
-The original CSV contains 1042 rows across architectures, including these 745
-gfx950/256-CU shapes. Either CSV can be passed to `-i`; the tuner selects the
-current gfx/CU shapes and ignores the input timings and candidate choices.
+contains the latest 745-shape compiler-split all-backend results from
+[tuned_all_config.csv](../../reports/opus_clang23_mixed_retune_20261008/tuned_all_config.csv):
+693 OPUS, 8 CK, 10 CKTile, and 34 ASM rows.
+OPUS uses native E8M0 scales; CK/CKTile/ASM use FP32 scales; all outputs are BF16.
+The production table reports bandwidth in TB/s; raw reports retain GB/s.
+The 13-column schema is retained. See the [complete measured report](../../reports/opus_clang23_mixed_retune_20261008/README.md)
+for compiler receipts, same-run comparison, historical timings, and raw accuracy results.
+The original upstream tune compiler remains unconfirmed; this Clang23 run is a new baseline.
+
+The earlier [Clang20 external-backend run](../../reports/opus_retune28_20261008/README.md)
+is retained as historical evidence; its anomalous CKTile timings and mixed
+five-round/screening output do not define the current table. The fresh table
+uses the complete new screening profile for all 745 selections.
+
+The table can be passed to `-i` for shape enumeration, which ignores its timings
+and candidate choices, or to `--run_config` for explicit backend replay. The tuner
+does not publish native E8M0 results into the FP32-scale production dispatcher.
 `-o` saves the fastest valid candidate per shape and `-o2` saves the candidate
 profile. OPUS candidates are compiled before the sweep; external backends use
 their existing JIT paths. `--shape_grouped` measures each shape's candidates
-on the same GPU. Omitting `--opus-kids` includes 26 consolidated MXFP8
-B-preshuffle candidates: 9000, 9010, 9020–9024, 9030, 9040–9047, 9049,
-9051–9055, and 9060–9063. The later candidates share two device templates:
+on the same GPU. Omitting `--opus-kids` includes all 89 configurations that
+support each shape. `--opus-families` restricts the sweep to named pipeline
+families, for example `--opus-families small_direct_b,register_split,fine_lds`.
+The original 28 consolidated candidates are 9000, 9001, 9010, 9011, 9020–9024,
+9030, 9040–9047, 9049, 9051–9055, and 9060–9063. The original small candidates share two device templates:
 [register](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh)
 and [LDS](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh).
 K length and tile-grid size select prefetch, tile geometry, and reduction
 configurations inside each family; K remains runtime up to 16384. This reduces
 tuning IDs and duplicated implementation, while retaining useful compiled variants.
-The 13 historical IDs remain callable with their original names and shape/workspace
+The 16 historical IDs remain callable with their original names and shape/workspace
 contracts, and can be explicitly selected by `--opus-kids`. Saved tables can still
 be replayed. Rebuild the OPUS JIT after changing the candidate set.
 
@@ -227,6 +312,9 @@ be replayed. Rebuild the OPUS JIT after changing the candidate set.
 | 9053 | runtime-K fallback plus 9072 at K=7168 |
 | 9062 | 9062 / 9064, two FP32 partitions, M80 / M96 tiles |
 | 9063 | 9063 / 9065–9069, four FP32 partitions, M48–M128 tiles |
+| 92410 | 48×64 fine geometry; 92411 retains the fixed-split-two compatibility path |
+| 92420 | 64×128 fine geometry; 92421 retains the fixed-split-two compatibility path |
+| 92430 | 96×128 fine geometry; 92431 retains the fixed-split-two compatibility path |
 
 9043–9046, 9055 and 9060–9063 accept M <= 2048; the other default 904x/905x
 candidates accept M <= 512. 9000/9010 retain their original implementations.

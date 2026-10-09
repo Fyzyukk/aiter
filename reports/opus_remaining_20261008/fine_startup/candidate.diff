@@ -1,0 +1,43 @@
+--- baseline/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh
++++ candidate/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh
+@@ -5,6 +5,10 @@
+ #include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh"
+ #include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh"
+ #include "opus_gemm_mxscale_bpreshuffle_small_output_gfx950.cuh"
++
++template<int BlockM, int WaveM, int WaveN, int Stages, int Cluster, int SplitK,
++         int ReduceVec, int ReduceBlock, int StoreCache, int FixedK>
++struct opus_gemm_mxscale_bpreshuffle_fine_traits_gfx950;
+ 
+ #if !defined(__HIP_DEVICE_COMPILE__)
+ template<class T>
+@@ -117,13 +121,26 @@
+             store<1>(ssb, load<1>(gsb, (index / loops) * args.stride_sfb + index % loops), index);
+         }
+     };
++    // Isolated fixed9062 prologue: issue its existing initial matrix tiles
++    // before the unequal SFA producer paths. All consumers and retirement stay
++    // below the original waits/barriers; no scale helper or ring step changes.
++    constexpr bool fine9062_initial_matrix_first = std::is_same_v<T,
++        opus_gemm_mxscale_bpreshuffle_fine_traits_gfx950<80, 1, 4, 4, 1, 2, 4, 128, 0, 16384>>;
++    if constexpr (fine9062_initial_matrix_first) {
++        static_for<T::NUM_STAGES>([&](auto i) {
++            if (decltype(i)::value < initial_tiles) prefetch(i, decltype(i)::value);
++        });
++        __builtin_amdgcn_sched_barrier(0);
++    }
+     if constexpr (!T::REGISTER_SCALES && T::EARLY_SCALE_LOADS) {
+         load_scales();
+         __builtin_amdgcn_sched_barrier(0);
+     }
+-    static_for<T::NUM_STAGES>([&](auto i) {
+-        if (decltype(i)::value < initial_tiles) prefetch(i, decltype(i)::value);
+-    });
++    if constexpr (!fine9062_initial_matrix_first) {
++        static_for<T::NUM_STAGES>([&](auto i) {
++            if (decltype(i)::value < initial_tiles) prefetch(i, decltype(i)::value);
++        });
++    }
+     if constexpr (!T::REGISTER_SCALES && !T::EARLY_SCALE_LOADS) load_scales();
+     if (loops <= T::NUM_STAGES || (!T::REGISTER_SCALES && !T::EARLY_SCALE_LOADS)) {
+         s_waitcnt_vmcnt(0_I);

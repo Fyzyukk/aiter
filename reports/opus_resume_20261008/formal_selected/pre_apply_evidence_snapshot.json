@@ -1,0 +1,1623 @@
+{
+  "status": "verified_before_production_source_application",
+  "timestamp_utc": "2026-10-08T01:43:17.901281+00:00",
+  "source_head": "b152ab834e68f8fde18adbd7b200c587770b9fb5",
+  "production_checkout": "/root/workspace/aiter-opus-mxfp8-bpreshuffle",
+  "candidate_worktree": "/root/workspace/opus-scale-issue-candidate-20261008",
+  "tracked_diff_before": "diff --git a/HANDOFF_MXFP8.md b/HANDOFF_MXFP8.md\nindex 16c4b567..a80089ee 100644\n--- a/HANDOFF_MXFP8.md\n+++ b/HANDOFF_MXFP8.md\n@@ -1,5 +1,13 @@\n # MXFP8 B-preshuffle \u4f18\u5316\u4ea4\u63a5\n \n+## 2026-10-08\uff1a\u6309\u6700\u65b0\u603b\u7ed3\u6062\u590d\u3001\u5b9a\u4f4d\u9650\u5236\u5e76\u4f18\u5316\n+\n+\u5f53\u524d\u5165\u53e3\u4e3a [10\u67088\u65e5\u6062\u590d\u4e0e\u4f18\u5316\u8bb0\u5f55](reports/opus_resume_20261008/README.md)\uff0c\u72b6\u6001 `formal_integration_in_progress`\u3002\u5df2\u6838\u5bf9\u5e76\u4fdd\u7559Oct7 selected\uff1a9021 prologue\u53ca9042/9053/9054 B-scale\u590d\u7528\u3002\u6309\u6700\u65b0\u5408\u5e76\u603b\u7ed3\u5b8c\u6210counter\u548c\u77ed/\u957fK ATT\uff0c\u77edK\u4e3b\u8981\u5b9a\u4f4d\u5230scale\u8bf7\u6c42\u4e32\u884c\u4e0eLDS\u53d1\u5e03barrier\uff0c\u957fK\u666e\u901atile\u8fb9\u754c\u4e0escale panel reload\u5206\u5f00\u5206\u6790\uff1bGRBM\u7a97\u53e3\u4ecd\u4e0d\u652f\u6301\u7edd\u5bf9\u5229\u7528\u7387\u3002\n+\n+\u65b09021 issue/publish\u5019\u9009\u76f8\u5bf9\u6628\u665aselected\u5b8c\u621042/42\u5b9e\u9645\u8d62\u5bb6Event\uff1a41\u9879median\u66f4\u5feb\uff0cgeomean\u52a0\u901f1.575621%\uff0c\u5408\u6210median\u65f6\u95f4\u548c\u52a0\u901f0.997733%\uff1b\u4e24\u4e2a\u6781\u5c0fM\u975e\u8d62\u5bb6\u7528\u4f8b\u6709\u590d\u73b0\u4ee3\u4ef7\u3002\u5019\u9009ATT\u786e\u8ba4\u8bf7\u6c42\u91cd\u53e0\u4e0e\u53d1\u5e03\u7b49\u5f85\u7f29\u77ed\u3002\u76ee\u524d\u8fdb\u5165\u6b63\u5f0fTU/API\u68c0\u67e5\uff0c\u901a\u8fc7\u540e\u5e94\u7528\uff1b\u751f\u4ea7\u6682\u4fdd\u7559Oct7\u4e24\u6587\u4ef6\u72b6\u6001\uff0c\u672a\u63d0\u4ea4\u6216\u63a8\u9001\u3002SFA packed scatter\u5df2\u6d4b\u9000\u6b65\u5173\u95ed\uff0cDPP\u65e0\u5019\u9009\u3002\u91cd\u8981\u7ed3\u8bba\u5df2\u56de\u586b\u65e2\u6709Compute/Memory\u7b2c11\u8282\u3002\n+\n+\u4e0b\u65b9\u6309\u65e5\u671f\u4fdd\u7559\u5404\u81ea\u5f53\u65f6\u7684\u4ea4\u63a5\u5feb\u7167\uff1b\u5f53\u524d\u72b6\u6001\u4ee5\u672c\u8282\u94fe\u63a5\u4e3a\u51c6\u3002\u65e7Oct7 manifest\u4e2d\u7684\u6587\u6863SHA\u63cf\u8ff0\u5386\u53f2\u65f6\u70b9\uff0c\u4e0d\u7528\u65b0\u5185\u5bb9\u8986\u76d6\u3002\n+\n ## 2026-09-29\uff1a\u6700\u65b0\u5206\u652f\u8fc1\u79fb\u4e0e\u91cd\u65b0 tune\n \n \u5206\u652f\u4e3a `Fyzyukk/aiter:aiter-opus-mxfp8-bpreshuffle`\u3002\u672c\u8282\u662f\u6700\u65b0\u6d4b\u8bd5\u5165\u53e3\uff1b\ndiff --git a/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh b/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh\nindex 8f269e7b..d5572eeb 100644\n--- a/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh\n+++ b/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh\n@@ -302,12 +302,18 @@ void gemm_a8w8_mxfp8_scale_4wave_128x128_kernel(opus_gemm_mxscale_bpreshuffle_ka\n     int stage = 0;\n \n     // Prologue\n+    issue_matrix_prefetch(0, 0);\n+    __builtin_amdgcn_sched_barrier(0);\n     load_sfa_panel(0);\n     load_sfb_panel(0);\n-    issue_matrix_prefetch(0, 0);\n-    if (loops > 1)\n+    __builtin_amdgcn_sched_barrier(0);\n+    if (loops > 1) {\n         issue_matrix_prefetch(1, 1);\n-    s_waitcnt_vmcnt(0_I);\n+        __builtin_amdgcn_sched_barrier(0);\n+        s_waitcnt_vmcnt(number<T::VMEM_INSTRUCTIONS_PER_TILE>{});\n+    } else {\n+        s_waitcnt_vmcnt(0_I);\n+    }\n     s_waitcnt_lgkmcnt(0_I);\n     __builtin_amdgcn_s_barrier();\n     read_scales(0, v_sfa, v_sfb);\ndiff --git a/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh b/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh\nindex fe764f1c..2f0264b6 100644\n--- a/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh\n+++ b/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh\n@@ -95,7 +95,7 @@ using opus_gemm_mxscale_bpreshuffle_small_register_16x32_traits_gfx950 =\n using opus_gemm_mxscale_bpreshuffle_small_register_16x16_traits_gfx950 =\n     opus_gemm_small_register_traits_gfx950<16, 16, 1, 1, 2, 8>;\n using opus_gemm_mxscale_bpreshuffle_small_register_32x32_traits_gfx950 =\n-    opus_gemm_small_register_traits_gfx950<32, 32, 1, 1, 3, 4, 3>;\n+    opus_gemm_small_register_traits_gfx950<32, 32, 1, 1, 3, 4, 3, 0, 0, false, true>;\n \n using opus_gemm_mxscale_bpreshuffle_small_lds_32x64_traits_gfx950 =\n     opus_gemm_small_lds_traits_gfx950<32, 64, 1, 4, 8, 2, 2, false, false, true>;\n@@ -121,9 +121,9 @@ using opus_gemm_mxscale_bpreshuffle_small_register_prefetch_16x32_traits_gfx950\n using opus_gemm_mxscale_bpreshuffle_small_register_wavek_16x32_traits_gfx950 =\n     opus_gemm_small_register_traits_gfx950<16, 32, 1, 1, 2, 8, 3, 3>;\n using opus_gemm_mxscale_bpreshuffle_small_register_wavek_32x32_traits_gfx950 =\n-    opus_gemm_small_register_traits_gfx950<32, 32, 1, 1, 2, 8, 3, 3>;\n+    opus_gemm_small_register_traits_gfx950<32, 32, 1, 1, 2, 8, 3, 3, 0, false, true>;\n using opus_gemm_mxscale_bpreshuffle_small_register_wavek_32x64_traits_gfx950 =\n-    opus_gemm_small_register_traits_gfx950<32, 64, 1, 1, 2, 4, 3, 3>;\n+    opus_gemm_small_register_traits_gfx950<32, 64, 1, 1, 2, 4, 3, 3, 0, false, true>;\n \n // Longer queues amortize barriers across four/two successive K128 tiles.\n using opus_gemm_mxscale_bpreshuffle_small_lds_deep_32x64_traits_gfx950 =\n",
+  "tracked_diff_before_sha256": "016dcde5d2450212d0f88291aeb69c2037b2f143381d267027ed7b2e1feb3514",
+  "selected_sources_diff_before_sha256": "155b09cce6c68d57aeb9daa9915bb88cd38c1aa68607f3f8bbf31de4a3c4966b",
+  "source_files": [
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh",
+      "original_sha256": "069811eb020523ce1543ff2ea350729f392dcdd519ad5031ffa3ec99a0fe2457",
+      "checkout_current_sha256": "f42695b106bbaaa9564cdd2cdaf128a3218c653dd78e213a26d4361b7d79e836",
+      "candidate_sha256": "2ff8cf90368c6945d3394fe11075c2336e6f8f99888c7167d3eb550045009bfa",
+      "private_candidate": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/candidate/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh",
+      "production_unchanged": true,
+      "changed_vs_head": true,
+      "changed_vs_current": true
+    },
+    {
+      "path": "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh",
+      "original_sha256": "f9ad2b221c82086207fd3ef8ac4443a0a8d8dad3acc80c0e619177b0b3b6a6bf",
+      "checkout_current_sha256": "34586b3e28cbf8d3b9bf4325d631fd0eb91d56f7ba4a1c6d9f965a041ff7b962",
+      "candidate_sha256": "34586b3e28cbf8d3b9bf4325d631fd0eb91d56f7ba4a1c6d9f965a041ff7b962",
+      "private_candidate": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/register_reuse_scoped/candidate/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh",
+      "production_unchanged": true,
+      "changed_vs_head": true,
+      "changed_vs_current": false
+    }
+  ],
+  "protected_build_inputs_count": 2691,
+  "protected_build_inputs_sha256": "90f5cf6e078751a015a2197d47b84718450c4e5a8f603b872ff5844dbe61384f",
+  "protected_sources": {
+    "csrc/opus_gemm/include/gfx1250/opus_co_launch_gfx1250.cuh": "f37966c3d9d715472d3cef9a2a092414c807ffd4518121d4181f35d8963e7420",
+    "csrc/opus_gemm/include/gfx1250/opus_gemm_arch_gfx1250.cuh": "a706cb0807f62d8eb185c20af47d11ae149e58d6cad973d2510ec76142f964b1",
+    "csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_4wave_compute_gfx1250.cuh": "4d745ff50c945b2e2e0cf8eab2c85f37c2282f841517b35c8cc5aac68623758c",
+    "csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_4wave_wl_gfx1250.cuh": "ee1b173c3504f9b84743781993e1ca8f264c84c05538be303a03dd420853e498",
+    "csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_4wave_wlr_gfx1250.cuh": "71e948402bbcafe7739dd7313c7d1255a2b1ee85ad06312fc09aeac37da44009",
+    "csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_cluster_tdm_splitk_ws_gfx1250.cuh": "8953c405ba3a16ab8c0f7ff3d3be2cd66dde92f7db1839288d5b1bd7fe476299",
+    "csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_clusterlaunch_tdm_splitk_fuse_gfx1250.cuh": "e1cb6f0647fb2934936879824d1c79bab9c4659e27cf9238e5bc1977b7366de6",
+    "csrc/opus_gemm/include/gfx1250/opus_gemm_pipeline_a16w16_clusterlaunch_tdm_splitk_ws_gfx1250.cuh": "128e684372c1c84b5802bcb95ebe6f09d59c48fee782ce070ceb3ae3ed7b0f2d",
+    "csrc/opus_gemm/include/gfx1250/opus_gemm_traits_a16w16_gfx1250.cuh": "0141d8f4d96b0ba119844a461a5925d5de08246249a05ed8769bbe1e60143e4b",
+    "csrc/opus_gemm/include/gfx1250/splitk_reduce_gfx1250.cuh": "739da44a0c997009f7404a4c7e11b4eff8939d8659201af9bbf8cacd25fc0d61",
+    "csrc/opus_gemm/include/gfx1250/splitk_reduce_launch_gfx1250.cuh": "d4a72ecee38ca8526336835663d9797afa090aff2f5133c6c2a5973896ac44e2",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_helpers_a16w16.cuh": "4d2db5a190a45ac499d55083d6ba6e6577f3e698571dd6c970d6eb4cc401ae9a",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_mfma16x16x16_gfx942.cuh": "8c76ec419db6c57250efde9ca22c8eabd269b0b818bce39d51a6ec26a4dd878b",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_em3en4_lds1_pgr2_sk.cuh": "1b02d1540197cfffa000f1a9cc2466a5bb4b3dbc9f669a80a89a46a860ed6dab",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf1.cuh": "6d28bd07ae5c76610b919b36f5c23fea17db9be33ad405a2b01b0bcd8431ee45",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf1_large_tile.cuh": "4755af2d9a6b674feca86fc17cddd83c7132e5c9f841827c85cecc028aa2a885",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf2v.cuh": "441dab6f650807a52feb75e80da11e160e09095c5bea8c009c39dc8a8e18f5df",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_kbuf2v_bk128.cuh": "0a62a9f0e5731025b933f40d15bef67999a107728e22ece6a3607db460f64dec",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_quad_mfma32_kbuf1.cuh": "9821abc5e70578e7835506a88e1ee92b8bfd17fac45834084bc0b35928f6b3f8",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_pipeline_a16w16_wave_k_coop.cuh": "9c2b9793e974ef14b5af747813337405248e584622dd751b1f661562de967edc",
+    "csrc/opus_gemm/include/gfx942/a16w16/opus_gemm_traits_a16w16.cuh": "e03b2e2464f07a6cd5e95757ae4ed0ecda01151c8e6ede5d608d09c28d91c132",
+    "csrc/opus_gemm/include/gfx942/a16w16/splitk_reduce_gfx942.cuh": "2e21413965d38f22433b7e90b655419440e632377a326db5b029860d0d136218",
+    "csrc/opus_gemm/include/gfx942/a8w8/opus_gemm_pipeline_a8w8_blockscale_bpreshuffle.cuh": "0386f2e1f9f9ad0bd0dbf33b65b1c91273d176868196327b5f59669eaec48b64",
+    "csrc/opus_gemm/include/gfx942/a8w8/opus_gemm_traits_a8w8_blockscale_bpreshuffle.cuh": "48f0b3533196c80ea27b00fd8b4b450005aa568de75c42e42408cdd67c5cebc1",
+    "csrc/opus_gemm/include/gfx942/opus_gemm_arch_gfx942.cuh": "a3f28e6f1d4df638ca0615ceb59d948213d767b1a7fa3179e744d8be229e555b",
+    "csrc/opus_gemm/include/gfx950/opus_bmm_launchers_a8w8_mxscale_gfx950.cuh": "d413a14a2bb5c622ed25d24cbe43aa312173bf800ad89aa785130c14f477ef13",
+    "csrc/opus_gemm/include/gfx950/opus_bmm_pipeline_a8w8_mxscale_gfx950.cuh": "0a909d994cce334952d071c5a0a489c35d4269ae1a4d5dec25411a7323043fc1",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_arch_gfx950.cuh": "d4eeccf7e387c2ed7b4f211207407b146a2b8aec1b3de160c891e9b864131201",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_mxscale_bpreshuffle_small_output_gfx950.cuh": "96d60cf2c338f8229c3ebd63f577106b72f7c91ab3da7e5b0804c7a6c901e127",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_4g_safe_gfx950.cuh": "db744f0a6a112e4a1afb197fc4bd790c9a4734b8ec290da889628b0c1fea2c13",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_flatmm_gfx950.cuh": "40979a2b88769284a40906c5c48e8e76bdcd59fce57b40b904c1eb285631f9b4",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_flatmm_splitk_gfx950.cuh": "34d820d666ff11e1d68d6d74bbe531bda9c66dff261dc0cbbfdbc8415e6b331e",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_gfx950.cuh": "a20ccf992b7b2a81a02cdfc920c5f1bcecee628860d25f3cc0b5d434a211b0e6",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_mono_tile_4g_safe_gfx950.cuh": "998e81936cec00ebd153ea8ab8bd1e07dbc7928e65b74caa44c521334f5c56c1",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_mono_tile_gfx950.cuh": "3da639fe5ebe4f027fdc9ba69a67cc2e0903cadfea3302cf1a0fa8e0ea1776a4",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_persistent_4g_safe_gfx950.cuh": "1c42cf3f1d40013b1d973052d13f21823050c5362193e2bade22dcc7419e965b",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a16w16_persistent_gfx950.cuh": "bf621cfe97d2b38a89ca668c57b32a10094aeef92b4fdbb723e530e0abd6946b",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_2wave_16x64_gfx950.cuh": "47913ef11f4c1f9dcd3a1806595ef76b4ec8f071f539a874ab42fc04821fdf4d",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_2wave_32x64_gfx950.cuh": "c3ae3e488f3cb1ed961212bd96d4db27a3bdeba911b7520af23d5080da622629",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_2wave_gfx950.cuh": "e10c84647059862ec30f0f320f0ad551421cf9c284f592aeb51891afe5e3fd21",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh": "f42695b106bbaaa9564cdd2cdaf128a3218c653dd78e213a26d4361b7d79e836",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh": "72db4b2b35ca4c46c83dc913c386cdf3c313090892e8d646026d641b47ae2b8d",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh": "d1e8958d8206b731f8a6662948ae8f3b25d6b0b140c995eea9603b04d15a4148",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh": "9981710c6c7cee6f8958bf25db2ed817fe15a0aae36cec7ec50f95873610f585",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh": "4989f127cdad5d791b519535e9a56d0d58aa80c06c0761737e1ddb0545087265",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh": "b0e695e9471046f3c263ca9913421e817256ab02e7b00511808871765c9e4e55",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh": "da000ab7ace7b87ef38c192309b33e3d3c2a629ac4ee3e2492abb426bed44f24",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh": "05227ecebc3e81ba1ab54c7f176ddcc9f53daf7e2d878c3e9095ef649d15ee74",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_fine_lds_gfx950.cuh": "961f4ef29156ff8d91869d4c5dc7a7928e49af496433b53b0c67b9779c08691e",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh": "116994002226b0bfaa01854cf801f7c37f1cf453e2f7be21d74712b6a3142284",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh": "8b1ffa51a3dc6f87b5e549bf6e0b67f8cd95fc255fdfbbb7ae412fd35f52fa2b",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_flatmm_splitk_gfx950.cuh": "f811eaac30894c9c73acb9806f40297265bb2d2278c28489dee52460be2c6fe0",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_noscale_gfx950.cuh": "dbcbeaf0d93c5158093c9fe7c9aa942093165b3123db4d7c88a73aa68bc8c6a4",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_scale_gfx950.cuh": "93dac422214661a53345f2c29459150a0488e7d0e346b828335ec46d6a3a5dad",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a16w16_gfx950.cuh": "580b876c7bb92980fce8d76d3ce2047557e6dea3a5585fbabdf991be66dd535b",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_192x256_gfx950.cuh": "244aabb128fb8b4a7ba61292559530d6b1c6ac6d140598dc99bb0c18f70fc19e",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_2wave_16x64_gfx950.cuh": "029c28dcf181284a78693b423abacb587d626f2036b94aeed71070d83df6ca9c",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_2wave_32x64_gfx950.cuh": "33abb435456f50d7e8d94bfbf92934d5546752738ce0f58eafc9712da37a11de",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_2wave_gfx950.cuh": "147953ff70ab5d5f73844a86ea76b17090da95de301de1a4378809618ced1d79",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh": "1a173ddf9e80fd19a6a97163f4f23ed02219adb0f847f4997c78aa66c0ad20ab",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh": "a52d9217c28f46d1321432c2fa07563ebee235adaa68737206e42fd406564570",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh": "e52abd0d277af32210d19cdea27095b346b0199702910fd04b5b94356d055f4d",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh": "80ffa1052f151390e2bf27f5f5f78f1b7baf3c5e6579a791c775b0ec9bdb9332",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh": "853b88dc8fab7d9d0464acf445afc7f1986f420067fbedb498ff71d8f5984d7a",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh": "6d357cbc51b89520faf3098f5c8e61a614f7b98c1b0803f209e07652de362fb4",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh": "61b6675135d7db59efe2cc222de8f0714cafa976bac3494503d917c37ce1d17e",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_fine_gfx950.cuh": "ee4a8bed31505c4b0d5866ab2732e66f42011cc871206483ed6464d8e34e77ce",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh": "a74c625c7fc524ce5a4b8b8386cc2d4527e0e8268529bb85296bf3fd2251cacf",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh": "34586b3e28cbf8d3b9bf4325d631fd0eb91d56f7ba4a1c6d9f965a041ff7b962",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_noscale_gfx950.cuh": "b321fb7cdb8f2a6472d78b0d9d5bc89cabf5c40aa8ed34cbe3ed14e9321d7237",
+    "csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh": "71d8f65c9a03ffec10dd8d8379fea1cecda96c1f0c29351ca4e9c8face430591",
+    "csrc/opus_gemm/include/gfx950/splitk_reduce_gfx950.cuh": "747d1666de2bc93761954f6868f4b06e8c949b3375eb524f6dd7b2d4c751302b",
+    "csrc/opus_gemm/include/opus_bmm.h": "61ab5def73509db7bc970425339067d07362743a4b960a324e95d427e950df33",
+    "csrc/opus_gemm/include/opus_gemm.h": "b8fb3491c9d103849eea399d0af36346c0b1efa98b8a3cbed8951a733a4b6b86",
+    "csrc/opus_gemm/include/opus_gemm_arch.cuh": "d7e53e3d64ceec2c961429a429754147adc59c0f31e330c34e9d2f012a52013d",
+    "csrc/opus_gemm/include/opus_gemm_common.cuh": "0fe90b4694593d9a8dfb7d68b1984c05b511f0112b35fc61e4b83e9022497562",
+    "csrc/opus_gemm/include/opus_gemm_utils.cuh": "8a0031d8e5c5329727160c54b1082782054444f5fa08039fc13bd4bfcba8b1a4"
+  },
+  "official_module": {
+    "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/module_deepgemm_opus.so",
+    "sha256": "6f6a0117b122f06b4802833c020effb4b24ff9fea56f20c8c16b9ced9787173f"
+  },
+  "formal_smoke_summary": {
+    "planned_and_completed_targets": 8,
+    "changed_device_entries_covered": 1,
+    "unchanged_control_device_entries_covered": 1,
+    "repetitions_per_label_and_target": 8,
+    "checked_numerical_calls_per_label": {
+      "official": 64,
+      "scale_issue_publish": 64
+    },
+    "total_checked_numerical_calls": 128,
+    "physical_gpus": [
+      "0000:95:00.0"
+    ],
+    "HIP_visible_ordinals": [
+      "7"
+    ],
+    "all_own_claim_epochs_clean": true,
+    "all_unique_owner_handshakes_matched": true,
+    "all_actual_loaded_module_identities_matched": true,
+    "all_private_device_identities_matched": true,
+    "all_numerical_repeatability_guards_passed": true,
+    "guarded_output_offset_bytes": 256,
+    "additional_input_offset_sweep": false,
+    "started_utc": "2026-10-08T01:39:31.511622+00:00",
+    "finished_utc": "2026-10-08T01:40:22.371302+00:00",
+    "performance_measured": false
+  },
+  "evidence": [
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/audit_current_compute_metadata.py",
+      "sha256": "6986134ef34f7bb7f31aa3d91661ee8f93f82a20f315fca3de1af38d24b3a73d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/experiment_runner.py",
+      "sha256": "a2bc29d2d5dd75959ae9529f53297defd135e3746d065398bc74fe14e1f55310"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/formal_selected/build_manifest.json",
+      "sha256": "e98ae546b22733efe696f0c461cbd7f920d8aea88d0357f6682d3c7b37cf1265"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/formal_selected/identity_audit.json",
+      "sha256": "ac1e9cbfb1464b4aabcaa8028e54a777ca69a144368a4f2a22da2e8043c51d65"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/formal_selected/integration_manifest.json",
+      "sha256": "8cca44cdd582d5027dee8789fcc560316bd2d80f52c3e2fd51ab0f8a67bfaf5c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/formal_selected/source_manifest.json",
+      "sha256": "18683f18e66841b4b51c0eacfb6ccd4d7601ba841e1c38d01b99041b85dcbd57"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/official_smoke.py",
+      "sha256": "4cf3190dd1bb54f24d9497a17447afae1c1e5909a38bf8b4cf324cedc8239051"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/owned_python_launch.py",
+      "sha256": "3a91f0aef6736413b3cebd2f28dac75223471df4f3ef6107b3ceae54e8dbec0e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/plans/compute_prologue_full_scope/compute_prologue_winners_9021_part00.json",
+      "sha256": "f18b8ab4dc4c14c5ef8e61e011b2fec9522331f93a26a2b138b463f04dbf86fa"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/plans/compute_prologue_full_scope/compute_prologue_winners_9021_part01.json",
+      "sha256": "64de54ec47a7c741355e02ee87c9aa555ea7a4c581106040863dd733929fe37f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/plans/compute_prologue_full_scope/compute_prologue_winners_9021_part02.json",
+      "sha256": "890460e134b2efde23cd61c7ba73f61e6f8610dfb2fb2ee92437d97b5d15e73f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/apply_verified.py",
+      "sha256": "8391156be72de5ee14d9b0376f129a855a9816c3a2c1d2d87e7e27d4a4779474"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/build_manifest.json",
+      "sha256": "0aa60b489bce118a12860039feca047ce73bb1307c27664b9a3041be4a1ebbc1"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/changes_vs_selected.diff",
+      "sha256": "67d60ec6091ae296872e3b747a5cc10095b1d2c9b9b699f6fa8340ec777dc584"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/gpu_smoke_analysis.json",
+      "sha256": "bd6bb271bfe768895f8d12cd2d4474c8f098006a0f654cd744bc25545d487510"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/identity_audit.json",
+      "sha256": "ec08a1773e85af717c06589ba19cbf21d43b4da38a5f773443b0bd91ab52e091"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/official_smoke_claim_log.jsonl",
+      "sha256": "1d24546444640813d59e22bad647b4adff9ee9cef36a9df1322c817eb6bf9afe"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/official_smoke_plan.json",
+      "sha256": "80e296b5a3738c6cdb3b2df7c2293f267af79e67b65c8f9cac733c3d2e41c780"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/official_smoke_queue.json",
+      "sha256": "53cc37dc838fd236d21d0e24775201ba3dfce88bbe24ce0b865d34595edfbf45"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/official_smoke_queue.log",
+      "sha256": "8774b4ffb9db206dac1401fccea60dabb1931e95127a52326edb2f2faf9100b2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_plan_cpu_audit.json",
+      "sha256": "6670f496606cc3981ca5edd5b9fe0a11a460fc4be8ac43ba1a61bc95c85ea248"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_0_kid9021.json",
+      "sha256": "131bfb9e8da824a66f51b5536b504942e5a0595bccb3e30dd572f441c5094c3e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_0_kid9021.log",
+      "sha256": "7662e5bf5f47d8c00113f81261f4ce42749330c3ec38a8f88a42f18c20e1b9cf"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_1_kid9021.json",
+      "sha256": "b2acf2a61e6200dfcecd250f7a03e4cedc9a854dbcc6b837563de5eaa415bb22"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_1_kid9021.log",
+      "sha256": "676da9c695ec3e50ccb980bb53e74bc8473476b3c400d1c54033148ecb6b390c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_2_kid9021.json",
+      "sha256": "beb15fbc4bd8ba6968ccdbb95b2c5b5df74f0a1ec347d642da40cead9fbeb1a3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_2_kid9021.log",
+      "sha256": "676da9c695ec3e50ccb980bb53e74bc8473476b3c400d1c54033148ecb6b390c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_3_kid9021.json",
+      "sha256": "a6530054b4948dd5abcfffe2711599b9ce99feb846853ce649eac8ba19bb5072"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_3_kid9021.log",
+      "sha256": "676da9c695ec3e50ccb980bb53e74bc8473476b3c400d1c54033148ecb6b390c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_4_kid9021.json",
+      "sha256": "36022c53762f00115bdfb0329f1b3061d408b115bd9511e645248747ecd1d56b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_4_kid9021.log",
+      "sha256": "676da9c695ec3e50ccb980bb53e74bc8473476b3c400d1c54033148ecb6b390c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_5_kid9021.json",
+      "sha256": "22d1e156ce30bc22c6c75b702381223bcf8e14324269c73610bea7f5f12de94f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_5_kid9021.log",
+      "sha256": "676da9c695ec3e50ccb980bb53e74bc8473476b3c400d1c54033148ecb6b390c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_6_kid9021.json",
+      "sha256": "43dc4831bbc531ca216f3bbe33c77ba7b5d57e67a078790ac345059bc10162c6"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_6_kid9021.log",
+      "sha256": "676da9c695ec3e50ccb980bb53e74bc8473476b3c400d1c54033148ecb6b390c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_7_kid9022.json",
+      "sha256": "f8879473f248325e46d6035ca52638b3707d829b9e6c7c09312e12eba3a525ab"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/smoke_results/official_smoke_oct8_7_kid9022.log",
+      "sha256": "676da9c695ec3e50ccb980bb53e74bc8473476b3c400d1c54033148ecb6b390c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/source.diff",
+      "sha256": "20024b1c420f1916e39d29794d238f13dee5cee52aa4c0df95a4da12ca854a4e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/formal_selected/source_manifest.json",
+      "sha256": "063155107efbbeb855e556bfb267893e69d9240f2e0ac4d7858772e9d57bc661"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_fused_256x32x128x128_2x1_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "9b1b56c8e6a93fa8ab10122e649a7c3a6bacfe7d020694ea79290a620b9fdd33"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_minterleave_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "fc5c0c77e1fb497809711d1fd69865109ce5286e3a9791b3fadb7d0d65c05591"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_minterleave_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_skip_scale_wait.cuh",
+      "sha256": "f20082c59a51c08cb949c1ccd6756f2da0cc2da473fd7a6dc80158997440e7a7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_mouter_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "1019597679b10d762f3351986988d290655d4e4c9676846b375b86b0669a11bb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_mouter_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw.cuh",
+      "sha256": "f773a4c4d1b23d8dcea8e445df1b61f0d5836423ddb0811f1724c65cfc4a7e3f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_mouter_tunable_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "59676fd587f6d776dbf67c30e86908a659f6e6284db32473e311e16d5ef03d66"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_mouter_tunable_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw.cuh",
+      "sha256": "47ec3e74ba0a4fb8a47933ac0e01ed1a5b6ca84570526f56c1a1d61dd5e120c6"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "7dd76bba2a390ab57ed1751d40a889c9f0abf4b720359e5319e38ccf00ee4559"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_scaleprefetch.cuh",
+      "sha256": "39bc4d6c7f634c9d60cba0d50cff727f34fceb4364c591199d3394e4ba5abb8c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_sfpreload.cuh",
+      "sha256": "a26df16c79efdaa448b7ae6788420f9fec1bf6a14814974bdce249d57b8133f4"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x64x256_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "d88e67a1fa7061a14b67613622f2bc9c3b6757100c04ea16f4072762a280cfee"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x64x256_2x1_16x16x128_1x128x128_wgpcu1_sfpreload.cuh",
+      "sha256": "c31ca373eb95a977f8536c3cd1d8c55c332f4dc361436edfb81b81945c7967c7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x128x256_1x2_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "584ae0270802f7ce4735059ade52f75d89af34dda5619276618c25b886917891"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x128_1x2_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "0f73290c5c1f78e0bf39b1946e6ce726fa82824bfe599a89ef5278b3093ed1f9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "017f987bcbd8c3deaeef98c9b73c2cd679b888846fbbabdfd5335952da20ef1a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu2_scaleprefetch.cuh",
+      "sha256": "85a7bcd1cfbca948faabc8eb621ee4ba93d72f6d76cc97ed717fb097d098ba30"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu4.cuh",
+      "sha256": "2d366debe5c6a1881f9625cdb84e69fbf40da131b8477eb15fd8ef45d2ce89bf"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x512_1x2_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "cc2fb838d1cec448d3d1ba57a86674cbd9c6fb6a247a57d9dce0b910a8d8db64"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x512_1x2_16x16x128_1x128x128_wgpcu2_scaleprefetch.cuh",
+      "sha256": "cbc62e19d13502dc2d1c918e738000c4b1adb1de8d3ef1f86097f60c085a0001"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x64x256_1x2_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "4f34174b1845ec9b3a394c362fbabee85706cd3ed33121635719e789b24fe3fd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x128x128_2x1_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "a412950fd811653d99d904f3737d2333ea0da45dc0c0bbd2a6265e80cb659d5b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x256x128_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "c423de0c45ff770742cf6df335e490d5b392bc0efaa77c6543760ce8aa3e27ab"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x32x128_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch.cuh",
+      "sha256": "ad59aa08b61dc889429ac9e5be5da5105288e53525160c21cb2e11e6323991cd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x32x256_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch.cuh",
+      "sha256": "57d71203c8fe542d64c35338978b31aaf643983ce9e91d402b5616f2cc022bd9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "d68b20163743398ce53e4830dedb672185e8cd9eed994e74a3b32e2f996d83b2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "401a1a046736a401de5b898367fc325e22ced1e2cb2d5ba3114f8b763f124ad9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu2_selfload.cuh",
+      "sha256": "80cf99ca7b02fefd55ad0b6a05ab867675b8b8710bdbff78f8f1579fc2406c99"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x128_2x1_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "f30534792b602aea64ec0ac994dc48c9647029a4583d7e41bb10cb22271aedc4"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x256_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "926c9304226126ccc008bde10363c36082df53dfba93a2bbfb39ea7a4b9e70aa"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x256_2x1_16x16x128_1x128x128_wgpcu1_sfpreload.cuh",
+      "sha256": "42cf025ccacbc661089b3634ae880a6b34c5f044b58311bcd5421657b3665d90"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "3fbe5dd34e068e5b7201ca759a3e3483afccaf4b2ed9bbee3f8184fa5a467e26"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "376d11b91b1fc5a056e81ac9ae5b15e5773e0966ab9f620312f5dff73b376331"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu2_sfpreload.cuh",
+      "sha256": "6a4510cbc687181e89e5780f842b69dba3dfb06df00d13bdc9b6a0d1affbd1fa"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x64x128_2x1_16x16x128_1x128x128_wgpcu2.cuh",
+      "sha256": "e9f541ed7871e7d0c6a94eaa3982233e52eafc8f7c76a844b3e67515a56c90bc"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x64x128_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch.cuh",
+      "sha256": "81edfe4529e68a5003fb128e3a67b3bda81ec91bc626a15700c5b94df4ad63bd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "cfc7dd28e3b3732489cc9e2767b2ef7e5903fd93fea7a9ac71935f82aa67c48e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw.cuh",
+      "sha256": "042b489bef815f585fe2539cd73dd88ae7e9b9b277e64b2ba45273c3d0e355f7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw_psod.cuh",
+      "sha256": "1798b1e857c2d47890c8eb3d98d50775baa79116580b8885e61c425e6f24f74a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_flatmm_wave8n2_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1.cuh",
+      "sha256": "f20d9477efa1aba4455b94bd6f52947830159e28fda7cc9ba7cc07d34d83ea28"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_pipeline_512x128x256x128_2x1_16x16x128_1x128x128.cuh",
+      "sha256": "01181f0465c14a5caf8face1d3538d2a5b6f5f6af6c921218ef15386cc34c73f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128.cuh",
+      "sha256": "cd6d21ff600e013e0d987efdd6ddd72e4440866c9827300bf23b260ab0565458"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_k1024.cuh",
+      "sha256": "5cf1ea56c3bdea53a7ee6ec91f249fbfd40415cd0c5fa842cd3ff1eff878ddea"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_k1024lb1.cuh",
+      "sha256": "8a6ed26cdeceadf59b4bf439c88bcb1083614154f4dea71611456a1492bf019d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_preload_sf.cuh",
+      "sha256": "8d935d5f6f2efd5fd9febf737bc016244a4a192cc3e0782b74cae0a3449efd0c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_256x256x128x32_2x2_16x16x32_0x0x0_nooob.cuh",
+      "sha256": "a893f8fb1ec46872c65c6c6be71c2cb8e052be24611f52cdb1ae781f4ef06257"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x128x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe.cuh",
+      "sha256": "b9f1af2e2477fb1f090f55d86054941d9b24e086af3e464941467b30689dba24"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x128x128x64_2x4_16x16x32_0x0x0_nooob_cA17cB1.cuh",
+      "sha256": "d4277f43ca99e716bb7608aac84102cc25432af97fdbd21dcef38735df6fd420"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x128x256x64_2x4_16x16x32_0x0x0_4g_safe.cuh",
+      "sha256": "17f48eeeeb7e5ac1918f67835e90a8e28a71baa37e840812709483c9dcbcbfd0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x128x256x64_2x4_16x16x32_0x0x0_cA1cB17.cuh",
+      "sha256": "af98be9b0cb24705fa92acdd2d23920a8b8bf69a1e5e26d5bf00b199e4af5c7b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x256x128x64_2x4_16x16x32_0x0x0_cA1cB17.cuh",
+      "sha256": "58c40c5f44ccfca6811504ec14c9865ac72e1dbb8324a263e60a743052fd17d2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x256x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe.cuh",
+      "sha256": "8899390ab826b71623d5b741903047784899b35c4d7f18ae17dcdfd7b26d4359"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x256x256x128_2x4_16x16x128_0x0x0.cuh",
+      "sha256": "7a6877e2ba22da37a1c3e3cab3d8204cdb2b082c7152de3f1252227c2416dd17"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x256x256x128_4x2_16x16x128_1x128x128.cuh",
+      "sha256": "19c002d61cfd0fcd77120eeb9d737a47feddd47eb1805faa4e86b3f6279fa161"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0.cuh",
+      "sha256": "528936abfcb987743c8d5b1fac6ad66ea8cac9de419189134ebe3545b57d1167"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_4g_safe.cuh",
+      "sha256": "21f54cd0840f583ccaf67694298186e33ef7e9bacd66684629298b6a7224e832"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_cA1cB17.cuh",
+      "sha256": "5d750546dd5f657bb535a863a91ec18e6ccc1f72bb5cc69c0fb89e1d88418dff"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_nooob_cA17cB1.cuh",
+      "sha256": "aebc9e0a9ca0f95e608d77b70ff2f1d93d8bbf8a0c9b6381346f7bfd50aa8329"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x32x128x64_2x1_16x16x32_0x0x0_wgpcu2.cuh",
+      "sha256": "22634494dec35fee060b516fa6c9ce2b1fe235cb6d74593779bf368ee3d71e27"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x32x32x128_2x1_16x16x32_0x0x0_wgpcu2_nooob.cuh",
+      "sha256": "1e6c0471f7f8c11e9657132b4b1727a6962cd7f25ab9a5ddffc9567d3fd7d13f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x32x128_2x1_16x16x32_0x0x0_wgpcu2.cuh",
+      "sha256": "b9c2bc3d4195d2ae20bea35aef67646303346ebb0590649aaf3f69d3078a20b6"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x32x128_2x1_16x16x32_0x0x0_wgpcu2_nooob.cuh",
+      "sha256": "a2c58765efe2e2801c194357104338489493ed5dd57482ac45d9dae48d33d9f2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x64x128_2x1_16x16x32_0x0x0_wgpcu1.cuh",
+      "sha256": "183fd2a4b74405c0210651a4e0684b6cd05cbfcc5a7e6a9e77ee59909827de96"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x64x128_2x1_16x16x32_0x0x0_wgpcu1_nooob.cuh",
+      "sha256": "e7c56c8706811ebdc644470f010e40c5c307d8b4f32ca264a3621c6af34ffe68"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x64x64_2x1_16x16x32_0x0x0_wgpcu2.cuh",
+      "sha256": "cce8a618ee5348b7a0a4342737d53ebecbbc96b8c133f92ab13f128dbf875cca"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x64x64_2x1_16x16x32_0x0x0_wgpcu2_nooob.cuh",
+      "sha256": "d4030f75d6e854e9efee88622266fca9616a6df4e1f24fcb30e07b7a52a78b51"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x96x128_2x1_16x16x32_0x0x0_wgpcu1_nooob.cuh",
+      "sha256": "385669c86accc4506bdd5ab74eb7e9cd76ebfffba141696658edb6387d732589"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x96x64_2x1_16x16x32_0x0x0_wgpcu1.cuh",
+      "sha256": "1d36f93342a6c366f339fe65d3470835dcc1fa3e5ab919c854cbc36fcf0d69c7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x64x96x64_2x1_16x16x32_0x0x0_wgpcu2_nooob.cuh",
+      "sha256": "1ed1c5315e6b8ea5e8021df24171fa93ceed6ea83bef954a644e89e5bb31c6a5"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_flatmm_splitk_256x96x64x64_2x1_16x16x32_0x0x0_wgpcu2_nooob.cuh",
+      "sha256": "d33937cd6b987592771e6915351b6c96fc5670e6c39dac884d50c343ff54eb0f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x128x128x128_2x2_16x16x128_1x128x128_tiles1_small.cuh",
+      "sha256": "3d32de1511910ea054c158fedd7d4c9b0567f8df5c54bb25cad55ff9a872a7c2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x160x128x128_2x2_16x16x128_1x128x128_tiles1_small.cuh",
+      "sha256": "824a15c67fec6d03aa994738e704169a4cafcf1c3d663308a49dfbc0b8bad66c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x16x32x128_1x1_16x16x128_1x128x128_tiles1_small_register_prefetch.cuh",
+      "sha256": "18898c417dc7966ba82182879073e3b16eae9046533c41b073ab8e04646d7e5d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1.cuh",
+      "sha256": "7b7510cdf1e0454983e996dab8d5beb3813df9f2cfcb26ae851826a2efa6b5b1"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_nooob.cuh",
+      "sha256": "e646aaf4d85678b9b0486247bb30131333431f7a1ed6809808f6e729dc597bd9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x128x128_2x2_16x16x128_1x128x128_tiles1_small_regscale_xor.cuh",
+      "sha256": "ee10b52cbd41245dd2a112c005db51efea4198f771c71a4bbf025ca38d6e8c9a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x32x128_1x1_16x16x128_1x128x128_tiles1_small_register.cuh",
+      "sha256": "4ae3570eb742f270e2111ffd552ce3095dc486df3ca909ffeafd3fa306fc3da8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x64x128_1x1_16x16x128_1x128x128_tiles1_small_register_wavek.cuh",
+      "sha256": "0d7dc7df7ebd603233af896b9d024842fa3e3ed269ef169e924316cbe2eb2396"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x64x128_1x4_16x16x128_1x128x128_tiles1_small_lds.cuh",
+      "sha256": "75b5916ea44164ca95ac50bafb7daf09bfe46f30426dbc94f1ea22d225b668d5"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x64x128_1x4_16x16x128_1x128x128_tiles1_small_lds_deep.cuh",
+      "sha256": "588c4e503ea454f8996a8eef765f8efd0d3873b81d79d2024d3a10ec2c20345f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x64x128_2x2_16x16x128_1x128x128_tiles1_small_regscale.cuh",
+      "sha256": "2a5114cf6022dec8cce59663874d6b49a2d594c7e4e00c14292521636facd4f7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x128x128_2x2_16x16x128_1x128x128_tiles1_narrow.cuh",
+      "sha256": "b3381cd6784053e5dec9736afbac3b1abeb18c7afa2c6b72a5b8e6304e54789a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x64x128_2x2_16x16x128_1x128x128_tiles1_narrow.cuh",
+      "sha256": "5f636e804ef56f6dc227f825ea932d1566896a699d0cc7aeee8249c325a99eb5"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x64x128_2x2_16x16x128_1x128x128_tiles1_small_lds.cuh",
+      "sha256": "26dd4cb2a31a0ac640060c3baa0a5700378acc7f2fa1fba4277fc77a12617b24"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x80x128x128_1x4_16x16x128_1x128x128_tiles1_fine_lds_s4_c1_sk1_v4b128.cuh",
+      "sha256": "dd217e564c486905b93efc7a1ae35a9294618f4534e0f121605fb5f71e80f5de"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x80x128x128_1x4_16x16x128_1x128x128_tiles1_fine_lds_s4_c1_sk2_v4b128.cuh",
+      "sha256": "8ba1770719506d14497b1c272fb089dd7c102f5821d5a11fe9df65b8b839de7b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x80x128x128_1x4_16x16x128_1x128x128_tiles1_fine_lds_s4_c1_sk4_v16b128.cuh",
+      "sha256": "c865622f91354a4dc53296335058340c8f28ce26d95494ed846ba4e705e1e411"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x96x64x128_2x2_16x16x128_1x128x128_tiles1_small_lds.cuh",
+      "sha256": "11f12a08d88da76e22264c088c66ad22c4a30a645596566e3469bf92f8aeb41d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x16x16x128_1x1_16x16x128_1x128x128_tiles1_small_register.cuh",
+      "sha256": "e70d12307f3b0240631a8f73c63f39dd6d948117f062aed2fb7fa2a08645e7f2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x16x32x128_1x1_16x16x128_1x128x128_tiles1_small_register_wavek.cuh",
+      "sha256": "860e929bebf476cfd6ba41ad1df019a3c49945caf534ce3d19d052b877d5b48c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x192x256x128_4x2_16x16x128_1x128x128_tiles1.cuh",
+      "sha256": "fcb15932f61a024c353fd0174f59d2e467f34cf4713fbeb4756dd7ed4735696d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x192x256x128_4x2_16x16x128_1x128x128_tiles1_main.cuh",
+      "sha256": "f71537d4c03c35bba94068b8670febc852f895f358c2c2252c6380b9c0d740ae"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x32x32x128_1x1_16x16x128_1x128x128_tiles1_small_register_wavek.cuh",
+      "sha256": "92bf9c989a482c7e67ad780d634da06506e6b166c93c689d6ff1b63189d7efd8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x64x128x128_4x2_16x16x128_1x128x128_tiles1_small_lds.cuh",
+      "sha256": "283a787ebbe6232235f37046c7346e548cb5db12924b32ff0567afc418bb3911"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x96x128x128_2x4_16x16x128_1x128x128_tiles1_fine_lds_s4_c1_sk1_v4b128.cuh",
+      "sha256": "5ca74b70aacfe5a679005a807979d5d2b852d876d43b44689d188f44951b29a8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_64x16x32x128_1x1_16x16x128_1x128x128_tiles1_small_register.cuh",
+      "sha256": "43995b239bab8b69771a35dcff48d11f40c013644af8d5596b7db6f49e28dc27"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_mono_tile_512x128x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe.cuh",
+      "sha256": "9a0f08c033853cd989d44a3802a59a1b68af7d3b82e33b60bbb09fb0dfc99364"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_mono_tile_512x128x256x64_2x4_16x16x32_0x0x0_nooob.cuh",
+      "sha256": "8cc4327e6eee64215982563d35442951006fd41836821868ca49f36f745d93c8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_mono_tile_512x128x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe.cuh",
+      "sha256": "5ccf77caefee4a428babdbc7eb045d70e52f08ab06e1689b7ef3c020486fe4a6"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_mono_tile_512x192x128x64_2x4_16x16x32_0x0x0_nooob.cuh",
+      "sha256": "da543f4158db42d196534c0cbf8d74b1c61b0fea28c3d880905060f78c999cc1"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_mono_tile_512x192x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe.cuh",
+      "sha256": "69cb5cefa386ebc2621c55095b683369a39beb439ef893b117e02a71e190530a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_mono_tile_512x192x256x64_2x4_16x16x32_0x0x0_nooob.cuh",
+      "sha256": "b42dd9aa44a2bad059ceba11a6c25566c489265df541f27905679d56a18b02e3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_mono_tile_512x192x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe.cuh",
+      "sha256": "a4fbb78fb36c80e31acc768b523a64ca2d7dbc5b0afd1fb193fbd6b8957c1696"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_mono_tile_512x64x128x64_2x4_16x16x32_0x0x0_nooob.cuh",
+      "sha256": "ad42d53c971cad954ba549eb4012ae245c6c69131e84e35cddff409fa9b08155"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_persistent_512x128x128x64_2x4_16x16x32_0x0x0.cuh",
+      "sha256": "01beecf2304454f7fbcb1ccccdffd1871804c2ce212a4267105e1b05f49215d9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_persistent_512x128x128x64_2x4_16x16x32_0x0x0_cA0cB0.cuh",
+      "sha256": "4467ce1424b88f7a5fc9dc62b363cf0e0d2f9f09d8bf6f4a95ec3e9bb9dc2c21"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_persistent_512x128x256x64_2x4_16x16x32_0x0x0_nooob.cuh",
+      "sha256": "8bfa8e5afadef420964097a83fa6aabe437299b9f295865332306e6467a08514"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_persistent_512x128x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe.cuh",
+      "sha256": "3cae5ca0db812b4a24afe624afe34f940227f1d9e69279ae4672d8bf1b50981d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0.cuh",
+      "sha256": "f29ab7bd4cdf959b7e68e24e88949a5f5f3ec9a22addb141f564b0347ff3feed"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0_cA0cB0.cuh",
+      "sha256": "9f0a47574d8d3e91804350adac35d9d6685bc0349ee5a2aa680f560b1d24b6df"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/impl/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0_nooob.cuh",
+      "sha256": "191abf8e333c1dc9c31093f21015aed608d9c8856e6451946141a56aa16fe2fb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/all_instances_host_gfx950.cu",
+      "sha256": "c717045b1a453e2f3aebac87520bc482c43172e4a485ab74cb24e0326b90f79d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_minterleave_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "84203d64e5344b0bc6b333e12fa90d6aed8adc064e3fa07105b25900d147faa8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_minterleave_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "98991561153f641b811cdfe689aa1c036c1ef0f5ce34dafad17abd8c0621b207"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_minterleave_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_skip_scale_wait_Cbf16.device.cu",
+      "sha256": "1b513aee16425bd64b9151d75336667278abf6e53263c484ea3ce52c7b6df3c8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_minterleave_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_skip_scale_wait_Cfp32.device.cu",
+      "sha256": "51c43468985a8e7785c80e82cfb29a489024348c57e7ac81f91fff695b1ec45f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_mouter_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "57129aa63445529fdb43807b7c3cb41340ba4e0600db57b37ec5397453943a28"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_mouter_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "3a4d23432ca4e0a49e3edd11a693273bb3b8dcc66bb1d5a0d4e2f98acbd0eb1b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_mouter_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw_Cbf16.device.cu",
+      "sha256": "b20a23095153b1edad5c156a55d80309afe14640b95c0571f7c2e4acd8899b4b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_mouter_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw_Cfp32.device.cu",
+      "sha256": "c77c5a14156005172e432d5293ba7175c2203c09a9bda27fe7f5f9ffb9d0ad03"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "afae5992b4569feea6edd5b05a21e7c876ae45e773a405f735bc698e5ecb6a9d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "493091d349aa2d402a7a0368ff16f0c099a226a6913cdd49cdba0199aab63b07"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cvoid.device.cu",
+      "sha256": "e9657220a432d0b85be68ca49d53d537860b4d0bd22cd99038f47d81a44b81f8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_scaleprefetch_Cbf16.device.cu",
+      "sha256": "93a18771226522c1b92fc5fce3b049dc802fa5cd13f7acba6911318265ec68eb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_scaleprefetch_Cfp32.device.cu",
+      "sha256": "5a049fbe07972c049684cfc352324487ec2ccb910bf22fb84a92fe7a37175fa1"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_scaleprefetch_Cvoid.device.cu",
+      "sha256": "eac3864ae5fb9d159e847df9380e78835715e128eb95a42306110ee9c653e0e5"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cbf16.device.cu",
+      "sha256": "d6f844a45e17aa30f468b00c9d73d7aa0ab786e56da5d0a2ff44b087c2a39c6c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cfp32.device.cu",
+      "sha256": "0b1e8f543f910243a710b206b3a81e26537be3d4a2a5697f61471e897cf6370e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cvoid.device.cu",
+      "sha256": "8531a55d3fd51faed9580cb5bddb2f2e123ab5a1fc51ea7135326cd2b8d6a599"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x64x256_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "ee625d512cf65285e81abe7dd9169a2cc3becbd5e888841f27bb5afb99bcf9b2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x64x256_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "98607cdd60f764f8c24fdf37b9920ab461e4ebfe248689fa77f4062da904ddd3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x64x256_2x1_16x16x128_1x128x128_wgpcu1_Cvoid.device.cu",
+      "sha256": "d0375b98d4376c18c51bf4204c85ebda9404c794b4ad4e451b11691f425776b0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x64x256_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cbf16.device.cu",
+      "sha256": "e1fd03f9defae3dc736b0a1ab6323e926a93703297e25b7c1c9f5224eebc65c4"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x64x256_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cfp32.device.cu",
+      "sha256": "4f04bb65189c92fbf1ebd8d5df2361da85792a1e56e626c9c7adc5b31e2ebf60"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x128x64x256_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cvoid.device.cu",
+      "sha256": "eea01a21c2808eb0d5226d29add263311a86a426944113676d6237d2e6c0d4eb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x128x256_1x2_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "6c9edbebbca07bf0f6a3c5d2f48e96a8bd004760ad55989ed9cc83aefec828ed"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x128x256_1x2_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "5d0827c6d27470bb766425748a9afdf300be7b3ab1fe2915ab46839a9b4449c8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x128x256_1x2_16x16x128_1x128x128_wgpcu1_Cvoid.device.cu",
+      "sha256": "28b0189c38bbd3b7e5eab8659db7907b83b7b58968fcdf51c94aa1d88a4ca098"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x128_1x2_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "e8048d70bc8b1b0dce8ac082ab6a19026aa9b358de52e1163d849772dec864ff"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x128_1x2_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "a84419797b4c599ce113db6791da85fb542c3175528262bd5a7e1e7a2aaa8352"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x128_1x2_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "9e8d2947f684c42b417c3a5a2011696e5655ae4480903153c9a52a71140b1534"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "0b4aca3ec1791a8418c2868c27b11c51e9748669199dcbaa7a31322e6634bbb8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "02a345a97d01087e72e3c38d5ff181ce4d067918a1ba7115ee5f28c82c876d69"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "e557df4e30a1e3fe8f38404175ead0c03f870923d6932b9319ecf77869953e4e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cbf16.device.cu",
+      "sha256": "d5c87cbaefe165c242c96d89ce54b481169755b0b1ac78d8f15fa1bc7e3a00fb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cfp32.device.cu",
+      "sha256": "059198f3fd516576b39c994e9d043a49ddcfe8fc2b8185b6e9d079a4e3a1bd13"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cvoid.device.cu",
+      "sha256": "4deefb034a76976207cfa4dc5d1c5e59738ba13d65b9aa82b1beb373cbae67fe"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu4_Cbf16.device.cu",
+      "sha256": "f7aadc6a3d9d7d3d9671742863a635c787a70053392642832d721310b46b3701"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu4_Cfp32.device.cu",
+      "sha256": "6c6062eb4dab7046b494deaca72c8ff364bd03f2a8ec93b65af9f52c8ec353bb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x256_1x2_16x16x128_1x128x128_wgpcu4_Cvoid.device.cu",
+      "sha256": "4a955e5896834f944d3af0d95192e361fb6c72df427625d08887f6f65c31c0a0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x512_1x2_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "73a4c2600f41ec69a50a86257609cb283d248fd0b19ebfe3caee5ea2a6ee9f48"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x512_1x2_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "f7ceb8652ee4aba99a1b9a35a8f2cc7c9294fea5f5804635ada279619acbe97b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x512_1x2_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "a73516756ea59cb1750f02bcfacd74cbd7b772d444643202cef9757001735c94"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x512_1x2_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cbf16.device.cu",
+      "sha256": "bce62c914fa62d833cc8daef5d9c25a413b8fd8a99dc8b5d98989f5e3a0550d3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x512_1x2_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cfp32.device.cu",
+      "sha256": "45a9bc10ef0603928a72c210983763d9b39e9042befdbb771cdfde186fd4e621"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x32x512_1x2_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cvoid.device.cu",
+      "sha256": "ebc599a82df121fd56eca5b4d12a078768df9e2a949f4502b064c5015c31d3fd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x64x256_1x2_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "cee3bf745e9a689f363cbb4bce9f77f306a4ce4c0f6eb0f4fd734f2535989f78"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x64x256_1x2_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "c898a82a264f58fae17d68ce49751eca01ccaa126078dbbf9bc1b1d173562c5f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x16x64x256_1x2_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "f941a2c285b3e01ae37630b23ef39d084b122983a165ad7ee1c0d4bc87fbcead"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x128x128_2x1_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "2324d6edd67460c91f171d069092c55cfea22566cdf08c28765d89092ee3e4ef"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x128x128_2x1_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "718b698cb1a3e70d5785c78317692ad51f51fa451c1c656e44c60de5815507cd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x128x128_2x1_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "de98cb23c24616336dc53580237fcb817cf15289da14762be48ebf9a1884c92d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x256x128_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "a1e6662015d5d86f98eb2a8b2ab937c0856d3f14200944191f19dfb836e32f1c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x256x128_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "28936582925dd9c06ceae4e92cbeff71a429962ea58649eda6101b0ba661226e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x256x128_2x1_16x16x128_1x128x128_wgpcu1_Cvoid.device.cu",
+      "sha256": "21288e40d0184a1acf9c416ad792ad7b2289727806b1daad6d883abb2000728e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x32x128_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cbf16.device.cu",
+      "sha256": "bf787feac6b7c511612b2dc28029a718ccf787419d26ecf7285dcce0ac85073f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x32x128_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cfp32.device.cu",
+      "sha256": "1273b745f8c3578beccb37a3753f7bd033fc700ada3217807a42889b74323a65"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x32x128_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cvoid.device.cu",
+      "sha256": "57d8abd223c789c66e17ea07773fa3c7c9ba71eb27417e85951350afe0072c6f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x32x256_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cbf16.device.cu",
+      "sha256": "86b671705eceaef80ec565144f3b2d57975dcb0d0f1109daf583491e7c0a890f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x32x256_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cfp32.device.cu",
+      "sha256": "90dd6df568c1331ffc31f39812f4878f479b1f2ec0dc2a100aa383d7896daaf7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x32x256_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cvoid.device.cu",
+      "sha256": "6a54de46b53f54cf589fec8898c95efe2588eb2c60c628f661117d68890168cf"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "1f9b0a52a96f91c761ab69cfaa7fee57c9bdd5a64376ecbd6f59e542ad1b5d53"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "ea1a52515f15f4e009a425859304f50d6d7aaca18d1de40681e01cb9953a5ed8"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu1_Cvoid.device.cu",
+      "sha256": "1486fb6d4781b1856829073f2e149c47285fdcf1dcb427203fa30b052773f946"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "4b3bc804bab39c8d1ed3519ceeb069a2a4bc644a8f59df71d3808f924d4a53c2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "55f4c834e94251991b8f338de780f4a79bdf125eac5ed66623cee4ea22bb9b76"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "52dfd9f85a007165d17836cbe37271def3e27aa007a86682178e741a1fa21ee0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu2_selfload_Cbf16.device.cu",
+      "sha256": "20e58a66f2b5cdf6bb1258c345d24fd6859ef452dba53fd5d7ddeb157a190fac"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x32x64x256_2x1_16x16x128_1x128x128_wgpcu2_selfload_Cfp32.device.cu",
+      "sha256": "13f8520a3483a4f716455fc43e2a260d7c1807b52e13626a263499f33184e8b3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x128_2x1_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "8d1ebe2781cd55fe959ae885d9aab600e59699ec5d4d9cff8013f308e6aeab43"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x128_2x1_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "6cef2f14ec7869a6236cfba8bc8d902e5df265c4493ce35567687a81cac4ef6b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x128_2x1_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "a491e36b9a61e72ee90c387ee4ae51ab386e9137446cd503ab2cc8dc95fb7ae4"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x256_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "64a2d69db3da93e0018eb7cee8b38d5b472a351496fe053a441b43712848cc2b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x256_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "bc50249d898f6f55f9d8916f6b8124dcf411a4cb0d9a9bcb141db4d86bce6721"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x256_2x1_16x16x128_1x128x128_wgpcu1_Cvoid.device.cu",
+      "sha256": "ae214a8ae19512168c0640da6a57da2cb06b4e49fea9234ff731aa82b4e967f0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x256_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cbf16.device.cu",
+      "sha256": "5ebf0dd7d0c4e7ca6c110fb792475a02714f93414cc3b0c8b5937cd057f53dac"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x256_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cfp32.device.cu",
+      "sha256": "a4fc309d183a1d602a5f0beda70c1fc030163fbd4d6025f6ff7007b3960c7f66"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x128x256_2x1_16x16x128_1x128x128_wgpcu1_sfpreload_Cvoid.device.cu",
+      "sha256": "ae6ce4b818f3b50acb66b9b8ffec344253b87fa04bd7ba0bba7e498d1636d6d0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "0b74ca6ddac75fb4b5b5b85959dbf3c225e7bb3ccd8efe671ad2a076499881ed"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "f56fd6814d33fafe88d7e46e14ad2c4cb6403ed577b6ad4a75a346c99a4a4b3b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu1_Cvoid.device.cu",
+      "sha256": "9874d2ad44c7e727eee151be270e507b296a6a4028f9638a936c08de98b876ed"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "7ef1a66927658466f167f27195c3ed4873e303b00e8053287683003d2d7e17d7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "7b30baf418cfad17e864d81b3917fb303e9459ed1333d1275be71bc1f45bd879"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "bd9736e1cfdd9f4a075674e281432944764c214e1a7ad7ac89a59574f5f1fc0e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu2_sfpreload_Cbf16.device.cu",
+      "sha256": "d7f185975bf871bd42f4616788066213e9f8d3988dbfe5be48c8bd04714204be"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu2_sfpreload_Cfp32.device.cu",
+      "sha256": "48f84b7d40990e129ec23cf71234d39ce8282a81ad266e82227b88e962822b74"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x32x256_2x1_16x16x128_1x128x128_wgpcu2_sfpreload_Cvoid.device.cu",
+      "sha256": "9e221017b92cfef681d62cb227cbfc6e74964ce46e698b256b5e28052871aa60"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x64x128_2x1_16x16x128_1x128x128_wgpcu2_Cbf16.device.cu",
+      "sha256": "ca15ed7641bdc6684fad3e3a69ef85a5125c32b02f03213c912ee9397f5b7503"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x64x128_2x1_16x16x128_1x128x128_wgpcu2_Cfp32.device.cu",
+      "sha256": "0229278dd47ae0a70dc3b880fd807cb8454c11025787b1c69d94e7d47177e4e7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x64x128_2x1_16x16x128_1x128x128_wgpcu2_Cvoid.device.cu",
+      "sha256": "d07a538131902cb46a41c581f9ab591ee6b51bcb23fc18be9840543236ced5eb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x64x128_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cbf16.device.cu",
+      "sha256": "6b81db6d9873ced5f4c71b880ef28b33118a297515c6f9f970a28d3385bcb85f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x64x128_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cfp32.device.cu",
+      "sha256": "aedaa91280b3b1e247227af655546a44407fe43ffb888d8b3ef47b2e161726f5"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_splitk_256x64x64x128_2x1_16x16x128_1x128x128_wgpcu2_scaleprefetch_Cvoid.device.cu",
+      "sha256": "45426b51d045647bc3edb0cf0be89b1bfb0a337b437733f26aba1aec62a6dd95"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "bed24290488dd0d155c8f7a5faf57dda7dab57f549bd1068ed5fbb852fcd41d3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "185345bd3392476c85a6935b8c1a31a34d7f4cd5cf26637cb9c3127b2f8816bd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw_Cbf16.device.cu",
+      "sha256": "d283fa3649ed3ad7aa77a0eda112040fa902bbe39badea79425c398ef05766ec"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw_Cfp32.device.cu",
+      "sha256": "a5ef36b14bd6de045063731303b8cf33a722608ba82e9a90046ac3b30a1e2c40"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw_psod_Cbf16.device.cu",
+      "sha256": "07025bb874e059a8cbfecfa0c24f35e1c746d8c0ec8e07e6c69c81b06a9d51af"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_wave4m2_selfload_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_ssw_psod_Cfp32.device.cu",
+      "sha256": "8d733d4c904b8bbc03b3099236e61e2420a408c3238e481f0bf84460e833c92c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_wave8n2_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cbf16.device.cu",
+      "sha256": "2c22feaf092f374df563bb9cd3002f1884a4d0407422f70e91d649a7a9aae63b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_flatmm_wave8n2_256x128x128x128_2x1_16x16x128_1x128x128_wgpcu1_Cfp32.device.cu",
+      "sha256": "6275e29532456c8de97d91b69bbbac4cfdee23373a2c7ec846887687f7e7e09e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x128x256x128_2x1_16x16x128_1x128x128_Cbf16.device.cu",
+      "sha256": "7b7ce088ad36aed8a63f43acf146e5a1d8e7eb82170da160dfba4cb1504ec740"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x128x256x128_2x1_16x16x128_1x128x128_Cfp32.device.cu",
+      "sha256": "aac023b4726293f945161eed64887433301b5c52355fe280d9fd79c533afe705"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_Cbf16.device.cu",
+      "sha256": "401af895b8f3fdc7b906fb629f8ee6b65b9f933f96f86f066af246f15e729769"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_Cfp32.device.cu",
+      "sha256": "ae11c1c40ea315ede5334e0d6028da1ace6aefe5fb69ccfac4ac5e04d2f0281b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_k1024_Cbf16.device.cu",
+      "sha256": "a7f242dfa33acf7ecbf2be9624593437ed2deb3f9ba8713df0192abc119f4363"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_k1024_Cfp32.device.cu",
+      "sha256": "d3f327703abde820c705271957d523e5a5d871b75d95ddcb0ecb9f41b915cd1a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_k1024lb1_Cbf16.device.cu",
+      "sha256": "9798f0ce62dcadc6814bb15fc2d352346d1ed7067f40a67c1cf233efef3bcd7a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_k1024lb1_Cfp32.device.cu",
+      "sha256": "294e10a0396fc19b07d386537af41c3ec2f89cf7996533e23ae881fe5950c47c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_preload_sf_Cbf16.device.cu",
+      "sha256": "a788f57399db2431b6746e484fd6d5723349ff8aeb0a8789a6d5f2683f855608"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_bmm_a8w8_mxscale_pipeline_512x256x256x128_2x1_16x16x128_1x128x128_preload_sf_Cfp32.device.cu",
+      "sha256": "a36423c5f4ba5b717a66c07028d060ba9adf9574356f2593c5f1f51d0d951130"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_256x256x128x32_2x2_16x16x32_0x0x0_nooob_Cbf16_t.device.cu",
+      "sha256": "203bf5a600d000f85d9b0074216a9ec04766e485e4c43461661f637466f7c7a0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_256x256x128x32_2x2_16x16x32_0x0x0_nooob_Cfp32_t.device.cu",
+      "sha256": "e903e97eb89a908b8c49c67a04adebdbaeb15b3571d1742ba8e623d1d7220944"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x128x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cbf16_t.device.cu",
+      "sha256": "34b58b37e610687d6bb498ef60b5ffd5a401dbdc4e6ff0a5f28208617f57d37a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x128x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cfp32_t.device.cu",
+      "sha256": "a2803c2732bd2042e29db9d7431a07426a45759644dcf3906b50f3969d05c0ce"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x128x128x64_2x4_16x16x32_0x0x0_nooob_cA17cB1_Cbf16_t.device.cu",
+      "sha256": "33b6e412f3fb5093bbfc5f03dc1154ff544846f6020f2d13fd8797afd333656b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x128x128x64_2x4_16x16x32_0x0x0_nooob_cA17cB1_Cfp32_t.device.cu",
+      "sha256": "a6beb4bb60f3584112d957d9ec2d973b2753bd20cc3d015605515504f856bd36"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x128x256x64_2x4_16x16x32_0x0x0_4g_safe_Cbf16_t.device.cu",
+      "sha256": "fc1631458d724506f3eae1e06a74659bcf8484e1167349c483061fb9a3afe999"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x128x256x64_2x4_16x16x32_0x0x0_4g_safe_Cfp32_t.device.cu",
+      "sha256": "eff636df1c9709d90e2fef2b82923b1cfa1522d0c4d7fcd8dc7d6ce3dee841f6"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x128x256x64_2x4_16x16x32_0x0x0_cA1cB17_Cbf16_t.device.cu",
+      "sha256": "37f7dab56874bef41dcc6361c35bfb08935178c7037c767b2ccd1c89039cfea0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x128x256x64_2x4_16x16x32_0x0x0_cA1cB17_Cfp32_t.device.cu",
+      "sha256": "6eeae675b4468d5744bce9b1cfa96fcdc77195ba9fa43bd52f6b3070a3057d62"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x128x64_2x4_16x16x32_0x0x0_cA1cB17_Cbf16_t.device.cu",
+      "sha256": "8c341c0c56caf29c3e7c4e8dcb4d1386efd0bb826e703b1de5dc56f3f2505cf3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x128x64_2x4_16x16x32_0x0x0_cA1cB17_Cfp32_t.device.cu",
+      "sha256": "a39e9150592e9bde508528d9d63165bb87bc90966d91eda6b97bba4c1ce0d98b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cbf16_t.device.cu",
+      "sha256": "b1a275f90f349c2db59476502bf1cd1171f3b4ff61cf194623d79384b1500c46"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cfp32_t.device.cu",
+      "sha256": "91796639414c10b34b7b566c8c88653ab8eab5d48c424d5faeeb19db9f50005d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x128_2x4_16x16x128_0x0x0_Cfp32_t.device.cu",
+      "sha256": "e4a673788bd576406b75d2bbef03550d567a5ba1126e47bd02561de57302d225"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x128_4x2_16x16x128_1x128x128_Cfp32_t.device.cu",
+      "sha256": "8dc033ca2fbb0f9dd706ce96c031f612a6e20f28564748818a6bff971f9eea9f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_4g_safe_Cbf16_t.device.cu",
+      "sha256": "c0e2c916344c136f851ef46db6c96dac1f691653f655eb4dd78bdea9086c78ee"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_4g_safe_Cfp32_t.device.cu",
+      "sha256": "1739c20952559d09ef21e61b137a78c9e5fdcce30cea6dffb00d9395e33fecfe"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_Cbf16_t.device.cu",
+      "sha256": "38136b91e33ce10c63d58d172aad66c19b50d3a3296373ecc80a557d71690caf"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_Cfp32_t.device.cu",
+      "sha256": "dbdf794172ad65049e0da41abff02739e3f461c2ead2c9e7a10debd3e41439d5"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_cA1cB17_Cbf16_t.device.cu",
+      "sha256": "08afbfede221b7795097386e4df00e49e7ebc8ca76f2697ab646c943f6ab0892"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_cA1cB17_Cfp32_t.device.cu",
+      "sha256": "83d14f1acb2d212341f90c2d45b9b13a387aa83b1611c6ecbd1602356d59f5d6"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_nooob_cA17cB1_Cbf16_t.device.cu",
+      "sha256": "06446294d4126adb0103803588a52d8352a9953fb78158f20687eac9117f7fbc"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_512x256x256x64_2x4_16x16x32_0x0x0_nooob_cA17cB1_Cfp32_t.device.cu",
+      "sha256": "33dafc5f72841fc77bee28751c8ac6a5d086f5fdfc4ceee9c2146e87d862aa13"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x32x128x64_2x1_16x16x32_0x0x0_wgpcu2_Cfp32_t.device.cu",
+      "sha256": "72e1aabd845a9950dc1a718b4d499138dc8a494606a685813d35599bcfa91193"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x32x32x128_2x1_16x16x32_0x0x0_wgpcu2_nooob_Cfp32_t.device.cu",
+      "sha256": "e3bc35e37fa801c97f1bc5c256398aa754746bda929ebdbb5cf7a52038b74b2c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x32x128_2x1_16x16x32_0x0x0_wgpcu2_Cfp32_t.device.cu",
+      "sha256": "d418749dfb55448a51173066ac5dd0eac7bb84160bcbf3b5e5c342be88955a5c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x32x128_2x1_16x16x32_0x0x0_wgpcu2_nooob_Cfp32_t.device.cu",
+      "sha256": "601b3c37113bb85ba93792354011b7493802e528364dca0185b1295c2b4b0c70"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x64x128_2x1_16x16x32_0x0x0_wgpcu1_Cfp32_t.device.cu",
+      "sha256": "31da543fde5d1ef7507f8e25c4aa758fd11c0d7f35748215285bb787f4d30fdd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x64x128_2x1_16x16x32_0x0x0_wgpcu1_nooob_Cfp32_t.device.cu",
+      "sha256": "26a658d7a67ebfb6a6398b137c118c73c3f488c7d62908b0f72f92f8eb5d8c7c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x64x64_2x1_16x16x32_0x0x0_wgpcu2_Cfp32_t.device.cu",
+      "sha256": "cea7a090cf435188cda9a57e99eadfbc65c27d6ae9fb986eabc99b671098bcef"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x64x64_2x1_16x16x32_0x0x0_wgpcu2_nooob_Cfp32_t.device.cu",
+      "sha256": "e45ee8a9c76dedd8d042954575a6c238b2e2e24665db03ee4d427b1f1ae659d6"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x96x128_2x1_16x16x32_0x0x0_wgpcu1_nooob_Cfp32_t.device.cu",
+      "sha256": "0f20fdb48030e127979ee8fad9dab544af3b8331ca6253c39d5f1ff659c4d27f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x96x64_2x1_16x16x32_0x0x0_wgpcu1_Cfp32_t.device.cu",
+      "sha256": "ee2f228802b2f72ab26d82d0c315e60d56436edadcb966bf5ddd4b202ecf2205"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x64x96x64_2x1_16x16x32_0x0x0_wgpcu2_nooob_Cfp32_t.device.cu",
+      "sha256": "5c425cdc7c04c63b6d71af1bafd13bf47d3e5ae105d536e437648f2fc1932f00"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_flatmm_splitk_256x96x64x64_2x1_16x16x32_0x0x0_wgpcu2_nooob_Cfp32_t.device.cu",
+      "sha256": "e360719b6caba050053f91de6f688a15433094287bbd33b818b78560a5564686"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x128x128x128_2x2_16x16x128_1x128x128_tiles1_small_Cbf16_t.device.cu",
+      "sha256": "02ea7017688b3b7723d87bfdd367f55faea43a9d39d8ae8e4c1a264da3cb3021"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x160x128x128_2x2_16x16x128_1x128x128_tiles1_small_Cbf16_t.device.cu",
+      "sha256": "e391ba859c23e9d9e082953a62104f89e69f6494833314ce4158641dd5aa2af7"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x16x32x128_1x1_16x16x128_1x128x128_tiles1_small_register_prefetch_Cbf16_t.device.cu",
+      "sha256": "39074c8f043af487e86b0696da34338de1a5b6eb57fff59af0f77781c0a657a2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_Cbf16_t.device.cu",
+      "sha256": "6a4725453712d16ca0b476e794d077a4336ba587069e49dc7dcd00a4ca48ebfa"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x256x256x128_2x2_16x16x128_1x128x128_tiles1_nooob_Cbf16_t.device.cu",
+      "sha256": "b5cfac9381a58f790bb16ed2f7023a5834cd5dbb3c2d151669560f9a86fc2dea"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x128x128_2x2_16x16x128_1x128x128_tiles1_small_regscale_xor_Cbf16_t.device.cu",
+      "sha256": "5e29814c8a0cd502dce506ef858f01f1af792d639b3caaaca4c800c088de17f4"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x32x128_1x1_16x16x128_1x128x128_tiles1_small_register_Cbf16_t.device.cu",
+      "sha256": "454fd85df6f6cfa5932d64a74972b3d3f5cb3109ea885ca36552e5b1fa4f7d77"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x64x128_1x1_16x16x128_1x128x128_tiles1_small_register_wavek_Cbf16_t.device.cu",
+      "sha256": "7467fd1313c7f92ed4d7fe60dccf8176c5f6170d790ad8c4309e53870a781ad9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x64x128_1x4_16x16x128_1x128x128_tiles1_small_lds_Cbf16_t.device.cu",
+      "sha256": "39310b170dfbc9b11751476f568afbec0d31b0b2a8535a82725b34f851670e23"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x64x128_1x4_16x16x128_1x128x128_tiles1_small_lds_deep_Cbf16_t.device.cu",
+      "sha256": "c705507a69e0933f2dacc5689ed32f25aa89182d26b5fc0ba8838119b40c1397"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x32x64x128_2x2_16x16x128_1x128x128_tiles1_small_regscale_Cbf16_t.device.cu",
+      "sha256": "c7f3dd183584607e290539c4ffb440c6cb08fd56c4e594c874528b7fd500e1e4"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x128x128_2x2_16x16x128_1x128x128_tiles1_narrow_Cbf16_t.device.cu",
+      "sha256": "b36cfb546758b83b6af3c8905d36edbb6b80c31eb4b9726d4e592f7310e06fcd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x64x128_2x2_16x16x128_1x128x128_tiles1_narrow_Cbf16_t.device.cu",
+      "sha256": "818e2f3ff60ab14da6d70252f6595886c332965997b2be52cf5631e11622b946"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x64x64x128_2x2_16x16x128_1x128x128_tiles1_small_lds_Cbf16_t.device.cu",
+      "sha256": "9760946417bb6c888f89d4e8b4ca873d547de8d75a4909cc17213e1d2055661c"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x80x128x128_1x4_16x16x128_1x128x128_tiles1_fine_lds_s4_c1_sk1_v4b128_Cbf16_t.device.cu",
+      "sha256": "f0e40687d8874a9f1139dd3bcf5a42d32adfce86915be5152d1329c7f8ee8582"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x80x128x128_1x4_16x16x128_1x128x128_tiles1_fine_lds_s4_c1_sk2_v4b128_Cbf16_t.device.cu",
+      "sha256": "b0b5005fd8451922375e8ed4d406fe9721b0b5f00750e26a7f3ea0d5d81f3f2a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x80x128x128_1x4_16x16x128_1x128x128_tiles1_fine_lds_s4_c1_sk4_v16b128_Cbf16_t.device.cu",
+      "sha256": "1eca85952588749c18c849e3dbbffc63efb4c873dfc45a5966aecf7934db3c75"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_256x96x64x128_2x2_16x16x128_1x128x128_tiles1_small_lds_Cbf16_t.device.cu",
+      "sha256": "a27c56bb816230a770ff676cbfffa14f8717f3022825a277989c6dda5e13a2fa"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x16x16x128_1x1_16x16x128_1x128x128_tiles1_small_register_Cbf16_t.device.cu",
+      "sha256": "5df18a9cc85d16b4736ff46bcfff9c822dd324a91d8f8449c7eb6fdd012a86d3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x16x32x128_1x1_16x16x128_1x128x128_tiles1_small_register_wavek_Cbf16_t.device.cu",
+      "sha256": "84985ca3c2a6fcaaae84734e9006fb475a69ac81cfde82828f43ee6b6fac1105"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x192x256x128_4x2_16x16x128_1x128x128_tiles1_Cbf16_t.device.cu",
+      "sha256": "1f05d25b3cf2dee74199bacabf02f1608d6ba68d60a2f4163cf8ee7099b7c79a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x192x256x128_4x2_16x16x128_1x128x128_tiles1_main_Cbf16_t.device.cu",
+      "sha256": "1b5e758c2d4354eda92a41dcf17e411dbb6d531c57bb0d8765e89b8efad7c3a2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x32x32x128_1x1_16x16x128_1x128x128_tiles1_small_register_wavek_Cbf16_t.device.cu",
+      "sha256": "30c07cbe0df3c89918ee4b33ad56cc35ca615df2f09f5aa63213a9e6516350c5"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x64x128x128_4x2_16x16x128_1x128x128_tiles1_small_lds_Cbf16_t.device.cu",
+      "sha256": "7b21c89056ac9b139a42317c7719a877f75a521dd7306b9e3ba9fd50615d4587"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_512x96x128x128_2x4_16x16x128_1x128x128_tiles1_fine_lds_s4_c1_sk1_v4b128_Cbf16_t.device.cu",
+      "sha256": "8e000dc60513d5976da55afd13c8527542f338c675f395681b3de382849489fc"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_64x16x32x128_1x1_16x16x128_1x128x128_tiles1_small_register_Cbf16_t.device.cu",
+      "sha256": "3638b17c107d51014d668bb164280a81be289d4ca4775deda9ba440db6ade487"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x128x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cbf16_t.device.cu",
+      "sha256": "2a86f9bea6ca5655e1ab5270352a5af9526cb8d3ffe21b5fd564c7db8b926224"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x128x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cfp32_t.device.cu",
+      "sha256": "a5231204eb95c44a92d28160ff4c154982cfcbad83ebf319421bc377846d3381"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x128x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cbf16_t.device.cu",
+      "sha256": "f4b35bf5a2f1c1c7987e9816072f4813f51dad3908fb6f7385f945877b668ae2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x128x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cfp32_t.device.cu",
+      "sha256": "cba965017de92f348a2feac7822c6d2084dc6a0ad75d03e418eacd74f2f51a6a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x128x256x64_2x4_16x16x32_0x0x0_nooob_Cbf16_t.device.cu",
+      "sha256": "cb94a933b2526a37945b70f5c2d9724c338ff2f0720bc66237d50d2ef4221fae"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x128x256x64_2x4_16x16x32_0x0x0_nooob_Cfp32_t.device.cu",
+      "sha256": "95e54e3c785b1e7d68c2569f2c6ca42370d2fb61a641ef90e873edd3fede9068"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x192x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cbf16_t.device.cu",
+      "sha256": "b25f61c7ae73f09e0810bb5923ac68d492df3ab6187c34083f7fdcd36f0b474a"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x192x128x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cfp32_t.device.cu",
+      "sha256": "6eb94a4640548da72ab12a94c4fc00228c5bd36c232d893c884be95b8f5428e0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x192x128x64_2x4_16x16x32_0x0x0_nooob_Cbf16_t.device.cu",
+      "sha256": "84de2cb2c215afebb9d8fb90fe8859ee6f61a85fe4e209b4a771e7573f710c21"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x192x128x64_2x4_16x16x32_0x0x0_nooob_Cfp32_t.device.cu",
+      "sha256": "0af6b1304cb2244835515684b7a9f77543070795fa099dc5cef6f563df2b2c04"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x192x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cbf16_t.device.cu",
+      "sha256": "3e852594369645ecc5aebe1c60121fc3f9e906eba641350010342b8eb7b4f959"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x192x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cfp32_t.device.cu",
+      "sha256": "7903d3210bcbae9064b1a0393e3e4e9a772d75da5a06c4b0c5d8d0f685623778"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x192x256x64_2x4_16x16x32_0x0x0_nooob_Cbf16_t.device.cu",
+      "sha256": "5f423afefad1e58d5d75b8b781e755f2affd0a2a2509eb3415c8f97bd0cfe6d9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x192x256x64_2x4_16x16x32_0x0x0_nooob_Cfp32_t.device.cu",
+      "sha256": "dd38a2c6e5ca0028b5498e3014999ecb8a7fb41c9a2058efe204caa5793d788e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x64x128x64_2x4_16x16x32_0x0x0_nooob_Cbf16_t.device.cu",
+      "sha256": "3f3da26dd23e4fe7fe8d10c5de50014b37041c333148b07aeeb209e4f9247718"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_mono_tile_512x64x128x64_2x4_16x16x32_0x0x0_nooob_Cfp32_t.device.cu",
+      "sha256": "5dbf6a0239953f8c9232d2d36407cd7b51541a65d8ccd6745af3200d22c6a885"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x128x128x64_2x4_16x16x32_0x0x0_Cbf16_t.device.cu",
+      "sha256": "69a30d9d6a7d764982523498e616916cb613004bddd64d2555ff95e39a4776f3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x128x128x64_2x4_16x16x32_0x0x0_Cfp32_t.device.cu",
+      "sha256": "1a6b83139a03c7f173487c41b25f7d776befa1634abd3bcc62ef262050b5faeb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x128x128x64_2x4_16x16x32_0x0x0_cA0cB0_Cbf16_t.device.cu",
+      "sha256": "2f2b02a2af9e194062d9919070e47d379c7dd637bea658f050e66a43ba4fcd1d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x128x128x64_2x4_16x16x32_0x0x0_cA0cB0_Cfp32_t.device.cu",
+      "sha256": "cf43942ba91d23c26982cf55b14c0599ad54c6af0d0daec79ea11930794c19c1"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x128x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cbf16_t.device.cu",
+      "sha256": "dce916f009af5f8a0e13aa68fc7c226e47fe01f99378e31dbadfad338b48d8a6"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x128x256x64_2x4_16x16x32_0x0x0_nooob_4g_safe_Cfp32_t.device.cu",
+      "sha256": "b8892ae3747c71afda7dffb90e212eea7e14bc76a4ff81b0ee065953d0277a85"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x128x256x64_2x4_16x16x32_0x0x0_nooob_Cbf16_t.device.cu",
+      "sha256": "7c90c47b85a82e6382912d23f66fa0914d17443d9ee863ebd8e948445155d7e9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x128x256x64_2x4_16x16x32_0x0x0_nooob_Cfp32_t.device.cu",
+      "sha256": "f203e06a1cf6f2ced0dc027bb3d411216ab6451b5006808f935f643519e88fe9"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0_Cbf16_t.device.cu",
+      "sha256": "0b0b76dc8ee5fd9c424d5fdda7118dfbe8c7579540ae67cf9bc5688128f9d755"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0_Cfp32_t.device.cu",
+      "sha256": "e04829e9135ac7055585551c9899b3feb6a3642e5bee0a3c17c9770002c2af04"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0_cA0cB0_Cbf16_t.device.cu",
+      "sha256": "0c137662ec2558fb55799b84a126f76fcefffb5d1d8583700bf0206be18f1ff3"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0_cA0cB0_Cfp32_t.device.cu",
+      "sha256": "f8bb2f91dd78a7d7e30c585ff21291c60260809aed24195a69f37afd1bb20ebb"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0_nooob_Cbf16_t.device.cu",
+      "sha256": "5b8e2fcb06738457525c687ca9b6504a694b3d22ab3ed1443fb90495ba98a176"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/opus_gemm_persistent_512x256x256x64_2x4_16x16x32_0x0x0_nooob_Cfp32_t.device.cu",
+      "sha256": "e546153f2f051c110b13528fac8b1555168f1d61d73988a5a3dd1285fedff03b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/build/module_deepgemm_opus/blob.staging/instances/splitk_reduce_gfx950.device.cu",
+      "sha256": "e3840f3dcd38b2eaefc621b47626374bcacb0e06f65bcec6f986817b5d002780"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/jit_formal_selected/module_deepgemm_opus.so",
+      "sha256": "6f6a0117b122f06b4802833c020effb4b24ff9fea56f20c8c16b9ced9787173f"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/plans/scale_issue_publish_screen.json",
+      "sha256": "ccb088b63093aaf3280ddb830aab60440fe78bd5a3536f57f5265bd39d69f227"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/results/scale_issue_publish_confirmation_20261008.json",
+      "sha256": "638fc28bed7c4be9ed1d0a5ca21f6811f98dcdbae4e4e5ceb8d5fecfbe87a3dd"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/results/scale_issue_publish_confirmation_20261008.log",
+      "sha256": "6822eef95220c99102dd332ce48444d196ab78e431db0f0a43ada1f9aac0e4dc"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/results/scale_issue_publish_confirmation_analysis.json",
+      "sha256": "390201f84dc107fceec30b5659a6a1b17d2f40bebc2e8ff1c1dc3d25fb006c2e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/results/scale_issue_publish_screen.json",
+      "sha256": "c1179a88ad2cb9c3ef994556049e3607ca52b819da87166a4bde26e23583411b"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/results/scale_issue_publish_screen.log",
+      "sha256": "cd5c87079268ed6d9353ba861ee97608f285641e3f117b9e4da4d6ec5a033d55"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/results/scale_issue_publish_screen_analysis.json",
+      "sha256": "5c2f84d0039d6e30d86f68b6f9a15690f0298b6c5fc011c13f27d3e9c60aa898"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/baseline/experiments.so",
+      "sha256": "3f3573b982c6230246e2ca4f78f34bbfdfc54f69bfc0ca9101a7336ae93d448d"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/build_manifest.json",
+      "sha256": "da7eea8556d7a0e67d7d0e2850a3f33591d92a9d9317fc136220d2e840290281"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/candidate/experiments.so",
+      "sha256": "9c008d08484da919f8254d7d67c3fdc1b2605b327e8ce56a4f5f744bfc2affd2"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/confirmation_plan_20261008.json",
+      "sha256": "84035e1e5adb452c22eef20ee6221e9d84a43bce6a56a7e7dbd3894f19fbadd5"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/device_audit.json",
+      "sha256": "3727ec85a02c1fb1f2c57abe15eb7c793f48b1f2443e69e71034ed3efdf9266e"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/isa_order_audit.json",
+      "sha256": "a91d0e51e9398bbe18df7c43c4e8a1b505e56cdb30e853898f6b439433c26580"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/source_manifest.json",
+      "sha256": "75e8e179dc2bd864be596d499d29a52ae8dcfec60fe922ccd24cd67a80ab3481"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish_claim_log.jsonl",
+      "sha256": "99489c3fecd972cb7857689b2deebc141815847899e6032b9ddb82bfa62406c0"
+    },
+    {
+      "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish_confirmation_claim_log.jsonl",
+      "sha256": "b9bf2cc61855cc3b9f81c4ac82b65efa7a0c9c58dcb9bfd8929274d1c4922bf4"
+    }
+  ],
+  "historical_evidence_policy": "Earlier adopted=false and not-built fields retain their collection-time meanings."
+}

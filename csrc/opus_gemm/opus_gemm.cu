@@ -33,6 +33,24 @@ using OpusA8W8BlockscaleBpreshuffleKernel = void (*)(
     aiter_tensor_t&, aiter_tensor_t&, std::optional<aiter_tensor_t>);
 #endif
 
+#ifndef OPUS_A8W8_BPRESHUFFLE_RUNTIME_KERNEL_TYPE_DEFINED
+#define OPUS_A8W8_BPRESHUFFLE_RUNTIME_KERNEL_TYPE_DEFINED
+using OpusA8W8BlockscaleBpreshuffleRuntimeKernel = void (*)(
+    aiter_tensor_t&, aiter_tensor_t&, aiter_tensor_t&,
+    aiter_tensor_t&, aiter_tensor_t&, std::optional<aiter_tensor_t>, int);
+#endif
+
+static OpusA8W8BlockscaleBpreshuffleRuntimeKernel
+opus_a8w8_blockscale_bpreshuffle_runtime_kid_dispatch(int kid)
+{
+  const auto& info = opus_get_arch_info();
+#ifdef OPUS_BUILD_HAS_GFX950
+  if (info.arch == OpusGfxArch::Gfx950)
+    return opus_a8w8_blockscale_bpreshuffle_runtime_kid_dispatch_gfx950(kid);
+#endif
+  return nullptr;
+}
+
 static OpusA8W8Kernel opus_a8w8_kid_dispatch(int kid)
 {
   const auto &info = opus_get_arch_info();
@@ -471,6 +489,11 @@ static void opus_gemm_a8w8_blockscale_bpreshuffle_impl(
 
   if (Y.dtype() == AITER_DTYPE_bf16)
   {
+    if (auto runtime = opus_a8w8_blockscale_bpreshuffle_runtime_kid_dispatch(kid))
+    {
+      runtime(XQ, WQ, x_scale, w_scale, Y, workspace, 0);
+      return;
+    }
     opus_a8w8_blockscale_bpreshuffle_kid_dispatch<bf16_t>(kid)(
         XQ, WQ, x_scale, w_scale, Y, workspace);
   }
@@ -503,6 +526,24 @@ void opus_gemm_a8w8_blockscale_bpreshuffle_workspace_launch(
 {
     opus_gemm_a8w8_blockscale_bpreshuffle_impl(
         XQ, WQ, x_scale, w_scale, Y, kid, workspace);
+}
+
+void opus_gemm_a8w8_blockscale_bpreshuffle_runtime_launch(
+    aiter_tensor_t& XQ, aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale, aiter_tensor_t& w_scale,
+    aiter_tensor_t& Y, int kid,
+    std::optional<aiter_tensor_t> workspace, int split_k)
+{
+  aiter_detail::g_aiter_can_throw = true;
+  constexpr const char* entry = "opus_gemm_a8w8_blockscale_bpreshuffle_runtime_launch";
+  opus_check_a8_family_tensors(entry, XQ, WQ, Y);
+  opus_check_a8_scale_devices(entry, XQ, x_scale, w_scale);
+  AITER_CHECK(Y.dtype() == AITER_DTYPE_bf16, entry, ": expected bf16 Y");
+  AITER_CHECK(split_k >= 0 && split_k <= 16, entry, ": split_k must be in [0,16]");
+  const auto runtime = opus_a8w8_blockscale_bpreshuffle_runtime_kid_dispatch(kid);
+  AITER_CHECK(runtime != nullptr, entry,
+              ": kid ", kid, " is not a registered runtime split-K kernel for this device/build");
+  runtime(XQ, WQ, x_scale, w_scale, Y, workspace, split_k);
 }
 
 #endif // !__HIP_DEVICE_COMPILE__

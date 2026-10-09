@@ -132,6 +132,25 @@ def _opus_gemm_bpreshuffle_workspace_raw(
 ) -> Tensor: ...
 
 
+def _gen_opus_gemm_bpreshuffle_runtime_fake(
+    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor,
+    Y: Tensor, kid: int, workspace: Tensor | None, split_k: int,
+) -> Tensor:
+    return Y
+
+
+@compile_ops(
+    "module_deepgemm_opus",
+    fc_name="opus_gemm_a8w8_blockscale_bpreshuffle_runtime_launch",
+    gen_fake=_gen_opus_gemm_bpreshuffle_runtime_fake,
+    develop=True,
+)
+def _opus_gemm_bpreshuffle_runtime_raw(
+    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor,
+    Y: Tensor, kid: int, workspace: Tensor | None, split_k: int,
+) -> Tensor: ...
+
+
 def opus_gemm_a8w8_blockscale_bpreshuffle_tune(
     XQ: Tensor,
     WQ: Tensor,
@@ -139,6 +158,7 @@ def opus_gemm_a8w8_blockscale_bpreshuffle_tune(
     w_scale: Tensor,
     Y: Tensor | None = None,
     kernelId: int = 11000,
+    split_k: int = 0,
 ) -> Tensor:
     """Compatibility entry for the existing A8W8 blockscale tuner."""
     if Y is None:
@@ -155,6 +175,7 @@ def opus_gemm_a8w8_blockscale_bpreshuffle_tune(
         w_scale,
         Y,
         kid=int(kernelId),
+        split_k=split_k,
     )
 
 
@@ -341,6 +362,7 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
     Y: Tensor,
     *,
     kid: int,
+    split_k: int = 0,
     workspace: Tensor | None = None,
     route_arch: str | None = None,
     instance: object | None = None,
@@ -369,7 +391,24 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
     if instance is None:
         from csrc.opus_gemm.opus_gemm_common import kernels_list
         instance = kernels_list[resolved_kid]
-    if instance.bpreshuffle_split_k > 1:
+    runtime_split_k = (
+        instance.bpreshuffle_variant is not None
+        and instance.bpreshuffle_variant.runtime_split_k
+    )
+    if not runtime_split_k and split_k != 0:
+        raise ValueError("this OPUS bpreshuffle kid has fixed split-K")
+    plan = None
+    if runtime_split_k:
+        from csrc.opus_gemm.opus_gemm_common import bpreshuffle_launch_plan
+        if any(tensor.dim() != 2 for tensor in (XQ, WQ, Y, x_scale, w_scale)):
+            raise ValueError("OPUS bpreshuffle expects logical 2D tensors")
+        cu_num = 256
+        if split_k == -1:
+            cu_num = int(torch.cuda.get_device_properties(XQ.device).multi_processor_count)
+        plan = bpreshuffle_launch_plan(
+            instance, int(XQ.shape[0]), int(WQ.shape[0]), int(XQ.shape[1]), split_k, cu_num,
+        )
+    if runtime_split_k or instance.bpreshuffle_split_k > 1:
         # Allocate through PyTorch so stream lifetime and graph pools are tracked.
         # Shape/dtype/device checks precede allocation; C++ also checks every
         # physical workspace contract for direct raw-ABI callers.
@@ -389,12 +428,26 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
                 or x_scale.shape != (m, k // 128) or x_scale.stride() != (1, m)
                 or w_scale.shape != (n // 128, k // 128) or not w_scale.is_contiguous()):
             raise ValueError("OPUS bpreshuffle requires column-major E8M0 A scales and row-major E8M0 B scales")
-        if workspace is None:
+        workspace_elements = (
+            plan.workspace_elements if plan is not None else instance.bpreshuffle_split_k * m * n
+        )
+        if not workspace_elements and workspace is not None:
+            raise ValueError("OPUS bpreshuffle split_k=1 does not use workspace")
+        if workspace_elements and workspace is None:
             workspace = torch.empty(
-                instance.bpreshuffle_split_k * m * n, device=XQ.device, dtype=torch.float32,
+                workspace_elements, device=XQ.device, dtype=torch.float32,
             )
     elif workspace is not None:
         raise ValueError("this OPUS bpreshuffle kid does not use workspace")
+    if runtime_split_k:
+        # Zero remains the historical default sentinel, including empty
+        # short-K register partitions. Explicit/auto splits are positive.
+        launch_split_k = 0 if split_k == 0 else plan.split_k
+        _opus_gemm_bpreshuffle_runtime_raw(
+            XQ.unsqueeze(0), WQ.unsqueeze(0), x_scale, w_scale,
+            Y.unsqueeze(0), resolved_kid, workspace, launch_split_k,
+        )
+        return Y
     _launch_a8w8_backend(
         XQ.unsqueeze(0),
         WQ.unsqueeze(0),

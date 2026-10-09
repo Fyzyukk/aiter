@@ -1,0 +1,460 @@
+rocprofiler-sdk:
+  counters-schema-version: 1
+  counters:
+  - name: OPUS_GFX950_GRBM_COUNT_MAX
+    description: max of gfx950 GRBM_COUNT; Tie High - Count Number of Clocks
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(GRBM_COUNT,max)
+  - name: OPUS_GFX950_GRBM_GUI_ACTIVE_MAX
+    description: max of gfx950 GRBM_GUI_ACTIVE; The GUI is Active
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(GRBM_GUI_ACTIVE,max)
+  - name: OPUS_GFX950_SQ_WAVE_CYCLES_SUM
+    description: sum of gfx950 SQ_WAVE_CYCLES; The cycles spent executing waves in
+      the CUs. This value is reported per-SE (aggregates of SIMD values) and is nondeterministic.
+      Units are in quad-cycles (4 cycles). Useful for determining how much time is
+      spent executing wave code vs overhead/waiting. Low cycle count relative to actual
+      number of cycles processed by the CU can indicate that the CU is stalling or
+      is overloaded.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_WAVE_CYCLES,sum)
+  - name: OPUS_GFX950_SQ_WAVES_SUM
+    description: sum of gfx950 SQ_WAVES; Count number of waves sent to distributed
+      sequencers (SQs). This value represents the number of waves that are sent to
+      each SQ. This only counts new waves sent since the start of collection (for
+      dispatch profiling this is the timeframe of kernel execution, for agent profiling
+      it is the timeframe between start_context and read counter data). A sum of all
+      SQ_WAVES values will give the total number of waves started by the application
+      during the collection timeframe. Returns one value per-SE (aggregates of SIMD
+      values).
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_WAVES,sum)
+  - name: OPUS_GFX950_SQ_WAIT_ANY_SUM
+    description: sum of gfx950 SQ_WAIT_ANY; Number of wave-cycles spent waiting for
+      anything (per-simd, nondeterministic). Units in quad-cycles(4 cycles)
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_WAIT_ANY,sum)
+  - name: OPUS_GFX950_SQ_WAIT_INST_ANY_SUM
+    description: sum of gfx950 SQ_WAIT_INST_ANY; Number of wave-cycles spent waiting
+      for any instruction issue. Units in quad-cycles(4 cycles).
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_WAIT_INST_ANY,sum)
+  - name: OPUS_GFX950_SQ_ACTIVE_INST_ANY_SUM
+    description: sum of gfx950 SQ_ACTIVE_INST_ANY; Number of cycles each wave spends
+      working on any type of instruction. Useful in determining percentage of time
+      spend executing wave workloads (see WaveExec). This value is returned on a per-SE
+      (aggregate of values in SIMDs in the SE) basis with units in quad-cycles(4 cycles).
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_ACTIVE_INST_ANY,sum)
+  - name: OPUS_GFX950_SQ_BUSY_CYCLES_SUM
+    description: sum of gfx950 SQ_BUSY_CYCLES; Number of clock cycles there are active
+      waves in a shader engine (as reported by the distributed sequencer). This value
+      does not denote the number of active waves, only the clock cycle in which any
+      wave is present in a SE. This value is returned on a per-shader engine basis
+      in clock cycles.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_BUSY_CYCLES,sum)
+  - name: OPUS_GFX950_SQ_VALU_MFMA_BUSY_CYCLES_SUM
+    description: sum of gfx950 SQ_VALU_MFMA_BUSY_CYCLES; Number of cycles the MFMA
+      (Matrixed-Fused-Multiply-Add) ALU is busy. This value is returned on a per-SIMD
+      basis.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_VALU_MFMA_BUSY_CYCLES,sum)
+  - name: OPUS_GFX950_SQ_INSTS_VALU_MFMA_MOPS_F8_SUM
+    description: sum of gfx950 SQ_INSTS_VALU_MFMA_MOPS_F8; The number of math operation
+      on F8 datatype. Captures add or mul ops performed divided by 512. The value
+      is returned per-SE (aggregate of values in SIMDs in the SE). See AMD CDNA3 ISA
+      for more information on MFMA F8 instructions.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_INSTS_VALU_MFMA_MOPS_F8,sum)
+  - name: OPUS_GFX950_TCC_EA0_RDREQ_DRAM_32B_SUM
+    description: sum of gfx950 TCC_EA0_RDREQ_DRAM_32B; Number of 32-byte TCC/EA read
+      requests due to DRAM traffic, 1 64-byte request will be counted to 2, 128-byte
+      as 4.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_RDREQ_DRAM_32B,sum)
+  - name: OPUS_GFX950_TCC_EA0_WRREQ_WRITE_DRAM_32B_SUM
+    description: sum of gfx950 TCC_EA0_WRREQ_WRITE_DRAM_32B; Number of 32-byte TCC/EA
+      write requests due to DRAM traffic, 1 64-byte request will be counted to 2.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_WRREQ_WRITE_DRAM_32B,sum)
+  - name: OPUS_GFX950_TCP_TCP_TA_ADDR_STALL_CYCLES_SUM
+    description: sum of gfx950 TCP_TCP_TA_ADDR_STALL_CYCLES; TCP stalls TA addr interface.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_TCP_TA_ADDR_STALL_CYCLES,sum)
+  - name: OPUS_GFX950_TCP_TCR_TCP_STALL_CYCLES_SUM
+    description: sum of gfx950 TCP_TCR_TCP_STALL_CYCLES; TCR stalls TCP_TCR_req interface
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_TCR_TCP_STALL_CYCLES,sum)
+  - name: OPUS_GFX950_TCP_LFIFO_STALL_CYCLES_SUM
+    description: sum of gfx950 TCP_LFIFO_STALL_CYCLES; Memory Latency fifos full stall.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_LFIFO_STALL_CYCLES,sum)
+  - name: OPUS_GFX950_TCP_GATE_EN1_SUM
+    description: sum of gfx950 TCP_GATE_EN1; TCP interface clocks are turned on. Not
+      Windowed.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_GATE_EN1,sum)
+  - name: OPUS_GFX950_TCC_HIT_SUM
+    description: sum of gfx950 TCC_HIT; Number of cache hits.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_HIT,sum)
+  - name: OPUS_GFX950_TCC_MISS_SUM
+    description: sum of gfx950 TCC_MISS; Number of cache misses. UC reads count as
+      misses.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_MISS,sum)
+  - name: OPUS_GFX950_TCC_TAG_STALL_SUM
+    description: sum of gfx950 TCC_TAG_STALL; Number of cycles the normal request
+      pipeline in the tag was stalled for any reason. Normally, stalls of this nature
+      are measured exactly from one point the pipeline, but that is not the case for
+      this counter. Probes can stall the pipeline at a variety of places, and there
+      is no single point that can reasonably measure the total stalls accurately.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_TAG_STALL,sum)
+  - name: OPUS_GFX950_TCC_BUSY_SUM
+    description: sum of gfx950 TCC_BUSY; Number of cycles we have a request pending.
+      Not windowable.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_BUSY,sum)
+  - name: OPUS_GFX950_TCP_TAGRAM0_REQ_SUM
+    description: sum of gfx950 TCP_TAGRAM0_REQ; Total L2 requests that mapped to tagram
+      0 from this TCP to all TCCs
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_TAGRAM0_REQ,sum)
+  - name: OPUS_GFX950_TCP_TAGRAM1_REQ_SUM
+    description: sum of gfx950 TCP_TAGRAM1_REQ; Total L2 requests that mapped to tagram
+      1 from this TCP to all TCCs
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_TAGRAM1_REQ,sum)
+  - name: OPUS_GFX950_TCP_TAGRAM2_REQ_SUM
+    description: sum of gfx950 TCP_TAGRAM2_REQ; Total L2 requests that mapped to tagram
+      2 from this TCP to all TCCs
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_TAGRAM2_REQ,sum)
+  - name: OPUS_GFX950_TCP_TAGRAM3_REQ_SUM
+    description: sum of gfx950 TCP_TAGRAM3_REQ; Total L2 requests that mapped to tagram
+      3 from this TCP to all TCCs
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_TAGRAM3_REQ,sum)
+  - name: OPUS_GFX950_TA_BUFFER_WAVEFRONTS_SUM
+    description: sum of gfx950 TA_BUFFER_WAVEFRONTS; Number of buffer wavefronts processed
+      by TA.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TA_BUFFER_WAVEFRONTS,sum)
+  - name: OPUS_GFX950_TA_BUFFER_TOTAL_CYCLES_SUM
+    description: sum of gfx950 TA_BUFFER_TOTAL_CYCLES; Number of buffer cycles issued
+      to TC.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TA_BUFFER_TOTAL_CYCLES,sum)
+  - name: OPUS_GFX950_TCP_UTCL1_SERIALIZATION_STALL_SUM
+    description: sum of gfx950 TCP_UTCL1_SERIALIZATION_STALL; Total number of stalls
+      due to serializing translation requests through the UTCL1.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_UTCL1_SERIALIZATION_STALL,sum)
+  - name: OPUS_GFX950_TCP_UTCL1_THRASHING_STALL_SUM
+    description: sum of gfx950 TCP_UTCL1_THRASHING_STALL; Stall caused by thrashing
+      feature in any probes. Not accurate when the stall signal has overlap between
+      probe0 and probe1. Even worse with MECO of thrashing deadlock. Some event of
+      probe0 could miss to count in with MECO on. Anyway this perf count can be a
+      rough estimation of thrashing.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_UTCL1_THRASHING_STALL,sum)
+  - name: OPUS_GFX950_TCP_UTCL1_STALL_INFLIGHT_MAX_SUM
+    description: sum of gfx950 TCP_UTCL1_STALL_INFLIGHT_MAX; Total utcl1 stalls due
+      to inflight counter saturation
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_UTCL1_STALL_INFLIGHT_MAX,sum)
+  - name: OPUS_GFX950_TCC_EA0_RDREQ_DRAM_CREDIT_STALL_SUM
+    description: sum of gfx950 TCC_EA0_RDREQ_DRAM_CREDIT_STALL; Number of cycles there
+      was a stall because the read request interface was out of DRAM credits. Stalls
+      occur regardless of whether a read needed to be performed or not.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_RDREQ_DRAM_CREDIT_STALL,sum)
+  - name: OPUS_GFX950_TCC_EA0_RDREQ_GMI_CREDIT_STALL_SUM
+    description: sum of gfx950 TCC_EA0_RDREQ_GMI_CREDIT_STALL; Number of cycles there
+      was a stall because the read request interface was out of GMI credits. Stalls
+      occur regardless of whether a read needed to be performed or not.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_RDREQ_GMI_CREDIT_STALL,sum)
+  - name: OPUS_GFX950_TCC_EA0_WRREQ_DRAM_CREDIT_STALL_SUM
+    description: sum of gfx950 TCC_EA0_WRREQ_DRAM_CREDIT_STALL; Number of cycles a
+      EA write request was stalled because the interface was out of DRAM credits.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_WRREQ_DRAM_CREDIT_STALL,sum)
+  - name: OPUS_GFX950_TCC_EA0_WRREQ_GMI_CREDIT_STALL_SUM
+    description: sum of gfx950 TCC_EA0_WRREQ_GMI_CREDIT_STALL; Number of cycles a
+      EA write request was stalled because the interface was out of GMI credits.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_WRREQ_GMI_CREDIT_STALL,sum)
+  - name: OPUS_GFX950_TA_ADDR_STALLED_BY_TC_CYCLES_SUM
+    description: sum of gfx950 TA_ADDR_STALLED_BY_TC_CYCLES; Number of cycles addr
+      path stalled by TC. Perf_Windowing not supported for this counter.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TA_ADDR_STALLED_BY_TC_CYCLES,sum)
+  - name: OPUS_GFX950_TA_TA_BUSY_SUM
+    description: sum of gfx950 TA_TA_BUSY; TA block is busy. Perf_Windowing not supported
+      for this counter.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TA_TA_BUSY,sum)
+  - name: OPUS_GFX950_SQ_VMEM_TA_ADDR_FIFO_FULL_SUM
+    description: sum of gfx950 SQ_VMEM_TA_ADDR_FIFO_FULL; Number of cycles texture
+      requests are stalled due to full address fifo in TA. (nondeterministic, unwindowed)
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_VMEM_TA_ADDR_FIFO_FULL,sum)
+  - name: OPUS_GFX950_SQ_LDS_BANK_CONFLICT_SUM
+    description: sum of gfx950 SQ_LDS_BANK_CONFLICT; The number of cycles LDS (local
+      data store) is stalled by bank conflicts. This value is returned on a per-SE
+      (aggregate of values in SIMDs in the SE) basis.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_LDS_BANK_CONFLICT,sum)
+  - name: OPUS_GFX950_SQ_WAIT_INST_LDS_SUM
+    description: sum of gfx950 SQ_WAIT_INST_LDS; Number of wave-cycles spent waiting
+      for LDS instruction issue. In units of 4 cycles. (per-simd, nondeterministic)
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SQ_WAIT_INST_LDS,sum)
+  - name: OPUS_GFX950_TCP_RFIFO_STALL_CYCLES_SUM
+    description: sum of gfx950 TCP_RFIFO_STALL_CYCLES; Memory Request fifos full stall
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_RFIFO_STALL_CYCLES,sum)
+  - name: OPUS_GFX950_TCP_READ_TAGCONFLICT_STALL_CYCLES_SUM
+    description: sum of gfx950 TCP_READ_TAGCONFLICT_STALL_CYCLES; Tagram conflict
+      stall on a read
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_READ_TAGCONFLICT_STALL_CYCLES,sum)
+  - name: OPUS_GFX950_TA_BUFFER_READ_LDS_WAVEFRONTS_SUM
+    description: sum of gfx950 TA_BUFFER_READ_LDS_WAVEFRONTS; Number of buffer read
+      wavefronts for lds return processed by TA.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TA_BUFFER_READ_LDS_WAVEFRONTS,sum)
+  - name: OPUS_GFX950_TA_BUFFER_READ_WAVEFRONTS_SUM
+    description: sum of gfx950 TA_BUFFER_READ_WAVEFRONTS; Number of buffer read wavefronts
+      processed by TA.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TA_BUFFER_READ_WAVEFRONTS,sum)
+  - name: OPUS_GFX950_TCC_EA0_RDREQ_32B_SUM
+    description: sum of gfx950 TCC_EA0_RDREQ_32B; Number of 32-byte TCC/EA read requests
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_RDREQ_32B,sum)
+  - name: OPUS_GFX950_TCC_EA0_RDREQ_64B_SUM
+    description: sum of gfx950 TCC_EA0_RDREQ_64B; Number of 64-byte TCC/EA read requests
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_RDREQ_64B,sum)
+  - name: OPUS_GFX950_TCC_EA0_RDREQ_128B_SUM
+    description: sum of gfx950 TCC_EA0_RDREQ_128B; Number of 128-byte TCC/EA read
+      requests
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCC_EA0_RDREQ_128B,sum)
+  - name: OPUS_GFX950_TA_BUFFER_COALESCED_READ_CYCLES_SUM
+    description: sum of gfx950 TA_BUFFER_COALESCED_READ_CYCLES; Number of buffer coalesced
+      read cycles issued to TC.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TA_BUFFER_COALESCED_READ_CYCLES,sum)
+  - name: OPUS_GFX950_TA_BUFFER_COALESCEABLE_WAVEFRONTS_SUM
+    description: sum of gfx950 TA_BUFFER_COALESCEABLE_WAVEFRONTS; Number of buffer
+      coalesceable wavefronts processed by TA.
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TA_BUFFER_COALESCEABLE_WAVEFRONTS,sum)
+  - name: OPUS_GFX950_TCP_UTCL1_TRANSLATION_HIT_SUM
+    description: sum of gfx950 TCP_UTCL1_TRANSLATION_HIT; Total utcl1 translation
+      hits
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_UTCL1_TRANSLATION_HIT,sum)
+  - name: OPUS_GFX950_TCP_UTCL1_TRANSLATION_MISS_SUM
+    description: sum of gfx950 TCP_UTCL1_TRANSLATION_MISS; Total utcl1 translation
+      misses
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_UTCL1_TRANSLATION_MISS,sum)
+  - name: OPUS_GFX950_TCP_TCC_READ_REQ_SUM
+    description: sum of gfx950 TCP_TCC_READ_REQ; Total read requests from TCP to all
+      TCCs
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(TCP_TCC_READ_REQ,sum)
+  - name: OPUS_GFX950_SPI_CSN_BUSY_SUM
+    description: sum of gfx950 SPI_CSN_BUSY; Number of clocks with outstanding waves
+      (SPI or SH). Requires SPI_DEBUG_CNTL.DEBUG_PIPE_SEL to select source, DEBUG_PIPE_SEL
+      = 1, source is CS1; DEBUG_PIPE_SEL = 2, source is CS2; DEBUG_PIPE_SEL = 3, source
+      is CS3; default, source is CS0;
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SPI_CSN_BUSY,sum)
+  - name: OPUS_GFX950_SPI_CSN_NUM_THREADGROUPS_SUM
+    description: sum of gfx950 SPI_CSN_NUM_THREADGROUPS; Number of threadgroups launched.
+      Requires SPI_DEBUG_CNTL.DEBUG_PIPE_SEL to select source, DEBUG_PIPE_SEL = 1,
+      source is CS1; DEBUG_PIPE_SEL = 2, source is CS2; DEBUG_PIPE_SEL = 3, source
+      is CS3; default, source is CS0;
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SPI_CSN_NUM_THREADGROUPS,sum)
+  - name: OPUS_GFX950_SPI_CSN_WINDOW_VALID_SUM
+    description: sum of gfx950 SPI_CSN_WINDOW_VALID; Clock count enabled by perfcounter_start
+      event. Requires SPI_DEBUG_CNTL.DEBUG_PIPE_SEL to select source, DEBUG_PIPE_SEL
+      = 1, source is CS1; DEBUG_PIPE_SEL = 2, source is CS2; DEBUG_PIPE_SEL = 3, source
+      is CS3; default, source is CS0;
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SPI_CSN_WINDOW_VALID,sum)
+  - name: OPUS_GFX950_SPI_RA_REQ_NO_ALLOC_SUM
+    description: sum of gfx950 SPI_RA_REQ_NO_ALLOC; Arb cycles with requests but no
+      allocation. Source is RA0
+    properties: []
+    definitions:
+    - architectures:
+      - gfx950
+      expression: reduce(SPI_RA_REQ_NO_ALLOC,sum)

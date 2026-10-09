@@ -1,0 +1,22 @@
+--- baseline/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh
++++ candidate/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh
+@@ -275,7 +275,7 @@
+     s_waitcnt_lgkmcnt(0_I);
+ 
+     // main loop
+-#pragma clang loop unroll_count(T::NUM_STAGES)
++#pragma clang loop unroll_count(T::FIXED_K ? T::NUM_STAGES : 1)
+     for (int tile_k = 0; tile_k + 1 < loops; ++tile_k) {
+         const int next_stage = stage == T::NUM_STAGES - 1 ? 0 : stage + 1;
+         const int future_stage = stage == 0 ? T::NUM_STAGES - 1 : stage - 1;
+--- baseline/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh
++++ candidate/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh
+@@ -230,7 +230,7 @@
+     s_waitcnt_lgkmcnt(0_I);
+ 
+     // main loop
+-#pragma unroll 4
++#pragma clang loop unroll_count(T::FIXED_K ? 4 : 1)
+     for (int tile_k = 0; tile_k + 1 < loops; ++tile_k) {
+         const int next_stage = stage == T::NUM_STAGES - 1 ? 0 : stage + 1;
+         const int future_stage = stage == 0 ? T::NUM_STAGES - 1 : stage - 1;

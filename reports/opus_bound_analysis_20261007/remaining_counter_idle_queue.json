@@ -1,0 +1,74 @@
+{
+  "env": {
+    "AITER_JIT_DIR": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/jit_baseline",
+    "AITER_AOT_IMPORT": "1",
+    "GPU_ARCHS": "gfx950",
+    "CU_NUM": "256",
+    "HIP_CLANG_PATH": "/root/toolchains/yuyzhang512-amdgpu-pin-op-dst-build/bin",
+    "OPUS_HIP_CLANG_PATH": "/root/toolchains/yuyzhang512-amdgpu-pin-op-dst-build/bin"
+  },
+  "independent_commands_defer_interrupted": true,
+  "commands": [
+    {
+      "name": "char_target30_kid9000_l2_tagmap",
+      "argv": [
+        "/opt/rocm/bin/rocprofv3",
+        "-E",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/gfx950_extra_counters.yaml",
+        "-i",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/pmc/l2_tagmap.txt",
+        "--kernel-trace",
+        "--kernel-include-regex",
+        "gemm_a8w8_mxfp8|opus_gemm_mxscale_bpreshuffle_reduce_kernel",
+        "-d",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/char_profiles/char_target30_kid9000_l2_tagmap",
+        "-o",
+        "char_target30_kid9000_l2_tagmap",
+        "--output-format",
+        "csv",
+        "--",
+        "/opt/venv/bin/python3",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/official_smoke.py",
+        "--plan",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/plans/official_characterization.json",
+        "--output",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/char_profiles/char_target30_kid9000_l2_tagmap/application.json",
+        "--profile",
+        "--target-index",
+        "30",
+        "--iters",
+        "51",
+        "--profile-rotation",
+        "0"
+      ],
+      "log": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/char_profiles/char_target30_kid9000_l2_tagmap/rocprof.log",
+      "parse_after_success_argv": [
+        "/opt/venv/bin/python3",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/parse_counters.py",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/char_profiles/char_target30_kid9000_l2_tagmap",
+        "--output",
+        "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/char_profiles/char_target30_kid9000_l2_tagmap/parsed.json",
+        "--last",
+        "51"
+      ],
+      "required_prior_check": "char_target30_kid9000_check",
+      "expected_target": {
+        "kid": 9000,
+        "shape": [
+          8192,
+          8192,
+          8192
+        ],
+        "actual_configuration": 9000,
+        "BM": 256,
+        "BN": 256,
+        "waves_per_workgroup": 4,
+        "workgroups": 1024,
+        "waves": 4096,
+        "dynamic_scaled_mfma": 16777216,
+        "useful_f8_operations": 1099511627776,
+        "padded_f8_operations": 1099511627776
+      }
+    }
+  ]
+}

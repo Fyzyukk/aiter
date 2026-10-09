@@ -1,0 +1,50 @@
+--- frozen/gemm_include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh
++++ candidate/pipeline.cuh
+@@ -4,15 +4,15 @@
+ #include <opus/opus.hpp>
+ 
+ #include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh"
+-#include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh"
++#include "traits.cuh"
+ 
+ #if !defined(__HIP_DEVICE_COMPILE__)
+ template<class Traits>
+-__global__ void gemm_a8w8_mxfp8_scale_4wave_160x128_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
++__global__ void opus_private_shortk9022_panel8_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
+ #elif defined(__gfx950__)
+ template<class Traits>
+ __global__ __launch_bounds__(Traits::BLOCK_SIZE, Traits::MIN_WGS_PER_CU)
+-void gemm_a8w8_mxfp8_scale_4wave_160x128_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
++void opus_private_shortk9022_panel8_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
+     using namespace opus;
+ 
+     using T = opus::remove_cvref_t<Traits>;
+@@ -33,7 +33,7 @@
+     const int row = block_m * T::B_M;
+     const int col = block_n * T::B_N;
+     const int batch_id = block_id_z();
+-    const int loops = kargs.k / T::B_K;
++    constexpr int loops = T::FIXED_K / T::B_K;
+ 
+     // Matrix and scale views retain bounded A/C resources for missing M rows.
+     auto g_a = make_gmem(reinterpret_cast<const D_A*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * kargs.stride_a,
+@@ -53,8 +53,6 @@
+     const auto u_rb = make_layout_rb_scale<T>(lane_id, wave_id_n);
+     const auto u_gsfa_0 = layout_9021::make_layout_gsfa_scale<T, 0>(lane_id, wave_id_m, wave_id_n, kargs.stride_sfa);
+     const auto u_ssfa_0 = layout_9021::make_layout_ssfa_scale<T, 0>(lane_id, wave_id_m, wave_id_n);
+-    const auto u_gsfa_1 = layout_9021::make_layout_gsfa_scale<T, 1>(lane_id, wave_id_m, wave_id_n, kargs.stride_sfa);
+-    const auto u_ssfa_1 = layout_9021::make_layout_ssfa_scale<T, 1>(lane_id, wave_id_m, wave_id_n);
+     const auto u_rsfa = opus_gemm_8wave_192x256_layout::make_layout_rsfa_scale<T>(lane_id, wave_id_m);
+     const auto u_gsfb = layout_9021::make_layout_gsfb_scale<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_sfb);
+     const auto u_ssfb = layout_9021::make_layout_ssfb_scale<T>(lane_id, wave_id_m, wave_id_n);
+@@ -106,8 +104,8 @@
+         async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(stage), ga_offset(tile_k));
+         async_load<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(stage), gb_offset(tile_k));
+     };
+-    const auto sfa_gmem_offsets = opus::make_tuple(layout_to_offsets<T::VEC_SCALE_A>(u_gsfa_0), layout_to_offsets<T::VEC_SCALE_A>(u_gsfa_1));
+-    const auto sfa_smem_offsets = opus::make_tuple(layout_to_offsets<T::VEC_SCALE_A>(u_ssfa_0), layout_to_offsets<T::VEC_SCALE_A>(u_ssfa_1));
++    const auto sfa_gmem_offsets = opus::make_tuple(layout_to_offsets<T::VEC_SCALE_A>(u_gsfa_0));
++    const auto sfa_smem_offsets = opus::make_tuple(layout_to_offsets<T::VEC_SCALE_A>(u_ssfa_0));
+     const auto sfb_gmem_offsets = layout_to_offsets<1>(u_gsfb);
+     const auto sfb_smem_offsets = layout_to_offsets<1>(u_ssfb);
+     const auto rsfa_offsets = layout_to_offsets<1>(u_rsfa);

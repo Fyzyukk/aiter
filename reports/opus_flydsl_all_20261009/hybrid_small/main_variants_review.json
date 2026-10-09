@@ -1,0 +1,32 @@
+{
+  "status": "review_complete_changes_required",
+  "reviewer": "hybrid_small_v2",
+  "read_only": true,
+  "gpu_operations": 0,
+  "findings": [
+    {
+      "severity": "high",
+      "file": "launch_pin.hip",
+      "description": "SFA descriptor bound depends on args.stride_sfa_batch but launcher leaves it0. Row0 descriptor size0 zeros every SFA load; later rows wrap. Set all contiguous batch strides after legal shape guard and before launch."
+    }
+  ],
+  "reviewed_checks": [
+    "BM-dependent geometry constants and matrix/SFA/C allocations",
+    "Exact SFA_PASSES tuple generation and shortK producer guards",
+    "SFA/SFB scale addressing and packing",
+    "Fixed pin16/32/64 SFB lane<Panel at all4 producer sites",
+    "FixedK guard and full-M256 guard for unpadded pin path",
+    "S2 ring reuse and C staging fences; no callers currentlyStages3"
+  ],
+  "input_sha256": {
+    "candidate/traits.cuh": "265713798a96ae1fda6cad46db511c7def9bcfd2ee4535f9a89a6e51c948187e",
+    "candidate/geometry.cuh": "c8e5480a7cbaae783fae19cfadf44e0024d49251f0e6ba6197d3c555c7df744e",
+    "candidate/pin.cuh": "01add859f952f9de93ba522d8c56ff187ae4e377f9ee2e3cbe69832f25b4b88d",
+    "candidate/pad_pin.cuh": "d830e1d04bac84d91902cf0ce5e7940e3019357d0510bb7edbe3388388e19bfd",
+    "contract.h": "89b64fca514d13a0f69bbfd27420d9f537c3382fd45b38fb2f5da485ed1ba72b",
+    "launch.hip": "067756c8b884377242e67793ccbdbcafe060ea1c1e805fcf2a52055492b4f218",
+    "launch_pin.hip": "96f0f438b91a457b3c82159ae3c4b3af26498778f380627668835e4f185d236b"
+  },
+  "numerical_validation": "not_run_gpu_stopped",
+  "performance_validation": "not_run_gpu_stopped"
+}

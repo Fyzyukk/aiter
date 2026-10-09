@@ -1379,6 +1379,7 @@ class TestCppExtensionControl(unittest.TestCase):
             {
                 "os": os,
                 "sys": sys,
+                "json": json,
                 "JIT_EXTENSION_VERSIONER": versioner_module.ExtensionVersioner(),
                 "FileBaton": baton_module.FileBaton,
                 "GeneratedFileCleaner": lambda **kwargs: contextlib.nullcontext(),
@@ -1404,6 +1405,12 @@ class TestCppExtensionControl(unittest.TestCase):
             torch_exclude=True,
             **options,
         )
+
+    def test_per_source_compiler_argv_change_rebuilds_versioned_module(self):
+        self.compile(hip_compiler_commands_per_source={"pin.cu": ["clang23"]})
+        self.compile(hip_compiler_commands_per_source={"pin.cu": ["clang23"]})
+        self.compile(hip_compiler_commands_per_source={"pin.cu": ["pin24"]})
+        self.assertEqual(self.targets, ["module", "module_v1"])
 
     def test_default_extension_loader_keeps_versioned_names_and_cache(self):
         self.compile()
@@ -1482,7 +1489,10 @@ class TestCppExtensionControl(unittest.TestCase):
 class TestOpusRequestedKids(unittest.TestCase):
     def test_real_generator_accepts_valid_requests_and_rejects_filtered_requests(self):
         generator = JIT_CACHE_PATH.parents[3] / "csrc/opus_gemm/gen_instances.py"
-        registry = runpy.run_path(str(generator.with_name("opus_gemm_common.py")))
+        # Match direct codegen's sibling import path now that the registry
+        # shares its bpreshuffle descriptors with a separate scalar module.
+        with mock.patch.object(sys, "path", [str(generator.parent), *sys.path]):
+            registry = runpy.run_path(str(generator.with_name("opus_gemm_common.py")))
         bmm_kids = sorted(registry["BMM_MXSCALE_KIDS"])
         co_kids = sorted(registry["GFX1250_4WAVE_CO_KIDS"])
         workspace_kid = min(registry["gfx1250_clusterlaunch_kernels_list"])

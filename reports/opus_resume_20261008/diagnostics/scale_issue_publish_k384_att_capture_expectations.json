@@ -1,0 +1,118 @@
+{
+  "status": "prepared_cpu_only_not_captured",
+  "gpu_executed": false,
+  "build_executed": false,
+  "queue": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/scale_issue_publish_k384_att_queue.json",
+  "plan": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/scale_issue_publish_k384_att_plan.json",
+  "capture_output": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/scale_issue_publish_k384_att",
+  "suggested_claim_log": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/scale_issue_publish_k384_att_claim_log.jsonl",
+  "suggested_queue_log": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/scale_issue_publish_k384_att_queue.log",
+  "reference_queue": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/att_queue.json",
+  "reference_queue_sha256": "1bf8fccd0c1ec55601114cccc37c4138550c91d38c5a7b3ec6edd71621868c72",
+  "reference_plan_sha256": "ac66f291cf5f83faab24a61cc4c9dea73ad05838345fc1ab940dc0003bda7355",
+  "queue_env_exact_match": true,
+  "SDK_env_exact_except_output": true,
+  "runner_argv_exact_except_plan_output_label": true,
+  "baseline_capture": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/diagnostics/current9021_k384_att",
+  "label": "candidate",
+  "target_index": 0,
+  "shape": [
+    480,
+    7168,
+    384
+  ],
+  "kid": 9021,
+  "workgroups": 224,
+  "target_CU": 0,
+  "SE_mask": 1,
+  "SIMD_select": 15,
+  "expected_complete_waves": 4,
+  "expected_scaled_MFMA_per_wave": 48,
+  "library": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/candidate/experiments.so",
+  "library_sha256": "9c008d08484da919f8254d7d67c3fdc1b2605b327e8ce56a4f5f744bfc2affd2",
+  "captured_device_sha256": "f9efa19573bbcf01acc4420b1e161773632e3f3fc469aba6bca14a07ac00b1c8",
+  "kernel_name": "_Z42gemm_a8w8_mxfp8_scale_4wave_128x128_kernelI57opus_gemm_mxscale_bpreshuffle_4wave_128x128_traits_gfx950Ev42opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
+  "kernel_instruction_bytes": 8660,
+  "kernel_instruction_sha256": "06c557cd5a4f4e8b698c6a127460f0a48b302b48dbdb0f80da22427d72940759",
+  "candidate_prologue_PC_roles": [
+    {
+      "pc": "0x29ec",
+      "line": 516,
+      "instruction": "buffer_load_dwordx4 v[66:69], v21, s[64:67], 0 offen",
+      "role": "SFA_full_VMEm",
+      "kernel_relative_offset": "0xaec"
+    },
+    {
+      "pc": "0x2a48",
+      "line": 536,
+      "instruction": "buffer_load_ubyte v3, v2, s[44:47], 0 offen",
+      "role": "SFB_VMEm",
+      "kernel_relative_offset": "0xb48"
+    },
+    {
+      "pc": "0x2a50",
+      "line": 537,
+      "instruction": "s_waitcnt vmcnt(0)",
+      "role": "SFB_decode_completion_wait",
+      "kernel_relative_offset": "0xb50"
+    },
+    {
+      "pc": "0x2a54",
+      "line": 538,
+      "instruction": "v_bfe_i32 v89, v3, 0, 8",
+      "role": "SFB_byte_decode",
+      "kernel_relative_offset": "0xb54"
+    },
+    {
+      "pc": "0x2a70",
+      "line": 543,
+      "instruction": "s_waitcnt vmcnt(0)",
+      "role": "SFA_publish_completion_wait",
+      "kernel_relative_offset": "0xb70"
+    },
+    {
+      "pc": "0x2a74",
+      "line": 544,
+      "instruction": "ds_write_b128 v3, v[66:69]",
+      "role": "SFA_publish",
+      "kernel_relative_offset": "0xb74"
+    },
+    {
+      "pc": "0x2a8c",
+      "line": 548,
+      "instruction": "ds_write_b8 v3, v89",
+      "role": "SFB_publish",
+      "kernel_relative_offset": "0xb8c"
+    },
+    {
+      "pc": "0x2aac",
+      "line": 555,
+      "instruction": "s_waitcnt vmcnt(0)",
+      "role": "loops1_vmcnt0",
+      "kernel_relative_offset": "0xbac"
+    },
+    {
+      "pc": "0x2b6c",
+      "line": 586,
+      "instruction": "s_waitcnt vmcnt(8)",
+      "role": "loops_gt1_vmcnt8",
+      "kernel_relative_offset": "0xc6c"
+    },
+    {
+      "pc": "0x2b74",
+      "line": 588,
+      "instruction": "s_waitcnt lgkmcnt(0)",
+      "role": "publication_lgkmcnt0",
+      "kernel_relative_offset": "0xc74"
+    },
+    {
+      "pc": "0x2b78",
+      "line": 589,
+      "instruction": "s_barrier",
+      "role": "publication_barrier",
+      "kernel_relative_offset": "0xc78"
+    }
+  ],
+  "timing_contract": "successful MFMA issue=time+stall; duration includes stall; shader clocks; wait durations are not load-return latencies",
+  "comparison_scope": "One baseline and one candidate capture, four CU0 full waves; correlated local evidence, no all-CU/no-profiler performance conclusion. Compare first-MFMA prologue and serial scale VMEM wait/publication barrier, using own ISA PCs."
+}

@@ -1,0 +1,300 @@
+{
+  "status": "shortk9022_offline_built_cpu_audited_other_groups_planned_gpu_tests_stopped",
+  "coverage_scope": "original294 selected OPUS historical losers; pools overlap and counts cannot be added",
+  "gpu_tests_stopped": true,
+  "sequence": [
+    {
+      "id": "compiler9070",
+      "priority": 0,
+      "kind": "existing_binary_compiler_control",
+      "pool_rule": "parent9052 and actual9070",
+      "mechanism": "Compare fixed actual9070 Clang23/Clang24 without changing source or other candidates. Prior6round gains are local; do not multiply into historical FlyDSL times.",
+      "variants": [
+        "same_actual9070_clang23",
+        "same_actual9070_clang24"
+      ],
+      "representatives": [
+        [
+          112,
+          768,
+          7168
+        ],
+        [
+          16,
+          6144,
+          7168
+        ],
+        [
+          16,
+          7168,
+          7168
+        ]
+      ],
+      "risks": [
+        "Clang23 vs Clang24 resource/schedule changes are candidate-specific",
+        "same-card FlyDSL baseline still pending"
+      ],
+      "losing_pool_count": 3,
+      "gpu_execution_status": "not_started_user_requested_stop"
+    },
+    {
+      "id": "shortk9022",
+      "priority": 1,
+      "kind": "isolated_source_prototype",
+      "pool_rule": "parent9022, K384 or768",
+      "mechanism": "Fixed3/6 K128 steps, panel8 and one SFA pass; preserve tile160x128, output and scale128 contract. Does not eliminate already guarded inactive-scale traffic; cuts reservation/static live-state overhead.",
+      "variants": [
+        "fixed384_panel8",
+        "fixed768_panel8"
+      ],
+      "representatives": [
+        [
+          672,
+          7168,
+          384
+        ],
+        [
+          864,
+          7168,
+          768
+        ],
+        [
+          544,
+          7168,
+          384
+        ],
+        [
+          1088,
+          7168,
+          768
+        ]
+      ],
+      "risks": [
+        "fixedK guards required",
+        "small gaps need paired full-call tests",
+        "panel8 coverage must preserve every valid scale byte"
+      ],
+      "losing_pool_count": 28,
+      "gpu_execution_status": "not_started_user_requested_stop",
+      "offline_status": "implemented_compile_link_cpu_layout_guard_audit_passed",
+      "prototype_directory": "shortk9022",
+      "build_receipt": "shortk9022/build_receipt.json",
+      "cpu_audit": "shortk9022/cpu_audit.json"
+    },
+    {
+      "id": "geometry9022",
+      "priority": 2,
+      "kind": "new_geometry_prototypes",
+      "pool_rule": "all parent9022",
+      "mechanism": "Separate BM64/BM96/128 by BN128 candidates; A-LDS and independent B register prefetch ahead1/2. Start with same scale/output/split policy before combined changes.",
+      "variants": [
+        "bm96_bn128_4w_directB1_Astages3",
+        "bm96_bn128_4w_directB2_Astages3",
+        "bm64_bn128_4w_shortM"
+      ],
+      "representatives": [
+        [
+          672,
+          7168,
+          384
+        ],
+        [
+          864,
+          7168,
+          768
+        ],
+        [
+          48,
+          65536,
+          1536
+        ],
+        [
+          4096,
+          2048,
+          7168
+        ]
+      ],
+      "risks": [
+        "directB can duplicate B reads among M waves",
+        "VGPR and output layout requirements",
+        "earlier global issue/publish change rejected"
+      ],
+      "losing_pool_count": 72,
+      "gpu_execution_status": "not_started_user_requested_stop"
+    },
+    {
+      "id": "smallKdistribution",
+      "priority": 3,
+      "kind": "new_pipeline_prototypes",
+      "pool_rule": "parents9041/9052",
+      "mechanism": "First fewer localK waves plus global split4 using same K128 math; separately A-LDS/B-register K256/512 software stages with perK128 scale values. Current register paths already load A/B directly; merely regrouping queue is insufficient.",
+      "variants": [
+        "localK1_globalSK4",
+        "localK2_globalSK4",
+        "hybrid_K256",
+        "hybrid_K512"
+      ],
+      "representatives": [
+        [
+          16,
+          768,
+          7168
+        ],
+        [
+          32,
+          2048,
+          7168
+        ],
+        [
+          16,
+          6144,
+          7168
+        ]
+      ],
+      "risks": [
+        "splitK workspace/reducer and reset correctness",
+        "globalSK plus separate reducer may cost more",
+        "no changed scale block granularity"
+      ],
+      "losing_pool_count": 32,
+      "gpu_execution_status": "not_started_user_requested_stop"
+    },
+    {
+      "id": "hybridSmallLDS",
+      "priority": 4,
+      "kind": "new_load_path_prototypes",
+      "pool_rule": "actual9044/9056/9046/9047/9055",
+      "mechanism": "Preserve A cooperative LDS and bypass B LDS with independent register sets ahead1/2/3; wave placement1x4 variant measured separately.",
+      "variants": [
+        "samegeometry_directB1",
+        "samegeometry_directB2",
+        "samegeometry_directB3",
+        "waveplacement1x4"
+      ],
+      "representatives": [
+        [
+          48,
+          16384,
+          1536
+        ],
+        [
+          160,
+          7168,
+          768
+        ],
+        [
+          992,
+          768,
+          7168
+        ]
+      ],
+      "risks": [
+        "B read duplication across T_M",
+        "higher live VGPR",
+        "regular small traits limit E_M"
+      ],
+      "losing_pool_count": 73,
+      "gpu_execution_status": "not_started_user_requested_stop"
+    },
+    {
+      "id": "narrowFine",
+      "priority": 5,
+      "kind": "new_geometry_split_prototypes",
+      "pool_rule": "parents9062/9063 at N768 K7168",
+      "mechanism": "BM48/64,BN64/128 with fewerwaves, directB and split1/2; separate reducer removed only in split1. Do not copy XCD last-arriver atomic assumptions blindly.",
+      "variants": [
+        "bm48_bn64_sk1",
+        "bm64_bn128_sk1",
+        "bm64_bn128_sk2"
+      ],
+      "representatives": [
+        [
+          800,
+          768,
+          7168
+        ],
+        [
+          928,
+          768,
+          7168
+        ],
+        [
+          1408,
+          768,
+          7168
+        ]
+      ],
+      "risks": [
+        "old fixedM80/K16384 BN64 replacement rejected",
+        "split1 may lose parallelism",
+        "full-call producer+reducer timing required"
+      ],
+      "losing_pool_count": 14,
+      "gpu_execution_status": "not_started_user_requested_stop"
+    },
+    {
+      "id": "largeOutput9030",
+      "priority": 6,
+      "kind": "new_pipeline_output_prototypes",
+      "pool_rule": "parent9030",
+      "mechanism": "First fixedK1536 panel16 control; then directB3A-ring plus chunked96rowC, or BM128BN2564wave directB. Keep64bit output resources.",
+      "variants": [
+        "fixed1536_panel16_control",
+        "bm192_bn256_directB_Astages3_Crows96",
+        "bm128_bn256_4w_directB_Astages3"
+      ],
+      "representatives": [
+        [
+          16384,
+          65536,
+          1536
+        ],
+        [
+          32768,
+          65536,
+          1536
+        ],
+        [
+          49152,
+          65536,
+          1536
+        ],
+        [
+          65536,
+          65536,
+          1536
+        ],
+        [
+          65536,
+          16384,
+          1536
+        ]
+      ],
+      "risks": [
+        "output addresses exceed4GiB",
+        "full192row C staging101376B defeats80KiB ring budget",
+        "static LDS resource eligibility is not dynamic occupancy",
+        "old midpoint rejectedall10"
+      ],
+      "losing_pool_count": 10,
+      "gpu_execution_status": "not_started_user_requested_stop"
+    }
+  ],
+  "required_acceptance": [
+    "Clean owner-free physical GPU0-3 only when user resumes tests",
+    "Full same-shape same-card baseline OPUS/candidate/FlyDSLBMM; compact layout separately",
+    "Independent signedFP8+rawE8M0 reference with strict OPUS accumulation gate and finite outputs",
+    "NaN sentinel, boundary/guards, all pool indices and repeated-call/splitcounter checks",
+    "First smoke then at least5 paired AB/BA rounds with full-call cost",
+    "Keep every original399 OPUS win and complete745shape regression before production publication"
+  ],
+  "rejected_prior_directions": [
+    "global9022 scale issue/publish",
+    "9030 midpoint",
+    "runtime9051 global scale-first",
+    "fine initial matrix-before-scale",
+    "9046/9055 futureissue-before-read",
+    "fixed9071/9073 N48->N32",
+    "fixedM80 K16384 split2 BN64"
+  ]
+}

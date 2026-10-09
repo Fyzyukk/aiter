@@ -1,0 +1,917 @@
+{
+  "status": "cpu_definitions_verified_no_gpu_execution",
+  "architecture": "gfx950",
+  "counter_defs": "/opt/rocm/share/rocprofiler-sdk/counter_defs.yaml",
+  "counter_defs_sha256": "02792ef1df4227167696c0bc417cca13bd563ae3417a7e7913a59b67e53dac39",
+  "hardware_spec": "/opt/rocm/libexec/rocprofiler-compute/utils/mi_gpu_spec.yaml",
+  "hardware_spec_sha256": "f3028e872ca5f79161709139d5efb4262105e1e551260fd7143d375780ed3dee",
+  "perfmon_budget": {
+    "SQ": 8,
+    "TA": 2,
+    "TD": 2,
+    "TCP": 4,
+    "TCC": 4,
+    "CPC": 2,
+    "CPF": 2,
+    "SPI": 6,
+    "GRBM": 2,
+    "GDS": 4,
+    "TCC_channels": 16
+  },
+  "groups": {
+    "sq_ea": {
+      "purpose": "Wave lifetime/waits, MFMA activity, physical DRAM bytes, TCP backpressure.",
+      "counters": [
+        "GRBM_COUNT",
+        "GRBM_GUI_ACTIVE",
+        "SQ_WAVE_CYCLES",
+        "SQ_WAVES",
+        "SQ_WAIT_ANY",
+        "SQ_WAIT_INST_ANY",
+        "SQ_ACTIVE_INST_ANY",
+        "SQ_BUSY_CYCLES",
+        "SQ_VALU_MFMA_BUSY_CYCLES",
+        "SQ_INSTS_VALU_MFMA_MOPS_F8",
+        "TCC_EA0_RDREQ_DRAM_32B",
+        "TCC_EA0_WRREQ_WRITE_DRAM_32B",
+        "TCP_TCP_TA_ADDR_STALL_CYCLES",
+        "TCP_TCR_TCP_STALL_CYCLES",
+        "TCP_LFIFO_STALL_CYCLES",
+        "TCP_GATE_EN1"
+      ],
+      "aggregate_counters": [
+        "OPUS_GFX950_GRBM_COUNT_MAX",
+        "OPUS_GFX950_GRBM_GUI_ACTIVE_MAX",
+        "OPUS_GFX950_SQ_WAVE_CYCLES_SUM",
+        "OPUS_GFX950_SQ_WAVES_SUM",
+        "OPUS_GFX950_SQ_WAIT_ANY_SUM",
+        "OPUS_GFX950_SQ_WAIT_INST_ANY_SUM",
+        "OPUS_GFX950_SQ_ACTIVE_INST_ANY_SUM",
+        "OPUS_GFX950_SQ_BUSY_CYCLES_SUM",
+        "OPUS_GFX950_SQ_VALU_MFMA_BUSY_CYCLES_SUM",
+        "OPUS_GFX950_SQ_INSTS_VALU_MFMA_MOPS_F8_SUM",
+        "OPUS_GFX950_TCC_EA0_RDREQ_DRAM_32B_SUM",
+        "OPUS_GFX950_TCC_EA0_WRREQ_WRITE_DRAM_32B_SUM",
+        "OPUS_GFX950_TCP_TCP_TA_ADDR_STALL_CYCLES_SUM",
+        "OPUS_GFX950_TCP_TCR_TCP_STALL_CYCLES_SUM",
+        "OPUS_GFX950_TCP_LFIFO_STALL_CYCLES_SUM",
+        "OPUS_GFX950_TCP_GATE_EN1_SUM"
+      ],
+      "block_use": {
+        "GRBM": 2,
+        "SQ": 8,
+        "TCC": 2,
+        "TCP": 4
+      },
+      "static_budget_passed": true,
+      "runtime_sdk_group_acceptance": "not_run"
+    },
+    "l2_tagmap": {
+      "purpose": "L2 hit/tag pressure, four TCP tagram request shares, paper TA address rate.",
+      "counters": [
+        "GRBM_COUNT",
+        "GRBM_GUI_ACTIVE",
+        "TCC_HIT",
+        "TCC_MISS",
+        "TCC_TAG_STALL",
+        "TCC_BUSY",
+        "TCP_TAGRAM0_REQ",
+        "TCP_TAGRAM1_REQ",
+        "TCP_TAGRAM2_REQ",
+        "TCP_TAGRAM3_REQ",
+        "TA_BUFFER_WAVEFRONTS",
+        "TA_BUFFER_TOTAL_CYCLES"
+      ],
+      "aggregate_counters": [
+        "OPUS_GFX950_GRBM_COUNT_MAX",
+        "OPUS_GFX950_GRBM_GUI_ACTIVE_MAX",
+        "OPUS_GFX950_TCC_HIT_SUM",
+        "OPUS_GFX950_TCC_MISS_SUM",
+        "OPUS_GFX950_TCC_TAG_STALL_SUM",
+        "OPUS_GFX950_TCC_BUSY_SUM",
+        "OPUS_GFX950_TCP_TAGRAM0_REQ_SUM",
+        "OPUS_GFX950_TCP_TAGRAM1_REQ_SUM",
+        "OPUS_GFX950_TCP_TAGRAM2_REQ_SUM",
+        "OPUS_GFX950_TCP_TAGRAM3_REQ_SUM",
+        "OPUS_GFX950_TA_BUFFER_WAVEFRONTS_SUM",
+        "OPUS_GFX950_TA_BUFFER_TOTAL_CYCLES_SUM"
+      ],
+      "block_use": {
+        "GRBM": 2,
+        "TCC": 4,
+        "TCP": 4,
+        "TA": 2
+      },
+      "static_budget_passed": true,
+      "runtime_sdk_group_acceptance": "not_run"
+    },
+    "utcl1_credits": {
+      "purpose": "UTCL1 pressure and DRAM/GMI credits; TA downstream stalls.",
+      "counters": [
+        "GRBM_COUNT",
+        "GRBM_GUI_ACTIVE",
+        "TCP_UTCL1_SERIALIZATION_STALL",
+        "TCP_UTCL1_THRASHING_STALL",
+        "TCP_UTCL1_STALL_INFLIGHT_MAX",
+        "TCP_GATE_EN1",
+        "TCC_EA0_RDREQ_DRAM_CREDIT_STALL",
+        "TCC_EA0_RDREQ_GMI_CREDIT_STALL",
+        "TCC_EA0_WRREQ_DRAM_CREDIT_STALL",
+        "TCC_EA0_WRREQ_GMI_CREDIT_STALL",
+        "TA_ADDR_STALLED_BY_TC_CYCLES",
+        "TA_TA_BUSY"
+      ],
+      "aggregate_counters": [
+        "OPUS_GFX950_GRBM_COUNT_MAX",
+        "OPUS_GFX950_GRBM_GUI_ACTIVE_MAX",
+        "OPUS_GFX950_TCP_UTCL1_SERIALIZATION_STALL_SUM",
+        "OPUS_GFX950_TCP_UTCL1_THRASHING_STALL_SUM",
+        "OPUS_GFX950_TCP_UTCL1_STALL_INFLIGHT_MAX_SUM",
+        "OPUS_GFX950_TCP_GATE_EN1_SUM",
+        "OPUS_GFX950_TCC_EA0_RDREQ_DRAM_CREDIT_STALL_SUM",
+        "OPUS_GFX950_TCC_EA0_RDREQ_GMI_CREDIT_STALL_SUM",
+        "OPUS_GFX950_TCC_EA0_WRREQ_DRAM_CREDIT_STALL_SUM",
+        "OPUS_GFX950_TCC_EA0_WRREQ_GMI_CREDIT_STALL_SUM",
+        "OPUS_GFX950_TA_ADDR_STALLED_BY_TC_CYCLES_SUM",
+        "OPUS_GFX950_TA_TA_BUSY_SUM"
+      ],
+      "block_use": {
+        "GRBM": 2,
+        "TCP": 4,
+        "TCC": 4,
+        "TA": 2
+      },
+      "static_budget_passed": true,
+      "runtime_sdk_group_acceptance": "not_run"
+    },
+    "ta_lds": {
+      "purpose": "Direct-LDS traffic, SQ address issue pressure, LDS waits/conflicts, TCP request pressure.",
+      "counters": [
+        "GRBM_COUNT",
+        "GRBM_GUI_ACTIVE",
+        "SQ_BUSY_CYCLES",
+        "SQ_VMEM_TA_ADDR_FIFO_FULL",
+        "SQ_LDS_BANK_CONFLICT",
+        "SQ_WAIT_INST_LDS",
+        "TCP_TCP_TA_ADDR_STALL_CYCLES",
+        "TCP_RFIFO_STALL_CYCLES",
+        "TCP_READ_TAGCONFLICT_STALL_CYCLES",
+        "TCP_GATE_EN1",
+        "TA_BUFFER_READ_LDS_WAVEFRONTS",
+        "TA_BUFFER_READ_WAVEFRONTS"
+      ],
+      "aggregate_counters": [
+        "OPUS_GFX950_GRBM_COUNT_MAX",
+        "OPUS_GFX950_GRBM_GUI_ACTIVE_MAX",
+        "OPUS_GFX950_SQ_BUSY_CYCLES_SUM",
+        "OPUS_GFX950_SQ_VMEM_TA_ADDR_FIFO_FULL_SUM",
+        "OPUS_GFX950_SQ_LDS_BANK_CONFLICT_SUM",
+        "OPUS_GFX950_SQ_WAIT_INST_LDS_SUM",
+        "OPUS_GFX950_TCP_TCP_TA_ADDR_STALL_CYCLES_SUM",
+        "OPUS_GFX950_TCP_RFIFO_STALL_CYCLES_SUM",
+        "OPUS_GFX950_TCP_READ_TAGCONFLICT_STALL_CYCLES_SUM",
+        "OPUS_GFX950_TCP_GATE_EN1_SUM",
+        "OPUS_GFX950_TA_BUFFER_READ_LDS_WAVEFRONTS_SUM",
+        "OPUS_GFX950_TA_BUFFER_READ_WAVEFRONTS_SUM"
+      ],
+      "block_use": {
+        "GRBM": 2,
+        "SQ": 4,
+        "TCP": 4,
+        "TA": 2
+      },
+      "static_budget_passed": true,
+      "runtime_sdk_group_acceptance": "not_run"
+    },
+    "ea_crosscheck": {
+      "purpose": "Total EA read size mix vs DRAM reads; TA coalescable reads; translation hit/miss.",
+      "optional": true,
+      "counters": [
+        "GRBM_COUNT",
+        "GRBM_GUI_ACTIVE",
+        "TCC_EA0_RDREQ_32B",
+        "TCC_EA0_RDREQ_64B",
+        "TCC_EA0_RDREQ_128B",
+        "TCC_EA0_RDREQ_DRAM_32B",
+        "TA_BUFFER_COALESCED_READ_CYCLES",
+        "TA_BUFFER_COALESCEABLE_WAVEFRONTS",
+        "TCP_UTCL1_TRANSLATION_HIT",
+        "TCP_UTCL1_TRANSLATION_MISS",
+        "TCP_TCC_READ_REQ",
+        "TCP_GATE_EN1"
+      ],
+      "aggregate_counters": [
+        "OPUS_GFX950_GRBM_COUNT_MAX",
+        "OPUS_GFX950_GRBM_GUI_ACTIVE_MAX",
+        "OPUS_GFX950_TCC_EA0_RDREQ_32B_SUM",
+        "OPUS_GFX950_TCC_EA0_RDREQ_64B_SUM",
+        "OPUS_GFX950_TCC_EA0_RDREQ_128B_SUM",
+        "OPUS_GFX950_TCC_EA0_RDREQ_DRAM_32B_SUM",
+        "OPUS_GFX950_TA_BUFFER_COALESCED_READ_CYCLES_SUM",
+        "OPUS_GFX950_TA_BUFFER_COALESCEABLE_WAVEFRONTS_SUM",
+        "OPUS_GFX950_TCP_UTCL1_TRANSLATION_HIT_SUM",
+        "OPUS_GFX950_TCP_UTCL1_TRANSLATION_MISS_SUM",
+        "OPUS_GFX950_TCP_TCC_READ_REQ_SUM",
+        "OPUS_GFX950_TCP_GATE_EN1_SUM"
+      ],
+      "block_use": {
+        "GRBM": 2,
+        "TCC": 4,
+        "TA": 2,
+        "TCP": 4
+      },
+      "static_budget_passed": true,
+      "runtime_sdk_group_acceptance": "not_run"
+    },
+    "dispatch": {
+      "purpose": "Optional SPI allocation investigation; CSN source defaults to CS0 and requires scope verification.",
+      "optional": true,
+      "counters": [
+        "GRBM_COUNT",
+        "GRBM_GUI_ACTIVE",
+        "SQ_WAVE_CYCLES",
+        "SQ_WAVES",
+        "SQ_BUSY_CYCLES",
+        "SPI_CSN_BUSY",
+        "SPI_CSN_NUM_THREADGROUPS",
+        "SPI_CSN_WINDOW_VALID",
+        "SPI_RA_REQ_NO_ALLOC"
+      ],
+      "aggregate_counters": [
+        "OPUS_GFX950_GRBM_COUNT_MAX",
+        "OPUS_GFX950_GRBM_GUI_ACTIVE_MAX",
+        "OPUS_GFX950_SQ_WAVE_CYCLES_SUM",
+        "OPUS_GFX950_SQ_WAVES_SUM",
+        "OPUS_GFX950_SQ_BUSY_CYCLES_SUM",
+        "OPUS_GFX950_SPI_CSN_BUSY_SUM",
+        "OPUS_GFX950_SPI_CSN_NUM_THREADGROUPS_SUM",
+        "OPUS_GFX950_SPI_CSN_WINDOW_VALID_SUM",
+        "OPUS_GFX950_SPI_RA_REQ_NO_ALLOC_SUM"
+      ],
+      "block_use": {
+        "GRBM": 2,
+        "SQ": 3,
+        "SPI": 4
+      },
+      "static_budget_passed": true,
+      "runtime_sdk_group_acceptance": "not_run"
+    }
+  },
+  "raw_definitions": {
+    "GRBM_COUNT": {
+      "description": "Tie High - Count Number of Clocks",
+      "architectures": [
+        "gfx10",
+        "gfx1010",
+        "gfx1030",
+        "gfx1031",
+        "gfx1032",
+        "gfx11",
+        "gfx1100",
+        "gfx1101",
+        "gfx1102",
+        "gfx12",
+        "gfx1200",
+        "gfx1201",
+        "gfx9",
+        "gfx900",
+        "gfx906",
+        "gfx908",
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "GRBM",
+      "event": 0
+    },
+    "GRBM_GUI_ACTIVE": {
+      "description": "The GUI is Active",
+      "architectures": [
+        "gfx10",
+        "gfx1010",
+        "gfx1030",
+        "gfx1031",
+        "gfx1032",
+        "gfx11",
+        "gfx1100",
+        "gfx1101",
+        "gfx1102",
+        "gfx12",
+        "gfx1200",
+        "gfx1201",
+        "gfx9",
+        "gfx900",
+        "gfx906",
+        "gfx908",
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "GRBM",
+      "event": 2
+    },
+    "SPI_CSN_BUSY": {
+      "description": "Number of clocks with outstanding waves (SPI or SH). Requires SPI_DEBUG_CNTL.DEBUG_PIPE_SEL to select source, DEBUG_PIPE_SEL = 1, source is CS1; DEBUG_PIPE_SEL = 2, source is CS2; DEBUG_PIPE_SEL = 3, source is CS3; default, source is CS0;",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "SPI",
+      "event": 48
+    },
+    "SPI_CSN_NUM_THREADGROUPS": {
+      "description": "Number of threadgroups launched. Requires SPI_DEBUG_CNTL.DEBUG_PIPE_SEL to select source, DEBUG_PIPE_SEL = 1, source is CS1; DEBUG_PIPE_SEL = 2, source is CS2; DEBUG_PIPE_SEL = 3, source is CS3; default, source is CS0;",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "SPI",
+      "event": 49
+    },
+    "SPI_CSN_WINDOW_VALID": {
+      "description": "Clock count enabled by perfcounter_start event. Requires SPI_DEBUG_CNTL.DEBUG_PIPE_SEL to select source, DEBUG_PIPE_SEL = 1, source is CS1; DEBUG_PIPE_SEL = 2, source is CS2; DEBUG_PIPE_SEL = 3, source is CS3; default, source is CS0;",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "SPI",
+      "event": 47
+    },
+    "SPI_RA_REQ_NO_ALLOC": {
+      "description": "Arb cycles with requests but no allocation. Source is RA0",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "SPI",
+      "event": 79
+    },
+    "SQ_ACTIVE_INST_ANY": {
+      "description": "Number of cycles each wave spends working on any type of instruction. Useful in determining percentage of time spend executing wave workloads (see WaveExec). This value is returned on a per-SE (aggregate of values in SIMDs in the SE) basis with units in quad-cycles(4 cycles).",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 117
+    },
+    "SQ_BUSY_CYCLES": {
+      "description": "Number of clock cycles there are active waves in a shader engine (as reported by the distributed sequencer). This value does not denote the number of active waves, only the clock cycle in which any wave is present in a SE. This value is returned on a per-shader engine basis in clock cycles.",
+      "architectures": [
+        "gfx10",
+        "gfx1010",
+        "gfx1030",
+        "gfx1031",
+        "gfx1032",
+        "gfx11",
+        "gfx1100",
+        "gfx1101",
+        "gfx1102",
+        "gfx12",
+        "gfx1200",
+        "gfx1201",
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 3
+    },
+    "SQ_INSTS_VALU_MFMA_MOPS_F8": {
+      "description": "The number of math operation on F8 datatype. Captures add or mul ops performed divided by 512. The value is returned per-SE (aggregate of values in SIMDs in the SE). See AMD CDNA3 ISA for more information on MFMA F8 instructions.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 56
+    },
+    "SQ_LDS_BANK_CONFLICT": {
+      "description": "The number of cycles LDS (local data store) is stalled by bank conflicts. This value is returned on a per-SE (aggregate of values in SIMDs in the SE) basis.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 142
+    },
+    "SQ_VALU_MFMA_BUSY_CYCLES": {
+      "description": "Number of cycles the MFMA (Matrixed-Fused-Multiply-Add) ALU is busy. This value is returned on a per-SIMD basis.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 93
+    },
+    "SQ_VMEM_TA_ADDR_FIFO_FULL": {
+      "description": "Number of cycles texture requests are stalled due to full address fifo in TA. (nondeterministic, unwindowed)",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 154
+    },
+    "SQ_WAIT_ANY": {
+      "description": "Number of wave-cycles spent waiting for anything (per-simd, nondeterministic). Units in quad-cycles(4 cycles)",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 106
+    },
+    "SQ_WAIT_INST_ANY": {
+      "description": "Number of wave-cycles spent waiting for any instruction issue. Units in quad-cycles(4 cycles).",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 109
+    },
+    "SQ_WAIT_INST_LDS": {
+      "description": "Number of wave-cycles spent waiting for LDS instruction issue. In units of 4 cycles. (per-simd, nondeterministic)",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 112
+    },
+    "SQ_WAVES": {
+      "description": "Count number of waves sent to distributed sequencers (SQs). This value represents the number of waves that are sent to each SQ. This only counts new waves sent since the start of collection (for dispatch profiling this is the timeframe of kernel execution, for agent profiling it is the timeframe between start_context and read counter data). A sum of all SQ_WAVES values will give the total number of waves started by the application during the collection timeframe. Returns one value per-SE (aggregates of SIMD values).",
+      "architectures": [
+        "gfx10",
+        "gfx1010",
+        "gfx1030",
+        "gfx1031",
+        "gfx1032",
+        "gfx11",
+        "gfx1100",
+        "gfx1101",
+        "gfx1102",
+        "gfx12",
+        "gfx1200",
+        "gfx1201",
+        "gfx9",
+        "gfx900",
+        "gfx906",
+        "gfx908",
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 4
+    },
+    "SQ_WAVE_CYCLES": {
+      "description": "The cycles spent executing waves in the CUs. This value is reported per-SE (aggregates of SIMD values) and is nondeterministic. Units are in quad-cycles (4 cycles). Useful for determining how much time is spent executing wave code vs overhead/waiting. Low cycle count relative to actual number of cycles processed by the CU can indicate that the CU is stalling or is overloaded.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "SQ",
+      "event": 95
+    },
+    "TA_ADDR_STALLED_BY_TC_CYCLES": {
+      "description": "Number of cycles addr path stalled by TC. Perf_Windowing not supported for this counter.",
+      "architectures": [
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TA",
+      "event": 42
+    },
+    "TA_BUFFER_COALESCEABLE_WAVEFRONTS": {
+      "description": "Number of buffer coalesceable wavefronts processed by TA.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TA",
+      "event": 36
+    },
+    "TA_BUFFER_COALESCED_READ_CYCLES": {
+      "description": "Number of buffer coalesced read cycles issued to TC.",
+      "architectures": [
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TA",
+      "event": 40
+    },
+    "TA_BUFFER_READ_LDS_WAVEFRONTS": {
+      "description": "Number of buffer read wavefronts for lds return processed by TA.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TA",
+      "event": 70
+    },
+    "TA_BUFFER_READ_WAVEFRONTS": {
+      "description": "Number of buffer read wavefronts processed by TA.",
+      "architectures": [
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TA",
+      "event": 33
+    },
+    "TA_BUFFER_TOTAL_CYCLES": {
+      "description": "Number of buffer cycles issued to TC.",
+      "architectures": [
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TA",
+      "event": 37
+    },
+    "TA_BUFFER_WAVEFRONTS": {
+      "description": "Number of buffer wavefronts processed by TA.",
+      "architectures": [
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TA",
+      "event": 32
+    },
+    "TA_TA_BUSY": {
+      "description": "TA block is busy. Perf_Windowing not supported for this counter.",
+      "architectures": [
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TA",
+      "event": 13
+    },
+    "TCC_BUSY": {
+      "description": "Number of cycles we have a request pending. Not windowable.",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 2
+    },
+    "TCC_EA0_RDREQ_128B": {
+      "description": "Number of 128-byte TCC/EA read requests",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 45
+    },
+    "TCC_EA0_RDREQ_32B": {
+      "description": "Number of 32-byte TCC/EA read requests",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 43
+    },
+    "TCC_EA0_RDREQ_64B": {
+      "description": "Number of 64-byte TCC/EA read requests",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 44
+    },
+    "TCC_EA0_RDREQ_DRAM_32B": {
+      "description": "Number of 32-byte TCC/EA read requests due to DRAM traffic, 1 64-byte request will be counted to 2, 128-byte as 4.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 112
+    },
+    "TCC_EA0_RDREQ_DRAM_CREDIT_STALL": {
+      "description": "Number of cycles there was a stall because the read request interface was out of DRAM credits. Stalls occur regardless of whether a read needed to be performed or not.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 49
+    },
+    "TCC_EA0_RDREQ_GMI_CREDIT_STALL": {
+      "description": "Number of cycles there was a stall because the read request interface was out of GMI credits. Stalls occur regardless of whether a read needed to be performed or not.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 48
+    },
+    "TCC_EA0_WRREQ_DRAM_CREDIT_STALL": {
+      "description": "Number of cycles a EA write request was stalled because the interface was out of DRAM credits.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 37
+    },
+    "TCC_EA0_WRREQ_GMI_CREDIT_STALL": {
+      "description": "Number of cycles a EA write request was stalled because the interface was out of GMI credits.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 36
+    },
+    "TCC_EA0_WRREQ_WRITE_DRAM_32B": {
+      "description": "Number of 32-byte TCC/EA write requests due to DRAM traffic, 1 64-byte request will be counted to 2.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 115
+    },
+    "TCC_HIT": {
+      "description": "Number of cache hits.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 21
+    },
+    "TCC_MISS": {
+      "description": "Number of cache misses. UC reads count as misses.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 23
+    },
+    "TCC_TAG_STALL": {
+      "description": "Number of cycles the normal request pipeline in the tag was stalled for any reason. Normally, stalls of this nature are measured exactly from one point the pipeline, but that is not the case for this counter. Probes can stall the pipeline at a variety of places, and there is no single point that can reasonably measure the total stalls accurately.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCC",
+      "event": 51
+    },
+    "TCP_GATE_EN1": {
+      "description": "TCP interface clocks are turned on. Not Windowed.",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 0
+    },
+    "TCP_LFIFO_STALL_CYCLES": {
+      "description": "Memory Latency fifos full stall.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 15
+    },
+    "TCP_READ_TAGCONFLICT_STALL_CYCLES": {
+      "description": "Tagram conflict stall on a read",
+      "architectures": [
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 10
+    },
+    "TCP_RFIFO_STALL_CYCLES": {
+      "description": "Memory Request fifos full stall",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 16
+    },
+    "TCP_TAGRAM0_REQ": {
+      "description": "Total L2 requests that mapped to tagram 0 from this TCP to all TCCs",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 59
+    },
+    "TCP_TAGRAM1_REQ": {
+      "description": "Total L2 requests that mapped to tagram 1 from this TCP to all TCCs",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 60
+    },
+    "TCP_TAGRAM2_REQ": {
+      "description": "Total L2 requests that mapped to tagram 2 from this TCP to all TCCs",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 61
+    },
+    "TCP_TAGRAM3_REQ": {
+      "description": "Total L2 requests that mapped to tagram 3 from this TCP to all TCCs",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 62
+    },
+    "TCP_TCC_READ_REQ": {
+      "description": "Total read requests from TCP to all TCCs",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 68
+    },
+    "TCP_TCP_TA_ADDR_STALL_CYCLES": {
+      "description": "TCP stalls TA addr interface.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 5
+    },
+    "TCP_TCR_TCP_STALL_CYCLES": {
+      "description": "TCR stalls TCP_TCR_req interface",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 8
+    },
+    "TCP_UTCL1_SERIALIZATION_STALL": {
+      "description": "Total number of stalls due to serializing translation requests through the UTCL1.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 23
+    },
+    "TCP_UTCL1_STALL_INFLIGHT_MAX": {
+      "description": "Total utcl1 stalls due to inflight counter saturation",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 49
+    },
+    "TCP_UTCL1_THRASHING_STALL": {
+      "description": "Stall caused by thrashing feature in any probes. Not accurate when the stall signal has overlap between probe0 and probe1. Even worse with MECO of thrashing deadlock. Some event of probe0 could miss to count in with MECO on. Anyway this perf count can be a rough estimation of thrashing.",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 44
+    },
+    "TCP_UTCL1_TRANSLATION_HIT": {
+      "description": "Total utcl1 translation hits",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 46
+    },
+    "TCP_UTCL1_TRANSLATION_MISS": {
+      "description": "Total utcl1 translation misses",
+      "architectures": [
+        "gfx950"
+      ],
+      "block": "TCP",
+      "event": 45
+    }
+  },
+  "derived_definitions": {
+    "SIMD_NUM": {
+      "description": "SIMD Number",
+      "architectures": [
+        "gfx10",
+        "gfx1010",
+        "gfx1030",
+        "gfx1031",
+        "gfx1032",
+        "gfx11",
+        "gfx1100",
+        "gfx1101",
+        "gfx1102",
+        "gfx9",
+        "gfx900",
+        "gfx906",
+        "gfx908",
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "expression": "simd_count"
+    },
+    "CU_NUM": {
+      "description": "CU_NUM",
+      "architectures": [
+        "gfx10",
+        "gfx1010",
+        "gfx1030",
+        "gfx1031",
+        "gfx1032",
+        "gfx11",
+        "gfx1100",
+        "gfx1101",
+        "gfx1102",
+        "gfx12",
+        "gfx1200",
+        "gfx1201",
+        "gfx9",
+        "gfx900",
+        "gfx906",
+        "gfx908",
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "expression": "simd_count/simd_per_cu"
+    },
+    "MfmaUtil": {
+      "description": "Unit: percent",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "expression": "reduce(SQ_VALU_MFMA_BUSY_CYCLES,sum)/(reduce(GRBM_GUI_ACTIVE,max)*SIMD_NUM)*100"
+    },
+    "OccupancyPercent": {
+      "description": "GPU Occupancy as % of maximum.",
+      "architectures": [
+        "gfx90a",
+        "gfx940",
+        "gfx941",
+        "gfx942",
+        "gfx950"
+      ],
+      "expression": "400*reduce(SQ_WAVE_CYCLES,sum)/reduce(GRBM_GUI_ACTIVE,max)/CU_NUM/32"
+    }
+  },
+  "normalization": {
+    "dram_read_bytes": "32 * sum(TCC_EA0_RDREQ_DRAM_32B)",
+    "dram_write_bytes": "32 * sum(TCC_EA0_WRREQ_WRITE_DRAM_32B)",
+    "dram_tb_s": "dram_bytes / dispatch_duration_ns / 1000",
+    "mean_wave_life_cycles_estimate": "4 * sum(SQ_WAVE_CYCLES) / sum(SQ_WAVES), matched scope/window",
+    "wave_wait_fraction": "sum(SQ_WAIT_ANY or SQ_WAIT_INST_ANY) / sum(SQ_WAVE_CYCLES)",
+    "issued_f8_operations": "512 * sum(SQ_INSTS_VALU_MFMA_MOPS_F8), includes padded/executed operations",
+    "mfma_util_pct": "100 * sum(SQ_VALU_MFMA_BUSY_CYCLES) / (max(GRBM_GUI_ACTIVE) * simd_count)",
+    "mean_resident_waves_per_cu_estimate": "4 * sum(SQ_WAVE_CYCLES) / (max(GRBM_GUI_ACTIVE) * CU_NUM)",
+    "ta_paper_addr_rate": "4 * sum(TA_BUFFER_WAVEFRONTS) / sum(TA_BUFFER_TOTAL_CYCLES); mixed/direct-LDS semantics require verification",
+    "tagram_share": "sum(TCP_TAGRAMi_REQ) / sum(all four TCP_TAGRAMi_REQ); L2 request mapping, not all L1 lookups",
+    "tcc_hit_fraction": "sum(TCC_HIT) / (sum(TCC_HIT) + sum(TCC_MISS))"
+  },
+  "limits": [
+    "Installed definitions and per-block budgets do not prove runtime SDK schedulability.",
+    "GRBM/TA/TCC/TCP clock gate and selected stall counters are unwindowed; isolate GPU and inspect definitions.",
+    "TCC_TAG_STALL probes and UTCL1_THRASHING_STALL can overlap; ratios are diagnostic estimates.",
+    "Profiling durations are instrumented; use unprofiled run_perftest for speedup decisions.",
+    "Collect one pass in one subprocess and keep source/process/agent/queue/dispatch identities separate.",
+    "Use last N dispatches per kernel to exclude automatic rotation probe and warmup.",
+    "For split-K report producer and reducer separately, and validated pairs for whole-call traffic/time.",
+    "Logical tensor bytes and roofline logical FLOPs are separate from physical DRAM traffic and issued operations."
+  ]
+}

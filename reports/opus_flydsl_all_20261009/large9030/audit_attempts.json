@@ -1,0 +1,36 @@
+{
+  "final_audit": "cpu_audit.json",
+  "final_artifact_directory": "cpu_audit_no_runtime",
+  "attempts": [
+    {
+      "build": "build_receipt.json",
+      "audit": "cpu_audit_v1",
+      "status": "rejected_full_tile_B_queue_register_spills",
+      "directb_resources": {
+        "VGPR": 256,
+        "SGPR": 46,
+        "LDS": 79168,
+        "scratch": 304,
+        "VGPR_spills": 143
+      }
+    },
+    {
+      "build": "build_receipt_v2.json",
+      "audit_directories": [
+        "cpu_audit_v2",
+        "cpu_audit_final"
+      ],
+      "status": "superseded_host_executable_inherited_libamdhip64_dependency",
+      "details": "HIP host-only compile+link driver linked libamdhip64. The host checks called no HIP functions but execution loaded that runtime library. These runs cannot support no-GPU-library-load claims. No experiment library or kernel was loaded or launched."
+    },
+    {
+      "build": "build_receipt_v2.json",
+      "audit": "cpu_audit_no_runtime",
+      "status": "passed_host_object_then_ordinary_CPP_link",
+      "no_HIP_or_HSA_dependency_verified_before_execution": true,
+      "GPU_kernel_launches": 0,
+      "numerical_validation": "not_run_gpu_stopped",
+      "performance_validation": "not_run_gpu_stopped"
+    }
+  ]
+}

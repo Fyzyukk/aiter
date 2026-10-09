@@ -1,0 +1,35 @@
+{
+  "abi": "launch_workspace(variant,a,b,sfa,sfb,c,workspace,m,n,k,stream)",
+  "variant": 9062,
+  "workspace_elements": "2*M*N float32, contiguous, aligned16, caller-owned, disjoint from inputs/output",
+  "contract": "1<=M<=2048; N>0,N%128=0; K=16384; contiguous FP8 A and N16/K16 pre-shuffled FP8 B; SFA dense column-major native E8M0 [M,K/128]; SFB dense row-major [N/128,K/128]; BF16 C",
+  "baseline": {
+    "BM": 80,
+    "BN": 128,
+    "waves": 4,
+    "stages": 4,
+    "cluster": 1,
+    "splitK": 2,
+    "reduceVec": 4,
+    "reduceBlock": 128,
+    "storeCache": 0,
+    "fixedK": 16384,
+    "LDS": 115008,
+    "VMEM_TILE": 6
+  },
+  "candidate": {
+    "BM": 80,
+    "BN": 64,
+    "waves": 4,
+    "stages": 4,
+    "cluster": 1,
+    "splitK": 2,
+    "reduceVec": 4,
+    "reduceBlock": 128,
+    "storeCache": 0,
+    "fixedK": 16384,
+    "LDS": 81216,
+    "VMEM_TILE": 4
+  },
+  "wait_policy": "Unchanged current conservative VMEM_TILE wait; no fine_wait optimization included."
+}

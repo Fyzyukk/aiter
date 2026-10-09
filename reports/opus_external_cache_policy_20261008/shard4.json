@@ -1,0 +1,3162 @@
+{
+  "status": "completed",
+  "started_unix": 1791451835.2649894,
+  "gpu_bdf": "0000:f5:00.0",
+  "gpu_properties": "_CudaDeviceProperties(name='AMD Instinct MI355X', major=9, minor=5, gcnArchName='gfx950:sramecc+:xnack-', total_memory=294896MB, multi_processor_count=256, uuid=61633535-3135-6438-3938-323832663062, pci_bus_id=245, pci_device_id=0, pci_domain_id=0, L2_cache_size=4MB)",
+  "owner_host_pid": null,
+  "script_sha256": "503141d879a77192254390d86f47cf08264fca17fa1d1479465534c1c60a108f",
+  "plan_sha256": "3778e429093d32b9bf552dba99422cbe48c41255d4336760ff0978cb74fed146",
+  "library_sha256": {
+    "module_gemm_a8w8_blockscale_bpreshuffle_tune": "14360dbea94f3e5609f53659f8f96b3f1a289c1c86681ca19bc27b743338f9c0",
+    "module_gemm_a8w8_blockscale_bpreshuffle_asm": "73f2d89ada539b2ff2ccbc2893feecbbee6ac1c26cb9c41886bf7cfbf837f7a6"
+  },
+  "mapped_libraries": [
+    "7f3e08ded000-7f3e08df0000 r--p 00000000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7f3e08df0000-7f3e08dfd000 r-xp 00003000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7f3e08dfd000-7f3e08e00000 r--p 00010000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7f3e08e00000-7f3e08e01000 r--p 00012000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7f3e08e01000-7f3e08e02000 rw-p 00013000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7f3e08e02000-7f3e08e03000 r--p 00013000 103:04 85214607                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_asm.so",
+    "7f3e08e03000-7f3e08e38000 r--p 00000000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7f3e08e38000-7f3e08eea000 r-xp 00035000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7f3e08eea000-7f3e0908e000 r--p 000e7000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7f3e0908e000-7f3e09092000 r--p 0028a000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7f3e09092000-7f3e09093000 rw-p 0028e000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7f3e09093000-7f3e090d0000 r--p 0028e000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so",
+    "7f3e090d0000-7f3e090d1000 rw-p 002ca000 103:04 85214177                  /root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_clang23_mixed_retune_20261008/jit/module_gemm_a8w8_blockscale_bpreshuffle_tune.so"
+  ],
+  "method": "same candidate and binary, per shape same GPU/data; 7 randomized forward/reverse protocol blocks (14 samples); 5/51 vs50/200, automatic rotation vs single-address reuse. Controlled ring pool1/4/16/64 separately tests sensitivity with constant128warmup/256iterations, 3balancedforward/reverse blocks (6samples). All timing via original torch profiler; original FP32-scale inputs/reference/accuracy gate.",
+  "rows": [
+    {
+      "case": {
+        "M": 64,
+        "N": 6144,
+        "K": 7168,
+        "libtype": "asm",
+        "kernelId_upstream": 20,
+        "splitK_upstream": 5,
+        "kernelId_new": 20.0,
+        "splitK_new": 5.0,
+        "kernelName": "_ZN5aiter42fp8gemm_bf16_blockscale_BpreShuffle_64x128E",
+        "us_upstream": 14.9877,
+        "us_new": 18.882,
+        "new_latency_change_pct": 25.98330631117518
+      },
+      "initial_errRatio": 0.0022608439127604165,
+      "protocol_records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.37010000000001,
+          "errRatio": 0.0024083455403645835
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.380760869565204,
+          "errRatio": 0.0023396809895833335
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.83234682080925,
+          "errRatio": 0.0022532145182291665
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.880169230769216,
+          "errRatio": 0.002777099609375
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.8100618556701,
+          "errRatio": 0.0023625691731770835
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.028304093567234,
+          "errRatio": 0.0024159749348958335
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.527510638297876,
+          "errRatio": 0.002655029296875
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.118127659574471,
+          "errRatio": 0.0024464925130208335
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.02854347826087,
+          "errRatio": 0.0024566650390625
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.438978723404244,
+          "errRatio": 0.0023218790690104165
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.827846994535546,
+          "errRatio": 0.0022328694661458335
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 16.550571428571427,
+          "errRatio": 0.0022710164388020835
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 16.454658163265297,
+          "errRatio": 0.0022786458333333335
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.816486631016053,
+          "errRatio": 0.0025151570638020835
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.24332608695652,
+          "errRatio": 0.0023218790690104165
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.41652,
+          "errRatio": 0.00234222412109375
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.14035555555555,
+          "errRatio": 0.0024007161458333335
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 18.79107734806631,
+          "errRatio": 0.0023040771484375
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 14.983700000000017,
+          "errRatio": 0.0023625691731770835
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.321728643216078,
+          "errRatio": 0.0024083455403645835
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.832534759358289,
+          "errRatio": 0.0023956298828125
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.160519999999998,
+          "errRatio": 0.0024617513020833335
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 18.81312269938649,
+          "errRatio": 0.0023473103841145835
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.191195652173917,
+          "errRatio": 0.0024134318033854165
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.658107526881707,
+          "errRatio": 0.0024439493815104165
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.22833333333334,
+          "errRatio": 0.0021692911783854165
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 14.445558139534903,
+          "errRatio": 0.0021464029947916665
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 18.624005434782617,
+          "errRatio": 0.0022023518880208335
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 18.518974093264244,
+          "errRatio": 0.0023295084635416665
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 14.672636363636359,
+          "errRatio": 0.0021820068359375
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.105934782608703,
+          "errRatio": 0.00222015380859375
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.490586021505361,
+          "errRatio": 0.0020955403645833335
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 15.946899999999996,
+          "errRatio": 0.0023193359375
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.986050251256307,
+          "errRatio": 0.0022150675455729165
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.426046511627902,
+          "errRatio": 0.00229644775390625
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 19.236189024390235,
+          "errRatio": 0.00250244140625
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 18.701265624999994,
+          "errRatio": 0.00231170654296875
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.19467391304347,
+          "errRatio": 0.0024210611979166665
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.855124352331623,
+          "errRatio": 0.0023523966471354165
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 17.770500000000002,
+          "errRatio": 0.0025634765625
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.978343023255828,
+          "errRatio": 0.0024973551432291665
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 14.67893478260868,
+          "errRatio": 0.0024388631184895835
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 18.568145833333304,
+          "errRatio": 0.0024236043294270835
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.37723913043478,
+          "errRatio": 0.0022328694661458335
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.38332608695652,
+          "errRatio": 0.0022557576497395835
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 18.57062962962965,
+          "errRatio": 0.0022226969401041665
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 14.874020408163263,
+          "errRatio": 0.00209808349609375
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.048047337278113,
+          "errRatio": 0.0022176106770833335
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.28595652173914,
+          "errRatio": 0.0023854573567708335
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 14.854608695652177,
+          "errRatio": 0.0024363199869791665
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 19.19697058823527,
+          "errRatio": 0.0023701985677083335
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 15.037252688172028,
+          "errRatio": 0.0020472208658854165
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 14.674854054054064,
+          "errRatio": 0.00229644775390625
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 18.919830303030295,
+          "errRatio": 0.0024058024088541665
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 16.28296,
+          "errRatio": 0.0020014444986979165
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 18.260739130434768,
+          "errRatio": 0.00229644775390625
+        }
+      ],
+      "ring_records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 64,
+          "pool_bytes": 2901442560,
+          "input_bytes": 2849538048,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.76900404858298,
+          "errRatio": 0.0024007161458333335
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 181340160,
+          "input_bytes": 178096128,
+          "warmup": 128,
+          "iters": 256,
+          "us": 17.797956521739135,
+          "errRatio": 0.0022532145182291665
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 16,
+          "pool_bytes": 725360640,
+          "input_bytes": 712384512,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.53104184100419,
+          "errRatio": 0.0023015340169270835
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 45335040,
+          "input_bytes": 44524032,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.119718061674021,
+          "errRatio": 0.0022176106770833335
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 45335040,
+          "input_bytes": 44524032,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.787429824561398,
+          "errRatio": 0.0022379557291666665
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 16,
+          "pool_bytes": 725360640,
+          "input_bytes": 712384512,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.85707949790794,
+          "errRatio": 0.0024007161458333335
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 181340160,
+          "input_bytes": 178096128,
+          "warmup": 128,
+          "iters": 256,
+          "us": 16.18479215686272,
+          "errRatio": 0.0021769205729166665
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 64,
+          "pool_bytes": 2901442560,
+          "input_bytes": 2849538048,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.7188237704918,
+          "errRatio": 0.0024312337239583335
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 4,
+          "pool_bytes": 181340160,
+          "input_bytes": 178096128,
+          "warmup": 128,
+          "iters": 256,
+          "us": 17.899869346733677,
+          "errRatio": 0.0023040771484375
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 64,
+          "pool_bytes": 2901442560,
+          "input_bytes": 2849538048,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.75718181818183,
+          "errRatio": 0.0025380452473958335
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 16,
+          "pool_bytes": 725360640,
+          "input_bytes": 712384512,
+          "warmup": 128,
+          "iters": 256,
+          "us": 19.277974226804126,
+          "errRatio": 0.00214385986328125
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 45335040,
+          "input_bytes": 44524032,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.087280172413827,
+          "errRatio": 0.0021998087565104165
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 45335040,
+          "input_bytes": 44524032,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.884841004184086,
+          "errRatio": 0.0023778279622395835
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 16,
+          "pool_bytes": 725360640,
+          "input_bytes": 712384512,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.77670901639346,
+          "errRatio": 0.0024286905924479165
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 64,
+          "pool_bytes": 2901442560,
+          "input_bytes": 2849538048,
+          "warmup": 128,
+          "iters": 256,
+          "us": 19.084853658536588,
+          "errRatio": 0.0024871826171875
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 4,
+          "pool_bytes": 181340160,
+          "input_bytes": 178096128,
+          "warmup": 128,
+          "iters": 256,
+          "us": 16.229541176470597,
+          "errRatio": 0.0023625691731770835
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 45335040,
+          "input_bytes": 44524032,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.66560251046027,
+          "errRatio": 0.0024134318033854165
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 64,
+          "pool_bytes": 2901442560,
+          "input_bytes": 2849538048,
+          "warmup": 128,
+          "iters": 256,
+          "us": 19.466708133971302,
+          "errRatio": 0.0025583902994791665
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 181340160,
+          "input_bytes": 178096128,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.22607327586208,
+          "errRatio": 0.0021031697591145835
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 16,
+          "pool_bytes": 725360640,
+          "input_bytes": 712384512,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.907392405063273,
+          "errRatio": 0.0021565755208333335
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 16,
+          "pool_bytes": 725360640,
+          "input_bytes": 712384512,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.852942622950824,
+          "errRatio": 0.0021006266276041665
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 181340160,
+          "input_bytes": 178096128,
+          "warmup": 128,
+          "iters": 256,
+          "us": 15.897294117647071,
+          "errRatio": 0.0020879109700520835
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 64,
+          "pool_bytes": 2901442560,
+          "input_bytes": 2849538048,
+          "warmup": 128,
+          "iters": 256,
+          "us": 18.81011428571429,
+          "errRatio": 0.0025812784830729165
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 45335040,
+          "input_bytes": 44524032,
+          "warmup": 128,
+          "iters": 256,
+          "us": 14.563512605041998,
+          "errRatio": 0.00246429443359375
+        }
+      ],
+      "protocol_summary": {
+        "rotate_5_51": {
+          "median_us": 18.252032608695643,
+          "samples": [
+            15.380760869565204,
+            18.527510638297876,
+            18.438978723404244,
+            18.24332608695652,
+            18.14035555555555,
+            18.191195652173917,
+            18.22833333333334,
+            18.105934782608703,
+            18.426046511627902,
+            18.19467391304347,
+            18.37723913043478,
+            18.38332608695652,
+            18.28595652173914,
+            18.260739130434768
+          ]
+        },
+        "reuse_5_51": {
+          "median_us": 15.07333556891767,
+          "samples": [
+            16.37010000000001,
+            15.118127659574471,
+            15.02854347826087,
+            15.41652,
+            14.983700000000017,
+            15.160519999999998,
+            14.445558139534903,
+            14.672636363636359,
+            15.946899999999996,
+            17.770500000000002,
+            14.67893478260868,
+            14.874020408163263,
+            14.854608695652177,
+            16.28296
+          ]
+        },
+        "rotate_50_200": {
+          "median_us": 18.597317532206134,
+          "samples": [
+            15.880169230769216,
+            15.8100618556701,
+            16.550571428571427,
+            16.454658163265297,
+            18.79107734806631,
+            18.81312269938649,
+            18.624005434782617,
+            18.518974093264244,
+            19.236189024390235,
+            18.701265624999994,
+            18.568145833333304,
+            18.57062962962965,
+            19.19697058823527,
+            18.919830303030295
+          ]
+        },
+        "reuse_50_200": {
+          "median_us": 14.843829555844955,
+          "samples": [
+            14.83234682080925,
+            15.028304093567234,
+            14.827846994535546,
+            14.816486631016053,
+            15.321728643216078,
+            14.832534759358289,
+            14.658107526881707,
+            14.490586021505361,
+            15.986050251256307,
+            14.855124352331623,
+            14.978343023255828,
+            15.048047337278113,
+            15.037252688172028,
+            14.674854054054064
+          ]
+        }
+      },
+      "ring_pool_bytes_per_copy": 45335040,
+      "ring_input_bytes_per_copy": 44524032,
+      "ring_input_addresses": [
+        [
+          139869951098880,
+          139628822659072,
+          139869952369152,
+          139869951571968,
+          139869951582720,
+          139869952383488
+        ],
+        [
+          139628663275520,
+          139628617138176,
+          139628663734272,
+          139628663748608,
+          139628663759360,
+          139628664545792
+        ],
+        [
+          139628664570368,
+          139628571000832,
+          139628665029120,
+          139628665043456,
+          139628566806528,
+          139628665054208
+        ],
+        [
+          139628567592960,
+          139628520669184,
+          139628665078784,
+          139628665093120,
+          139628568051712,
+          139628568838144
+        ],
+        [
+          139628516474880,
+          139628470337536,
+          139628568862720,
+          139628568877056,
+          139628516933632,
+          139628665103872
+        ],
+        [
+          139628517720064,
+          139628424200192,
+          139628568887808,
+          139628665128448,
+          139628420005888,
+          139628665139200
+        ],
+        [
+          139628420792320,
+          139628373868544,
+          139628665163776,
+          139628665178112,
+          139628421251072,
+          139628422037504
+        ],
+        [
+          139628369674240,
+          139628323536896,
+          139628422062080,
+          139628422076416,
+          139628370132992,
+          139628665188864
+        ],
+        [
+          139628370919424,
+          139628277399552,
+          139628422087168,
+          139628665213440,
+          139628273205248,
+          139628665224192
+        ],
+        [
+          139628273991680,
+          139628227067904,
+          139628665248768,
+          139628665263104,
+          139628274450432,
+          139628275236864
+        ],
+        [
+          139628222873600,
+          139628176736256,
+          139628275261440,
+          139628275275776,
+          139628223332352,
+          139628665273856
+        ],
+        [
+          139628224118784,
+          139627662934016,
+          139628275286528,
+          139628665298432,
+          139628172541952,
+          139628665309184
+        ],
+        [
+          139628173328384,
+          139627616796672,
+          139628665333760,
+          139628665348096,
+          139628173787136,
+          139628174573568
+        ],
+        [
+          139628168347648,
+          139627570659328,
+          139628174598144,
+          139628665358848,
+          139628168806400,
+          139628174612480
+        ],
+        [
+          139628169592832,
+          139627524521984,
+          139628170051584,
+          139628170065920,
+          139628164153344,
+          139628170076672
+        ],
+        [
+          139628164939776,
+          139627478384640,
+          139628170101248,
+          139628170115584,
+          139628165398528,
+          139628166184960
+        ],
+        [
+          139628159959040,
+          139627432247296,
+          139628166209536,
+          139628166223872,
+          139628160417792,
+          139628170126336
+        ],
+        [
+          139628161204224,
+          139627386109952,
+          139628166234624,
+          139628170150912,
+          139628155764736,
+          139628170161664
+        ],
+        [
+          139628156551168,
+          139627339972608,
+          139628170186240,
+          139628170200576,
+          139628157009920,
+          139628157796352
+        ],
+        [
+          139628151570432,
+          139627293835264,
+          139628157820928,
+          139628157835264,
+          139628152029184,
+          139628170211328
+        ],
+        [
+          139628152815616,
+          139627247697920,
+          139628157846016,
+          139628170235904,
+          139628040421376,
+          139628170246656
+        ],
+        [
+          139628041207808,
+          139627201560576,
+          139628170271232,
+          139628170285568,
+          139628041666560,
+          139628042452992
+        ],
+        [
+          139628023644160,
+          139627155423232,
+          139628042477568,
+          139628042491904,
+          139628024102912,
+          139628170296320
+        ],
+        [
+          139628024889344,
+          139627109285888,
+          139628042502656,
+          139628170320896,
+          139627952340992,
+          139628170331648
+        ],
+        [
+          139627953127424,
+          139627063148544,
+          139628170356224,
+          139628170370560,
+          139627953586176,
+          139628170381312
+        ],
+        [
+          139627948146688,
+          139627017011200,
+          139628170405888,
+          139628170420224,
+          139627948605440,
+          139627954372608
+        ],
+        [
+          139627949391872,
+          139626970873856,
+          139627954397184,
+          139628170430976,
+          139627943952384,
+          139627954411520
+        ],
+        [
+          139627944738816,
+          139626924736512,
+          139627949850624,
+          139627949864960,
+          139627945197568,
+          139627945984000
+        ],
+        [
+          139627939758080,
+          139626878599168,
+          139627946008576,
+          139627946022912,
+          139627940216832,
+          139627949875712
+        ],
+        [
+          139627941003264,
+          139626832461824,
+          139627946033664,
+          139627949900288,
+          139627935563776,
+          139627949911040
+        ],
+        [
+          139627936350208,
+          139626786324480,
+          139627949935616,
+          139627949949952,
+          139627936808960,
+          139627937595392
+        ],
+        [
+          139627931369472,
+          139626740187136,
+          139627937619968,
+          139627937634304,
+          139627931828224,
+          139627949960704
+        ],
+        [
+          139627932614656,
+          139626694049792,
+          139627937645056,
+          139627949985280,
+          139627927175168,
+          139627949996032
+        ],
+        [
+          139627927961600,
+          139626647912448,
+          139627950020608,
+          139627950034944,
+          139627928420352,
+          139627929206784
+        ],
+        [
+          139627922980864,
+          139626601775104,
+          139627929231360,
+          139627929245696,
+          139627923439616,
+          139627950045696
+        ],
+        [
+          139627924226048,
+          139626555637760,
+          139627929256448,
+          139627950070272,
+          139627918786560,
+          139627950081024
+        ],
+        [
+          139627919572992,
+          139626509500416,
+          139627950105600,
+          139627950119936,
+          139627920031744,
+          139627920818176
+        ],
+        [
+          139627914592256,
+          139626463363072,
+          139627920842752,
+          139627920857088,
+          139627915051008,
+          139627950130688
+        ],
+        [
+          139627915837440,
+          139626417225728,
+          139627920867840,
+          139627950155264,
+          139626413031424,
+          139627950166016
+        ],
+        [
+          139626413817856,
+          139626366894080,
+          139627950190592,
+          139627950204928,
+          139626414276608,
+          139627950215680
+        ],
+        [
+          139626362699776,
+          139626316562432,
+          139626415063040,
+          139626415077376,
+          139626363158528,
+          139626415088128
+        ],
+        [
+          139626363944960,
+          139626270425088,
+          139626415112704,
+          139626364403712,
+          139626266230784,
+          139626364414464
+        ],
+        [
+          139626267017216,
+          139626220093440,
+          139626364439040,
+          139626364453376,
+          139626267475968,
+          139626268262400
+        ],
+        [
+          139626215899136,
+          139626169761792,
+          139626268286976,
+          139626268301312,
+          139626216357888,
+          139626364464128
+        ],
+        [
+          139626217144320,
+          139626123624448,
+          139626268312064,
+          139626364488704,
+          139626119430144,
+          139626364499456
+        ],
+        [
+          139626120216576,
+          139626073292800,
+          139626364524032,
+          139626364538368,
+          139626120675328,
+          139626121461760
+        ],
+        [
+          139626069098496,
+          139626022961152,
+          139626121486336,
+          139626121500672,
+          139626069557248,
+          139626364549120
+        ],
+        [
+          139626070343680,
+          139625976823808,
+          139626121511424,
+          139626364573696,
+          139625972629504,
+          139626364584448
+        ],
+        [
+          139625973415936,
+          139625926492160,
+          139626364609024,
+          139626364623360,
+          139625973874688,
+          139625974661120
+        ],
+        [
+          139625922297856,
+          139625876160512,
+          139625974685696,
+          139625974700032,
+          139625922756608,
+          139626364634112
+        ],
+        [
+          139625923543040,
+          139625830023168,
+          139625974710784,
+          139626364658688,
+          139625825828864,
+          139626364669440
+        ],
+        [
+          139625826615296,
+          139625779691520,
+          139626364694016,
+          139626364708352,
+          139625827074048,
+          139625827860480
+        ],
+        [
+          139625775497216,
+          139625729359872,
+          139625827885056,
+          139625827899392,
+          139625775955968,
+          139626364719104
+        ],
+        [
+          139625776742400,
+          139625683222528,
+          139625827910144,
+          139626364743680,
+          139625679028224,
+          139626364754432
+        ],
+        [
+          139625679814656,
+          139625632890880,
+          139626364779008,
+          139625777201152,
+          139625680273408,
+          139625681059840
+        ],
+        [
+          139625628696576,
+          139625582559232,
+          139625681084416,
+          139625681098752,
+          139625629155328,
+          139625777211904
+        ],
+        [
+          139625629941760,
+          139625536421888,
+          139625681109504,
+          139625777236480,
+          139625532227584,
+          139625777247232
+        ],
+        [
+          139625533014016,
+          139625486090240,
+          139625777271808,
+          139625777286144,
+          139625533472768,
+          139625534259200
+        ],
+        [
+          139625481895936,
+          139625435758592,
+          139625534283776,
+          139625534298112,
+          139625482354688,
+          139625777296896
+        ],
+        [
+          139625483141120,
+          139625389621248,
+          139625534308864,
+          139625777321472,
+          139625385426944,
+          139625777332224
+        ],
+        [
+          139625386213376,
+          139625339289600,
+          139625777356800,
+          139625777371136,
+          139625386672128,
+          139625387458560
+        ],
+        [
+          139625335095296,
+          139625288957952,
+          139625387483136,
+          139625387497472,
+          139625335554048,
+          139625777381888
+        ],
+        [
+          139625336340480,
+          139625242820608,
+          139625387508224,
+          139625777406464,
+          139625238626304,
+          139625777417216
+        ],
+        [
+          139625239412736,
+          139625192488960,
+          139625777441792,
+          139625777456128,
+          139625239871488,
+          139625240657920
+        ]
+      ],
+      "ring_summary": {
+        "1": {
+          "median_us": 14.836135414372741,
+          "samples": [
+            15.119718061674021,
+            14.787429824561398,
+            15.087280172413827,
+            14.884841004184086,
+            14.66560251046027,
+            14.563512605041998
+          ]
+        },
+        "4": {
+          "median_us": 16.20716666666666,
+          "samples": [
+            17.797956521739135,
+            16.18479215686272,
+            17.899869346733677,
+            16.229541176470597,
+            15.22607327586208,
+            15.897294117647071
+          ]
+        },
+        "16": {
+          "median_us": 18.855011060429383,
+          "samples": [
+            18.53104184100419,
+            18.85707949790794,
+            19.277974226804126,
+            18.77670901639346,
+            18.907392405063273,
+            18.852942622950824
+          ]
+        },
+        "64": {
+          "median_us": 18.78955916714863,
+          "samples": [
+            18.76900404858298,
+            18.7188237704918,
+            18.75718181818183,
+            19.084853658536588,
+            19.466708133971302,
+            18.81011428571429
+          ]
+        }
+      }
+    },
+    {
+      "case": {
+        "M": 8,
+        "N": 768,
+        "K": 7168,
+        "libtype": "asm",
+        "kernelId_upstream": 31,
+        "splitK_upstream": 8,
+        "kernelId_new": 31.0,
+        "splitK_new": 8.0,
+        "kernelName": "_ZN5aiter42fp8gemm_bf16_blockscale_BpreShuffle_80x128E",
+        "us_upstream": 10.8073,
+        "us_new": 8.7981,
+        "new_latency_change_pct": -18.591137471893997
+      },
+      "initial_errRatio": 0.007975260416666666,
+      "protocol_records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.836502512562795,
+          "errRatio": 0.011393229166666666
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.241300000000003,
+          "errRatio": 0.01123046875
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 8.836459999999999,
+          "errRatio": 0.009440104166666666
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.646115577889438,
+          "errRatio": 0.010904947916666666
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 9.235497487437183,
+          "errRatio": 0.011067708333333334
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 8.922080000000001,
+          "errRatio": 0.013346354166666666
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.957279999999992,
+          "errRatio": 0.010904947916666666
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.869462311557777,
+          "errRatio": 0.010091145833333334
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.812797979797985,
+          "errRatio": 0.013834635416666666
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 10.685550561797731,
+          "errRatio": 0.0126953125
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.99980434782609,
+          "errRatio": 0.0087890625
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 10.70502173913045,
+          "errRatio": 0.010091145833333334
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 10.247333333333327,
+          "errRatio": 0.00830078125
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.967075000000023,
+          "errRatio": 0.009114583333333334
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 9.658809045226123,
+          "errRatio": 0.013020833333333334
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 7.616745454545455,
+          "errRatio": 0.012858072916666666
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.268520000000006,
+          "errRatio": 0.011393229166666666
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.944638190954743,
+          "errRatio": 0.01025390625
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.924272727272726,
+          "errRatio": 0.01171875
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.770949748743712,
+          "errRatio": 0.013834635416666666
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.863844221105506,
+          "errRatio": 0.00927734375
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.23086,
+          "errRatio": 0.012858072916666666
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 9.915477386934672,
+          "errRatio": 0.01220703125
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 10.511604651162788,
+          "errRatio": 0.010091145833333334
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 10.056915662650606,
+          "errRatio": 0.01123046875
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 10.657279999999991,
+          "errRatio": 0.010091145833333334
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.802939999999998,
+          "errRatio": 0.0087890625
+        },
+        {
+          "block": 3,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 10.042478260869554,
+          "errRatio": 0.009602864583333334
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 10.07817499999999,
+          "errRatio": 0.009114583333333334
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 10.606458333333324,
+          "errRatio": 0.0107421875
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 10.780819999999999,
+          "errRatio": 0.009765625
+        },
+        {
+          "block": 3,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 7.5654319526627205,
+          "errRatio": 0.012532552083333334
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 8.262833333333337,
+          "errRatio": 0.008463541666666666
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 8.710100000000008,
+          "errRatio": 0.00927734375
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.195726744186022,
+          "errRatio": 0.013671875
+        },
+        {
+          "block": 4,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.854768844221105,
+          "errRatio": 0.013509114583333334
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 9.02021608040201,
+          "errRatio": 0.009765625
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.160620253164534,
+          "errRatio": 0.012858072916666666
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.029320000000007,
+          "errRatio": 0.013997395833333334
+        },
+        {
+          "block": 4,
+          "pass": 1,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.806939999999992,
+          "errRatio": 0.01123046875
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 10.048451612903234,
+          "errRatio": 0.012369791666666666
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 1,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.965534883720926,
+          "errRatio": 0.010579427083333334
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 10.768456953642366,
+          "errRatio": 0.010416666666666666
+        },
+        {
+          "block": 5,
+          "pass": 0,
+          "order": 3,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 8.092906976744189,
+          "errRatio": 0.012044270833333334
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 0,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 8.7949,
+          "errRatio": 0.0146484375
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.38051445086707,
+          "errRatio": 0.0126953125
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 2,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 8.594119999999998,
+          "errRatio": 0.009602864583333334
+        },
+        {
+          "block": 5,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 7.672598802395237,
+          "errRatio": 0.014973958333333334
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 0,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.70846733668342,
+          "errRatio": 0.00927734375
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 1,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.16901212121213,
+          "errRatio": 0.0107421875
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 2,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 10.418078947368425,
+          "errRatio": 0.007975260416666666
+        },
+        {
+          "block": 6,
+          "pass": 0,
+          "order": 3,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.05968,
+          "errRatio": 0.013509114583333334
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 0,
+          "protocol": "reuse_5_51",
+          "rotation_setting": 1,
+          "warmup": 5,
+          "iters": 51,
+          "us": 10.0276052631579,
+          "errRatio": 0.01025390625
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 1,
+          "protocol": "rotate_5_51",
+          "rotation_setting": 0,
+          "warmup": 5,
+          "iters": 51,
+          "us": 9.94052000000001,
+          "errRatio": 0.010579427083333334
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 2,
+          "protocol": "rotate_50_200",
+          "rotation_setting": 0,
+          "warmup": 50,
+          "iters": 200,
+          "us": 9.996296482412069,
+          "errRatio": 0.013834635416666666
+        },
+        {
+          "block": 6,
+          "pass": 1,
+          "order": 3,
+          "protocol": "reuse_50_200",
+          "rotation_setting": 1,
+          "warmup": 50,
+          "iters": 200,
+          "us": 8.853798994974854,
+          "errRatio": 0.01171875
+        }
+      ],
+      "ring_records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 5580864,
+          "input_bytes": 5565504,
+          "warmup": 128,
+          "iters": 256,
+          "us": 10.009882352941176,
+          "errRatio": 0.009114583333333334
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 22323456,
+          "input_bytes": 22262016,
+          "warmup": 128,
+          "iters": 256,
+          "us": 10.012660194174806,
+          "errRatio": 0.008463541666666666
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 64,
+          "pool_bytes": 357175296,
+          "input_bytes": 356192256,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.135894273127745,
+          "errRatio": 0.013671875
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 16,
+          "pool_bytes": 89293824,
+          "input_bytes": 89048064,
+          "warmup": 128,
+          "iters": 256,
+          "us": 7.455935643564363,
+          "errRatio": 0.01318359375
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 16,
+          "pool_bytes": 89293824,
+          "input_bytes": 89048064,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.611749019607826,
+          "errRatio": 0.011393229166666666
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 64,
+          "pool_bytes": 357175296,
+          "input_bytes": 356192256,
+          "warmup": 128,
+          "iters": 256,
+          "us": 9.429035294117634,
+          "errRatio": 0.0107421875
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 22323456,
+          "input_bytes": 22262016,
+          "warmup": 128,
+          "iters": 256,
+          "us": 10.031015151515163,
+          "errRatio": 0.00927734375
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 5580864,
+          "input_bytes": 5565504,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.734247058823536,
+          "errRatio": 0.013671875
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 1,
+          "pool_bytes": 5580864,
+          "input_bytes": 5565504,
+          "warmup": 128,
+          "iters": 256,
+          "us": 9.284388235294115,
+          "errRatio": 0.010091145833333334
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 64,
+          "pool_bytes": 357175296,
+          "input_bytes": 356192256,
+          "warmup": 128,
+          "iters": 256,
+          "us": 10.435524999999975,
+          "errRatio": 0.010579427083333334
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 4,
+          "pool_bytes": 22323456,
+          "input_bytes": 22262016,
+          "warmup": 128,
+          "iters": 256,
+          "us": 7.558969298245596,
+          "errRatio": 0.012369791666666666
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 16,
+          "pool_bytes": 89293824,
+          "input_bytes": 89048064,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.283278431372569,
+          "errRatio": 0.014485677083333334
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 16,
+          "pool_bytes": 89293824,
+          "input_bytes": 89048064,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.92579607843136,
+          "errRatio": 0.013509114583333334
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 4,
+          "pool_bytes": 22323456,
+          "input_bytes": 22262016,
+          "warmup": 128,
+          "iters": 256,
+          "us": 9.038113725490183,
+          "errRatio": 0.011067708333333334
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 64,
+          "pool_bytes": 357175296,
+          "input_bytes": 356192256,
+          "warmup": 128,
+          "iters": 256,
+          "us": 9.215732283464572,
+          "errRatio": 0.010091145833333334
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 1,
+          "pool_bytes": 5580864,
+          "input_bytes": 5565504,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.717301960784287,
+          "errRatio": 0.012369791666666666
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "pool_count": 64,
+          "pool_bytes": 357175296,
+          "input_bytes": 356192256,
+          "warmup": 128,
+          "iters": 256,
+          "us": 9.676537254901962,
+          "errRatio": 0.013020833333333334
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "pool_count": 1,
+          "pool_bytes": 5580864,
+          "input_bytes": 5565504,
+          "warmup": 128,
+          "iters": 256,
+          "us": 7.6447478632479084,
+          "errRatio": 0.012044270833333334
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "pool_count": 16,
+          "pool_bytes": 89293824,
+          "input_bytes": 89048064,
+          "warmup": 128,
+          "iters": 256,
+          "us": 7.582050691244216,
+          "errRatio": 0.012044270833333334
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "pool_count": 4,
+          "pool_bytes": 22323456,
+          "input_bytes": 22262016,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.678415686274532,
+          "errRatio": 0.0126953125
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "pool_count": 4,
+          "pool_bytes": 22323456,
+          "input_bytes": 22262016,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.851298039215687,
+          "errRatio": 0.00927734375
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "pool_count": 16,
+          "pool_bytes": 89293824,
+          "input_bytes": 89048064,
+          "warmup": 128,
+          "iters": 256,
+          "us": 9.294121568627427,
+          "errRatio": 0.01123046875
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "pool_count": 1,
+          "pool_bytes": 5580864,
+          "input_bytes": 5565504,
+          "warmup": 128,
+          "iters": 256,
+          "us": 8.940698039215686,
+          "errRatio": 0.009765625
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "pool_count": 64,
+          "pool_bytes": 357175296,
+          "input_bytes": 356192256,
+          "warmup": 128,
+          "iters": 256,
+          "us": 10.397576744186054,
+          "errRatio": 0.013509114583333334
+        }
+      ],
+      "protocol_summary": {
+        "rotate_5_51": {
+          "median_us": 9.873730000000002,
+          "samples": [
+            9.241300000000003,
+            9.957279999999992,
+            10.70502173913045,
+            10.247333333333327,
+            9.268520000000006,
+            10.511604651162788,
+            9.802939999999998,
+            10.606458333333324,
+            8.262833333333337,
+            9.806939999999992,
+            8.092906976744189,
+            8.7949,
+            10.418078947368425,
+            9.94052000000001
+          ]
+        },
+        "reuse_5_51": {
+          "median_us": 9.577566363636363,
+          "samples": [
+            8.836459999999999,
+            8.922080000000001,
+            9.99980434782609,
+            9.967075000000023,
+            9.924272727272726,
+            9.23086,
+            10.042478260869554,
+            10.07817499999999,
+            8.710100000000008,
+            9.029320000000007,
+            9.965534883720926,
+            8.594119999999998,
+            9.05968,
+            10.0276052631579
+          ]
+        },
+        "rotate_50_200": {
+          "median_us": 9.301723618090433,
+          "samples": [
+            8.836502512562795,
+            8.869462311557777,
+            10.685550561797731,
+            9.658809045226123,
+            8.944638190954743,
+            9.915477386934672,
+            10.657279999999991,
+            10.780819999999999,
+            8.195726744186022,
+            8.160620253164534,
+            10.768456953642366,
+            8.38051445086707,
+            8.16901212121213,
+            9.996296482412069
+          ]
+        },
+        "reuse_50_200": {
+          "median_us": 8.833298487386418,
+          "samples": [
+            8.646115577889438,
+            9.235497487437183,
+            8.812797979797985,
+            7.616745454545455,
+            8.770949748743712,
+            8.863844221105506,
+            10.056915662650606,
+            7.5654319526627205,
+            8.854768844221105,
+            9.02021608040201,
+            10.048451612903234,
+            7.672598802395237,
+            8.70846733668342,
+            8.853798994974854
+          ]
+        }
+      },
+      "ring_pool_bytes_per_copy": 5580864,
+      "ring_input_bytes_per_copy": 5565504,
+      "ring_input_addresses": [
+        [
+          139628864602112,
+          139628855427072,
+          139628864675328,
+          139628864661504,
+          139628864663040,
+          139628864677376
+        ],
+        [
+          139628864717312,
+          139628826853376,
+          139628864680448,
+          139628864682496,
+          139628864684032,
+          139628864696320
+        ],
+        [
+          139628864774656,
+          139628832358400,
+          139628864699392,
+          139628864701440,
+          139628864832000,
+          139628864844288
+        ],
+        [
+          139628864847360,
+          139628837863424,
+          139628864702976,
+          139628864904704,
+          139628864906240,
+          139628864918528
+        ],
+        [
+          139628864921600,
+          139628803784704,
+          139628864978944,
+          139628864980992,
+          139628864982528,
+          139628864994816
+        ],
+        [
+          139628864997888,
+          139628809289728,
+          139628865055232,
+          139628865057280,
+          139628865058816,
+          139628865071104
+        ],
+        [
+          139628865074176,
+          139628814794752,
+          139628865131520,
+          139628865133568,
+          139628865135104,
+          139628865147392
+        ],
+        [
+          139628865150464,
+          139628661178368,
+          139628865207808,
+          139628865209856,
+          139628865211392,
+          139628865223680
+        ],
+        [
+          139628865226752,
+          139628666683392,
+          139628865284096,
+          139628865286144,
+          139628865287680,
+          139628865299968
+        ],
+        [
+          139628865303040,
+          139628672188416,
+          139628865360384,
+          139628865362432,
+          139628865363968,
+          139628865376256
+        ],
+        [
+          139628865379328,
+          139628638109696,
+          139628865436672,
+          139628865438720,
+          139628865440256,
+          139628865452544
+        ],
+        [
+          139628865455616,
+          139628643614720,
+          139628865512960,
+          139628865515008,
+          139628865516544,
+          139628865528832
+        ],
+        [
+          139628865531904,
+          139628649119744,
+          139628865589248,
+          139628865591296,
+          139628865592832,
+          139628865605120
+        ],
+        [
+          139628865608192,
+          139628615041024,
+          139628865665536,
+          139628865667584,
+          139628865669120,
+          139628865681408
+        ],
+        [
+          139628865684480,
+          139628620546048,
+          139628865741824,
+          139628865743872,
+          139628865745408,
+          139628865757696
+        ],
+        [
+          139628865760768,
+          139628626051072,
+          139628865818112,
+          139628865820160,
+          139628865821696,
+          139628865833984
+        ],
+        [
+          139628865837056,
+          139628591972352,
+          139628865894400,
+          139628865896448,
+          139628865897984,
+          139628865910272
+        ],
+        [
+          139628865913344,
+          139628597477376,
+          139628865970688,
+          139628865972736,
+          139628865974272,
+          139628865986560
+        ],
+        [
+          139628865989632,
+          139628602982400,
+          139628866046976,
+          139628866049024,
+          139628866050560,
+          139628866062848
+        ],
+        [
+          139628866065920,
+          139628568903680,
+          139628866123264,
+          139628866125312,
+          139628866126848,
+          139628866139136
+        ],
+        [
+          139628866142208,
+          139628574408704,
+          139628866199552,
+          139628866201600,
+          139628866203136,
+          139628866215424
+        ],
+        [
+          139628866218496,
+          139628579913728,
+          139628866275840,
+          139628866277888,
+          139628866279424,
+          139628866291712
+        ],
+        [
+          139628866294784,
+          139628545835008,
+          139628866352128,
+          139628866354176,
+          139628866355712,
+          139628866368000
+        ],
+        [
+          139628866371072,
+          139628551340032,
+          139628866428416,
+          139628866430464,
+          139628866432000,
+          139628866444288
+        ],
+        [
+          139628866447360,
+          139628556845056,
+          139628866504704,
+          139628866506752,
+          139628866508288,
+          139628866520576
+        ],
+        [
+          139628866523648,
+          139628522766336,
+          139628866580992,
+          139628866583040,
+          139628866584576,
+          139628866596864
+        ],
+        [
+          139628866599936,
+          139628528271360,
+          139628866657280,
+          139628866659328,
+          139628866660864,
+          139628866673152
+        ],
+        [
+          139628787007488,
+          139628533776384,
+          139628866676224,
+          139628866678272,
+          139628866679808,
+          139628866692096
+        ],
+        [
+          139628787064832,
+          139628499697664,
+          139628866695168,
+          139628866697216,
+          139628787122176,
+          139628787134464
+        ],
+        [
+          139628787137536,
+          139628505202688,
+          139628787194880,
+          139628787196928,
+          139628787198464,
+          139628787210752
+        ],
+        [
+          139628787213824,
+          139628510707712,
+          139628787271168,
+          139628787273216,
+          139628787274752,
+          139628787287040
+        ],
+        [
+          139628787290112,
+          139628476628992,
+          139628787347456,
+          139628787349504,
+          139628787351040,
+          139628787363328
+        ],
+        [
+          139628787366400,
+          139628482134016,
+          139628787423744,
+          139628787425792,
+          139628787427328,
+          139628787439616
+        ],
+        [
+          139628787442688,
+          139628487639040,
+          139628787500032,
+          139628787502080,
+          139628787503616,
+          139628787515904
+        ],
+        [
+          139628787518976,
+          139628453560320,
+          139628787576320,
+          139628787578368,
+          139628787579904,
+          139628787592192
+        ],
+        [
+          139628787595264,
+          139628459065344,
+          139628787652608,
+          139628787654656,
+          139628787656192,
+          139628787668480
+        ],
+        [
+          139628787671552,
+          139628464570368,
+          139628787728896,
+          139628787730944,
+          139628787732480,
+          139628787744768
+        ],
+        [
+          139628787747840,
+          139628430491648,
+          139628787805184,
+          139628787807232,
+          139628787808768,
+          139628787821056
+        ],
+        [
+          139628787824128,
+          139628435996672,
+          139628787881472,
+          139628787883520,
+          139628787885056,
+          139628787897344
+        ],
+        [
+          139628787900416,
+          139628441501696,
+          139628787957760,
+          139628787959808,
+          139628787961344,
+          139628787973632
+        ],
+        [
+          139628787976704,
+          139628407422976,
+          139628788034048,
+          139628788036096,
+          139628788037632,
+          139628788049920
+        ],
+        [
+          139628788052992,
+          139628412928000,
+          139628788110336,
+          139628788112384,
+          139628788113920,
+          139628788126208
+        ],
+        [
+          139628788129280,
+          139628418433024,
+          139628788186624,
+          139628788188672,
+          139628788190208,
+          139628788202496
+        ],
+        [
+          139628788205568,
+          139628384354304,
+          139628788262912,
+          139628788264960,
+          139628788266496,
+          139628788278784
+        ],
+        [
+          139628788281856,
+          139628389859328,
+          139628788339200,
+          139628788341248,
+          139628788342784,
+          139628788355072
+        ],
+        [
+          139628788358144,
+          139628395364352,
+          139628788415488,
+          139628788417536,
+          139628788419072,
+          139628788431360
+        ],
+        [
+          139628788434432,
+          139628361285632,
+          139628788491776,
+          139628788493824,
+          139628788495360,
+          139628788507648
+        ],
+        [
+          139628788510720,
+          139628366790656,
+          139628788568064,
+          139628788570112,
+          139628788571648,
+          139628788583936
+        ],
+        [
+          139628788587008,
+          139628372295680,
+          139628788644352,
+          139628788646400,
+          139628788647936,
+          139628788660224
+        ],
+        [
+          139628788663296,
+          139628338216960,
+          139628788720640,
+          139628788722688,
+          139628788724224,
+          139628788736512
+        ],
+        [
+          139628788739584,
+          139628343721984,
+          139628788796928,
+          139628788798976,
+          139628788800512,
+          139628788812800
+        ],
+        [
+          139628788815872,
+          139628349227008,
+          139628788873216,
+          139628788875264,
+          139628788876800,
+          139628788889088
+        ],
+        [
+          139628788892160,
+          139628315148288,
+          139628788949504,
+          139628788951552,
+          139628788953088,
+          139628788965376
+        ],
+        [
+          139628788968448,
+          139628320653312,
+          139628789025792,
+          139628789027840,
+          139628789029376,
+          139628789041664
+        ],
+        [
+          139628789044736,
+          139628326158336,
+          139628789102080,
+          139628778618880,
+          139628778620416,
+          139628778632704
+        ],
+        [
+          139628778635776,
+          139628292079616,
+          139628778693120,
+          139628778695168,
+          139628778696704,
+          139628778708992
+        ],
+        [
+          139628778712064,
+          139628297584640,
+          139628778769408,
+          139628778771456,
+          139628778772992,
+          139628778785280
+        ],
+        [
+          139628778788352,
+          139628303089664,
+          139628778845696,
+          139628778847744,
+          139628778849280,
+          139628778861568
+        ],
+        [
+          139628778864640,
+          139628269010944,
+          139628778921984,
+          139628778924032,
+          139628778925568,
+          139628778937856
+        ],
+        [
+          139628778940928,
+          139628274515968,
+          139628778998272,
+          139628779000320,
+          139628779001856,
+          139628779014144
+        ],
+        [
+          139628779017216,
+          139628280020992,
+          139628779074560,
+          139628779076608,
+          139628779078144,
+          139628779090432
+        ],
+        [
+          139628779093504,
+          139628245942272,
+          139628779150848,
+          139628779152896,
+          139628779154432,
+          139628779166720
+        ],
+        [
+          139628779169792,
+          139628251447296,
+          139628779227136,
+          139628779229184,
+          139628779230720,
+          139628779243008
+        ],
+        [
+          139628779246080,
+          139628256952320,
+          139628779303424,
+          139628779305472,
+          139628779307008,
+          139628779319296
+        ]
+      ],
+      "ring_summary": {
+        "1": {
+          "median_us": 8.837472549019612,
+          "samples": [
+            10.009882352941176,
+            8.734247058823536,
+            9.284388235294115,
+            8.717301960784287,
+            7.6447478632479084,
+            8.940698039215686
+          ]
+        },
+        "4": {
+          "median_us": 8.944705882352935,
+          "samples": [
+            10.012660194174806,
+            10.031015151515163,
+            7.558969298245596,
+            9.038113725490183,
+            8.678415686274532,
+            8.851298039215687
+          ]
+        },
+        "16": {
+          "median_us": 8.447513725490197,
+          "samples": [
+            7.455935643564363,
+            8.611749019607826,
+            8.283278431372569,
+            8.92579607843136,
+            7.582050691244216,
+            9.294121568627427
+          ]
+        },
+        "64": {
+          "median_us": 9.5527862745098,
+          "samples": [
+            8.135894273127745,
+            9.429035294117634,
+            10.435524999999975,
+            9.215732283464572,
+            9.676537254901962,
+            10.397576744186054
+          ]
+        }
+      }
+    }
+  ],
+  "ended_unix": 1791451846.4409463
+}

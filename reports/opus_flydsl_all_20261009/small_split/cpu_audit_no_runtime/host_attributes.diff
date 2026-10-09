@@ -1,0 +1,501 @@
+--- frozen/opus/opus.hpp
++++ host_include/opus/opus.hpp
+@@ -3496,27 +3496,27 @@
+ template<typename FDim, typename Target, index_t I0, index_t... Rest> static constexpr auto pickup_filter(seq<I0, Rest...>) {
+     if constexpr (std::is_same_v<remove_cvref_t<decltype(get<I0>(FDim{}))>, remove_cvref_t<Target>>) return concat_seq(seq<I0>{}, pickup_filter<FDim, Target>(seq<Rest...>{}));
+     else return pickup_filter<FDim, Target>(seq<Rest...>{}); }
+-template<typename Shape, index_t... Fs> OPUS_D static constexpr auto pickup_shape_apply(seq<Fs...>) { return opus::make_tuple(get<Fs>(Shape{})...); }
++template<typename Shape, index_t... Fs> OPUS_H_D static constexpr auto pickup_shape_apply(seq<Fs...>) { return opus::make_tuple(get<Fs>(Shape{})...); }
+ template<typename Shape, typename FDim, typename Target, index_t... Is>
+-OPUS_D static constexpr auto pickup_shape_impl(const Shape&, const FDim&, Target, seq<Is...>) { static_assert(size<Shape>() == size<FDim>()); return pickup_shape_apply<Shape>(pickup_filter<FDim, Target>(seq<Is...>{})); }
++OPUS_H_D static constexpr auto pickup_shape_impl(const Shape&, const FDim&, Target, seq<Is...>) { static_assert(size<Shape>() == size<FDim>()); return pickup_shape_apply<Shape>(pickup_filter<FDim, Target>(seq<Is...>{})); }
+ 
+ template<typename Dim, index_t... Js>
+-OPUS_D constexpr index_t dim_group_size_sum(seq<Js...>) { return (static_cast<index_t>(get<Js>(Dim{}).size()) + ... + 0); }
++OPUS_H_D constexpr index_t dim_group_size_sum(seq<Js...>) { return (static_cast<index_t>(get<Js>(Dim{}).size()) + ... + 0); }
+ 
+ template<typename Shape, typename Dim, index_t DIdx, index_t... Ss>
+-OPUS_D constexpr auto unflatten_shape_group(seq<Ss...>) {
++OPUS_H_D constexpr auto unflatten_shape_group(seq<Ss...>) {
+     constexpr index_t SStart = dim_group_size_sum<Dim>(make_index_seq<DIdx>{});
+     return opus::make_tuple(get<SStart + Ss>(Shape{})...);
+ }
+ 
+ template<typename Shape, typename Dim, index_t... DIs>
+-OPUS_D constexpr auto unflatten_shape_impl(seq<DIs...>) { return opus::make_tuple(unflatten_shape_group<Shape, Dim, DIs>(make_index_seq<get<DIs>(Dim{}).size()>{})...); }
++OPUS_H_D constexpr auto unflatten_shape_impl(seq<DIs...>) { return opus::make_tuple(unflatten_shape_group<Shape, Dim, DIs>(make_index_seq<get<DIs>(Dim{}).size()>{})...); }
+ 
+ template<typename Dim, index_t... Js>
+-OPUS_D constexpr index_t p_count_in(seq<Js...>) { return ((std::is_same_v<remove_cvref_t<decltype(get<Js>(Dim{}))>, p_dim> ? 1 : 0) + ... + 0); }
++OPUS_H_D constexpr index_t p_count_in(seq<Js...>) { return ((std::is_same_v<remove_cvref_t<decltype(get<Js>(Dim{}))>, p_dim> ? 1 : 0) + ... + 0); }
+ 
+ template<typename Dim, typename Coord, index_t... Is>
+-OPUS_D constexpr auto unfold_p_coord_impl(const Coord& coord, seq<Is...>) {
++OPUS_H_D constexpr auto unfold_p_coord_impl(const Coord& coord, seq<Is...>) {
+     return opus::make_tuple( [&]() -> decltype(auto) {
+             if constexpr (std::is_same_v<remove_cvref_t<decltype(get<Is>(Dim{}))>, p_dim>) return get< p_count_in<Dim>(make_index_seq<Is>{}) >(coord);
+             else                                                                           return underscore{};
+@@ -3525,10 +3525,10 @@
+ }
+ 
+ template<typename Dim, index_t... Js>
+-OPUS_D constexpr index_t dim_offset_sum(seq<Js...>) { return (static_cast<index_t>(size<decltype(get<Js>(Dim{}))>()) + ... + 0); }
++OPUS_H_D constexpr index_t dim_offset_sum(seq<Js...>) { return (static_cast<index_t>(size<decltype(get<Js>(Dim{}))>()) + ... + 0); }
+ 
+ template<typename Dim, typename Shape, typename Stride, index_t I>
+-OPUS_D constexpr auto unfold_x_stride_each(const Stride& stride) {
++OPUS_H_D constexpr auto unfold_x_stride_each(const Stride& stride) {
+     constexpr index_t C = dim_offset_sum<Dim>(make_index_seq<I>{});
+     constexpr index_t len = size<decltype(get<I>(Dim{}))>();
+     constexpr auto current_shape = slice(Shape{}, number<C>{}, number<C + len>{});
+@@ -3538,27 +3538,27 @@
+ 
+ template<typename Dim, index_t J, index_t... Gs> constexpr index_t unfold_find_group(seq<Gs...>) {
+     index_t acc = 0, r = 0; ((void)(acc += size<decltype(get<Gs>(Dim{}))>(), (acc <= J ? (void)(r = Gs + 1) : (void)0)), ...); return r; }
+-template<typename Dim, typename Shape, typename Stride, index_t J> OPUS_D constexpr auto unfold_x_stride_at(const Stride& stride) {
++template<typename Dim, typename Shape, typename Stride, index_t J> OPUS_H_D constexpr auto unfold_x_stride_at(const Stride& stride) {
+     constexpr index_t G = unfold_find_group<Dim, J>(make_index_seq<size<Dim>()>{}); constexpr index_t group_end = dim_offset_sum<Dim>(make_index_seq<G + 1>{});
+     return packed_stride_at<Shape, J>(make_index_seq<group_end - J - 1>{}) * get<G>(stride); }
+-template<typename Dim, typename Shape, typename Stride, index_t... Js> OPUS_D constexpr auto unfold_x_stride_flat(const Stride& stride, seq<Js...>) { return opus::make_tuple(unfold_x_stride_at<Dim, Shape, Stride, Js>(stride)...); }
+-template<typename Dim, typename Shape, typename Stride, index_t... Is> OPUS_D constexpr auto unfold_x_stride_impl(const Stride& stride, seq<Is...>) { return unfold_x_stride_flat<Dim, Shape, Stride>(stride, make_index_seq<size<Shape>()>{}); }
++template<typename Dim, typename Shape, typename Stride, index_t... Js> OPUS_H_D constexpr auto unfold_x_stride_flat(const Stride& stride, seq<Js...>) { return opus::make_tuple(unfold_x_stride_at<Dim, Shape, Stride, Js>(stride)...); }
++template<typename Dim, typename Shape, typename Stride, index_t... Is> OPUS_H_D constexpr auto unfold_x_stride_impl(const Stride& stride, seq<Is...>) { return unfold_x_stride_flat<Dim, Shape, Stride>(stride, make_index_seq<size<Shape>()>{}); }
+ }
+ 
+ template<typename Shape, typename Dim, typename Target>
+-OPUS_D static constexpr auto pickup_shape(const Shape&, const Dim&, Target) { return pickup_shape_impl(Shape{}, flatten_tuple(Dim{}), Target{}, make_index_seq<size<Shape>()>{}); }
++OPUS_H_D static constexpr auto pickup_shape(const Shape&, const Dim&, Target) { return pickup_shape_impl(Shape{}, flatten_tuple(Dim{}), Target{}, make_index_seq<size<Shape>()>{}); }
+ 
+ // Shape : tuple<N0, N1, N2, N3, N4, N5>
+ // Dim   : tuple<tuple<*, *>, tuple<*, *, *>, tuple<*>>
+ // =>    : tuple<tuple<N0, N1>, tuple<N2, N3, N4>, tuple<N5>>
+ template<typename Shape, typename Dim, index_t... Ds /* index for Dim not Shape */>
+-OPUS_D constexpr auto unflatten_shape(const Shape&, const Dim&) {
++OPUS_H_D constexpr auto unflatten_shape(const Shape&, const Dim&) {
+     return impl::unflatten_shape_impl<Shape, Dim>(make_index_seq<size<Dim>()>{});
+ }
+ 
+ // coord: tuple<a, b>, dim: tuple<tuple<p_dim, y_dim>, tuple<y_dim, p_dim, y_dim>> -> tuple <a, _, _, b, _>
+ template<typename Dim, typename Coord>
+-OPUS_D constexpr auto unfold_p_coord(const Dim&, const Coord& coord) {
++OPUS_H_D constexpr auto unfold_p_coord(const Dim&, const Coord& coord) {
+     constexpr auto flatten_dim = flatten_tuple(Dim{});
+     using FDim = remove_cvref_t<decltype(flatten_dim)>;
+     static_assert(tuple_count<opus::p_dim>(flatten_dim) == size<Coord>(), "input coord must be same size as p_dim inside Dim");
+@@ -3566,7 +3566,7 @@
+ }
+ 
+ template<typename Dim, typename Shape, typename Stride>
+-OPUS_D constexpr auto unfold_x_stride(const Dim&, const Shape&, const Stride& stride) {
++OPUS_H_D constexpr auto unfold_x_stride(const Dim&, const Shape&, const Stride& stride) {
+     constexpr auto flatten_dim = flatten_tuple(Dim{});
+     static_assert(size<Dim>() == size<Stride>(), "input stride must be same size as x_dim");
+     static_assert(size<Shape>() == size<remove_cvref_t<decltype(flatten_dim)>>(), "input shape must be same size as flattened dim");
+@@ -3576,19 +3576,19 @@
+ #define OPUS_KP_(x_) static_assert(opus::tuple_count<opus::p_dim>(opus::flatten_tuple(x_ ())) == size<C>())
+ // Per-axis layout API: generates y_shape_X, p_shape_X, layout_X (3 overloads), layout_X_packed, y_layout_X
+ #define OPUS_ADAPTOR_LAYOUT_API_DEFINE_FOR(X)                                                                                                                       \
+-    OPUS_D static constexpr auto y_shape_##X() { return y_shape(shape_##X(), dim_##X()); }                                                                          \
+-    OPUS_D static constexpr auto p_shape_##X() { return p_shape(shape_##X(), dim_##X()); }                                                                          \
+-    template<index_t cached_vec = 0> OPUS_D constexpr auto layout_##X() { return make_layout<cached_vec>(shape_##X());}                                             \
+-    template<index_t cached_vec = 0, typename S> OPUS_D constexpr auto layout_##X(S&& stride) { return make_layout<cached_vec>(shape_##X(), unfold_x_stride(dim_##X(), shape_##X(), stride));} \
+-    template<index_t cached_vec = 0, typename S, typename C> OPUS_D constexpr auto layout_##X(S&& stride, C&& z) { OPUS_KP_(dim_##X); return make_layout<cached_vec>(shape_##X(), unfold_x_stride(dim_##X(), shape_##X(), stride), opus::unfold_p_coord(dim_##X(), z));}  \
+-    template<index_t cached_vec = 0, typename C> OPUS_D constexpr auto layout_##X##_packed(C&& z) { OPUS_KP_(dim_##X); return make_layout_packed<cached_vec>(shape_##X(), opus::unfold_p_coord(dim_##X(), z));}   \
+-    template<index_t cached_vec = 0, typename... Ts, std::enable_if_t<(!is_tuple_v<Ts> && ...), bool> = true> OPUS_D constexpr auto layout_##X(Ts&&... strides) {return layout_##X<cached_vec>(opus::make_tuple(strides...)); }  \
+-    template<index_t cached_vec = 0> OPUS_D constexpr auto y_layout_##X() { return make_layout<cached_vec>(y_shape_##X());}
++    OPUS_H_D static constexpr auto y_shape_##X() { return y_shape(shape_##X(), dim_##X()); }                                                                          \
++    OPUS_H_D static constexpr auto p_shape_##X() { return p_shape(shape_##X(), dim_##X()); }                                                                          \
++    template<index_t cached_vec = 0> OPUS_H_D constexpr auto layout_##X() { return make_layout<cached_vec>(shape_##X());}                                             \
++    template<index_t cached_vec = 0, typename S> OPUS_H_D constexpr auto layout_##X(S&& stride) { return make_layout<cached_vec>(shape_##X(), unfold_x_stride(dim_##X(), shape_##X(), stride));} \
++    template<index_t cached_vec = 0, typename S, typename C> OPUS_H_D constexpr auto layout_##X(S&& stride, C&& z) { OPUS_KP_(dim_##X); return make_layout<cached_vec>(shape_##X(), unfold_x_stride(dim_##X(), shape_##X(), stride), opus::unfold_p_coord(dim_##X(), z));}  \
++    template<index_t cached_vec = 0, typename C> OPUS_H_D constexpr auto layout_##X##_packed(C&& z) { OPUS_KP_(dim_##X); return make_layout_packed<cached_vec>(shape_##X(), opus::unfold_p_coord(dim_##X(), z));}   \
++    template<index_t cached_vec = 0, typename... Ts, std::enable_if_t<(!is_tuple_v<Ts> && ...), bool> = true> OPUS_H_D constexpr auto layout_##X(Ts&&... strides) {return layout_##X<cached_vec>(opus::make_tuple(strides...)); }  \
++    template<index_t cached_vec = 0> OPUS_H_D constexpr auto y_layout_##X() { return make_layout<cached_vec>(y_shape_##X());}
+ 
+ // any struct implement adaptor like feature must implement(or using from base) shape_a/b/c, dim_a/b/c
+ #define OPUS_ADAPTOR_LAYOUT_API_DEFINE                                                                                                                              \
+-    template<typename S, typename D> OPUS_D static constexpr auto y_shape(const S& /*shape*/, const D& /*dim*/) { return opus::pickup_shape(S{}, D{}, y_dim{}); }   \
+-    template<typename S, typename D> OPUS_D static constexpr auto p_shape(const S& /*shape*/, const D& /*dim*/) { return opus::pickup_shape(S{}, D{}, p_dim{}); }   \
++    template<typename S, typename D> OPUS_H_D static constexpr auto y_shape(const S& /*shape*/, const D& /*dim*/) { return opus::pickup_shape(S{}, D{}, y_dim{}); }   \
++    template<typename S, typename D> OPUS_H_D static constexpr auto p_shape(const S& /*shape*/, const D& /*dim*/) { return opus::pickup_shape(S{}, D{}, p_dim{}); }   \
+     OPUS_ADAPTOR_LAYOUT_API_DEFINE_FOR(a)                                                                                                                           \
+     OPUS_ADAPTOR_LAYOUT_API_DEFINE_FOR(b)                                                                                                                           \
+     OPUS_ADAPTOR_LAYOUT_API_DEFINE_FOR(c)
+@@ -3626,14 +3626,14 @@
+     static constexpr index_t rept_c = mfma_type::elem_c / pack_c;
+ 
+     // by default, this is X shape, P + Y
+-    OPUS_D static constexpr auto shape_a() { return tuple<number<grpm_a>, number<rept_a>, number<grpk_a>, number<pack_a>>{}; }
+-    OPUS_D static constexpr auto shape_b() { return tuple<number<grpn_b>, number<rept_b>, number<grpk_b>, number<pack_b>>{}; }
+-    OPUS_D static constexpr auto shape_c() { return tuple<number<rept_c>, number<grpm_c>, number<pack_c>, number<grpn_c>>{}; }
++    OPUS_H_D static constexpr auto shape_a() { return tuple<number<grpm_a>, number<rept_a>, number<grpk_a>, number<pack_a>>{}; }
++    OPUS_H_D static constexpr auto shape_b() { return tuple<number<grpn_b>, number<rept_b>, number<grpk_b>, number<pack_b>>{}; }
++    OPUS_H_D static constexpr auto shape_c() { return tuple<number<rept_c>, number<grpm_c>, number<pack_c>, number<grpn_c>>{}; }
+ 
+     // here we describe above shape by group them into a 2d shape style, and with p/y dim. we could put into same structure, but let's make things easier
+-    OPUS_D static constexpr auto dim_a()   { return tuple< tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }    // dim encoding for A, MxK
+-    OPUS_D static constexpr auto dim_b()   { return tuple< tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }    // dim encoding for B, NxK
+-    OPUS_D static constexpr auto dim_c()   { return tuple< tuple<y_dim, p_dim, y_dim>,  tuple<p_dim> >{}; }    // dim encoding for C, MxN
++    OPUS_H_D static constexpr auto dim_a()   { return tuple< tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }    // dim encoding for A, MxK
++    OPUS_H_D static constexpr auto dim_b()   { return tuple< tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }    // dim encoding for B, NxK
++    OPUS_H_D static constexpr auto dim_c()   { return tuple< tuple<y_dim, p_dim, y_dim>,  tuple<p_dim> >{}; }    // dim encoding for C, MxN
+ 
+     OPUS_ADAPTOR_LAYOUT_API_DEFINE
+ };
+@@ -3647,41 +3647,41 @@
+     using base::shape_a; using base::shape_b; using base::dim_a; using base::dim_b; using base::y_shape; using base::p_shape;
+     using base::y_shape_a; using base::y_shape_b; using base::p_shape_a; using base::p_shape_b;
+     using base::layout_a; using base::layout_b; using base::layout_a_packed; using base::layout_b_packed; using base::y_layout_a; using base::y_layout_b;
+-    OPUS_D static constexpr auto shape_c() { return tuple<number<base::grpn_c>, number<base::rept_c>, number<base::grpm_c>, number<base::pack_c>>{}; }
+-    OPUS_D static constexpr auto dim_c()   { return tuple<tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }    // dim encoding for C, MxN
++    OPUS_H_D static constexpr auto shape_c() { return tuple<number<base::grpn_c>, number<base::rept_c>, number<base::grpm_c>, number<base::pack_c>>{}; }
++    OPUS_H_D static constexpr auto dim_c()   { return tuple<tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }    // dim encoding for C, MxN
+     // Only generate _c layout methods (shape_c/dim_c changed)
+     OPUS_ADAPTOR_LAYOUT_API_DEFINE_FOR(c)
+ 
+     template<typename VA, typename VB, typename VC, index_t cbsz = 0, index_t abid = 0, index_t blgp = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
+         return base::operator()(b, a, c, number<cbsz>{}, number<abid>{}, number<blgp>{});
+     }
+ 
+     template<typename VA, typename VB, index_t cbsz = 0, index_t abid = 0, index_t blgp = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
+         typename MFMA::vtype_c c{0}; return operator()(a, b, c, number<cbsz>{}, number<abid>{}, number<blgp>{});
+     }
+ 
+     template<typename VA, typename VB, typename VC, index_t scale_op_sel_a = 0, index_t scale_op_sel_b = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
+         return base::operator()(b, a, c, scale_b, scale_a, number<scale_op_sel_b>{}, number<scale_op_sel_a>{});
+     }
+ 
+     template<typename VA, typename VB, index_t scale_op_sel_a = 0, index_t scale_op_sel_b = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
+         typename MFMA::vtype_c c{0}; return operator()(a, b, c, scale_a, scale_b, number<scale_op_sel_a>{}, number<scale_op_sel_b>{});
+     }
+ };
+ }
+ // helper class to create adaptor instance for mfma, need be paired with make_mfma(). don't directly use it
+-struct mfma_adaptor         { template<typename M> OPUS_D decltype(auto) operator()(M&&) { return impl::mfma_adaptor<remove_cvref_t<M>>{};} };
+-struct mfma_adaptor_swap_ab { template<typename M> OPUS_D decltype(auto) operator()(M&&) { return impl::mfma_adaptor_swap_ab<remove_cvref_t<M>>{};} };
++struct mfma_adaptor         { template<typename M> OPUS_H_D decltype(auto) operator()(M&&) { return impl::mfma_adaptor<remove_cvref_t<M>>{};} };
++struct mfma_adaptor_swap_ab { template<typename M> OPUS_H_D decltype(auto) operator()(M&&) { return impl::mfma_adaptor_swap_ab<remove_cvref_t<M>>{};} };
+ 
+ template<typename d_a, typename d_b, typename d_c, index_t w_m, index_t w_n, index_t w_k, typename A = mfma_adaptor, index_t warp_size_ = get_warp_size()>
+-OPUS_D decltype(auto) make_mfma(number<w_m>, number<w_n>, number<w_k>, A&& = {}, number<warp_size_> = {}) { return A{}(mfma<d_a, d_b, d_c, w_m, w_n, w_k, warp_size_>{}); }
++OPUS_H_D decltype(auto) make_mfma(number<w_m>, number<w_n>, number<w_k>, A&& = {}, number<warp_size_> = {}) { return A{}(mfma<d_a, d_b, d_c, w_m, w_n, w_k, warp_size_>{}); }
+ 
+ template<typename d_a, typename d_b, typename d_c, typename WaveMNK /*seq<m, n, k>*/, typename A = mfma_adaptor, index_t warp_size_ = get_warp_size()>
+-OPUS_D decltype(auto) make_mfma(WaveMNK&&, A&& = {}, number<warp_size_> = {}) { return A{}(mfma<d_a, d_b, d_c, get<0>(WaveMNK{}), get<1>(WaveMNK{}), get<2>(WaveMNK{}), warp_size_>{}); }
++OPUS_H_D decltype(auto) make_mfma(WaveMNK&&, A&& = {}, number<warp_size_> = {}) { return A{}(mfma<d_a, d_b, d_c, get<0>(WaveMNK{}), get<1>(WaveMNK{}), get<2>(WaveMNK{}), warp_size_>{}); }
+ #endif // __GFX9__
+ 
+ // wmma_adaptor: layout encoding for wave32 WMMA (gfx1250, gfx1200/gfx1201).
+@@ -3714,13 +3714,13 @@
+     static constexpr index_t rept_b = wmma_type::elem_b / pack_b;
+     static constexpr index_t rept_c = wmma_type::elem_c / pack_c;
+ 
+-    OPUS_D static constexpr auto shape_a() { return tuple<number<grpm_a>, number<rept_a>, number<grpk_a>, number<pack_a>>{}; }
+-    OPUS_D static constexpr auto shape_b() { return tuple<number<grpn_b>, number<rept_b>, number<grpk_a>, number<pack_b>>{}; }
+-    OPUS_D static constexpr auto shape_c() { return tuple<number<grpm_c>, number<rept_c>, number<pack_c>, number<grpn_c>>{}; }
+-
+-    OPUS_D static constexpr auto dim_a()   { return tuple< tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }
+-    OPUS_D static constexpr auto dim_b()   { return tuple< tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }
+-    OPUS_D static constexpr auto dim_c()   { return tuple< tuple<p_dim, y_dim, y_dim>,  tuple<p_dim> >{}; }
++    OPUS_H_D static constexpr auto shape_a() { return tuple<number<grpm_a>, number<rept_a>, number<grpk_a>, number<pack_a>>{}; }
++    OPUS_H_D static constexpr auto shape_b() { return tuple<number<grpn_b>, number<rept_b>, number<grpk_a>, number<pack_b>>{}; }
++    OPUS_H_D static constexpr auto shape_c() { return tuple<number<grpm_c>, number<rept_c>, number<pack_c>, number<grpn_c>>{}; }
++
++    OPUS_H_D static constexpr auto dim_a()   { return tuple< tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }
++    OPUS_H_D static constexpr auto dim_b()   { return tuple< tuple<p_dim>,  tuple<y_dim, p_dim, y_dim> >{}; }
++    OPUS_H_D static constexpr auto dim_c()   { return tuple< tuple<p_dim, y_dim, y_dim>,  tuple<p_dim> >{}; }
+ 
+     OPUS_ADAPTOR_LAYOUT_API_DEFINE
+ };
+@@ -3731,54 +3731,54 @@
+     using base::shape_a; using base::shape_b; using base::dim_a; using base::dim_b; using base::y_shape; using base::p_shape;
+     using base::y_shape_a; using base::y_shape_b; using base::p_shape_a; using base::p_shape_b;
+     using base::layout_a; using base::layout_b; using base::layout_a_packed; using base::layout_b_packed; using base::y_layout_a; using base::y_layout_b;
+-    OPUS_D static constexpr auto shape_c() { return tuple<number<base::grpn_c>, number<base::grpm_c>, number<base::rept_c>, number<base::pack_c>>{}; }
+-    OPUS_D static constexpr auto dim_c()   { return tuple<tuple<p_dim>,  tuple<p_dim, y_dim, y_dim> >{}; }
++    OPUS_H_D static constexpr auto shape_c() { return tuple<number<base::grpn_c>, number<base::grpm_c>, number<base::rept_c>, number<base::pack_c>>{}; }
++    OPUS_H_D static constexpr auto dim_c()   { return tuple<tuple<p_dim>,  tuple<p_dim, y_dim, y_dim> >{}; }
+     // Only generate _c layout methods (shape_c/dim_c changed)
+     OPUS_ADAPTOR_LAYOUT_API_DEFINE_FOR(c)
+ 
+     // reuse_a/reuse_b name THIS call's operands, so they swap too: under swap_ab `a` lands in SRC1, making reuse_a the one that reaches the working bit.
+     template<bool reuse_a = false, bool reuse_b = false, typename VA, typename VB, typename VC>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c) {
+         return base::template operator()<reuse_b, reuse_a>(b, a, c);
+     }
+ 
+     template<typename VA, typename VB>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b) {
+         typename base::vtype_c c{0}; return operator()(a, b, c);
+     }
+ 
+     // BX32 scaled: scale word is an int holding 4 packed E8M0 bytes.
+     template<typename VA, typename VB, typename VC, index_t a_scale_sel = 0, index_t b_scale_sel = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<a_scale_sel> = {}, number<b_scale_sel> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<a_scale_sel> = {}, number<b_scale_sel> = {}) {
+         return base::operator()(b, a, c, scale_b, scale_a, number<b_scale_sel>{}, number<a_scale_sel>{});
+     }
+ 
+     template<typename VA, typename VB, index_t a_scale_sel = 0, index_t b_scale_sel = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, int scale_a, int scale_b, number<a_scale_sel> = {}, number<b_scale_sel> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, int scale_a, int scale_b, number<a_scale_sel> = {}, number<b_scale_sel> = {}) {
+         typename base::vtype_c c{0}; return operator()(a, b, c, scale_a, scale_b, number<a_scale_sel>{}, number<b_scale_sel>{});
+     }
+ 
+     // BX16 scaled: scale word is a long holding 8 packed E8M0 bytes.
+     template<typename VA, typename VB, typename VC, index_t a_scale_sel = 0, index_t b_scale_sel = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, long scale_a, long scale_b, number<a_scale_sel> = {}, number<b_scale_sel> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, long scale_a, long scale_b, number<a_scale_sel> = {}, number<b_scale_sel> = {}) {
+         return base::operator()(b, a, c, scale_b, scale_a, number<b_scale_sel>{}, number<a_scale_sel>{});
+     }
+ 
+     template<typename VA, typename VB, index_t a_scale_sel = 0, index_t b_scale_sel = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, long scale_a, long scale_b, number<a_scale_sel> = {}, number<b_scale_sel> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, long scale_a, long scale_b, number<a_scale_sel> = {}, number<b_scale_sel> = {}) {
+         typename base::vtype_c c{0}; return operator()(a, b, c, scale_a, scale_b, number<a_scale_sel>{}, number<b_scale_sel>{});
+     }
+ };
+ } // namespace impl (wmma_adaptor)
+ 
+-struct wmma_adaptor         { template<typename M> OPUS_D decltype(auto) operator()(M&&) { return impl::wmma_adaptor<remove_cvref_t<M>>{};} };
+-struct wmma_adaptor_swap_ab { template<typename M> OPUS_D decltype(auto) operator()(M&&) { return impl::wmma_adaptor_swap_ab<remove_cvref_t<M>>{};} };
++struct wmma_adaptor         { template<typename M> OPUS_H_D decltype(auto) operator()(M&&) { return impl::wmma_adaptor<remove_cvref_t<M>>{};} };
++struct wmma_adaptor_swap_ab { template<typename M> OPUS_H_D decltype(auto) operator()(M&&) { return impl::wmma_adaptor_swap_ab<remove_cvref_t<M>>{};} };
+ 
+ template<typename d_a, typename d_b, typename d_c, index_t w_m, index_t w_n, index_t w_k, typename A = wmma_adaptor, index_t warp_size_ = get_warp_size()>
+-OPUS_D decltype(auto) make_wmma(number<w_m>, number<w_n>, number<w_k>, A&& = {}, number<warp_size_> = {}) { return A{}(wmma<d_a, d_b, d_c, w_m, w_n, w_k, warp_size_>{}); }
++OPUS_H_D decltype(auto) make_wmma(number<w_m>, number<w_n>, number<w_k>, A&& = {}, number<warp_size_> = {}) { return A{}(wmma<d_a, d_b, d_c, w_m, w_n, w_k, warp_size_>{}); }
+ 
+ template<typename d_a, typename d_b, typename d_c, typename WaveMNK, typename A = wmma_adaptor, index_t warp_size_ = get_warp_size()>
+-OPUS_D decltype(auto) make_wmma(WaveMNK&&, A&& = {}, number<warp_size_> = {}) { return A{}(wmma<d_a, d_b, d_c, get<0>(WaveMNK{}), get<1>(WaveMNK{}), get<2>(WaveMNK{}), warp_size_>{}); }
++OPUS_H_D decltype(auto) make_wmma(WaveMNK&&, A&& = {}, number<warp_size_> = {}) { return A{}(wmma<d_a, d_b, d_c, get<0>(WaveMNK{}), get<1>(WaveMNK{}), get<2>(WaveMNK{}), warp_size_>{}); }
+ #endif // __gfx1250__ / __gfx1201__ / __gfx1200__ (wmma_adaptor)
+ 
+ /////////////////////////////////////////////////////////////////////////////////////////////////////////
+@@ -3805,21 +3805,21 @@
+     using vtype_b = array<typename MMA::vtype_b, expd_n * expd_k>;
+     using vtype_c = array<typename MMA::vtype_c, expd_m * expd_n>;
+ #endif
+-    OPUS_D static constexpr auto tile_shape_a() { return tuple<number<expd_m>, number<tile_m>, number<expd_k>, number<tile_k>>{}; }
+-    OPUS_D static constexpr auto tile_shape_b() { return tuple<number<expd_n>, number<tile_n>, number<expd_k>, number<tile_k>>{}; }
+-    OPUS_D static constexpr auto tile_shape_c() { return tuple<number<expd_m>, number<tile_m>, number<expd_n>, number<tile_n>>{}; }
+-
+-    OPUS_D static constexpr auto tile_dim_a()   { return tuple< tuple<y_dim, p_dim>,  tuple<y_dim, p_dim> >{}; }    // dim encoding for A, MxK
+-    OPUS_D static constexpr auto tile_dim_b()   { return tuple< tuple<y_dim, p_dim>,  tuple<y_dim, p_dim> >{}; }    // dim encoding for B, NxK
+-    OPUS_D static constexpr auto tile_dim_c()   { return tuple< tuple<y_dim, p_dim>,  tuple<y_dim, p_dim> >{}; }    // dim encoding for C, MxN
+-
+-    OPUS_D static constexpr auto shape_a() { return flatten_tuple(embed_nested_tuple(unflatten_shape(tile_shape_a(), tile_dim_a()), unflatten_shape(MMA::shape_a(), MMA::dim_a()))); }
+-    OPUS_D static constexpr auto shape_b() { return flatten_tuple(embed_nested_tuple(unflatten_shape(tile_shape_b(), tile_dim_b()), unflatten_shape(MMA::shape_b(), MMA::dim_b()))); }
+-    OPUS_D static constexpr auto shape_c() { return flatten_tuple(embed_nested_tuple(unflatten_shape(tile_shape_c(), tile_dim_c()), unflatten_shape(MMA::shape_c(), MMA::dim_c()))); }
+-
+-    OPUS_D static constexpr auto dim_a()   { return embed_nested_tuple(tile_dim_a(), MMA::dim_a()); }    // dim encoding for A, MxK
+-    OPUS_D static constexpr auto dim_b()   { return embed_nested_tuple(tile_dim_b(), MMA::dim_b()); }    // dim encoding for A, MxK
+-    OPUS_D static constexpr auto dim_c()   { return embed_nested_tuple(tile_dim_c(), MMA::dim_c()); }    // dim encoding for A, MxK
++    OPUS_H_D static constexpr auto tile_shape_a() { return tuple<number<expd_m>, number<tile_m>, number<expd_k>, number<tile_k>>{}; }
++    OPUS_H_D static constexpr auto tile_shape_b() { return tuple<number<expd_n>, number<tile_n>, number<expd_k>, number<tile_k>>{}; }
++    OPUS_H_D static constexpr auto tile_shape_c() { return tuple<number<expd_m>, number<tile_m>, number<expd_n>, number<tile_n>>{}; }
++
++    OPUS_H_D static constexpr auto tile_dim_a()   { return tuple< tuple<y_dim, p_dim>,  tuple<y_dim, p_dim> >{}; }    // dim encoding for A, MxK
++    OPUS_H_D static constexpr auto tile_dim_b()   { return tuple< tuple<y_dim, p_dim>,  tuple<y_dim, p_dim> >{}; }    // dim encoding for B, NxK
++    OPUS_H_D static constexpr auto tile_dim_c()   { return tuple< tuple<y_dim, p_dim>,  tuple<y_dim, p_dim> >{}; }    // dim encoding for C, MxN
++
++    OPUS_H_D static constexpr auto shape_a() { return flatten_tuple(embed_nested_tuple(unflatten_shape(tile_shape_a(), tile_dim_a()), unflatten_shape(MMA::shape_a(), MMA::dim_a()))); }
++    OPUS_H_D static constexpr auto shape_b() { return flatten_tuple(embed_nested_tuple(unflatten_shape(tile_shape_b(), tile_dim_b()), unflatten_shape(MMA::shape_b(), MMA::dim_b()))); }
++    OPUS_H_D static constexpr auto shape_c() { return flatten_tuple(embed_nested_tuple(unflatten_shape(tile_shape_c(), tile_dim_c()), unflatten_shape(MMA::shape_c(), MMA::dim_c()))); }
++
++    OPUS_H_D static constexpr auto dim_a()   { return embed_nested_tuple(tile_dim_a(), MMA::dim_a()); }    // dim encoding for A, MxK
++    OPUS_H_D static constexpr auto dim_b()   { return embed_nested_tuple(tile_dim_b(), MMA::dim_b()); }    // dim encoding for A, MxK
++    OPUS_H_D static constexpr auto dim_c()   { return embed_nested_tuple(tile_dim_c(), MMA::dim_c()); }    // dim encoding for A, MxK
+ 
+     // Cached tile sizes (avoids re-evaluating y_shape + reduce_tuple_mul in every operator/step_k)
+     static constexpr index_t mma_a_len = get<0>(reduce_tuple_mul(MMA::y_shape_a())).value;
+@@ -3833,7 +3833,7 @@
+     // #pragma unroll required: constexpr trip counts but clang's heuristic gives up on large tiles -> runtime indices into vtype_a/b/c -> N-way s_cselect_b64 chain on GFX9 -> SGPR-spill-to-VGPR-lane blow-up.
+     template<typename VA, typename VB, typename VC, index_t cbsz = 0, index_t abid = 0, index_t blgp = 0,
+                     std::enable_if_t< (is_array_v< remove_cvref_t<VA> > && is_array_v< remove_cvref_t<VB> > && is_array_v< remove_cvref_t<VC> >), bool > = true>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
+         VC c_ {c};
+         #pragma unroll
+         for (index_t I = 0; I < EXPAND_K * EXPAND_M * EXPAND_N; I++) {
+@@ -3845,7 +3845,7 @@
+     }
+     template<typename VA, typename VB, typename VC, index_t cbsz = 0, index_t abid = 0, index_t blgp = 0,
+                     std::enable_if_t< (is_vector_v< remove_cvref_t<VA> > && is_vector_v< remove_cvref_t<VB> > && is_vector_v< remove_cvref_t<VC> >), bool > = true>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
+         static_assert(size<VA>() == tile_a_len);
+         static_assert(size<VB>() == tile_b_len);
+         static_assert(size<VC>() == tile_c_len);
+@@ -3874,7 +3874,7 @@
+     }
+ 
+     template<typename VA, typename VB, index_t cbsz = 0, index_t abid = 0, index_t blgp = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
+         vtype_c c{0};
+         return operator()(a, b, c, number<cbsz>{}, number<abid>{}, number<blgp>{});
+     }
+@@ -3882,7 +3882,7 @@
+     // Scaled MFMA (f8f6f4): forward scale_a, scale_b and per-call scale_op_sel to underlying MMA; all sub-MFMAs in this call share the same scale_op_sel (same K position in the packed-int32 scale word).
+     template<typename VA, typename VB, typename VC, index_t scale_op_sel_a = 0, index_t scale_op_sel_b = 0,
+              std::enable_if_t< (is_array_v< remove_cvref_t<VA> > && is_array_v< remove_cvref_t<VB> > && is_array_v< remove_cvref_t<VC> >), bool > = true>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
+         VC c_ {c};
+         #pragma unroll
+         for (index_t I = 0; I < EXPAND_K * EXPAND_M * EXPAND_N; I++) {
+@@ -3895,7 +3895,7 @@
+ 
+     template<typename VA, typename VB, typename VC, index_t scale_op_sel_a = 0, index_t scale_op_sel_b = 0,
+              std::enable_if_t< (is_vector_v< remove_cvref_t<VA> > && is_vector_v< remove_cvref_t<VB> > && is_vector_v< remove_cvref_t<VC> >), bool > = true>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
+         static_assert(size<VA>() == tile_a_len);
+         static_assert(size<VB>() == tile_b_len);
+         static_assert(size<VC>() == tile_c_len);
+@@ -3917,14 +3917,14 @@
+     }
+ 
+     template<typename VA, typename VB, index_t scale_op_sel_a = 0, index_t scale_op_sel_b = 0>
+-    OPUS_D constexpr auto operator()(const VA& a, const VB& b, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
++    OPUS_H_D constexpr auto operator()(const VA& a, const VB& b, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
+         vtype_c c{0};
+         return operator()(a, b, c, scale_a, scale_b, number<scale_op_sel_a>{}, number<scale_op_sel_b>{});
+     }
+ 
+     template<index_t STEP_K, typename VA, typename VB, typename VC, index_t cbsz = 0, index_t abid = 0, index_t blgp = 0,
+                     std::enable_if_t< (is_array_v< remove_cvref_t<VA> > && is_array_v< remove_cvref_t<VB> > && is_array_v< remove_cvref_t<VC> >), bool > = true>
+-    OPUS_D constexpr auto step_k(number<STEP_K>, const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
++    OPUS_H_D constexpr auto step_k(number<STEP_K>, const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
+         static_assert(STEP_K < EXPAND_K);
+         VC c_ {c};
+         static_for<EXPAND_M * EXPAND_N>([&](auto I){
+@@ -3937,7 +3937,7 @@
+ 
+     template<index_t STEP_K, typename VA, typename VB, typename VC, index_t cbsz = 0, index_t abid = 0, index_t blgp = 0,
+                     std::enable_if_t< (is_vector_v< remove_cvref_t<VA> > && is_vector_v< remove_cvref_t<VB> > && is_vector_v< remove_cvref_t<VC> >), bool > = true>
+-    OPUS_D constexpr auto step_k(number<STEP_K>, const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
++    OPUS_H_D constexpr auto step_k(number<STEP_K>, const VA& a, const VB& b, const VC& c, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
+         static_assert(STEP_K < EXPAND_K);
+         static_assert(size<VA>() == tile_a_len);
+         static_assert(size<VB>() == tile_b_len);
+@@ -3967,14 +3967,14 @@
+     }
+ 
+     template<index_t STEP_K, typename VA, typename VB, index_t cbsz = 0, index_t abid = 0, index_t blgp = 0>
+-    OPUS_D constexpr auto step_k(number<STEP_K> step, const VA& a, const VB& b, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
++    OPUS_H_D constexpr auto step_k(number<STEP_K> step, const VA& a, const VB& b, number<cbsz> = {}, number<abid> = {}, number<blgp> = {}) {
+         vtype_c c{0};
+         return step_k(step, a, b, c, number<cbsz>{}, number<abid>{}, number<blgp>{});
+     }
+ 
+     template<index_t STEP_K, typename VA, typename VB, typename VC, index_t scale_op_sel_a = 0, index_t scale_op_sel_b = 0,
+              std::enable_if_t< (is_array_v< remove_cvref_t<VA> > && is_array_v< remove_cvref_t<VB> > && is_array_v< remove_cvref_t<VC> >), bool > = true>
+-    OPUS_D constexpr auto step_k(number<STEP_K>, const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
++    OPUS_H_D constexpr auto step_k(number<STEP_K>, const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
+         static_assert(STEP_K < EXPAND_K);
+         VC c_ {c};
+         #pragma unroll
+@@ -3988,7 +3988,7 @@
+ 
+     template<index_t STEP_K, typename VA, typename VB, typename VC, index_t scale_op_sel_a = 0, index_t scale_op_sel_b = 0,
+              std::enable_if_t< (is_vector_v< remove_cvref_t<VA> > && is_vector_v< remove_cvref_t<VB> > && is_vector_v< remove_cvref_t<VC> >), bool > = true>
+-    OPUS_D constexpr auto step_k(number<STEP_K>, const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
++    OPUS_H_D constexpr auto step_k(number<STEP_K>, const VA& a, const VB& b, const VC& c, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
+         static_assert(STEP_K < EXPAND_K);
+         static_assert(size<VA>() == tile_a_len);
+         static_assert(size<VB>() == tile_b_len);
+@@ -4018,7 +4018,7 @@
+     }
+ 
+     template<index_t STEP_K, typename VA, typename VB, index_t scale_op_sel_a = 0, index_t scale_op_sel_b = 0>
+-    OPUS_D constexpr auto step_k(number<STEP_K> step, const VA& a, const VB& b, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
++    OPUS_H_D constexpr auto step_k(number<STEP_K> step, const VA& a, const VB& b, int scale_a, int scale_b, number<scale_op_sel_a> = {}, number<scale_op_sel_b> = {}) {
+         vtype_c c{0};
+         return step_k(step, a, b, c, scale_a, scale_b, number<scale_op_sel_a>{}, number<scale_op_sel_b>{});
+     }
+@@ -4027,16 +4027,16 @@
+ };
+ }
+ struct tiled_mma_adaptor {
+-    template<typename MMA, index_t... Ts> OPUS_D decltype(auto) operator()(MMA&&, number<Ts>...) { return impl::tiled_mma_adaptor<remove_cvref_t<MMA>, Ts...>{};}
++    template<typename MMA, index_t... Ts> OPUS_H_D decltype(auto) operator()(MMA&&, number<Ts>...) { return impl::tiled_mma_adaptor<remove_cvref_t<MMA>, Ts...>{};}
+ };
+ 
+ template<typename MMA, index_t E_M, index_t E_N, index_t E_K, index_t T_M, index_t T_N, index_t T_K, typename A = tiled_mma_adaptor>
+-OPUS_D decltype(auto) make_tiled_mma(MMA&& mma, number<E_M>, number<E_N>, number<E_K>, number<T_M>, number<T_N>, number<T_K>, A&& = {}) {
++OPUS_H_D decltype(auto) make_tiled_mma(MMA&& mma, number<E_M>, number<E_N>, number<E_K>, number<T_M>, number<T_N>, number<T_K>, A&& = {}) {
+     return A{}(std::forward<MMA>(mma), number<E_M>{}, number<E_N>{}, number<E_K>{}, number<T_M>{}, number<T_N>{}, number<T_K>{});
+ }
+ 
+ template<typename MMA, typename ES /* expand-m/n/k */, typename TS /* tile-m/n/k */, typename A = tiled_mma_adaptor>
+-OPUS_D decltype(auto) make_tiled_mma(MMA&& mma, ES, TS, A&& = {}) {
++OPUS_H_D decltype(auto) make_tiled_mma(MMA&& mma, ES, TS, A&& = {}) {
+     return A{}(std::forward<MMA>(mma), number<get<0>(ES{})>{}, number<get<1>(ES{})>{}, number<get<2>(ES{})>{}, number<get<0>(TS{})>{}, number<get<1>(TS{})>{}, number<get<2>(TS{})>{});
+ }
+ 
+@@ -4047,7 +4047,7 @@
+          typename WA = mfma_adaptor,
+ #endif
+          typename TA = tiled_mma_adaptor, index_t warp_size = get_warp_size()>
+-OPUS_D decltype(auto) make_tiled_mma(ES, TS, WS, WA&& = {}, TA&& = {}) {
++OPUS_H_D decltype(auto) make_tiled_mma(ES, TS, WS, WA&& = {}, TA&& = {}) {
+ #if defined(__gfx1250__)
+     return TA{}(make_wmma<d_a, d_b, d_c>(WS{}, WA{}, number<warp_size>{}),
+ #else
+@@ -4058,29 +4058,29 @@
+ 
+ /////////////////////////////////////////////////////////////////////////////////////////////////////////
+ template<index_t cached_vec = 0, typename L, typename D, typename S, typename C, std::enable_if_t<is_layout_v<L> && is_tuple_v<D> && is_tuple_v<S> && is_tuple_v<C>, bool> = true>
+-OPUS_D constexpr auto partition_layout(L&& layout, D&& dims, S&& shapes, C&& p_coord) {
++OPUS_H_D constexpr auto partition_layout(L&& layout, D&& dims, S&& shapes, C&& p_coord) {
+     OPUS_KP_(dims);
+     return make_layout<cached_vec>(std::forward<S>(shapes), unfold_x_stride(std::forward<D>(dims), std::forward<S>(shapes), layout.stride()), unfold_p_coord(std::forward<D>(dims), p_coord));
+ }
+ // partition, use cached_vec to dispatch which layout implementation. cached_vec < 0 : "layout", cached_vec == 0 : "layout_linear", cached_vec > 0 : "layout_cached"
+-template<index_t cached_vec = 0, typename M> OPUS_D constexpr auto partition_layout_a(M&& mma) { return mma.template layout_a<cached_vec>(); }
+-template<index_t cached_vec = 0, typename M> OPUS_D constexpr auto partition_layout_b(M&& mma) { return mma.template layout_b<cached_vec>(); }
+-template<index_t cached_vec = 0, typename M> OPUS_D constexpr auto partition_layout_c(M&& mma) { return mma.template layout_c<cached_vec>(); }
+-
+-template<index_t cached_vec = 0, typename M, typename S, std::enable_if_t<is_tuple_v<S>, bool> = true> OPUS_D constexpr auto partition_layout_a(M&& mma, S&& x_stride) { return mma.template layout_a<cached_vec>(std::forward<S>(x_stride)); }
+-template<index_t cached_vec = 0, typename M, typename S, std::enable_if_t<is_tuple_v<S>, bool> = true> OPUS_D constexpr auto partition_layout_b(M&& mma, S&& x_stride) { return mma.template layout_b<cached_vec>(std::forward<S>(x_stride)); }
+-template<index_t cached_vec = 0, typename M, typename S, std::enable_if_t<is_tuple_v<S>, bool> = true> OPUS_D constexpr auto partition_layout_c(M&& mma, S&& x_stride) { return mma.template layout_c<cached_vec>(std::forward<S>(x_stride)); }
++template<index_t cached_vec = 0, typename M> OPUS_H_D constexpr auto partition_layout_a(M&& mma) { return mma.template layout_a<cached_vec>(); }
++template<index_t cached_vec = 0, typename M> OPUS_H_D constexpr auto partition_layout_b(M&& mma) { return mma.template layout_b<cached_vec>(); }
++template<index_t cached_vec = 0, typename M> OPUS_H_D constexpr auto partition_layout_c(M&& mma) { return mma.template layout_c<cached_vec>(); }
++
++template<index_t cached_vec = 0, typename M, typename S, std::enable_if_t<is_tuple_v<S>, bool> = true> OPUS_H_D constexpr auto partition_layout_a(M&& mma, S&& x_stride) { return mma.template layout_a<cached_vec>(std::forward<S>(x_stride)); }
++template<index_t cached_vec = 0, typename M, typename S, std::enable_if_t<is_tuple_v<S>, bool> = true> OPUS_H_D constexpr auto partition_layout_b(M&& mma, S&& x_stride) { return mma.template layout_b<cached_vec>(std::forward<S>(x_stride)); }
++template<index_t cached_vec = 0, typename M, typename S, std::enable_if_t<is_tuple_v<S>, bool> = true> OPUS_H_D constexpr auto partition_layout_c(M&& mma, S&& x_stride) { return mma.template layout_c<cached_vec>(std::forward<S>(x_stride)); }
+ 
+ template<index_t cached_vec = 0, typename M, typename S, typename C, std::enable_if_t<is_tuple_v<S> && is_tuple_v<C>, bool> = true>
+-OPUS_D constexpr auto partition_layout_a(M&& mma, S&& x_stride, C&& p_coord) { return mma.template layout_a<cached_vec>(std::forward<S>(x_stride), std::forward<C>(p_coord)); }
++OPUS_H_D constexpr auto partition_layout_a(M&& mma, S&& x_stride, C&& p_coord) { return mma.template layout_a<cached_vec>(std::forward<S>(x_stride), std::forward<C>(p_coord)); }
+ template<index_t cached_vec = 0, typename M, typename S, typename C, std::enable_if_t<is_tuple_v<S> && is_tuple_v<C>, bool> = true>
+-OPUS_D constexpr auto partition_layout_b(M&& mma, S&& x_stride, C&& p_coord) { return mma.template layout_b<cached_vec>(std::forward<S>(x_stride), std::forward<C>(p_coord)); }
++OPUS_H_D constexpr auto partition_layout_b(M&& mma, S&& x_stride, C&& p_coord) { return mma.template layout_b<cached_vec>(std::forward<S>(x_stride), std::forward<C>(p_coord)); }
+ template<index_t cached_vec = 0, typename M, typename S, typename C, std::enable_if_t<is_tuple_v<S> && is_tuple_v<C>, bool> = true>
+-OPUS_D constexpr auto partition_layout_c(M&& mma, S&& x_stride, C&& p_coord) { return mma.template layout_c<cached_vec>(std::forward<S>(x_stride), std::forward<C>(p_coord)); }
+-
+-template<index_t cached_vec = 0, typename M, typename C, std::enable_if_t<is_tuple_v<C>, bool> = true> OPUS_D constexpr auto partition_layout_a_packed(M&& mma, C&& p_coord) { return mma.template layout_a_packed<cached_vec>(std::forward<C>(p_coord)); }
+-template<index_t cached_vec = 0, typename M, typename C, std::enable_if_t<is_tuple_v<C>, bool> = true> OPUS_D constexpr auto partition_layout_b_packed(M&& mma, C&& p_coord) { return mma.template layout_b_packed<cached_vec>(std::forward<C>(p_coord)); }
+-template<index_t cached_vec = 0, typename M, typename C, std::enable_if_t<is_tuple_v<C>, bool> = true> OPUS_D constexpr auto partition_layout_c_packed(M&& mma, C&& p_coord) { return mma.template layout_c_packed<cached_vec>(std::forward<C>(p_coord)); }
++OPUS_H_D constexpr auto partition_layout_c(M&& mma, S&& x_stride, C&& p_coord) { return mma.template layout_c<cached_vec>(std::forward<S>(x_stride), std::forward<C>(p_coord)); }
++
++template<index_t cached_vec = 0, typename M, typename C, std::enable_if_t<is_tuple_v<C>, bool> = true> OPUS_H_D constexpr auto partition_layout_a_packed(M&& mma, C&& p_coord) { return mma.template layout_a_packed<cached_vec>(std::forward<C>(p_coord)); }
++template<index_t cached_vec = 0, typename M, typename C, std::enable_if_t<is_tuple_v<C>, bool> = true> OPUS_H_D constexpr auto partition_layout_b_packed(M&& mma, C&& p_coord) { return mma.template layout_b_packed<cached_vec>(std::forward<C>(p_coord)); }
++template<index_t cached_vec = 0, typename M, typename C, std::enable_if_t<is_tuple_v<C>, bool> = true> OPUS_H_D constexpr auto partition_layout_c_packed(M&& mma, C&& p_coord) { return mma.template layout_c_packed<cached_vec>(std::forward<C>(p_coord)); }
+ #undef OPUS_KP_
+ 
+ } // namespace opus

@@ -1,0 +1,757 @@
+{
+  "status": "recommend_full_variant_retention_pending_root_official_gates",
+  "generated_utc": "2026-10-08T02:28:32.860458+00:00",
+  "cpu_only_analysis": true,
+  "new_GPU_execution": false,
+  "new_build_execution": false,
+  "production_applied": false,
+  "baseline": {
+    "official_module": "reports/opus_resume_20261008/jit_formal_selected/module_deepgemm_opus.so",
+    "sha256": "6f6a0117b122f06b4802833c020effb4b24ff9fea56f20c8c16b9ced9787173f",
+    "description": "Oct8 applied9021 + Oct7 scoped register aliases",
+    "source_head": "b152ab834e68f8fde18adbd7b200c587770b9fb5",
+    "identity_audit": "reports/opus_resume_20261008/formal_selected/identity_audit.json",
+    "current_object_vs_retained_ELF_independently_verified": true
+  },
+  "recommendation": {
+    "9023_runtime": "retain throughout existing runtime entry; no new K/shape threshold",
+    "9024_fixed": "retain existing fixed7168 entry",
+    "9023_fixed": "unchanged",
+    "9024_runtime": "unchanged"
+  },
+  "reason": "9023 runtime actual-winner aggregate is positive in both measured K groups and all five pooled paired rounds, with no winner5/5 slower. Accept measured544-longK winner andM16 boundary costs under the previous finite-cost retention standard.9024 fixed has nine positive medians, all5/5 faster, and unchanged VGPR/LDS/spill (SGPR58\u219260). No repeated test-to-positive or invented K threshold is used.",
+  "prior_retention_reference": {
+    "path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/retention_decision.json",
+    "sha256": "5e138a11ebcb168fa3ac6bdc271a49bce2c846ca215a94f39723e7286854db3c"
+  },
+  "statistics_definition": "Speedup=median(Event baseline us)/median(Event candidate us); time_change=candidate/baseline-1. Shape geomean weights each target equally. Paired-round geomeans are descriptive finite evidence, not independent cohorts or a significance test.",
+  "summaries": {
+    "9023_runtime_winners": {
+      "shape_count": 4,
+      "geomean_speedup": 1.0111727679943727,
+      "geomean_speedup_percent": 1.1172767994372723,
+      "sum_of_shape_medians_us": {
+        "baseline": 294.230811736163,
+        "candidate": 291.80330856173646
+      },
+      "sum_time_speedup_percent": 0.8318970701159722,
+      "median_faster_shapes": 3,
+      "median_slower_shapes": 1,
+      "five_of_five_faster_shapes": 2,
+      "five_of_five_slower_shapes": 0,
+      "paired_round_shape_geomeans": [
+        1.016149828094087,
+        1.0090632020822996,
+        1.0047909898223877,
+        1.0150548415465324,
+        1.0069865158732605
+      ],
+      "all_five_paired_round_shape_geomeans_positive": true
+    },
+    "9023_runtime_winners_plus_M16_boundary": {
+      "shape_count": 5,
+      "geomean_speedup": 1.0080898379050924,
+      "geomean_speedup_percent": 0.8089837905092434,
+      "sum_of_shape_medians_us": {
+        "baseline": 299.68657622150346,
+        "candidate": 297.28179877879575
+      },
+      "sum_time_speedup_percent": 0.8089218554873767,
+      "median_faster_shapes": 3,
+      "median_slower_shapes": 2,
+      "five_of_five_faster_shapes": 2,
+      "five_of_five_slower_shapes": 0,
+      "paired_round_shape_geomeans": [
+        1.010936946424127,
+        1.003464923428725,
+        1.0036868077176113,
+        1.01132835413241,
+        1.006390217033223
+      ],
+      "all_five_paired_round_shape_geomeans_positive": true
+    },
+    "9024_fixed_winners": {
+      "shape_count": 9,
+      "geomean_speedup": 1.012745113666219,
+      "geomean_speedup_percent": 1.274511366621911,
+      "sum_of_shape_medians_us": {
+        "baseline": 185.75344833673216,
+        "candidate": 183.43892167596255
+      },
+      "sum_time_speedup_percent": 1.2617424042963732,
+      "median_faster_shapes": 9,
+      "median_slower_shapes": 0,
+      "five_of_five_faster_shapes": 9,
+      "five_of_five_slower_shapes": 0,
+      "paired_round_shape_geomeans": [
+        1.0134632036852487,
+        1.012397753927344,
+        1.012209183030965,
+        1.0130937637409447,
+        1.012979413260624
+      ],
+      "all_five_paired_round_shape_geomeans_positive": true
+    },
+    "all13_narrow_winners": {
+      "shape_count": 13,
+      "geomean_speedup": 1.0122610547650055,
+      "geomean_speedup_percent": 1.2261054765005497,
+      "sum_of_shape_medians_us": {
+        "baseline": 479.9842600728951,
+        "candidate": 475.242230237699
+      },
+      "sum_time_speedup_percent": 0.99781322733552,
+      "median_faster_shapes": 12,
+      "median_slower_shapes": 1,
+      "five_of_five_faster_shapes": 11,
+      "five_of_five_slower_shapes": 0,
+      "paired_round_shape_geomeans": [
+        1.0142890999187153,
+        1.0113705660022192,
+        1.0099208475432058,
+        1.0136967684168912,
+        1.0111316559472365
+      ],
+      "all_five_paired_round_shape_geomeans_positive": true
+    },
+    "9023_winner_K7168": {
+      "shape_count": 2,
+      "geomean_speedup": 1.019162048616188,
+      "geomean_speedup_percent": 1.9162048616188088,
+      "sum_of_shape_medians_us": {
+        "baseline": 95.28657034331677,
+        "candidate": 93.49439190883263
+      },
+      "sum_time_speedup_percent": 1.9168833529948248,
+      "median_faster_shapes": 2,
+      "median_slower_shapes": 0,
+      "five_of_five_faster_shapes": 2,
+      "five_of_five_slower_shapes": 0,
+      "paired_round_shape_geomeans": [
+        1.0134280231143522,
+        1.0198593995211875,
+        1.0175900634191897,
+        1.0181940795609332,
+        1.019994342117969
+      ],
+      "all_five_paired_round_shape_geomeans_positive": true
+    },
+    "9023_winner_K16384": {
+      "shape_count": 2,
+      "geomean_speedup": 1.0032461158867771,
+      "geomean_speedup_percent": 0.32461158867771456,
+      "sum_of_shape_medians_us": {
+        "baseline": 198.9442413928462,
+        "candidate": 198.30891665290383
+      },
+      "sum_time_speedup_percent": 0.32037124233519343,
+      "median_faster_shapes": 1,
+      "median_slower_shapes": 1,
+      "five_of_five_faster_shapes": 0,
+      "five_of_five_slower_shapes": 0,
+      "paired_round_shape_geomeans": [
+        1.0188789431364793,
+        0.9983812928278362,
+        0.9921529007819656,
+        1.0119252822520426,
+        0.9941445763757876
+      ],
+      "all_five_paired_round_shape_geomeans_positive": false
+    }
+  },
+  "rows": [
+    {
+      "target_index": 0,
+      "kid": 9023,
+      "shape": [
+        544,
+        7168,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 47.26876464544558,
+      "candidate_us": 46.42170550776463,
+      "speedup": 1.0182470490563789,
+      "speedup_percent": 1.8247049056378861,
+      "time_change_percent": -1.7920060827368522,
+      "paired_speedups": [
+        1.012433826964714,
+        1.0240488258687221,
+        1.0269482189605605,
+        1.0111907408270426,
+        1.0220644122132574
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 1,
+      "kid": 9023,
+      "shape": [
+        544,
+        7168,
+        16384
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 99.52820048612706,
+      "candidate_us": 100.0678025039972,
+      "speedup": 0.9946076359791294,
+      "speedup_percent": -0.5392364020870621,
+      "time_change_percent": 0.5421599257643184,
+      "paired_speedups": [
+        1.0159482186810156,
+        0.9864560686262482,
+        0.9790835534810108,
+        1.009596905411298,
+        0.9963115332197726
+      ],
+      "faster_rounds": 2
+    },
+    {
+      "target_index": 2,
+      "kid": 9023,
+      "shape": [
+        576,
+        7168,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 48.01780569787119,
+      "candidate_us": 47.072686401068,
+      "speedup": 1.0200778703970834,
+      "speedup_percent": 2.007787039708342,
+      "time_change_percent": -1.9682684018297203,
+      "paired_speedups": [
+        1.0144231955509908,
+        1.0156871122911229,
+        1.0083171848893757,
+        1.0252459222530201,
+        1.0179284647038347
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 3,
+      "kid": 9023,
+      "shape": [
+        576,
+        7168,
+        16384
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 99.41604090671913,
+      "candidate_us": 98.24111414890663,
+      "speedup": 1.0119596237073578,
+      "speedup_percent": 1.1959623707357814,
+      "time_change_percent": -1.1818281507658512,
+      "paired_speedups": [
+        1.0218181219065192,
+        1.0104506805424087,
+        1.0053967049392998,
+        1.014259028897987,
+        0.9919823326178274
+      ],
+      "faster_rounds": 4
+    },
+    {
+      "target_index": 4,
+      "kid": 9024,
+      "shape": [
+        1024,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 19.211980642056933,
+      "candidate_us": 18.914725266250908,
+      "speedup": 1.0157155534443003,
+      "speedup_percent": 1.5715553444300312,
+      "time_change_percent": -1.5472396175296055,
+      "paired_speedups": [
+        1.0158840288591755,
+        1.0111388134440413,
+        1.0109779918544868,
+        1.0168351050453166,
+        1.0152223241552978
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 5,
+      "kid": 9024,
+      "shape": [
+        1088,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 19.61982250213623,
+      "candidate_us": 19.270803414139092,
+      "speedup": 1.018111288901482,
+      "speedup_percent": 1.8111288901482059,
+      "time_change_percent": -1.7789105276520112,
+      "paired_speedups": [
+        1.020976391082307,
+        1.0177460720080114,
+        1.0155635216113867,
+        1.0202604064181031,
+        1.0200625364162303
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 6,
+      "kid": 9024,
+      "shape": [
+        1152,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 19.501391579123105,
+      "candidate_us": 19.289627963421392,
+      "speedup": 1.0109781078257847,
+      "speedup_percent": 1.0978107825784678,
+      "time_change_percent": -1.0858897676225943,
+      "paired_speedups": [
+        1.018528585671881,
+        1.0103604331329152,
+        1.0108548204417147,
+        1.0114501033463876,
+        1.0135803591882406
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 7,
+      "kid": 9024,
+      "shape": [
+        1216,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 19.909234607920926,
+      "candidate_us": 19.672372761894675,
+      "speedup": 1.0120403292929183,
+      "speedup_percent": 1.2040329292918317,
+      "time_change_percent": -1.1897084478175501,
+      "paired_speedups": [
+        1.0112435076597466,
+        1.0111160581246386,
+        1.013272163022742,
+        1.013835435525352,
+        1.013495023580654
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 8,
+      "kid": 9024,
+      "shape": [
+        1280,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 19.500607368992824,
+      "candidate_us": 19.19707831214456,
+      "speedup": 1.0158112110558117,
+      "speedup_percent": 1.5811211055811736,
+      "time_change_percent": -1.5565107850481374,
+      "paired_speedups": [
+        1.0176729779246068,
+        1.0158112110558117,
+        1.016103146766904,
+        1.0148414137716493,
+        1.0142657555361105
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 9,
+      "kid": 9024,
+      "shape": [
+        1344,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 19.843353944666244,
+      "candidate_us": 19.608079218396952,
+      "speedup": 1.0119988665717217,
+      "speedup_percent": 1.1998866571721667,
+      "time_change_percent": -1.1856600800719597,
+      "paired_speedups": [
+        1.0183661916200784,
+        1.0188889287102236,
+        1.0056904258413228,
+        1.0048108972289567,
+        1.0119988665717217
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 10,
+      "kid": 9024,
+      "shape": [
+        1408,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 22.00417658861946,
+      "candidate_us": 21.907705886691225,
+      "speedup": 1.0044035054344433,
+      "speedup_percent": 0.44035054344433444,
+      "time_change_percent": -0.4384199587733173,
+      "paired_speedups": [
+        1.0026850799031597,
+        1.0045158464165833,
+        1.005794762692498,
+        1.008083012688037,
+        1.0023580498397568
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 11,
+      "kid": 9024,
+      "shape": [
+        1472,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 23.907724548788632,
+      "candidate_us": 23.62535280339858,
+      "speedup": 1.0119520647052276,
+      "speedup_percent": 1.1952064705227583,
+      "time_change_percent": -1.181090006344243,
+      "paired_speedups": [
+        1.007892670981104,
+        1.01354565354506,
+        1.0129263701178879,
+        1.0135541035541036,
+        1.0088843776193432
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 12,
+      "kid": 9024,
+      "shape": [
+        1536,
+        768,
+        7168
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 22.255156554427803,
+      "candidate_us": 21.95317604962517,
+      "speedup": 1.0137556636051206,
+      "speedup_percent": 1.3755663605120594,
+      "time_change_percent": -1.3569012829188654,
+      "paired_speedups": [
+        1.0080730628529562,
+        1.0085398190371426,
+        1.0187776417554661,
+        1.0142558772979433,
+        1.0170486826573581
+      ],
+      "faster_rounds": 5
+    },
+    {
+      "target_index": 13,
+      "kid": 9023,
+      "shape": [
+        16,
+        128,
+        384
+      ],
+      "actual_winner": false,
+      "purpose": "runtime M16 tail nonwinner control",
+      "baseline_us": 5.4557644853404925,
+      "candidate_us": 5.478490217059266,
+      "speedup": 0.9958518258099632,
+      "speedup_percent": -0.41481741900367686,
+      "time_change_percent": 0.41654532155552815,
+      "paired_speedups": [
+        0.9903514738985727,
+        0.9813806827026949,
+        0.9992822000186263,
+        0.9965587106168563,
+        1.0040085506360445
+      ],
+      "faster_rounds": 1
+    },
+    {
+      "target_index": 14,
+      "kid": 9024,
+      "shape": [
+        64,
+        128,
+        16384
+      ],
+      "actual_winner": false,
+      "purpose": "unchangedruntime control",
+      "baseline_us": 34.17529311834597,
+      "candidate_us": 34.00980491264194,
+      "speedup": 1.0048658969414586,
+      "speedup_percent": 0.48658969414585584,
+      "time_change_percent": -0.48423346401436085,
+      "paired_speedups": [
+        1.0016379949368817,
+        1.0114216845729758,
+        0.9988309157708049,
+        1.007251933825006,
+        1.0006226099294153
+      ],
+      "faster_rounds": 4
+    }
+  ],
+  "resources": {
+    "9023_runtime": {
+      "baseline": {
+        ".vgpr_count": 232,
+        ".sgpr_count": 106,
+        ".sgpr_spill_count": 46,
+        ".vgpr_spill_count": 0,
+        ".agpr_count": 0,
+        ".group_segment_fixed_size": 78112,
+        ".private_segment_fixed_size": 0,
+        "instruction_bytes": 25976
+      },
+      "candidate": {
+        ".vgpr_count": 251,
+        ".sgpr_count": 106,
+        ".sgpr_spill_count": 48,
+        ".vgpr_spill_count": 0,
+        ".agpr_count": 0,
+        ".group_segment_fixed_size": 78112,
+        ".private_segment_fixed_size": 0,
+        "instruction_bytes": 26328
+      }
+    },
+    "9024_fixed": {
+      "baseline": {
+        ".vgpr_count": 110,
+        ".sgpr_count": 58,
+        ".sgpr_spill_count": 0,
+        ".vgpr_spill_count": 0,
+        ".agpr_count": 0,
+        ".group_segment_fixed_size": 71744,
+        ".private_segment_fixed_size": 0,
+        "instruction_bytes": 7276
+      },
+      "candidate": {
+        ".vgpr_count": 110,
+        ".sgpr_count": 60,
+        ".sgpr_spill_count": 0,
+        ".vgpr_spill_count": 0,
+        ".agpr_count": 0,
+        ".group_segment_fixed_size": 71744,
+        ".private_segment_fixed_size": 0,
+        "instruction_bytes": 7408
+      }
+    }
+  },
+  "finite_costs": [
+    {
+      "target_index": 1,
+      "kid": 9023,
+      "shape": [
+        544,
+        7168,
+        16384
+      ],
+      "actual_winner": true,
+      "purpose": "all exact current narrow actual winners",
+      "baseline_us": 99.52820048612706,
+      "candidate_us": 100.0678025039972,
+      "speedup": 0.9946076359791294,
+      "speedup_percent": -0.5392364020870621,
+      "time_change_percent": 0.5421599257643184,
+      "paired_speedups": [
+        1.0159482186810156,
+        0.9864560686262482,
+        0.9790835534810108,
+        1.009596905411298,
+        0.9963115332197726
+      ],
+      "faster_rounds": 2
+    },
+    {
+      "target_index": 13,
+      "kid": 9023,
+      "shape": [
+        16,
+        128,
+        384
+      ],
+      "actual_winner": false,
+      "purpose": "runtime M16 tail nonwinner control",
+      "baseline_us": 5.4557644853404925,
+      "candidate_us": 5.478490217059266,
+      "speedup": 0.9958518258099632,
+      "speedup_percent": -0.41481741900367686,
+      "time_change_percent": 0.41654532155552815,
+      "paired_speedups": [
+        0.9903514738985727,
+        0.9813806827026949,
+        0.9992822000186263,
+        0.9965587106168563,
+        1.0040085506360445
+      ],
+      "faster_rounds": 1
+    }
+  ],
+  "clean_claim": {
+    "claim": {
+      "event": "claimed",
+      "gpu": {
+        "smi_index": 7,
+        "hip_index": 4,
+        "bdf": "0000:f5:00.0",
+        "gfx": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "umc": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "used_gib": 0.279296875,
+        "free_gib": 287.705078125,
+        "peak_gfx": 0,
+        "mean_gfx": 0.0,
+        "peak_umc": 0
+      },
+      "other_busy": 6,
+      "time": 1791426286.7896388
+    },
+    "start": {
+      "event": "start",
+      "command": {
+        "name": "narrow13winners_controls",
+        "argv": [
+          "/opt/venv/bin/python3",
+          "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_bound_analysis_20261007/experiment_runner.py",
+          "--plan",
+          "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_remaining_20261008/narrow_candidate/screen_plan.json",
+          "--output",
+          "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_remaining_20261008/narrow_candidate/screen_results.json",
+          "--rounds",
+          "5",
+          "--iters",
+          "51",
+          "--repetitions",
+          "8",
+          "--event-confirm"
+        ],
+        "log": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_remaining_20261008/narrow_candidate/screen_runner.log"
+      },
+      "fingerprint": "c45a894123274a007f62ffe885cb5f0be219360afbf6f968662caacd1f3d3199",
+      "time": 1791426286.7901826
+    },
+    "end": {
+      "event": "end",
+      "name": "narrow13winners_controls",
+      "returncode": 0,
+      "contamination": false,
+      "time": 1791426304.8349655
+    },
+    "owner_identity": {
+      "event": "owner_identity",
+      "name": "narrow13winners_controls",
+      "inner_pid": 1383285,
+      "host_pid": 2409214,
+      "baseline_host_pids": [
+        1966758,
+        2210639,
+        2215087,
+        2215534,
+        2215751,
+        2217600,
+        2275188,
+        2284477,
+        2285304,
+        2285564,
+        2396959
+      ],
+      "new_host_pids": [
+        2409214
+      ],
+      "launcher_sha256": "3a91f0aef6736413b3cebd2f28dac75223471df4f3ef6107b3ceae54e8dbec0e",
+      "method": "KFD open + unique sysfs registration + same-mm runpy handshake",
+      "time": 1791426286.8074641
+    },
+    "monitor_count": 9,
+    "fingerprint_recomputed_equal": true
+  },
+  "validation": {
+    "all15_signed8_repetitions_passed": true,
+    "all15_reference_errRatio_zero": true,
+    "all15_output_and_workspace_guards_passed": true,
+    "five_ABBA_Event_rounds_shared51_address_pool": true,
+    "same_private_libraries_as_CPU_audit": true,
+    "unchanged9024runtime_control_median_speedup": 1.0048658969414586,
+    "unchanged_control_interpretation": "The0.49% control speedup is noise/process evidence and not attributed to source."
+  },
+  "evidence": {
+    "screen_plan.json": "1e3ce9ba2b608db7f96732c7bcec162ba1d7da013536f684b60905891efa0ce6",
+    "screen_results.json": "4c1c17a6995944d6039a286a28f287457fc19314cab17bd3fde9167063644987",
+    "screen_analysis.json": "ac1720bad104e3172040a19e2b49a4693dc80f1a745637ae0ffb8d48f4fc9834",
+    "screen_claim.jsonl": "3373da783ba29cf0a8073d7752fbbee59a10b733ce2501b1ca27fea7eba08f5e",
+    "screen_queue.json": "7d023acfcdca5e641c39602416dcb1a6d3ac6b8bb5d360d24030075d1e8f5f67",
+    "device_audit.json": "d13e87a5f763250e6f1721074b308fc1c191f9ff41254513f6725b1e9a18ce2e",
+    "isa_order_audit.json": "bf86f88b792ecf3ad57cc44715179151cc3b90d1cabbad9470502a5c64e2daed",
+    "source_review.json": "fab7b61cb28a956551f6ec859ea58fe2748d74f2a6394dfb1facc9c406a7038a",
+    "build_manifest.json": "6be101edbe525e6043cdcfc0e40de2f807b02c9aca888fb3410b4d67da0092b1",
+    "formal_merge/manifest.json": "b94f9c6702a6e1ca09acab5848918bb0d20fe22cd336801e9f61dfadd5eaccf4",
+    "formal_merge/narrow.patch": "a51385b89bfdc680f711eca913bb6c38a7d79ab90f1c52ed831ed76decff8900"
+  },
+  "analysis_script_sha256": "f0416c576283ea738e8f4a0cab2607001e92bc9697733918d7f17a639a20a02b",
+  "remaining_required_checks": [
+    "Root coordinated apply of exact tested narrow sources.",
+    "Official generated TU/host launch and complete linked device identity against current Oct8 baseline.",
+    "Official API signed8/reference/repeatability/guards and loaded module identity after merge."
+  ],
+  "limits": [
+    "9023 runtime VGPR232\u2192251(+8.19%), SGPR lane spill46\u219248, ISA25976\u219226328(+1.36%); no scratch/VGPR spill/AGPR/LDS increase. The extra live registers reduce future compiler headroom; this experiment does not establish occupancy or full support-domain performance.",
+    "The544 longK winner regresses0.542% in median call time,2/5 paired rounds faster; theM16 boundary regresses0.417%,1/5 faster. These costs are accepted explicitly, not dismissed as zero.",
+    "9023 longK remains mixed per shape; aggregate positivity is not a guarantee for every shape.",
+    "Only one clean finite process window with five paired rounds is available; no confirmation-to-positive is requested.",
+    "9024 fixed SGPR58\u219260 and ISA7276\u21927408(+1.81%); VGPR110/LDS/spill remain unchanged.",
+    "The unchanged9024runtime control varies by0.49%; sub-percent per-shape results require restraint.",
+    "Baseline ATT identifies serialization; candidate ISA confirms order. No candidate ATT execution/latency claim.",
+    "ATT target12 is excluded for unowned GPU process; no clean252/264WG paired timing claim."
+  ]
+}

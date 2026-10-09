@@ -1,0 +1,632 @@
+{
+  "status": "cpu_ISA_order_verified_limited_paths",
+  "gpu_access": false,
+  "files_modified": "new isa_order_audit.json only",
+  "device_audit_sha256": "3727ec85a02c1fb1f2c57abe15eb7c793f48b1f2443e69e71034ed3efdf9266e",
+  "evidence": {
+    "baseline": {
+      "source_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/device_audit_artifacts/baseline/kid9021.s",
+      "source_sha256": "700cc5d1ad2f332cb9b5e35721ef7d31446856b0e4885ea3a98fdb069398e146",
+      "kernel_base_pc": "0x1f00",
+      "paths": {
+        "prologue": [
+          {
+            "pc": "0x29e4",
+            "line": 513,
+            "instruction": "buffer_load_dwordx4 v[6:9], v21, s[60:63], 0 offen",
+            "role": "SFA_full_VMEm",
+            "kernel_relative_offset": "0xae4"
+          },
+          {
+            "pc": "0x29f8",
+            "line": 516,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "SFA_completion_wait",
+            "kernel_relative_offset": "0xaf8"
+          },
+          {
+            "pc": "0x29fc",
+            "line": 517,
+            "instruction": "ds_write_b128 v2, v[6:9]",
+            "role": "SFA_publish",
+            "kernel_relative_offset": "0xafc"
+          },
+          {
+            "pc": "0x2a64",
+            "line": 538,
+            "instruction": "buffer_load_ubyte v4, v2, s[40:43], 0 offen",
+            "role": "SFB_VMEm",
+            "kernel_relative_offset": "0xb64"
+          },
+          {
+            "pc": "0x2a74",
+            "line": 540,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "SFB_completion_wait",
+            "kernel_relative_offset": "0xb74"
+          },
+          {
+            "pc": "0x2a78",
+            "line": 541,
+            "instruction": "ds_write_b8 v3, v4",
+            "role": "SFB_publish",
+            "kernel_relative_offset": "0xb78"
+          }
+        ],
+        "refill": [
+          {
+            "pc": "0x3818",
+            "line": 1157,
+            "instruction": "buffer_load_dwordx4 v[70:73], v66, s[60:63], 0 offen",
+            "role": "SFA_full_VMEm",
+            "kernel_relative_offset": "0x1918"
+          },
+          {
+            "pc": "0x3824",
+            "line": 1159,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "SFA_completion_wait",
+            "kernel_relative_offset": "0x1924"
+          },
+          {
+            "pc": "0x3828",
+            "line": 1160,
+            "instruction": "ds_write_b128 v95, v[70:73]",
+            "role": "SFA_publish",
+            "kernel_relative_offset": "0x1928"
+          },
+          {
+            "pc": "0x3848",
+            "line": 1167,
+            "instruction": "buffer_load_ubyte v66, v66, s[40:43], 0 offen",
+            "role": "SFB_VMEm",
+            "kernel_relative_offset": "0x1948"
+          },
+          {
+            "pc": "0x3850",
+            "line": 1168,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "SFB_completion_wait",
+            "kernel_relative_offset": "0x1950"
+          },
+          {
+            "pc": "0x3854",
+            "line": 1169,
+            "instruction": "ds_write_b8 v96, v66",
+            "role": "SFB_publish",
+            "kernel_relative_offset": "0x1954"
+          },
+          {
+            "pc": "0x3860",
+            "line": 1171,
+            "instruction": "s_waitcnt vmcnt(0) lgkmcnt(0)",
+            "role": "final_vmcnt0_lgkmcnt0",
+            "kernel_relative_offset": "0x1960"
+          },
+          {
+            "pc": "0x3864",
+            "line": 1172,
+            "instruction": "s_barrier",
+            "role": "publication_barrier",
+            "kernel_relative_offset": "0x1964"
+          }
+        ]
+      }
+    },
+    "candidate": {
+      "source_path": "/root/workspace/aiter-opus-mxfp8-bpreshuffle/reports/opus_resume_20261008/scale_issue_publish/device_audit_artifacts/candidate/kid9021.s",
+      "source_sha256": "6560bb78dd4b0fd7a38f41aad32c3cf162003e7cfc3054975f8f1b8cd888274c",
+      "kernel_base_pc": "0x1f00",
+      "paths": {
+        "prologue": [
+          {
+            "pc": "0x29ec",
+            "line": 516,
+            "instruction": "buffer_load_dwordx4 v[66:69], v21, s[64:67], 0 offen",
+            "role": "SFA_full_VMEm",
+            "kernel_relative_offset": "0xaec"
+          },
+          {
+            "pc": "0x2a48",
+            "line": 536,
+            "instruction": "buffer_load_ubyte v3, v2, s[44:47], 0 offen",
+            "role": "SFB_VMEm",
+            "kernel_relative_offset": "0xb48"
+          },
+          {
+            "pc": "0x2a50",
+            "line": 537,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "SFB_decode_completion_wait",
+            "kernel_relative_offset": "0xb50"
+          },
+          {
+            "pc": "0x2a54",
+            "line": 538,
+            "instruction": "v_bfe_i32 v89, v3, 0, 8",
+            "role": "SFB_byte_decode",
+            "kernel_relative_offset": "0xb54"
+          },
+          {
+            "pc": "0x2a70",
+            "line": 543,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "SFA_publish_completion_wait",
+            "kernel_relative_offset": "0xb70"
+          },
+          {
+            "pc": "0x2a74",
+            "line": 544,
+            "instruction": "ds_write_b128 v3, v[66:69]",
+            "role": "SFA_publish",
+            "kernel_relative_offset": "0xb74"
+          },
+          {
+            "pc": "0x2a8c",
+            "line": 548,
+            "instruction": "ds_write_b8 v3, v89",
+            "role": "SFB_publish",
+            "kernel_relative_offset": "0xb8c"
+          },
+          {
+            "pc": "0x2aac",
+            "line": 555,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "loops1_vmcnt0",
+            "kernel_relative_offset": "0xbac"
+          },
+          {
+            "pc": "0x2b6c",
+            "line": 586,
+            "instruction": "s_waitcnt vmcnt(8)",
+            "role": "loops_gt1_vmcnt8",
+            "kernel_relative_offset": "0xc6c"
+          },
+          {
+            "pc": "0x2b74",
+            "line": 588,
+            "instruction": "s_waitcnt lgkmcnt(0)",
+            "role": "publication_lgkmcnt0",
+            "kernel_relative_offset": "0xc74"
+          },
+          {
+            "pc": "0x2b78",
+            "line": 589,
+            "instruction": "s_barrier",
+            "role": "publication_barrier",
+            "kernel_relative_offset": "0xc78"
+          }
+        ],
+        "refill": [
+          {
+            "pc": "0x3834",
+            "line": 1165,
+            "instruction": "buffer_load_dwordx4 v[66:69], v71, s[64:67], 0 offen",
+            "role": "SFA_full_VMEm",
+            "kernel_relative_offset": "0x1934"
+          },
+          {
+            "pc": "0x3860",
+            "line": 1175,
+            "instruction": "buffer_load_ubyte v70, v70, s[44:47], 0 offen",
+            "role": "SFB_VMEm",
+            "kernel_relative_offset": "0x1960"
+          },
+          {
+            "pc": "0x3868",
+            "line": 1176,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "SFB_decode_completion_wait",
+            "kernel_relative_offset": "0x1968"
+          },
+          {
+            "pc": "0x386c",
+            "line": 1177,
+            "instruction": "v_bfe_i32 v89, v70, 0, 8",
+            "role": "SFB_byte_decode",
+            "kernel_relative_offset": "0x196c"
+          },
+          {
+            "pc": "0x3880",
+            "line": 1181,
+            "instruction": "s_waitcnt vmcnt(0)",
+            "role": "SFA_publish_completion_wait",
+            "kernel_relative_offset": "0x1980"
+          },
+          {
+            "pc": "0x3884",
+            "line": 1182,
+            "instruction": "ds_write_b128 v96, v[66:69]",
+            "role": "SFA_publish",
+            "kernel_relative_offset": "0x1984"
+          },
+          {
+            "pc": "0x3894",
+            "line": 1185,
+            "instruction": "ds_write_b8 v97, v89",
+            "role": "SFB_publish",
+            "kernel_relative_offset": "0x1994"
+          },
+          {
+            "pc": "0x38a0",
+            "line": 1187,
+            "instruction": "s_waitcnt vmcnt(0) lgkmcnt(0)",
+            "role": "final_vmcnt0_lgkmcnt0",
+            "kernel_relative_offset": "0x19a0"
+          },
+          {
+            "pc": "0x38a4",
+            "line": 1188,
+            "instruction": "s_barrier",
+            "role": "publication_barrier",
+            "kernel_relative_offset": "0x19a4"
+          }
+        ],
+        "prologue_SFA_tail": [
+          {
+            "pc": "0x2224",
+            "line": 152,
+            "instruction": "buffer_load_ubyte v6, v21, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x2254",
+            "line": 160,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x22c8",
+            "line": 177,
+            "instruction": "buffer_load_ubyte v8, v21, s[64:67], 0 offen offset:1"
+          },
+          {
+            "pc": "0x22dc",
+            "line": 180,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x2354",
+            "line": 202,
+            "instruction": "buffer_load_ubyte v6, v21, s[64:67], 0 offen offset:2"
+          },
+          {
+            "pc": "0x235c",
+            "line": 203,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x23cc",
+            "line": 225,
+            "instruction": "buffer_load_ubyte v3, v21, s[64:67], 0 offen offset:3"
+          },
+          {
+            "pc": "0x23d4",
+            "line": 226,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x2450",
+            "line": 249,
+            "instruction": "buffer_load_ubyte v2, v21, s[64:67], 0 offen offset:4"
+          },
+          {
+            "pc": "0x2458",
+            "line": 250,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x24cc",
+            "line": 271,
+            "instruction": "buffer_load_ubyte v6, v21, s[64:67], 0 offen offset:5"
+          },
+          {
+            "pc": "0x24d4",
+            "line": 272,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x254c",
+            "line": 295,
+            "instruction": "buffer_load_ubyte v2, v21, s[64:67], 0 offen offset:6"
+          },
+          {
+            "pc": "0x2554",
+            "line": 296,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x25c4",
+            "line": 318,
+            "instruction": "buffer_load_ubyte v6, v21, s[64:67], 0 offen offset:7"
+          },
+          {
+            "pc": "0x25cc",
+            "line": 319,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x2648",
+            "line": 342,
+            "instruction": "buffer_load_ubyte v2, v21, s[64:67], 0 offen offset:8"
+          },
+          {
+            "pc": "0x2650",
+            "line": 343,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x26c4",
+            "line": 364,
+            "instruction": "buffer_load_ubyte v6, v21, s[64:67], 0 offen offset:9"
+          },
+          {
+            "pc": "0x26cc",
+            "line": 365,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x2744",
+            "line": 388,
+            "instruction": "buffer_load_ubyte v2, v21, s[64:67], 0 offen offset:10"
+          },
+          {
+            "pc": "0x274c",
+            "line": 389,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x27bc",
+            "line": 411,
+            "instruction": "buffer_load_ubyte v6, v21, s[64:67], 0 offen offset:11"
+          },
+          {
+            "pc": "0x27c4",
+            "line": 412,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x2840",
+            "line": 435,
+            "instruction": "buffer_load_ubyte v2, v21, s[64:67], 0 offen offset:12"
+          },
+          {
+            "pc": "0x2848",
+            "line": 436,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x28bc",
+            "line": 457,
+            "instruction": "buffer_load_ubyte v6, v21, s[64:67], 0 offen offset:13"
+          },
+          {
+            "pc": "0x28c4",
+            "line": 458,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x293c",
+            "line": 481,
+            "instruction": "buffer_load_ubyte v2, v21, s[64:67], 0 offen offset:14"
+          },
+          {
+            "pc": "0x2944",
+            "line": 482,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x29ac",
+            "line": 503,
+            "instruction": "buffer_load_ubyte v7, v21, s[64:67], 0 offen offset:15"
+          },
+          {
+            "pc": "0x29b4",
+            "line": 504,
+            "instruction": "s_waitcnt vmcnt(0)"
+          }
+        ],
+        "refill_SFA_tail": [
+          {
+            "pc": "0x31bc",
+            "line": 851,
+            "instruction": "buffer_load_ubyte v70, v71, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x31c8",
+            "line": 853,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3244",
+            "line": 872,
+            "instruction": "buffer_load_ubyte v72, v66, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x3258",
+            "line": 875,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x32b4",
+            "line": 893,
+            "instruction": "buffer_load_ubyte v70, v70, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x32bc",
+            "line": 894,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3318",
+            "line": 913,
+            "instruction": "buffer_load_ubyte v67, v67, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x3320",
+            "line": 914,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3380",
+            "line": 933,
+            "instruction": "buffer_load_ubyte v66, v66, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x3388",
+            "line": 934,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x33e8",
+            "line": 952,
+            "instruction": "buffer_load_ubyte v70, v70, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x33f0",
+            "line": 953,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3454",
+            "line": 973,
+            "instruction": "buffer_load_ubyte v66, v66, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x345c",
+            "line": 974,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x34b8",
+            "line": 993,
+            "instruction": "buffer_load_ubyte v70, v70, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x34c0",
+            "line": 994,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3520",
+            "line": 1013,
+            "instruction": "buffer_load_ubyte v66, v66, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x3528",
+            "line": 1014,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3588",
+            "line": 1032,
+            "instruction": "buffer_load_ubyte v70, v70, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x3590",
+            "line": 1033,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x35f4",
+            "line": 1053,
+            "instruction": "buffer_load_ubyte v66, v66, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x35fc",
+            "line": 1054,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3658",
+            "line": 1073,
+            "instruction": "buffer_load_ubyte v70, v70, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x3660",
+            "line": 1074,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x36c0",
+            "line": 1093,
+            "instruction": "buffer_load_ubyte v66, v66, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x36c8",
+            "line": 1094,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3728",
+            "line": 1112,
+            "instruction": "buffer_load_ubyte v70, v70, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x3730",
+            "line": 1113,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x3794",
+            "line": 1133,
+            "instruction": "buffer_load_ubyte v67, v67, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x379c",
+            "line": 1134,
+            "instruction": "s_waitcnt vmcnt(0)"
+          },
+          {
+            "pc": "0x37f4",
+            "line": 1152,
+            "instruction": "buffer_load_ubyte v66, v94, s[64:67], 0 offen"
+          },
+          {
+            "pc": "0x37fc",
+            "line": 1153,
+            "instruction": "s_waitcnt vmcnt(0)"
+          }
+        ]
+      }
+    }
+  },
+  "conclusion": {
+    "aligned_full_SFA_prologue": "SFA VMEM at0x29ec and SFB VMEM at0x2a48 both precede first SFA publish0x2a74, with no VMEM wait between those two loads. The issue-before-first-publish hypothesis is present in machine code.",
+    "aligned_full_SFA_refill": "SFA VMEM0x3834 and SFB VMEM0x3860 both precede first SFA publish0x3884, with no VMEM wait between those two loads. Same hypothesis is present at SCALE_PANEL32 refill.",
+    "helper_internal_wait": "Candidate SFB raw uchar conversion inserts vmcnt0 then v_bfe_i32 at0x2a50/0x2a54 and0x3868/0x386c. These waits occur after both full-path scale requests have issued, so they do not restore original SFA-publish-before-SFB-issue serialization.",
+    "SFA_tail_path": "Both prologue and refill retain16 conditional byte load/completion-wait/pack sequences; SFB is issued only after SFA tail reconstruction. Both panels still issue before first publish, but SFA byte requests have already completed by then. No simultaneous SFA-tail/SFB-inflight improvement is established.",
+    "timing": "ISA proves ordering, not amount of overlap, barrier waiting reduction or performance benefit; GPU screen/Event/ATT required."
+  },
+  "resource_comparison": {
+    "baseline": {
+      "resources": {
+        "agpr_count": 0,
+        "vgpr_count": 164,
+        "sgpr_count": 98,
+        "group_segment_fixed_size": 105504,
+        "private_segment_fixed_size": 0,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0
+      },
+      "instruction_bytes": 8588,
+      "instruction_sha256": "9450c93608d08fefe797c46af50ea2a2f54ec7804d36bb70bbd9c5385dd642e4"
+    },
+    "candidate": {
+      "resources": {
+        "agpr_count": 0,
+        "vgpr_count": 164,
+        "sgpr_count": 99,
+        "group_segment_fixed_size": 105504,
+        "private_segment_fixed_size": 0,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0
+      },
+      "instruction_bytes": 8660,
+      "instruction_sha256": "06c557cd5a4f4e8b698c6a127460f0a48b302b48dbdb0f80da22427d72940759"
+    }
+  },
+  "limitations": [
+    "PCs are absolute addresses in isolated kid9021.s; relative offsets are against kernel base0x1f00. Different future binaries require a fresh audit.",
+    "Record means source conditional full/byte path, not an observed dynamically traced candidate path.",
+    "sched_barrier zero constrains compiler scheduling, has no runtime barrier semantics; all visible vmcnt/lgkmcnt and runtime barriers require numerical/synchronization checks."
+  ]
+}

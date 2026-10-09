@@ -40,3 +40,10 @@ void opus_gemm_a8w8_blockscale_bpreshuffle_workspace_launch(
     aiter_tensor_t& XQ, aiter_tensor_t& WQ,
     aiter_tensor_t& x_scale, aiter_tensor_t& w_scale,
     aiter_tensor_t& Y, int kid, aiter_tensor_t& workspace);
+
+// Runtime global split count; zero retains the selected ID's historical default.
+void opus_gemm_a8w8_blockscale_bpreshuffle_runtime_launch(
+    aiter_tensor_t& XQ, aiter_tensor_t& WQ,
+    aiter_tensor_t& x_scale, aiter_tensor_t& w_scale,
+    aiter_tensor_t& Y, int kid,
+    std::optional<aiter_tensor_t> workspace, int split_k);

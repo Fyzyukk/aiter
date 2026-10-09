@@ -1,0 +1,38 @@
+{
+  "status": "read_only_source_review_passed_with_unvalidated_numerics",
+  "reviewed_family": "hybrid_small",
+  "gpu_operations": 0,
+  "files": {
+    "reports/opus_flydsl_all_20261009/hybrid_small/candidate/pipeline.cuh": "161d0308a838d777af0522afc48d5f573b232f527e9a62311fe49f2f988191d2",
+    "reports/opus_flydsl_all_20261009/hybrid_small/candidate/traits.cuh": "e7317abd90deaacd136cbfdf402e3ab4b78f613c3340b683a5feec7c31ff730a",
+    "reports/opus_flydsl_all_20261009/hybrid_small/launch.hip": "5b633027d54462f4f5ce12c7a600979e961869003c935825149124554cc7d5a5",
+    "reports/opus_flydsl_all_20261009/hybrid_small/contract.h": "9f26592a50d7ab3d8a346a6d782aacde494f55ef3b0cb322308a385b85554653"
+  },
+  "findings": [
+    {
+      "topic": "A stage reuse",
+      "result": "Every step waits VMEM/LDS and publishes producers, reads current A/scales, then waits lgkmcnt0 and block barrier before prefetch_a refills the same A stage. Current A/scales are local values before the ring storage is reused."
+    },
+    {
+      "topic": "B copy before refill",
+      "result": "qb[bstage] is copied into local b before prefetch_b reuses that slot. The next step vmcnt0 completes newly issued global B loads before qb is copied. SSA value semantics preserve b while qb changes."
+    },
+    {
+      "topic": "Ring period and partial prologue",
+      "result": "RING_PERIOD is LCM(NUM_STAGES,B_SLOTS), so static slot indices agree with kt modulo each queue. If loops<NUM_STAGES, only indices below loops execute, matching active_stages and matrix_bytes."
+    },
+    {
+      "topic": "C alias and output1 allocation",
+      "result": "No future A/B prefetch is issued on the final K step; its entry vmcnt0 completed prior A producers and its reader retirement barrier completed LDS reads. Output1 adds a final lgkmcnt0/barrier before C alias, then a publish barrier. lds_bytes(k)=max(matrix+scale,C_BYTES) includes the complete padded C arena at short K."
+    },
+    {
+      "topic": "M tails and raw resource guards",
+      "result": "All eight private launch traits have SplitK1/runtime K. Arbitrary M tails are bounded by global resources and the frozen scale/output helper contracts. The output/reducer body matches the frozen implementation, including output1 paths."
+    }
+  ],
+  "limits": [
+    "Source review establishes schedule/mapping consistency for the eight instantiated traits. It does not validate GPU execution, numerical values, occupancy or performance.",
+    "Generic unused SplitK branches were read but are not launched by the private ABI; no new coverage claim is made for them."
+  ],
+  "modified_peer_directory": false
+}

@@ -1,0 +1,57 @@
+--- frozen/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh
++++ candidate/pad_pin.cuh
+@@ -1,16 +1,17 @@
+ #pragma once
+ 
+ #include "opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh"
+-#include "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh"
+-
++#include "pin.cuh"
++
++namespace opus_private_pin {
+ #if !defined(__HIP_DEVICE_COMPILE__)
+ template<class Traits>
+-__global__ void gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
++__global__ void gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel_private_fixed(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
+ #elif defined(__gfx950__)
+ #if __has_cpp_attribute(clang::amdgpu_pin_agpr)
+ 
+ template<class Traits>
+-__global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
++__global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel_private_fixed(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
+     using namespace opus;
+ 
+     using T = opus::remove_cvref_t<Traits>;
+@@ -165,7 +166,7 @@
+     };
+ 
+     // Load Scale_A
+-    const int scale_k_groups = static_cast<unsigned int>(kargs.k) / T::GROUP_K;
++    const int scale_k_groups = T::FIXED_K / T::GROUP_K;
+     constexpr int sfa_lds_word_stride = T::VEC_SF * (T::B_M / T::HALF_B_M) * T::E_M; // 4 * （256 / 128）* 4 = 32
+     const auto sfa_gmem_offsets = opus::layout_to_offsets<T::VEC_SCALE_A>(u_gsfa);
+     opus::vector_t<D_SF, T::VEC_SCALE_A> sfa_panel_raw[T::SFA_PASSES_PER_CACHE_PANEL];
+@@ -259,7 +260,7 @@
+ 
+     int stage = 0;
+     int tile = 0;
+-    const int loops = static_cast<unsigned int>(kargs.k) / T::B_K;
++    const int loops = T::FIXED_K / T::B_K;
+ 
+     // ===== Prologue =====
+     async_load<T::VEC_A>(g_a, s_a.ptr, u_ga + ga_offset(0, 0), u_sa + sa_offset(0, 0));
+@@ -305,7 +306,7 @@
+     __builtin_amdgcn_s_setprio(1);
+ 
+     // ===== Main loop =====
+-#pragma clang loop unroll_count(T::LOOP_UNROLL)
++#pragma clang loop unroll(disable)
+     for (; tile + 2 < loops; ++tile) {
+         const int k_tile = tile;
+         asm volatile("" : "+v"(matrix_voffsets[0]), "+v"(matrix_voffsets[1]), "+v"(matrix_voffsets[2]), "+v"(matrix_voffsets[3]));
+@@ -788,3 +789,5 @@
+ 
+ #endif // AMDGPU hard-pin support
+ #endif // gfx950
++
++} // namespace opus_private_pin

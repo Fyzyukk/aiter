@@ -2858,15 +2858,27 @@ def gen_mxscale_bpreshuffle_instance(
 ):
     """Emit the optional gfx950 compact-E8M0 bpreshuffle implementation."""
     assert k.B_K == 128 and k.output_tiles_per_wg == 1
-    small_pipeline = k.name_tag in {
+    variant = getattr(k, "bpreshuffle_variant", None)
+    runtime_split_k = bool(variant and getattr(variant, "runtime_split_k", False))
+    small_pipeline = not variant and k.name_tag in {
         "small_register", "small_lds", "small_regscale", "small_regscale_xor",
         "small_register_prefetch", "small_register_wavek", "small_lds_deep",
     }
-    fine_pipeline = k.name_tag.startswith("fine_lds")
-    register_tail_pipeline = k.name_tag.startswith("register_tail")
+    fine_pipeline = not variant and k.name_tag.startswith("fine_lds")
+    register_tail_pipeline = not variant and k.name_tag.startswith("register_tail")
     large_output = k.name_tag == "large_output"
-    merged = k.name_tag in {"main", "small", "narrow", "large_output", "tiny"}
-    if register_tail_pipeline:
+    merged = not variant and k.name_tag in {"main", "small", "narrow", "large_output", "tiny"}
+    if variant:
+        pipeline_header = variant.pipeline_header
+        traits_header = variant.traits_header
+        kernel_func = variant.kernel
+        traits_name = variant.traits
+        large_output = variant.family == "large_output"
+        assert (k.B_M, k.B_N) == (variant.tile_m, variant.tile_n)
+        assert k.m_align == variant.m_align and k.max_m == variant.max_m
+        assert k.bpreshuffle_fixed_k == variant.fixed_k
+        assert k.bpreshuffle_split_k == variant.split_k
+    elif register_tail_pipeline:
         assert k.pad_m and k.m_align == 1 and k.max_m == 512
         assert k.bpreshuffle_fixed_k == 7168 and (k.T_M, k.T_N) == (1, 1)
         pipeline_header = "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh"
@@ -2945,6 +2957,14 @@ def gen_mxscale_bpreshuffle_instance(
             traits_name = (
                 "opus_gemm_mxscale_bpreshuffle_4wave_256x256_padded_m_traits_gfx950"
             )
+        assert k.bpreshuffle_loop_unroll in (2, 4)
+        if k.bpreshuffle_loop_unroll == 4:
+            traits_name = traits_name.removesuffix("_gfx950") + "_unroll4_gfx950"
+        if k.bpreshuffle_scale_reset:
+            assert not k.pad_m and k.bpreshuffle_loop_unroll == 2
+            traits_name = traits_name.removesuffix("_gfx950") + "_scale_reset_gfx950"
+    if runtime_split_k:
+        kargs_name = "opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950"
     n_align = k.GROUP_N if k.bpreshuffle_pad_n else max(k.B_N, k.GROUP_N)
     split = f"""#ifdef OPUS_FUSED_HOST_TU
 #include "{traits_header}"
@@ -2953,11 +2973,33 @@ __global__ void {kernel_func}({kargs_name} kargs);
 #else
 #include "{pipeline_header}"
 #endif"""
+    if variant:
+        # The selected traits may be a new specialization of an existing
+        # pipeline, so the device path must include both descriptor headers.
+        split = split.replace(
+            f'#else\n#include "{pipeline_header}"',
+            f'#else\n#include "{traits_header}"\n#include "{pipeline_header}"',
+        )
+    if runtime_split_k:
+        runtime_fine = variant.family == "fine_lds"
+        kernel_template = "typename Traits, bool Partial" if runtime_fine else "typename Traits"
+        split = f"""#ifdef OPUS_FUSED_HOST_TU
+#include "{traits_header}"
+template<{kernel_template}>
+__global__ void {kernel_func}({kargs_name} kargs);
+template<int Vec, int Block>
+__global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
+    const float*, opus::bf16_t*, int, int);
+#else
+#include "{traits_header}"
+#include "{pipeline_header}"
+#endif"""
     assert k.output_dtypes == ["bf16_t"]
     traits_alias = f"using {k.name}_Traits = {traits_name};"
     lds_bytes = (
         f"{k.name}_Traits::lds_bytes(k)"
-        if fine_pipeline or (small_pipeline and not k.name_tag.startswith("small_register")) else "0"
+        if (variant and variant.dynamic_lds) or fine_pipeline or
+        (small_pipeline and not k.name_tag.startswith("small_register")) else "0"
     )
     kernel_launch = f"""{kernel_func}<{k.name}_Traits><<<
         grid, dim3({k.BLOCK_SIZE}), {lds_bytes}, aiter::getCurrentHIPStream()>>>(args);"""
@@ -2965,11 +3007,59 @@ __global__ void {kernel_func}({kargs_name} kargs);
         f"template __global__ void {kernel_func}<\n"
         f"    {k.name}_Traits>({kargs_name});\n"
     )
-    if fine_pipeline:
+    if runtime_split_k:
+        vec, block = variant.reduce_vec, variant.reduce_block
+        if runtime_fine:
+            device_decl = "".join(
+                f"template __global__ void {kernel_func}<\n"
+                f"    {k.name}_Traits, {str(partial).lower()}>({kargs_name});\n"
+                for partial in (False, True)
+            )
+            kernel_launch = f"""const int lds_bytes = {k.name}_Traits::lds_bytes(k, effective_split_k);
+    AITER_CHECK(lds_bytes >= 0 && lds_bytes <= 160 * 1024,
+                entry, ": runtime split-K LDS extent exceeds 160 KiB");
+    if (effective_split_k == 1) {{
+        {kernel_func}<{k.name}_Traits, false><<<
+            grid, dim3({k.BLOCK_SIZE}), lds_bytes, aiter::getCurrentHIPStream()>>>(args);
+    }} else {{
+        {kernel_func}<{k.name}_Traits, true><<<
+            grid, dim3({k.BLOCK_SIZE}), lds_bytes, aiter::getCurrentHIPStream()>>>(args);
+    }}"""
+        else:
+            kernel_launch = f"""{kernel_func}<{k.name}_Traits><<<
+        grid, dim3({k.BLOCK_SIZE}), 0, aiter::getCurrentHIPStream()>>>(args);"""
+        kernel_launch += f"""
+    if (effective_split_k > 1) {{
+        opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel<{vec}, {block}><<<
+            dim3((m * n + {vec * block - 1}) / {vec * block}),
+            {block}, 0, aiter::getCurrentHIPStream()>>>(
+            reinterpret_cast<const float*>(args.ptr_c),
+            reinterpret_cast<opus::bf16_t*>(Y.data_ptr()), m * n, effective_split_k);
+    }}"""
+        device_decl += (
+            "template __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel<"
+            f"{vec}, {block}>(const float*, opus::bf16_t*, int, int);\n"
+        )
+    if not runtime_split_k and (fine_pipeline or (variant and variant.split_k > 1)):
         split += "\n#ifdef OPUS_FUSED_HOST_TU\n" + (
             "template<int SplitK, int Vec, int Block>\n"
             "__global__ void opus_gemm_mxscale_bpreshuffle_reduce_kernel("
             "const float*, opus::bf16_t*, int);\n#endif"
+        )
+    if variant and variant.split_k > 1 and not runtime_split_k:
+        # Both register and LDS producers write one FP32 partition per z block.
+        # Keep the complete-call reduction and workspace ABI shared across them.
+        split_k, vec, block = variant.split_k, variant.reduce_vec, variant.reduce_block
+        kernel_launch += (
+            f"\n    opus_gemm_mxscale_bpreshuffle_reduce_kernel<{split_k}, {vec}, {block}><<<"
+            f"dim3((m * n + {vec * block - 1}) / {vec * block}), "
+            f"{block}, 0, aiter::getCurrentHIPStream()>>>("
+            "reinterpret_cast<const float*>(args.ptr_c), "
+            "reinterpret_cast<opus::bf16_t*>(Y.data_ptr()), m * n);"
+        )
+        device_decl += (
+            "template __global__ void opus_gemm_mxscale_bpreshuffle_reduce_kernel<"
+            f"{split_k}, {vec}, {block}>(const float*, opus::bf16_t*, int);\n"
         )
     if small_pipeline or fine_pipeline or register_tail_pipeline:
         reductions = set()
@@ -3090,14 +3180,26 @@ __global__ void {kernel_func}({kargs_name} kargs);
         )
     small_shape_check = (
         f'    AITER_CHECK(m <= {k.max_m}, entry, ": requires M <= {k.max_m}");\n'
-        if small_pipeline or fine_pipeline or register_tail_pipeline else ""
+        if small_pipeline or fine_pipeline or register_tail_pipeline or
+        (variant and k.max_m is not None) else ""
     )
     m_alignment_check = f"m % {k.m_align} == 0 && " if k.m_align > 1 else ""
     m_requirement = f"M multiple of {k.m_align}" if k.m_align > 1 else "M"
     scale_alignment_check = (
         '    AITER_CHECK(reinterpret_cast<uintptr_t>(x_scale.data_ptr()) % 16 == 0,\n'
         '                entry, ": x_scale must be 16-byte aligned");\n\n'
-        if merged or small_pipeline or fine_pipeline or register_tail_pipeline else ""
+        if variant or merged or small_pipeline or fine_pipeline or register_tail_pipeline else ""
+    )
+    if variant:
+        scale_alignment_check = (
+            f'    AITER_CHECK(reinterpret_cast<uintptr_t>(x_scale.data_ptr()) % {variant.sfa_alignment} == 0,\n'
+            f'                entry, ": x_scale must be {variant.sfa_alignment}-byte aligned");\n\n'
+            if variant.sfa_alignment > 1 else ""
+        )
+    c_alignment = variant.c_alignment if variant else 16
+    output_alignment_message = (
+        f'": XQ/WQ must be 16-byte aligned; Y must be {c_alignment}-byte aligned"'
+        if variant else '": XQ/WQ/Y must be 16-byte aligned"'
     )
     if large_output:
         extent_checks = f"""    // Inputs and tile-local offsets remain signed-int; C's base is 64-bit.
@@ -3118,9 +3220,50 @@ __global__ void {kernel_func}({kargs_name} kargs);
                 m <= (byte_limit / sizeof(D_C)) / n,
                 entry, ": tensor byte extent exceeds signed 32-bit addressing");
 """
+    split_k_check = ""
+    host_split_k_param = ""
+    split_k_setup = ""
+    if runtime_split_k:
+        split_k_check = f"""    AITER_CHECK(split_k >= 0 && split_k <= 16,
+                entry, ": split_k must be in [0,16]");
+    const int effective_split_k = split_k == 0 ? {variant.split_k} : split_k;
+    AITER_CHECK(split_k == 0 || effective_split_k <= k / 128,
+                entry, ": explicit split_k must not exceed K/128");
+"""
+        host_split_k_param = ", int split_k"
+        split_k_setup = "    args.split_k = effective_split_k;\n"
+        # Each buffer resource addresses a single FP32 partition. Its base and
+        # the complete workspace extent use 64-bit arithmetic, as in fixed split-K.
+        extent_checks = extent_checks.replace(
+            "sizeof(D_C)", "(effective_split_k > 1 ? sizeof(float) : sizeof(D_C))"
+        )
     workspace_check = '    AITER_CHECK(!workspace.has_value(), entry, ": kernel does not use workspace");\n'
     workspace_setup = ""
-    if fine_pipeline and k.bpreshuffle_split_k > 1:
+    if runtime_split_k:
+        preamble += '\n#if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)\n#include "opus_gemm_common.cuh"\n#endif'
+        workspace_check = """    void* partials = nullptr;
+    if (effective_split_k > 1) {
+        AITER_CHECK(workspace.has_value(), entry, ": runtime split-K requires workspace");
+        const size_t required = opus_checked_extent_product(
+            {size_t(effective_split_k), size_t(m), size_t(n)}, entry);
+        AITER_CHECK(required <= uint64_t(9223372036854775807) / sizeof(float),
+                    entry, ": runtime split-K workspace byte extent exceeds int64");
+        partials = opus_validate_workspace(workspace.value(), Y, AITER_DTYPE_fp32, required, 16, entry);
+        const uintptr_t partial_begin = reinterpret_cast<uintptr_t>(partials);
+        const uint64_t partial_bytes = required * sizeof(float);
+        for (const auto* input : {&XQ, &WQ, &x_scale, &w_scale, &Y}) {
+            const uintptr_t begin = reinterpret_cast<uintptr_t>(input->data_ptr());
+            const uint64_t bytes = input->numel() * input->element_size();
+            const bool overlap = partial_begin >= begin
+                ? partial_begin - begin < bytes : begin - partial_begin < partial_bytes;
+            AITER_CHECK(!overlap, entry, ": workspace must not overlap input/output storage");
+        }
+    } else {
+        AITER_CHECK(!workspace.has_value(), entry, ": split_k=1 does not use workspace");
+    }
+"""
+        workspace_setup = "    if (partials != nullptr) args.ptr_c = partials;\n"
+    elif (fine_pipeline or variant) and k.bpreshuffle_split_k > 1:
         # One partition's buffer resource uses signed-int byte offsets; partition
         # bases and the total workspace extent use 64-bit arithmetic.
         extent_checks = extent_checks.replace("sizeof(D_C)", "sizeof(float)")
@@ -3141,6 +3284,9 @@ __global__ void {kernel_func}({kargs_name} kargs);
         workspace_setup = "    args.ptr_c = partials;\n"
     # The ABI remains unchanged. The batch=1 kernel does not use this stride.
     stride_c_batch = "0" if large_output else "m * n"
+    grid_split = ", effective_split_k" if runtime_split_k else (
+        f", {variant.split_k}" if variant and variant.split_k > 1 else ""
+    )
     source = f"""{preamble}
 {split}
 {traits_alias}
@@ -3150,7 +3296,7 @@ template <typename D_C>
 void {k.name}(
     aiter_tensor_t &XQ, aiter_tensor_t &WQ,
     aiter_tensor_t &x_scale, aiter_tensor_t &w_scale, aiter_tensor_t &Y,
-    std::optional<aiter_tensor_t> workspace)
+    std::optional<aiter_tensor_t> workspace{host_split_k_param})
 {{
     static_assert(std::is_same_v<D_C, bf16_t>);
     constexpr const char* entry =
@@ -3174,7 +3320,7 @@ void {k.name}(
                 entry, ": requires positive {m_requirement}, N multiple of {n_align} and K multiple of 128");
 {max_k_check}{small_shape_check}    AITER_CHECK(WQ.size(-1) == k && Y.size(-2) == m && Y.size(-1) == n,
                 entry, ": XQ/WQ/Y shapes do not match");
-{extent_checks}
+{split_k_check}{extent_checks}
     const auto is_e8m0 = [](const aiter_tensor_t& t) {{
         return t.dtype() == AITER_DTYPE_fp8_e8m0 || t.dtype() == AITER_DTYPE_u8;
     }};
@@ -3197,12 +3343,12 @@ void {k.name}(
         AITER_CHECK(!overlap, entry, ": Y must not overlap input storage");
     }}
     AITER_CHECK(reinterpret_cast<uintptr_t>(XQ.data_ptr()) % 16 == 0 &&
-                reinterpret_cast<uintptr_t>(WQ.data_ptr()) % 16 == 0 && output % 16 == 0,
-                entry, ": XQ/WQ/Y must be 16-byte aligned");
+                reinterpret_cast<uintptr_t>(WQ.data_ptr()) % 16 == 0 && output % {c_alignment} == 0,
+                entry, {output_alignment_message});
 
 {scale_alignment_check}{workspace_check}    {kargs_name} args{{}};
     args.ptr_a = XQ.data_ptr(); args.ptr_b = WQ.data_ptr(); args.ptr_c = Y.data_ptr();
-{workspace_setup}    args.m = m; args.n = n; args.k = k; args.batch = 1;
+{workspace_setup}{split_k_setup}    args.m = m; args.n = n; args.k = k; args.batch = 1;
     args.stride_a = k; args.stride_b = k; args.stride_c = n;
     args.stride_a_batch = m * k; args.stride_b_batch = n * k; args.stride_c_batch = {stride_c_batch};
     args.ptr_sfa = x_scale.data_ptr(); args.ptr_sfb = w_scale.data_ptr();
@@ -3212,18 +3358,25 @@ void {k.name}(
     const int tiles_m = {f"(m + {k.B_M - 1})" if k.pad_m else "m"} / {k.B_M};
     // The imported pipeline uses block_id_x for N and block_id_y for M,
     // including its 2x2 tile swizzle when both dimensions are multiples of 512.
-    const dim3 grid({f"(n + {k.B_N - 1})" if k.bpreshuffle_pad_n else "n"} / {k.B_N}, tiles_m);
+    const dim3 grid({f"(n + {k.B_N - 1})" if k.bpreshuffle_pad_n else "n"} / {k.B_N}, tiles_m{grid_split});
     {kernel_launch}
 }}
 #endif
 """
     Path(os.path.join(cg.impl_path, f"{k.name}.cuh")).write_text(source)
     for c_dtype in k.output_dtypes:
+        host_decl = make_a8w8_bpreshuffle_host_decl(k.name, c_dtype, "")
+        if runtime_split_k:
+            host_decl = host_decl.replace(
+                "std::optional<aiter_tensor_t> workspace);",
+                "std::optional<aiter_tensor_t> workspace, int split_k);",
+            )
         cg._host_instantiations.append(
             {
                 "kid_name": k.name,
                 "dtype": c_dtype,
-                "host_decl": make_a8w8_bpreshuffle_host_decl(k.name, c_dtype, ""),
+                "host_decl": host_decl,
+                **({"runtime_split_k": True} if runtime_split_k else {}),
             }
         )
         cg._device_instantiations.append(

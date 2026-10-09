@@ -1,0 +1,4007 @@
+{
+  "status": "completed",
+  "started_unix": 1791452789.3911355,
+  "gpu_bdf": "0000:f5:00.0",
+  "owner_host_pid": null,
+  "plan_sha256": "1f2ba5e2491ec3046d63e695cde8aa07f66666f9ca50fe98353c0456202288c8",
+  "script_sha256": "23d1104c4a586806677d5d19e7cf08b25470c054737a12303644a268609ba568",
+  "library_sha256": {
+    "module_gemm_a8w8_blockscale_bpreshuffle_tune": "14360dbea94f3e5609f53659f8f96b3f1a289c1c86681ca19bc27b743338f9c0",
+    "module_gemm_a8w8_blockscale_bpreshuffle_asm": "73f2d89ada539b2ff2ccbc2893feecbbee6ac1c26cb9c41886bf7cfbf837f7a6",
+    "module_ck_old3238": "1e4ef9e01c6d79545d0c0f609f64564816bf1657b2f9ff11925085d5c8133fe8",
+    "module_ck_old3383": "3f3c56891e34f442b6abb829d54162588dc200eede056aad0dc7ba74388a8433",
+    "module_ck_current20": "78544bd1137a1106d431d50b5467f6d6ecd6ea7ec71d61486022dc8c9f861104",
+    "module_ck_current23": "9bc10c92585188083ebdb04e45500bd56ba9d569b061628a112d76faf73a4e78"
+  },
+  "rows": [
+    {
+      "case": {
+        "M": 64,
+        "N": 6144,
+        "K": 7168,
+        "libtype": "asm",
+        "kernelId_upstream": 20,
+        "splitK_upstream": 5,
+        "kernelId_new": 20.0,
+        "splitK_new": 5.0,
+        "kernelName": "_ZN5aiter42fp8gemm_bf16_blockscale_BpreShuffle_64x128E",
+        "us_upstream": 14.9877,
+        "us_new": 18.882,
+        "new_latency_change_pct": 25.98330631117518
+      },
+      "records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0021616617838541665,
+          "us": 15.037053333333336,
+          "memset_us": 4.049706666666671,
+          "gemm_us": 10.987346666666665,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 75,
+              "us_per_call": 4.049706666666671
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 75,
+              "us_per_call": 10.987346666666665
+            }
+          ],
+          "kept_calls": 75.0,
+          "event_count": 154,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999990162,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.2789999999999964,
+              "start_us": 176.641,
+              "end_us": 179.92
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.759000000000015,
+              "start_us": 179.921,
+              "end_us": 190.68
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9589999999999748,
+              "start_us": 190.681,
+              "end_us": 194.64
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.039000000000016,
+              "start_us": 194.641,
+              "end_us": 205.68
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.038999999999987,
+              "start_us": 205.681,
+              "end_us": 209.72
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.119,
+              "start_us": 209.721,
+              "end_us": 220.84
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 220.841,
+              "end_us": 224.8
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.15900000000002,
+              "start_us": 224.801,
+              "end_us": 235.96
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0025380452473958335,
+          "us": 18.62606578947366,
+          "memset_us": 4.031131578947347,
+          "gemm_us": 14.594934210526313,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 228,
+              "us_per_call": 4.031131578947347
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 228,
+              "us_per_call": 14.594934210526315
+            }
+          ],
+          "kept_calls": 228,
+          "event_count": 512,
+          "gap_median_us": 0.00100000000009004,
+          "gap_mean_us": 0.33626614481409905,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.359000000000009,
+              "start_us": 147.548,
+              "end_us": 150.907
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.599000000000018,
+              "start_us": 150.908,
+              "end_us": 163.507
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.399000000000001,
+              "start_us": 190.028,
+              "end_us": 193.427
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.0,
+              "start_us": 193.428,
+              "end_us": 206.428
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.7990000000000066,
+              "start_us": 211.269,
+              "end_us": 215.068
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.799000000000007,
+              "start_us": 215.069,
+              "end_us": 227.868
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.7590000000000146,
+              "start_us": 231.749,
+              "end_us": 235.508
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.759000000000015,
+              "start_us": 235.509,
+              "end_us": 248.268
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.00251007080078125,
+          "us": 14.547024489795891,
+          "memset_us": 3.7167510204081617,
+          "gemm_us": 10.83027346938773,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 245,
+              "us_per_call": 3.7167510204081617
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 245,
+              "us_per_call": 10.83027346938773
+            }
+          ],
+          "kept_calls": 245,
+          "event_count": 512,
+          "gap_median_us": 0.0010000000002037268,
+          "gap_mean_us": 2.0706908023483503,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 4.718999999999994,
+              "start_us": 178.573,
+              "end_us": 183.292
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.679000000000002,
+              "start_us": 183.293,
+              "end_us": 193.972
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.079000000000008,
+              "start_us": 209.533,
+              "end_us": 213.612
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.399000000000001,
+              "start_us": 213.613,
+              "end_us": 225.012
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 2.1990000000000123,
+              "start_us": 230.893,
+              "end_us": 233.092
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 9.638999999999982,
+              "start_us": 236.293,
+              "end_us": 245.932
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.7590000000000146,
+              "start_us": 251.374,
+              "end_us": 255.133
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.318999999999988,
+              "start_us": 255.134,
+              "end_us": 266.453
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0022252400716145835,
+          "us": 17.433413934426216,
+          "memset_us": 4.0331065573770495,
+          "gemm_us": 13.400307377049167,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 244,
+              "us_per_call": 4.0331065573770495
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 244,
+              "us_per_call": 13.40030737704917
+            }
+          ],
+          "kept_calls": 244.0,
+          "event_count": 494,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0010000000000052937,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.3190000000000026,
+              "start_us": 88.084,
+              "end_us": 91.403
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.838999999999999,
+              "start_us": 91.404,
+              "end_us": 104.243
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0390000000000015,
+              "start_us": 104.244,
+              "end_us": 108.283
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.399000000000001,
+              "start_us": 108.284,
+              "end_us": 121.683
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 121.684,
+              "end_us": 125.643
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.239000000000004,
+              "start_us": 125.644,
+              "end_us": 138.883
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.919000000000011,
+              "start_us": 138.884,
+              "end_us": 142.803
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.239000000000004,
+              "start_us": 142.804,
+              "end_us": 156.043
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0023244222005208335,
+          "us": 17.45194444444445,
+          "memset_us": 4.00480555555557,
+          "gemm_us": 13.44713888888888,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 180,
+              "us_per_call": 4.00480555555557
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 180,
+              "us_per_call": 13.447138888888881
+            }
+          ],
+          "kept_calls": 180.0,
+          "event_count": 363,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999979442,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.3190000000000026,
+              "start_us": 81.383,
+              "end_us": 84.702
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.838999999999999,
+              "start_us": 84.703,
+              "end_us": 97.542
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9989999999999952,
+              "start_us": 97.543,
+              "end_us": 101.542
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.279999999999987,
+              "start_us": 101.543,
+              "end_us": 114.823
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 114.824,
+              "end_us": 118.783
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.23899999999999,
+              "start_us": 118.784,
+              "end_us": 132.023
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 132.024,
+              "end_us": 135.983
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.239000000000004,
+              "start_us": 135.984,
+              "end_us": 149.223
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0022532145182291665,
+          "us": 14.632055299539166,
+          "memset_us": 3.799788018433196,
+          "gemm_us": 10.83226728110597,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 217,
+              "us_per_call": 3.799788018433196
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 217,
+              "us_per_call": 10.832267281105972
+            }
+          ],
+          "kept_calls": 217,
+          "event_count": 512,
+          "gap_median_us": 3.201000000000022,
+          "gap_mean_us": 1.975025440313114,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.2390000000000043,
+              "start_us": 147.758,
+              "end_us": 150.997
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.519000000000005,
+              "start_us": 150.998,
+              "end_us": 161.517
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.959000000000003,
+              "start_us": 173.358,
+              "end_us": 177.317
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.198999999999984,
+              "start_us": 177.318,
+              "end_us": 188.517
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.5989999999999895,
+              "start_us": 194.678,
+              "end_us": 198.277
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.199000000000012,
+              "start_us": 198.278,
+              "end_us": 209.477
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 2.158999999999992,
+              "start_us": 214.598,
+              "end_us": 216.757
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 9.519000000000005,
+              "start_us": 219.958,
+              "end_us": 229.477
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0023066202799479165,
+          "us": 17.84733196721313,
+          "memset_us": 3.7491967213114816,
+          "gemm_us": 14.098135245901648,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 244,
+              "us_per_call": 3.7491967213114816
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 244,
+              "us_per_call": 14.098135245901645
+            }
+          ],
+          "kept_calls": 244,
+          "event_count": 512,
+          "gap_median_us": 0.0010000000002037268,
+          "gap_mean_us": 1.4345244618395232,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.158999999999992,
+              "start_us": 155.11,
+              "end_us": 158.269
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.87899999999999,
+              "start_us": 158.27,
+              "end_us": 171.149
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 2.5190000000000055,
+              "start_us": 181.71,
+              "end_us": 184.229
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.558999999999997,
+              "start_us": 187.43,
+              "end_us": 198.989
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.7990000000000066,
+              "start_us": 203.59,
+              "end_us": 207.389
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 17.079000000000008,
+              "start_us": 207.39,
+              "end_us": 224.469
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.038999999999987,
+              "start_us": 224.47,
+              "end_us": 228.509
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.838999999999999,
+              "start_us": 228.51,
+              "end_us": 241.349
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0023625691731770835,
+          "us": 14.918136054421833,
+          "memset_us": 4.036863945578269,
+          "gemm_us": 10.881272108843564,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 147,
+              "us_per_call": 4.036863945578269
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 147,
+              "us_per_call": 10.881272108843563
+            }
+          ],
+          "kept_calls": 147.0,
+          "event_count": 379,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999807142,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.7190000000000083,
+              "start_us": 84.464,
+              "end_us": 88.183
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.64,
+              "start_us": 88.184,
+              "end_us": 98.824
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 5.198999999999998,
+              "start_us": 98.825,
+              "end_us": 104.024
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.918999999999997,
+              "start_us": 104.025,
+              "end_us": 114.944
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 114.945,
+              "end_us": 118.904
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.679000000000002,
+              "start_us": 118.905,
+              "end_us": 130.584
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 10.959000000000003,
+              "start_us": 130.585,
+              "end_us": 141.544
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.919000000000011,
+              "start_us": 141.545,
+              "end_us": 152.464
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.002227783203125,
+          "us": 15.756645833333343,
+          "memset_us": 3.917866666666662,
+          "gemm_us": 11.838779166666681,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 240,
+              "us_per_call": 3.917866666666662
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 240,
+              "us_per_call": 11.83877916666668
+            }
+          ],
+          "kept_calls": 240,
+          "event_count": 512,
+          "gap_median_us": 0.00100000000009004,
+          "gap_mean_us": 0.5822935420743619,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 2.478999999999999,
+              "start_us": 106.42,
+              "end_us": 108.899
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.759,
+              "start_us": 108.9,
+              "end_us": 119.659
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 5.0789999999999935,
+              "start_us": 127.3,
+              "end_us": 132.379
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.838999999999999,
+              "start_us": 132.38,
+              "end_us": 143.219
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.599000000000018,
+              "start_us": 146.98,
+              "end_us": 151.579
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.599999999999994,
+              "start_us": 151.58,
+              "end_us": 162.18
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.399000000000001,
+              "start_us": 165.861,
+              "end_us": 169.26
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.278999999999996,
+              "start_us": 169.261,
+              "end_us": 179.54
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0024693806966145835,
+          "us": 18.163161290322606,
+          "memset_us": 4.033568548387118,
+          "gemm_us": 14.129592741935488,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 248,
+              "us_per_call": 4.033568548387118
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 248,
+              "us_per_call": 14.12959274193549
+            }
+          ],
+          "kept_calls": 248,
+          "event_count": 512,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.05235420743638726,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.1990000000000123,
+              "start_us": 95.204,
+              "end_us": 98.403
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.799000000000007,
+              "start_us": 98.404,
+              "end_us": 111.203
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.879000000000005,
+              "start_us": 116.285,
+              "end_us": 121.164
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 16.078999999999994,
+              "start_us": 121.165,
+              "end_us": 137.244
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.959000000000003,
+              "start_us": 137.245,
+              "end_us": 141.204
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 14.438999999999993,
+              "start_us": 141.205,
+              "end_us": 155.644
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.959000000000003,
+              "start_us": 155.645,
+              "end_us": 159.604
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 14.359000000000009,
+              "start_us": 159.605,
+              "end_us": 173.964
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0022303263346354165,
+          "us": 17.422229437229465,
+          "memset_us": 4.015826839826842,
+          "gemm_us": 13.406402597402622,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 231,
+              "us_per_call": 4.015826839826842
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 231,
+              "us_per_call": 13.40640259740262
+            }
+          ],
+          "kept_calls": 231.0,
+          "event_count": 501,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999866986,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.3590000000000018,
+              "start_us": 60.766,
+              "end_us": 64.125
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.998999999999995,
+              "start_us": 64.126,
+              "end_us": 77.125
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0789999999999935,
+              "start_us": 77.126,
+              "end_us": 81.205
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.23899999999999,
+              "start_us": 81.206,
+              "end_us": 94.445
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0390000000000015,
+              "start_us": 94.446,
+              "end_us": 98.485
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.278999999999996,
+              "start_us": 98.486,
+              "end_us": 111.765
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 111.766,
+              "end_us": 115.685
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.439999999999998,
+              "start_us": 115.686,
+              "end_us": 129.126
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0025126139322916665,
+          "us": 14.800776649746187,
+          "memset_us": 4.0280812182741075,
+          "gemm_us": 10.77269543147208,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 197,
+              "us_per_call": 4.0280812182741075
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 197,
+              "us_per_call": 10.772695431472078
+            }
+          ],
+          "kept_calls": 197.0,
+          "event_count": 397,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0010000000000040213,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.5189999999999984,
+              "start_us": 57.388,
+              "end_us": 60.907
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.718999999999994,
+              "start_us": 60.908,
+              "end_us": 71.627
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0390000000000015,
+              "start_us": 71.628,
+              "end_us": 75.667
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.678999999999988,
+              "start_us": 75.668,
+              "end_us": 86.347
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.079000000000008,
+              "start_us": 86.348,
+              "end_us": 90.427
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.838999999999999,
+              "start_us": 90.428,
+              "end_us": 101.267
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0789999999999935,
+              "start_us": 101.268,
+              "end_us": 105.347
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.759,
+              "start_us": 105.348,
+              "end_us": 116.107
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0023930867513020835,
+          "us": 14.914966887417227,
+          "memset_us": 4.022331125827814,
+          "gemm_us": 10.892635761589414,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 151,
+              "us_per_call": 4.022331125827814
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 151,
+              "us_per_call": 10.892635761589412
+            }
+          ],
+          "kept_calls": 151.0,
+          "event_count": 309,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.000999999999997185,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.198999999999998,
+              "start_us": 56.106,
+              "end_us": 59.305
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.759,
+              "start_us": 59.306,
+              "end_us": 70.065
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 70.066,
+              "end_us": 74.025
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.959000000000003,
+              "start_us": 74.026,
+              "end_us": 84.985
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 84.986,
+              "end_us": 88.905
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.798999999999992,
+              "start_us": 88.906,
+              "end_us": 99.705
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0789999999999935,
+              "start_us": 99.706,
+              "end_us": 103.785
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.879000000000005,
+              "start_us": 103.786,
+              "end_us": 114.665
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0025304158528645835,
+          "us": 17.446081218274188,
+          "memset_us": 4.018294416243695,
+          "gemm_us": 13.427786802030493,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 197,
+              "us_per_call": 4.018294416243695
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 197,
+              "us_per_call": 13.427786802030495
+            }
+          ],
+          "kept_calls": 197.0,
+          "event_count": 416,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999663028,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.5190000000000055,
+              "start_us": 55.69,
+              "end_us": 59.209
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.96,
+              "start_us": 59.21,
+              "end_us": 72.17
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9989999999999952,
+              "start_us": 72.171,
+              "end_us": 76.17
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.278999999999996,
+              "start_us": 76.171,
+              "end_us": 89.45
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.879000000000005,
+              "start_us": 89.451,
+              "end_us": 93.33
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.198999999999998,
+              "start_us": 93.331,
+              "end_us": 106.53
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.8789999999999907,
+              "start_us": 106.531,
+              "end_us": 110.41
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.198999999999998,
+              "start_us": 110.411,
+              "end_us": 123.61
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0023956298828125,
+          "us": 18.220379591836778,
+          "memset_us": 4.041983673469413,
+          "gemm_us": 14.178395918367364,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 245,
+              "us_per_call": 4.041983673469413
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 245,
+              "us_per_call": 14.178395918367363
+            }
+          ],
+          "kept_calls": 245,
+          "event_count": 512,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.07645988258315128,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.7989999999999924,
+              "start_us": 95.784,
+              "end_us": 99.583
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.679000000000002,
+              "start_us": 99.584,
+              "end_us": 112.263
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.918999999999997,
+              "start_us": 116.464,
+              "end_us": 121.383
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 15.159000000000006,
+              "start_us": 121.384,
+              "end_us": 136.543
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.198999999999984,
+              "start_us": 136.544,
+              "end_us": 140.743
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 15.519000000000005,
+              "start_us": 140.744,
+              "end_us": 156.263
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.959000000000003,
+              "start_us": 156.264,
+              "end_us": 160.223
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 14.319000000000017,
+              "start_us": 160.224,
+              "end_us": 174.543
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0024871826171875,
+          "us": 14.683404255319143,
+          "memset_us": 3.8141787234042606,
+          "gemm_us": 10.869225531914882,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 235,
+              "us_per_call": 3.8141787234042606
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 235,
+              "us_per_call": 10.869225531914882
+            }
+          ],
+          "kept_calls": 235,
+          "event_count": 512,
+          "gap_median_us": 0.0010000000002037268,
+          "gap_mean_us": 1.8926810176125266,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.2390000000000043,
+              "start_us": 135.238,
+              "end_us": 138.477
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.599999999999994,
+              "start_us": 138.478,
+              "end_us": 149.078
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.8389999999999986,
+              "start_us": 157.639,
+              "end_us": 161.478
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.158999999999992,
+              "start_us": 161.479,
+              "end_us": 172.638
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.959000000000003,
+              "start_us": 178.079,
+              "end_us": 182.038
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.15900000000002,
+              "start_us": 182.039,
+              "end_us": 193.198
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.438999999999993,
+              "start_us": 197.199,
+              "end_us": 200.638
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 11.07899999999998,
+              "start_us": 200.639,
+              "end_us": 211.718
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0025304158528645835,
+          "us": 14.830408839779022,
+          "memset_us": 4.048790055248617,
+          "gemm_us": 10.781618784530405,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 181,
+              "us_per_call": 4.048790055248617
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 181,
+              "us_per_call": 10.781618784530405
+            }
+          ],
+          "kept_calls": 181.0,
+          "event_count": 395,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999937019,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.478999999999999,
+              "start_us": 79.312,
+              "end_us": 82.791
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.399000000000001,
+              "start_us": 82.792,
+              "end_us": 93.191
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.319000000000003,
+              "start_us": 93.192,
+              "end_us": 97.511
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.679999999999993,
+              "start_us": 97.512,
+              "end_us": 108.192
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 108.193,
+              "end_us": 112.112
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.679000000000002,
+              "start_us": 112.113,
+              "end_us": 122.792
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9989999999999952,
+              "start_us": 122.793,
+              "end_us": 126.792
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.638999999999982,
+              "start_us": 126.793,
+              "end_us": 137.432
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0021387736002604165,
+          "us": 18.39047540983606,
+          "memset_us": 4.069528688524603,
+          "gemm_us": 14.320946721311458,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 244,
+              "us_per_call": 4.069528688524603
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 244,
+              "us_per_call": 14.320946721311458
+            }
+          ],
+          "kept_calls": 244,
+          "event_count": 512,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.03747749510763003,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.5589999999999975,
+              "start_us": 112.382,
+              "end_us": 115.941
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.159000000000006,
+              "start_us": 115.942,
+              "end_us": 129.101
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.919000000000011,
+              "start_us": 134.302,
+              "end_us": 139.221
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 16.198999999999984,
+              "start_us": 139.222,
+              "end_us": 155.421
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.079000000000008,
+              "start_us": 155.422,
+              "end_us": 159.501
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 14.198999999999984,
+              "start_us": 159.502,
+              "end_us": 173.701
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.919000000000011,
+              "start_us": 173.702,
+              "end_us": 177.621
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 14.599999999999994,
+              "start_us": 177.622,
+              "end_us": 192.222
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0022761027018229165,
+          "us": 14.321643171806166,
+          "memset_us": 3.5031674008810536,
+          "gemm_us": 10.818475770925112,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 227,
+              "us_per_call": 3.5031674008810536
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 227,
+              "us_per_call": 10.818475770925112
+            }
+          ],
+          "kept_calls": 227,
+          "event_count": 512,
+          "gap_median_us": 0.0010000000002037268,
+          "gap_mean_us": 1.5279041095890409,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.2390000000000043,
+              "start_us": 96.77,
+              "end_us": 100.009
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.518999999999991,
+              "start_us": 100.01,
+              "end_us": 110.529
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.919000000000011,
+              "start_us": 116.49,
+              "end_us": 121.409
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.59899999999999,
+              "start_us": 121.41,
+              "end_us": 132.009
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.838999999999999,
+              "start_us": 135.93,
+              "end_us": 140.769
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.638999999999982,
+              "start_us": 140.77,
+              "end_us": 151.409
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.238999999999976,
+              "start_us": 155.211,
+              "end_us": 158.45
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.479000000000013,
+              "start_us": 158.451,
+              "end_us": 168.93
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0023091634114583335,
+          "us": 17.474463917525785,
+          "memset_us": 4.046247422680415,
+          "gemm_us": 13.428216494845369,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 194,
+              "us_per_call": 4.046247422680415
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 194,
+              "us_per_call": 13.42821649484537
+            }
+          ],
+          "kept_calls": 194.0,
+          "event_count": 409,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999957536,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.5589999999999975,
+              "start_us": 64.598,
+              "end_us": 68.157
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.158999999999992,
+              "start_us": 68.158,
+              "end_us": 81.317
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.119,
+              "start_us": 81.318,
+              "end_us": 85.437
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.198999999999998,
+              "start_us": 85.438,
+              "end_us": 98.637
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0390000000000015,
+              "start_us": 98.638,
+              "end_us": 102.677
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.320000000000007,
+              "start_us": 102.678,
+              "end_us": 115.998
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9990000000000094,
+              "start_us": 115.999,
+              "end_us": 119.998
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.239000000000004,
+              "start_us": 119.999,
+              "end_us": 133.238
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0024007161458333335,
+          "us": 17.476573333333352,
+          "memset_us": 4.039553333333338,
+          "gemm_us": 13.437020000000015,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 150,
+              "us_per_call": 4.039553333333338
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 150,
+              "us_per_call": 13.437020000000015
+            }
+          ],
+          "kept_calls": 150.0,
+          "event_count": 302,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999897615,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.958999999999996,
+              "start_us": 59.71,
+              "end_us": 62.669
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.998999999999995,
+              "start_us": 62.67,
+              "end_us": 75.669
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0390000000000015,
+              "start_us": 75.67,
+              "end_us": 79.709
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.359000000000009,
+              "start_us": 79.71,
+              "end_us": 93.069
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9990000000000094,
+              "start_us": 93.07,
+              "end_us": 97.069
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.240000000000009,
+              "start_us": 97.07,
+              "end_us": 110.31
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.958999999999989,
+              "start_us": 110.311,
+              "end_us": 114.27
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 13.159000000000006,
+              "start_us": 114.271,
+              "end_us": 127.43
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0024846394856770835,
+          "us": 15.413976470588217,
+          "memset_us": 3.7466549019607753,
+          "gemm_us": 11.667321568627441,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 255,
+              "us_per_call": 3.7466549019607753
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 255,
+              "us_per_call": 11.667321568627441
+            }
+          ],
+          "kept_calls": 255,
+          "event_count": 512,
+          "gap_median_us": 0.0010000000002037268,
+          "gap_mean_us": 1.1250958904109676,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.478999999999999,
+              "start_us": 96.008,
+              "end_us": 99.487
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.599999999999994,
+              "start_us": 99.488,
+              "end_us": 110.088
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.319000000000003,
+              "start_us": 115.929,
+              "end_us": 120.248
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.558999999999997,
+              "start_us": 120.249,
+              "end_us": 130.808
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.959000000000003,
+              "start_us": 135.049,
+              "end_us": 139.008
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.559000000000026,
+              "start_us": 139.009,
+              "end_us": 149.568
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.198999999999984,
+              "start_us": 153.209,
+              "end_us": 157.408
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.558999999999997,
+              "start_us": 157.409,
+              "end_us": 167.968
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0023015340169270835,
+          "us": 18.214298387096754,
+          "memset_us": 4.061286290322573,
+          "gemm_us": 14.15301209677418,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 248,
+              "us_per_call": 4.061286290322573
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 248,
+              "us_per_call": 14.153012096774184
+            }
+          ],
+          "kept_calls": 248,
+          "event_count": 512,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.02586301369863783,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.2390000000000043,
+              "start_us": 90.954,
+              "end_us": 94.193
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.679000000000002,
+              "start_us": 94.194,
+              "end_us": 106.873
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.0390000000000015,
+              "start_us": 110.715,
+              "end_us": 114.754
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 12.919000000000011,
+              "start_us": 114.755,
+              "end_us": 127.674
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 2.7590000000000146,
+              "start_us": 131.355,
+              "end_us": 134.114
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 15.558999999999997,
+              "start_us": 134.115,
+              "end_us": 149.674
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.038999999999987,
+              "start_us": 149.675,
+              "end_us": 153.714
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 14.318999999999988,
+              "start_us": 153.715,
+              "end_us": 168.034
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0022125244140625,
+          "us": 14.872287804878065,
+          "memset_us": 4.038448780487817,
+          "gemm_us": 10.833839024390247,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 205,
+              "us_per_call": 4.038448780487817
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "count": 205,
+              "us_per_call": 10.833839024390247
+            }
+          ],
+          "kept_calls": 205.0,
+          "event_count": 412,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999918952,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.3590000000000018,
+              "start_us": 59.364,
+              "end_us": 62.723
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.759000000000007,
+              "start_us": 62.724,
+              "end_us": 73.483
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9990000000000094,
+              "start_us": 73.484,
+              "end_us": 77.483
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.99900000000001,
+              "start_us": 77.484,
+              "end_us": 88.483
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9990000000000094,
+              "start_us": 88.484,
+              "end_us": 92.483
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.99900000000001,
+              "start_us": 92.484,
+              "end_us": 103.483
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.079000000000008,
+              "start_us": 103.484,
+              "end_us": 107.563
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_64x128",
+              "us": 10.959000000000003,
+              "start_us": 107.564,
+              "end_us": 118.523
+            }
+          ]
+        }
+      ],
+      "pool_count": 64,
+      "tensor_bytes_per_copy": 45335040,
+      "summary": {
+        "asm/reuse_host": {
+          "us": 14.657729777429154,
+          "memset_us": 3.773221460196986,
+          "gemm_us": 10.850746406510426,
+          "gap_mean_us": 1.7102925636007837,
+          "gap_median_us": 0.0010000000002037268
+        },
+        "asm/pool64_host": {
+          "us": 18.217338989466768,
+          "memset_us": 4.037776110928265,
+          "gemm_us": 14.165704007570772,
+          "gap_mean_us": 0.06440704500976926,
+          "gap_median_us": 0.0009999999999763531
+        },
+        "asm/reuse_graph": {
+          "us": 14.893627346147646,
+          "memset_us": 4.037656363033044,
+          "gemm_us": 10.857555566616906,
+          "gap_mean_us": 0.0009999999999954433,
+          "gap_median_us": 0.0009999999999763531
+        },
+        "asm/pool64_graph": {
+          "us": 17.44901283135932,
+          "memset_us": 4.025700486810372,
+          "gemm_us": 13.428001648437931,
+          "gap_mean_us": 0.0009999999999927576,
+          "gap_median_us": 0.0009999999999763531
+        }
+      }
+    },
+    {
+      "case": {
+        "M": 8,
+        "N": 768,
+        "K": 7168,
+        "libtype": "asm",
+        "kernelId_upstream": 31,
+        "splitK_upstream": 8,
+        "kernelId_new": 31.0,
+        "splitK_new": 8.0,
+        "kernelName": "_ZN5aiter42fp8gemm_bf16_blockscale_BpreShuffle_80x128E",
+        "us_upstream": 10.8073,
+        "us_new": 8.7981,
+        "new_latency_change_pct": -18.591137471893997
+      },
+      "records": [
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.00830078125,
+          "us": 10.983801324503323,
+          "memset_us": 3.951099337748348,
+          "gemm_us": 7.032701986754976,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 151,
+              "us_per_call": 3.951099337748348
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 151,
+              "us_per_call": 7.032701986754977
+            }
+          ],
+          "kept_calls": 151.0,
+          "event_count": 316,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999929776,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.878999999999998,
+              "start_us": 58.743,
+              "end_us": 61.622
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.559000000000005,
+              "start_us": 61.623,
+              "end_us": 68.182
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.8389999999999986,
+              "start_us": 68.183,
+              "end_us": 72.022
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.959000000000003,
+              "start_us": 72.023,
+              "end_us": 78.982
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9989999999999952,
+              "start_us": 78.983,
+              "end_us": 82.982
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.0390000000000015,
+              "start_us": 82.983,
+              "end_us": 90.022
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 90.023,
+              "end_us": 93.982
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.319000000000003,
+              "start_us": 93.983,
+              "end_us": 101.302
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.00927734375,
+          "us": 9.991168724279852,
+          "memset_us": 3.451053497942385,
+          "gemm_us": 6.540115226337467,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 243,
+              "us_per_call": 3.451053497942385
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 243,
+              "us_per_call": 6.540115226337465
+            }
+          ],
+          "kept_calls": 243,
+          "event_count": 512,
+          "gap_median_us": 3.9610000000000127,
+          "gap_mean_us": 3.890984344422688,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.1189999999999998,
+              "start_us": 93.95,
+              "end_us": 97.069
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.999000000000009,
+              "start_us": 97.07,
+              "end_us": 103.069
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.359000000000009,
+              "start_us": 114.19,
+              "end_us": 117.549
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.918999999999997,
+              "start_us": 117.55,
+              "end_us": 124.469
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.079000000000008,
+              "start_us": 132.91,
+              "end_us": 136.989
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.959000000000003,
+              "start_us": 136.99,
+              "end_us": 142.949
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.9189999999999827,
+              "start_us": 150.43,
+              "end_us": 154.349
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.079000000000008,
+              "start_us": 154.35,
+              "end_us": 160.429
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.006673177083333333,
+          "us": 10.492423868312738,
+          "memset_us": 3.4340781893004,
+          "gemm_us": 7.058345679012337,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 243,
+              "us_per_call": 3.4340781893004
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 243,
+              "us_per_call": 7.058345679012337
+            }
+          ],
+          "kept_calls": 243,
+          "event_count": 512,
+          "gap_median_us": 5.4809999999999945,
+          "gap_mean_us": 3.606432485322907,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 2.879000000000005,
+              "start_us": 86.758,
+              "end_us": 89.637
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.478999999999999,
+              "start_us": 89.638,
+              "end_us": 96.117
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 1.5990000000000038,
+              "start_us": 106.798,
+              "end_us": 108.397
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.438999999999993,
+              "start_us": 111.638,
+              "end_us": 118.077
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 2.918999999999997,
+              "start_us": 126.318,
+              "end_us": 129.237
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.158999999999992,
+              "start_us": 129.238,
+              "end_us": 136.397
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 2.9989999999999952,
+              "start_us": 144.558,
+              "end_us": 147.557
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.480000000000018,
+              "start_us": 147.558,
+              "end_us": 155.038
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 0,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.008463541666666666,
+          "us": 9.812548022598861,
+          "memset_us": 3.980282485875702,
+          "gemm_us": 5.832265536723159,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 177,
+              "us_per_call": 3.980282485875702
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 177,
+              "us_per_call": 5.83226553672316
+            }
+          ],
+          "kept_calls": 177.0,
+          "event_count": 365,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.001000000000004892,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.918999999999997,
+              "start_us": 82.209,
+              "end_us": 85.128
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.679000000000002,
+              "start_us": 85.129,
+              "end_us": 90.808
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.960000000000008,
+              "start_us": 90.809,
+              "end_us": 94.769
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.838999999999999,
+              "start_us": 94.77,
+              "end_us": 100.609
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0789999999999935,
+              "start_us": 100.61,
+              "end_us": 104.689
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.879000000000005,
+              "start_us": 104.69,
+              "end_us": 110.569
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.879000000000005,
+              "start_us": 110.57,
+              "end_us": 114.449
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.798999999999992,
+              "start_us": 114.45,
+              "end_us": 120.249
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.009602864583333334,
+          "us": 9.791539062499997,
+          "memset_us": 3.9712109375000004,
+          "gemm_us": 5.820328124999996,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 128,
+              "us_per_call": 3.9712109375000004
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 128,
+              "us_per_call": 5.820328124999997
+            }
+          ],
+          "kept_calls": 128.0,
+          "event_count": 267,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0010000000000016229,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.9989999999999952,
+              "start_us": 57.703,
+              "end_us": 60.702
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.718999999999994,
+              "start_us": 60.703,
+              "end_us": 66.422
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 66.423,
+              "end_us": 70.342
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.838999999999999,
+              "start_us": 70.343,
+              "end_us": 76.182
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0789999999999935,
+              "start_us": 76.183,
+              "end_us": 80.262
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.839999999999989,
+              "start_us": 80.263,
+              "end_us": 86.103
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 86.104,
+              "end_us": 90.063
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.799000000000007,
+              "start_us": 90.064,
+              "end_us": 95.863
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.009114583333333334,
+          "us": 10.607096330275237,
+          "memset_us": 3.4069266055045966,
+          "gemm_us": 7.200169724770641,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 218,
+              "us_per_call": 3.4069266055045966
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 218,
+              "us_per_call": 7.200169724770639
+            }
+          ],
+          "kept_calls": 218,
+          "event_count": 512,
+          "gap_median_us": 5.041000000000167,
+          "gap_mean_us": 3.9737945205479437,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.919000000000011,
+              "start_us": 102.591,
+              "end_us": 106.51
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.279000000000011,
+              "start_us": 106.511,
+              "end_us": 113.79
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.4390000000000214,
+              "start_us": 130.271,
+              "end_us": 133.71
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.518999999999977,
+              "start_us": 133.711,
+              "end_us": 141.23
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.2390000000000043,
+              "start_us": 149.471,
+              "end_us": 152.71
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.5589999999999975,
+              "start_us": 152.711,
+              "end_us": 160.27
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.198999999999984,
+              "start_us": 167.632,
+              "end_us": 170.831
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.63900000000001,
+              "start_us": 170.832,
+              "end_us": 178.471
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.009440104166666666,
+          "us": 10.064408888888902,
+          "memset_us": 3.384640000000021,
+          "gemm_us": 6.679768888888882,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 225,
+              "us_per_call": 3.384640000000021
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 225,
+              "us_per_call": 6.67976888888888
+            }
+          ],
+          "kept_calls": 225,
+          "event_count": 512,
+          "gap_median_us": 5.641000000000076,
+          "gap_mean_us": 4.014109589041088,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.2789999999999964,
+              "start_us": 92.983,
+              "end_us": 96.262
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.798999999999992,
+              "start_us": 96.263,
+              "end_us": 102.062
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.159000000000006,
+              "start_us": 112.863,
+              "end_us": 116.022
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.799000000000007,
+              "start_us": 116.023,
+              "end_us": 122.822
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.079999999999984,
+              "start_us": 132.223,
+              "end_us": 135.303
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.878999999999991,
+              "start_us": 135.304,
+              "end_us": 142.183
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.0790000000000077,
+              "start_us": 150.624,
+              "end_us": 153.703
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.878999999999991,
+              "start_us": 153.704,
+              "end_us": 160.583
+            }
+          ]
+        },
+        {
+          "block": 0,
+          "pass": 1,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.009928385416666666,
+          "us": 10.981310000000013,
+          "memset_us": 3.9450250000000087,
+          "gemm_us": 7.036285000000005,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 200,
+              "us_per_call": 3.9450250000000087
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 200,
+              "us_per_call": 7.036285000000003
+            }
+          ],
+          "kept_calls": 200.0,
+          "event_count": 409,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999941167,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.9989999999999952,
+              "start_us": 59.252,
+              "end_us": 62.251
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.878999999999998,
+              "start_us": 62.252,
+              "end_us": 69.131
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.8789999999999907,
+              "start_us": 69.132,
+              "end_us": 73.011
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.918999999999997,
+              "start_us": 73.012,
+              "end_us": 79.931
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9989999999999952,
+              "start_us": 79.932,
+              "end_us": 83.931
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.119,
+              "start_us": 83.932,
+              "end_us": 91.051
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9989999999999952,
+              "start_us": 91.052,
+              "end_us": 95.051
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.998999999999995,
+              "start_us": 95.052,
+              "end_us": 102.051
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.010579427083333334,
+          "us": 10.573721030042902,
+          "memset_us": 3.441609442060088,
+          "gemm_us": 7.1321115879828145,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 233,
+              "us_per_call": 3.441609442060088
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 233,
+              "us_per_call": 7.132111587982813
+            }
+          ],
+          "kept_calls": 233,
+          "event_count": 512,
+          "gap_median_us": 3.441000000000713,
+          "gap_mean_us": 3.7930528375733954,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.3190000000000026,
+              "start_us": 91.234,
+              "end_us": 94.553
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.599000000000004,
+              "start_us": 94.554,
+              "end_us": 101.153
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.0790000000000077,
+              "start_us": 110.874,
+              "end_us": 113.953
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.319000000000003,
+              "start_us": 113.954,
+              "end_us": 121.273
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.1590000000000202,
+              "start_us": 129.754,
+              "end_us": 132.913
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.479000000000013,
+              "start_us": 132.914,
+              "end_us": 140.393
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.9589999999999748,
+              "start_us": 148.354,
+              "end_us": 152.313
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.879000000000019,
+              "start_us": 152.314,
+              "end_us": 159.193
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.009765625,
+          "us": 10.024874476987437,
+          "memset_us": 3.419292887029282,
+          "gemm_us": 6.605581589958154,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 239,
+              "us_per_call": 3.419292887029282
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 239,
+              "us_per_call": 6.605581589958155
+            }
+          ],
+          "kept_calls": 239,
+          "event_count": 512,
+          "gap_median_us": 4.280999999999949,
+          "gap_mean_us": 3.9368454011741725,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.0390000000000015,
+              "start_us": 90.344,
+              "end_us": 93.383
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.998999999999995,
+              "start_us": 93.384,
+              "end_us": 99.383
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.119000000000014,
+              "start_us": 110.064,
+              "end_us": 113.183
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.0390000000000015,
+              "start_us": 113.184,
+              "end_us": 120.223
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.079000000000008,
+              "start_us": 128.784,
+              "end_us": 132.863
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.079000000000008,
+              "start_us": 132.864,
+              "end_us": 138.943
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.2390000000000043,
+              "start_us": 146.584,
+              "end_us": 149.823
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.038999999999987,
+              "start_us": 149.824,
+              "end_us": 156.863
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.007486979166666667,
+          "us": 10.981517073170721,
+          "memset_us": 3.9553268292682886,
+          "gemm_us": 7.026190243902432,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 205,
+              "us_per_call": 3.9553268292682886
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 205,
+              "us_per_call": 7.026190243902433
+            }
+          ],
+          "kept_calls": 205.0,
+          "event_count": 417,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0010000000000057656,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.958999999999996,
+              "start_us": 59.67,
+              "end_us": 62.629
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.958999999999996,
+              "start_us": 62.63,
+              "end_us": 69.589
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.8789999999999907,
+              "start_us": 69.59,
+              "end_us": 73.469
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.998999999999995,
+              "start_us": 73.47,
+              "end_us": 80.469
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0390000000000015,
+              "start_us": 80.47,
+              "end_us": 84.509
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.119,
+              "start_us": 84.51,
+              "end_us": 91.629
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9990000000000094,
+              "start_us": 91.63,
+              "end_us": 95.629
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.919000000000011,
+              "start_us": 95.63,
+              "end_us": 102.549
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 0,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.011393229166666666,
+          "us": 9.795684563758389,
+          "memset_us": 3.9730000000000065,
+          "gemm_us": 5.822684563758383,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 149,
+              "us_per_call": 3.9730000000000065
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 149,
+              "us_per_call": 5.822684563758383
+            }
+          ],
+          "kept_calls": 149.0,
+          "event_count": 309,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0009999999999995841,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.0390000000000015,
+              "start_us": 56.42,
+              "end_us": 59.459
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.758999999999993,
+              "start_us": 59.46,
+              "end_us": 65.219
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 65.22,
+              "end_us": 69.139
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.879000000000005,
+              "start_us": 69.14,
+              "end_us": 75.019
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 75.02,
+              "end_us": 78.939
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.879000000000005,
+              "start_us": 78.94,
+              "end_us": 84.819
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9990000000000094,
+              "start_us": 84.82,
+              "end_us": 88.819
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.879000000000005,
+              "start_us": 88.82,
+              "end_us": 94.699
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.011067708333333334,
+          "us": 9.801870646766178,
+          "memset_us": 3.971169154228861,
+          "gemm_us": 5.830701492537317,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 201,
+              "us_per_call": 3.971169154228861
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 201,
+              "us_per_call": 5.830701492537317
+            }
+          ],
+          "kept_calls": 201.0,
+          "event_count": 416,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0010626506024049532,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.9989999999999952,
+              "start_us": 56.133,
+              "end_us": 59.132
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.7989999999999995,
+              "start_us": 59.133,
+              "end_us": 64.932
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 64.933,
+              "end_us": 68.852
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.960000000000008,
+              "start_us": 68.853,
+              "end_us": 74.813
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.919000000000011,
+              "start_us": 74.814,
+              "end_us": 78.733
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.879000000000005,
+              "start_us": 78.734,
+              "end_us": 84.613
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 84.614,
+              "end_us": 88.533
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.798999999999992,
+              "start_us": 88.534,
+              "end_us": 94.333
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.012369791666666666,
+          "us": 10.964922480620151,
+          "memset_us": 3.9385891472868204,
+          "gemm_us": 7.026333333333331,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 129,
+              "us_per_call": 3.9385891472868204
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 129,
+              "us_per_call": 7.026333333333329
+            }
+          ],
+          "kept_calls": 129.0,
+          "event_count": 263,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.00100000000000209,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.9990000000000023,
+              "start_us": 56.019,
+              "end_us": 59.018
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.68,
+              "start_us": 59.019,
+              "end_us": 65.699
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.8789999999999907,
+              "start_us": 65.7,
+              "end_us": 69.579
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.159000000000006,
+              "start_us": 69.58,
+              "end_us": 76.739
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.919000000000011,
+              "start_us": 76.74,
+              "end_us": 80.659
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.239000000000004,
+              "start_us": 80.66,
+              "end_us": 87.899
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.038999999999987,
+              "start_us": 87.9,
+              "end_us": 91.939
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.0390000000000015,
+              "start_us": 91.94,
+              "end_us": 98.979
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.006184895833333333,
+          "us": 9.97834285714286,
+          "memset_us": 3.42939183673469,
+          "gemm_us": 6.54895102040817,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 245,
+              "us_per_call": 3.42939183673469
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 245,
+              "us_per_call": 6.548951020408168
+            }
+          ],
+          "kept_calls": 245,
+          "event_count": 512,
+          "gap_median_us": 3.321000000000822,
+          "gap_mean_us": 3.91727788649707,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 2.718999999999994,
+              "start_us": 106.161,
+              "end_us": 108.88
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.838999999999999,
+              "start_us": 108.881,
+              "end_us": 114.72
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.0390000000000015,
+              "start_us": 126.361,
+              "end_us": 129.4
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.798999999999978,
+              "start_us": 129.401,
+              "end_us": 136.2
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 2.9989999999999952,
+              "start_us": 145.841,
+              "end_us": 148.84
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.918999999999983,
+              "start_us": 148.841,
+              "end_us": 155.76
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.0390000000000157,
+              "start_us": 164.641,
+              "end_us": 167.68
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.718999999999994,
+              "start_us": 167.681,
+              "end_us": 174.4
+            }
+          ]
+        },
+        {
+          "block": 1,
+          "pass": 1,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.008138020833333334,
+          "us": 10.576436681222695,
+          "memset_us": 3.4047903930131,
+          "gemm_us": 7.171646288209596,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 229,
+              "us_per_call": 3.4047903930131
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 229,
+              "us_per_call": 7.171646288209596
+            }
+          ],
+          "kept_calls": 229,
+          "event_count": 512,
+          "gap_median_us": 4.161000000000058,
+          "gap_mean_us": 3.7881956947162503,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 2.9990000000000094,
+              "start_us": 88.332,
+              "end_us": 91.331
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.439000000000007,
+              "start_us": 91.332,
+              "end_us": 97.771
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 1.6389999999999958,
+              "start_us": 108.452,
+              "end_us": 110.091
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.478999999999999,
+              "start_us": 113.372,
+              "end_us": 119.851
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.359000000000009,
+              "start_us": 127.572,
+              "end_us": 130.931
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.599000000000018,
+              "start_us": 130.932,
+              "end_us": 138.531
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.039000000000016,
+              "start_us": 145.813,
+              "end_us": 149.852
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.798999999999978,
+              "start_us": 149.853,
+              "end_us": 156.652
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.00927734375,
+          "us": 10.008987234042538,
+          "memset_us": 3.4073787234042405,
+          "gemm_us": 6.601608510638297,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 235,
+              "us_per_call": 3.4073787234042405
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 235,
+              "us_per_call": 6.601608510638297
+            }
+          ],
+          "kept_calls": 235,
+          "event_count": 512,
+          "gap_median_us": 4.40099999999984,
+          "gap_mean_us": 3.9192524461839606,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.0390000000000015,
+              "start_us": 93.019,
+              "end_us": 96.058
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.959000000000003,
+              "start_us": 96.059,
+              "end_us": 102.018
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.3589999999999947,
+              "start_us": 111.819,
+              "end_us": 115.178
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.918999999999997,
+              "start_us": 115.179,
+              "end_us": 122.098
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.1590000000000202,
+              "start_us": 130.939,
+              "end_us": 134.098
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.0800000000000125,
+              "start_us": 134.099,
+              "end_us": 141.179
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 2.8789999999999907,
+              "start_us": 149.18,
+              "end_us": 152.059
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.959000000000003,
+              "start_us": 152.06,
+              "end_us": 159.019
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.00830078125,
+          "us": 10.97519597989949,
+          "memset_us": 3.9477788944723593,
+          "gemm_us": 7.027417085427132,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 199,
+              "us_per_call": 3.9477788944723593
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 199,
+              "us_per_call": 7.027417085427129
+            }
+          ],
+          "kept_calls": 199.0,
+          "event_count": 404,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0010000000000039285,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.2390000000000043,
+              "start_us": 83.336,
+              "end_us": 86.575
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.879000000000005,
+              "start_us": 86.576,
+              "end_us": 93.455
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 93.456,
+              "end_us": 97.375
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.920000000000002,
+              "start_us": 97.376,
+              "end_us": 104.296
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.879000000000005,
+              "start_us": 104.297,
+              "end_us": 108.176
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.958999999999989,
+              "start_us": 108.177,
+              "end_us": 115.136
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.9989999999999952,
+              "start_us": 115.137,
+              "end_us": 119.136
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.998999999999995,
+              "start_us": 119.137,
+              "end_us": 126.136
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.00732421875,
+          "us": 9.82441447368421,
+          "memset_us": 3.9782434210526314,
+          "gemm_us": 5.846171052631577,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 152,
+              "us_per_call": 3.9782434210526314
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 152,
+              "us_per_call": 5.846171052631577
+            }
+          ],
+          "kept_calls": 152.0,
+          "event_count": 309,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.0010000000000003916,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.7190000000000083,
+              "start_us": 63.714,
+              "end_us": 66.433
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.759,
+              "start_us": 66.434,
+              "end_us": 72.193
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.918999999999997,
+              "start_us": 72.194,
+              "end_us": 76.113
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.878999999999991,
+              "start_us": 76.114,
+              "end_us": 81.993
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 81.994,
+              "end_us": 85.953
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.839000000000013,
+              "start_us": 85.954,
+              "end_us": 91.793
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 91.794,
+              "end_us": 95.753
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.838999999999999,
+              "start_us": 95.754,
+              "end_us": 101.593
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 0,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.008626302083333334,
+          "us": 9.934576470588235,
+          "memset_us": 2.982105882352962,
+          "gemm_us": 6.952470588235273,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 255,
+              "us_per_call": 2.982105882352962
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 255,
+              "us_per_call": 6.952470588235274
+            }
+          ],
+          "kept_calls": 255,
+          "event_count": 512,
+          "gap_median_us": 3.441000000000031,
+          "gap_mean_us": 4.143892367906066,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 2.7990000000000066,
+              "start_us": 105.951,
+              "end_us": 108.75
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.358999999999995,
+              "start_us": 108.751,
+              "end_us": 115.11
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.0390000000000015,
+              "start_us": 127.391,
+              "end_us": 130.43
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.638999999999982,
+              "start_us": 130.431,
+              "end_us": 138.07
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.359000000000009,
+              "start_us": 146.391,
+              "end_us": 149.75
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.560000000000002,
+              "start_us": 149.751,
+              "end_us": 157.311
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.959000000000003,
+              "start_us": 164.712,
+              "end_us": 168.671
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.799000000000007,
+              "start_us": 168.672,
+              "end_us": 175.471
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 0,
+          "variant": "asm",
+          "protocol": "pool64_host",
+          "pool_count": 64,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.0087890625,
+          "us": 10.599027397260272,
+          "memset_us": 3.3771324200913346,
+          "gemm_us": 7.221894977168938,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 219,
+              "us_per_call": 3.3771324200913346
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 219,
+              "us_per_call": 7.221894977168938
+            }
+          ],
+          "kept_calls": 219,
+          "event_count": 512,
+          "gap_median_us": 5.761000000000422,
+          "gap_mean_us": 3.863027397260275,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 3.0390000000000015,
+              "start_us": 91.266,
+              "end_us": 94.305
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.679000000000002,
+              "start_us": 94.306,
+              "end_us": 100.985
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.1189999999999998,
+              "start_us": 110.186,
+              "end_us": 113.305
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.5190000000000055,
+              "start_us": 113.306,
+              "end_us": 120.825
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.038999999999987,
+              "start_us": 129.306,
+              "end_us": 133.345
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.799000000000007,
+              "start_us": 133.346,
+              "end_us": 140.145
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.9989999999999952,
+              "start_us": 147.386,
+              "end_us": 151.385
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.718999999999994,
+              "start_us": 151.386,
+              "end_us": 158.105
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 1,
+          "variant": "asm",
+          "protocol": "reuse_graph",
+          "pool_count": 1,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.010416666666666666,
+          "us": 9.808882022471918,
+          "memset_us": 3.9740955056179854,
+          "gemm_us": 5.834786516853933,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 178,
+              "us_per_call": 3.9740955056179854
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 178,
+              "us_per_call": 5.834786516853933
+            }
+          ],
+          "kept_calls": 178.0,
+          "event_count": 371,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.000999999999997516,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.718999999999994,
+              "start_us": 63.116,
+              "end_us": 65.835
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.719000000000008,
+              "start_us": 65.836,
+              "end_us": 71.555
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.960000000000008,
+              "start_us": 71.556,
+              "end_us": 75.516
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.879000000000005,
+              "start_us": 75.517,
+              "end_us": 81.396
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.958999999999989,
+              "start_us": 81.397,
+              "end_us": 85.356
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.879000000000005,
+              "start_us": 85.357,
+              "end_us": 91.236
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 4.0390000000000015,
+              "start_us": 91.237,
+              "end_us": 95.276
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.798999999999992,
+              "start_us": 95.277,
+              "end_us": 101.076
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 2,
+          "variant": "asm",
+          "protocol": "pool64_graph",
+          "pool_count": 64,
+          "graph": true,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.007649739583333333,
+          "us": 10.944061068702286,
+          "memset_us": 3.939816793893122,
+          "gemm_us": 7.004244274809164,
+          "event_groups": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "count": 131,
+              "us_per_call": 3.939816793893122
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 131,
+              "us_per_call": 7.004244274809165
+            }
+          ],
+          "kept_calls": 131.0,
+          "event_count": 273,
+          "gap_median_us": 0.0009999999999763531,
+          "gap_mean_us": 0.001000000000001614,
+          "event_samples": [
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 2.878999999999998,
+              "start_us": 57.655,
+              "end_us": 60.534
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.0,
+              "start_us": 60.535,
+              "end_us": 67.535
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 67.536,
+              "end_us": 71.495
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.079000000000008,
+              "start_us": 71.496,
+              "end_us": 78.575
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.879000000000005,
+              "start_us": 78.576,
+              "end_us": 82.455
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.878999999999991,
+              "start_us": 82.456,
+              "end_us": 89.335
+            },
+            {
+              "name": "__amd_rocclr_fillBufferAligned",
+              "us": 3.959000000000003,
+              "start_us": 89.336,
+              "end_us": 93.295
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.878999999999991,
+              "start_us": 93.296,
+              "end_us": 100.175
+            }
+          ]
+        },
+        {
+          "block": 2,
+          "pass": 1,
+          "order": 3,
+          "variant": "asm",
+          "protocol": "reuse_host",
+          "pool_count": 1,
+          "graph": false,
+          "warmup": 128,
+          "iters": 256,
+          "errRatio": 0.007975260416666666,
+          "us": 10.039094650205758,
+          "memset_us": 3.4611028806584296,
+          "gemm_us": 6.577991769547328,
+          "event_groups": [
+            {
+              "name": "Memset (Device)",
+              "count": 243,
+              "us_per_call": 3.4611028806584296
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "count": 243,
+              "us_per_call": 6.577991769547327
+            }
+          ],
+          "kept_calls": 243,
+          "event_count": 512,
+          "gap_median_us": 3.282000000000153,
+          "gap_mean_us": 3.867727984344428,
+          "event_samples": [
+            {
+              "name": "Memset (Device)",
+              "us": 2.918999999999997,
+              "start_us": 94.78,
+              "end_us": 97.699
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 5.798999999999992,
+              "start_us": 97.7,
+              "end_us": 103.499
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 4.319000000000003,
+              "start_us": 115.1,
+              "end_us": 119.419
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.0390000000000015,
+              "start_us": 119.42,
+              "end_us": 125.459
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.1189999999999998,
+              "start_us": 133.821,
+              "end_us": 136.94
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 7.198999999999984,
+              "start_us": 136.941,
+              "end_us": 144.14
+            },
+            {
+              "name": "Memset (Device)",
+              "us": 3.0790000000000077,
+              "start_us": 152.541,
+              "end_us": 155.62
+            },
+            {
+              "name": "aiter::fp8gemm_bf16_blockscale_BpreShuffle_80x128",
+              "us": 6.078999999999979,
+              "start_us": 155.621,
+              "end_us": 161.7
+            }
+          ]
+        }
+      ],
+      "pool_count": 64,
+      "tensor_bytes_per_copy": 5580864,
+      "summary": {
+        "asm/reuse_host": {
+          "us": 10.016930855514987,
+          "memset_us": 3.424342361881986,
+          "gemm_us": 6.589800140092812,
+          "gap_mean_us": 3.9182651663405155,
+          "gap_median_us": 4.120999999999981
+        },
+        "asm/pool64_host": {
+          "us": 10.5750788556328,
+          "memset_us": 3.4058584992588483,
+          "gemm_us": 7.151878938096205,
+          "gap_mean_us": 3.828040117416835,
+          "gap_median_us": 4.601000000000113
+        },
+        "asm/reuse_graph": {
+          "us": 9.805376334619048,
+          "memset_us": 3.973547752808996,
+          "gemm_us": 5.8314835146302375,
+          "gap_mean_us": 0.0010000000000010072,
+          "gap_median_us": 0.0009999999999763531
+        },
+        "asm/pool64_graph": {
+          "us": 10.978252989949752,
+          "memset_us": 3.946401947236184,
+          "gemm_us": 7.026875209380231,
+          "gap_mean_us": 0.0010000000000018518,
+          "gap_median_us": 0.0009999999999763531
+        }
+      }
+    }
+  ],
+  "ended_unix": 1791452793.0497105
+}

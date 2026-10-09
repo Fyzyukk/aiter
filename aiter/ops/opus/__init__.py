@@ -27,6 +27,17 @@ def opus_gemm(
 
     ``Y`` is caller-owned and returned. ``layout='bpreshuffle'`` declares a
     transformed WQ content layout that Tensor metadata cannot prove.
+
+    ``kid`` is mandatory and selects the exact registered kernel configuration;
+    this entry does not choose a kid from the shape. For gfx950 native-E8M0
+    bpreshuffle runtime IDs 92310/92311/92320/92321/92330/92340 and
+    92410/92420/92430, ``split_k`` selects a launch parameter within that kid:
+    positive values are literal counts in ``1..min(16, K/128)``, zero keeps the
+    historical default (register four, fine one), and minus one requests the
+    optional shape/CU grid heuristic. The heuristic chooses only the split
+    count and has no measured performance guarantee. Fixed-split bpreshuffle
+    IDs retain ``split_k=0``. A split greater than one uses a call-scoped FP32
+    workspace; split one rejects a supplied workspace.
     """
     return _opus_dispatch(
         "opus_gemm",

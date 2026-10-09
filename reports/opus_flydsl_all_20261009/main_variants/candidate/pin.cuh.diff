@@ -1,0 +1,81 @@
+--- frozen/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh
++++ candidate/pin.cuh
+@@ -5,9 +5,10 @@
+ 
+ #include "opus_gemm_mxscale_bpreshuffle_layout_gfx950.cuh"
+ 
++namespace opus_private_pin {
+ #if !defined(__HIP_DEVICE_COMPILE__)
+ template<class Traits>
+-__global__ void gemm_a8w8_mxfp8_scale_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
++__global__ void gemm_a8w8_mxfp8_scale_kernel_private_fixed(opus_gemm_mxscale_bpreshuffle_kargs_gfx950) {}
+ #elif defined(__gfx950__)
+ 
+ #if !__has_cpp_attribute(clang::amdgpu_pin_agpr)
+@@ -102,7 +103,7 @@
+ }
+ 
+ template<class Traits>
+-__global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
++__global__ __launch_bounds__(256, 1) void gemm_a8w8_mxfp8_scale_kernel_private_fixed(opus_gemm_mxscale_bpreshuffle_kargs_gfx950 kargs) {
+     using namespace opus;
+ 
+     using T = opus::remove_cvref_t<Traits>;
+@@ -254,7 +255,7 @@
+     };
+ 
+     // Load Scale_A
+-    const int scale_k_groups = static_cast<unsigned int>(kargs.k) / T::GROUP_K;
++    const int scale_k_groups = T::FIXED_K / T::GROUP_K;
+     constexpr int sfa_lds_word_stride = T::VEC_SF * (T::B_M / T::HALF_B_M) * T::E_M; // 4 * （256 / 128）* 4 = 32
+     const auto sfa_gmem_offsets = opus::layout_to_offsets<T::VEC_SCALE_A>(u_gsfa);
+     opus::vector_t<D_SF, T::VEC_SCALE_A> sfa_panel_raw[T::SFA_PASSES_PER_CACHE_PANEL];
+@@ -326,13 +327,13 @@
+             __builtin_amdgcn_s_barrier();
+             load_sfa_panel(next_tile);
+             D_SF_PACK raw_b = 0;
+-            if (wave_id < T::SCALE_N_HALVES) {
++            if (wave_id < T::SCALE_N_HALVES && lane_id < T::SCALE_PANEL_K_CAPACITY) {
+                 const auto raw = load<1>(g_sfb, u_gsfb + gsfb_offset(next_tile));
+                 raw_b = static_cast<D_SF_PACK>(raw[0]);
+             }
+             s_waitcnt_vmcnt(0_I);
+             publish_sfa_panel(next_tile);
+-            if (wave_id < T::SCALE_N_HALVES) {
++            if (wave_id < T::SCALE_N_HALVES && lane_id < T::SCALE_PANEL_K_CAPACITY) {
+                 const D_SF_PACK packed = raw_b;
+                 store<T::VEC_SF>(s_sfb, __builtin_bit_cast(opus::vector_t<D_SF, T::VEC_SF>, packed), u_ssfb);
+             }
+@@ -343,7 +344,7 @@
+ 
+     int stage = 0;
+     int tile = 0;
+-    const int loops = static_cast<unsigned int>(kargs.k) / T::B_K;
++    const int loops = T::FIXED_K / T::B_K;
+ 
+     // ===== Prologue =====
+     async_load<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 0), ga_offset(0, 0));
+@@ -351,7 +352,7 @@
+     load_sfa_panel(0);
+ 
+     D_SF_PACK panel_sfb_raw = 0;
+-    if (wave_id < T::SCALE_N_HALVES) {
++    if (wave_id < T::SCALE_N_HALVES && lane_id < T::SCALE_PANEL_K_CAPACITY) {
+         const auto raw = load<1>(g_sfb, u_gsfb + gsfb_offset(0));
+         panel_sfb_raw = static_cast<D_SF_PACK>(raw[0]);
+     }
+@@ -359,7 +360,7 @@
+     async_load<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(0, 1), gb_offset(1, 0));
+ 
+     publish_sfa_panel(0);
+-    if (wave_id < T::SCALE_N_HALVES) {
++    if (wave_id < T::SCALE_N_HALVES && lane_id < T::SCALE_PANEL_K_CAPACITY) {
+         const D_SF_PACK packed = panel_sfb_raw;
+         store<T::VEC_SF>(s_sfb, __builtin_bit_cast(opus::vector_t<D_SF, T::VEC_SF>, packed), u_ssfb);
+     }
+@@ -870,3 +871,5 @@
+ 
+ #endif // AMDGPU hard-pin support
+ #endif // gfx950
++
++} // namespace opus_private_pin

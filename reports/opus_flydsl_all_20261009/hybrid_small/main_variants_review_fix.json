@@ -1,0 +1,331 @@
+{
+  "status": "review_passed_fix_verified_unvalidated_gpu_stopped",
+  "reviewer": "hybrid_small_v2",
+  "read_only": true,
+  "cpu_only": true,
+  "gpu_operations": 0,
+  "supersedes": "main_variants_review.json",
+  "finding_resolution": {
+    "stride_sfa_batch": "fixed; initializedm*(k/128) before any launch, with64-bit multiplication after general shape/extent guard",
+    "all_batch_strides": "initialized for both main and pin launchers",
+    "pin_SFB_short_panel": "all4 producer load/store sites retain wave<2 and lane<Panel; CPU bounds/consumer check passed",
+    "pad_pin_fixed7168": "unroll(disable) retained, final ELF shows zero scratch/spills"
+  },
+  "main_input_sha256": {
+    "candidate/traits.cuh": "265713798a96ae1fda6cad46db511c7def9bcfd2ee4535f9a89a6e51c948187e",
+    "candidate/pin.cuh": "01add859f952f9de93ba522d8c56ff187ae4e377f9ee2e3cbe69832f25b4b88d",
+    "candidate/pad_pin.cuh": "d08a4b783d3721fb1bccfc322ce2411cedcd0b95ab863017109ad5931cb83ed6",
+    "candidate/geometry.cuh": "c8e5480a7cbaae783fae19cfadf44e0024d49251f0e6ba6197d3c555c7df744e",
+    "contract.h": "89b64fca514d13a0f69bbfd27420d9f537c3382fd45b38fb2f5da485ed1ba72b",
+    "launch.hip": "067756c8b884377242e67793ccbdbcafe060ea1c1e805fcf2a52055492b4f218",
+    "launch_pin.hip": "96f0f438b91a457b3c82159ae3c4b3af26498778f380627668835e4f185d236b"
+  },
+  "main_build_receipt_sha256": "bdcd39fc4d5c8aca218f49f51d07894f92c2b0aa28da67fcbbb608e62a3eb214",
+  "main_library_sha256": {
+    "main23": "55927bffd4f3b05b59e0eda5fad3d5b58396f525f618fed0eec4a1cb48df83b6",
+    "pin24": "3b9fb951504917f017ffb87b5eb192be99453337cdf969b6800ff47283d2746d"
+  },
+  "deep_cpu_receipt_sha256": "7eb5cb871ea1101b42643d998f80a8121b4b2dbc86421df29153bb4aef5f3d4c",
+  "deep_cpu_result": {
+    "status": "passed",
+    "geometry_matrix_address_bytes": 1966080,
+    "pin_sfa_consumer_bytes": 913408,
+    "pin_sfb_consumer_bytes": 228352,
+    "BM_variants": 4,
+    "K_strides": 8,
+    "pin_fixed_reset_variants": 10,
+    "gpu_operations": 0
+  },
+  "final_main_elf_resources": [
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<64, 2, 32, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 116,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<96, 2, 32, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 140,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<128, 2, 32, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 166,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<96, 2, 8, 384> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 124,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<96, 2, 8, 768> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 124,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<128, 2, 16, 1536> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 150,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<160, 2, 16, 1536> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 176,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<96, 2, 32, 3072> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 124,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<96, 2, 32, 7168> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 140,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<128, 2, 32, 7168> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 166,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void opus_private_main_geometry_kernel<opus_private_geometry_traits<128, 2, 32, 3072> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 150,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void gemm_a8w8_mxfp8_scale_4wave_64x64_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 8> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 264,
+      "AGPR": 8
+    },
+    {
+      "side": "main23",
+      "name": "void gemm_a8w8_mxfp8_scale_4wave_64x64_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 16> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 264,
+      "AGPR": 8
+    },
+    {
+      "side": "main23",
+      "name": "void gemm_a8w8_mxfp8_scale_4wave_160x128_kernel<opus_gemm_mxscale_bpreshuffle_4wave_160x128_traits_gfx950>(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 194,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void gemm_a8w8_mxfp8_scale_4wave_128x128_kernel<opus_gemm_mxscale_bpreshuffle_4wave_128x128_traits_gfx950>(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 162,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel<opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950<192, 256, 128, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 203,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void gemm_a8w8_mxfp8_scale_8wave_192x256_kernel<opus_gemm_mxscale_bpreshuffle_8wave_traits_gfx950<128, 128, 64, 0> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 96,
+      "AGPR": 0
+    },
+    {
+      "side": "main23",
+      "name": "void gemm_a8w8_mxfp8_scale_4wave_64x64_kernel<opus_gemm_mxscale_bpreshuffle_4wave_64x64_traits_base_gfx950<64, 7168, 4> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 264,
+      "AGPR": 8
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<384, 16, false> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 484,
+      "AGPR": 228
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<1536, 16, false> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 464,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<3072, 32, false> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 464,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<7168, 64, false> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 464,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<16384, 64, false> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 468,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<384, 16, true> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 484,
+      "AGPR": 228
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<1536, 16, true> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 464,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<3072, 32, true> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 464,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<7168, 64, true> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 464,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_kernel_private_fixed<opus_private_pin_fixed_traits<16384, 64, true> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 468,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void opus_private_pin::gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel_private_fixed<opus_private_pad_pin_fixed_traits<7168> >(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 464,
+      "AGPR": 212
+    },
+    {
+      "side": "pin24",
+      "name": "void gemm_a8w8_mxfp8_scale_kernel<opus_gemm_mxscale_bpreshuffle_4wave_traits_gfx950>(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 477,
+      "AGPR": 221
+    },
+    {
+      "side": "pin24",
+      "name": "void gemm_a8w8_mxfp8_scale_kernel<opus_gemm_mxscale_bpreshuffle_4wave_traits_scale_reset_gfx950>(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 469,
+      "AGPR": 213
+    },
+    {
+      "side": "pin24",
+      "name": "void gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel<opus_gemm_mxscale_bpreshuffle_4wave_256x256_padded_m_traits_unroll4_gfx950>(opus_gemm_mxscale_bpreshuffle_kargs_gfx950)",
+      "private_segment_fixed_size": 0,
+      "vgpr_spill_count": 0,
+      "sgpr_spill_count": 0,
+      "VGPR": 492,
+      "AGPR": 236
+    }
+  ],
+  "numerical_validation": "not_run_gpu_stopped",
+  "performance_validation": "not_run_gpu_stopped"
+}

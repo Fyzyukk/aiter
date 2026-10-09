@@ -85,6 +85,10 @@ def _resolve_contract(
     family = launch_plan._validate_a8w8_public_contract(
         kernel_tag=instance.kernel_tag,
         bpreshuffle_split_k=instance.bpreshuffle_split_k,
+        bpreshuffle_runtime_split_k=(
+            instance.bpreshuffle_variant is not None
+            and instance.bpreshuffle_variant.runtime_split_k
+        ),
         kid=kid,
         input_dtype=input_dtype,
         weight_dtype=weight_dtype,
@@ -153,8 +157,8 @@ def _opus_dispatch(
         raise ValueError(f"OPUS kid must be an integer id, got {kid!r}")
     if type(split_k) is not int:
         raise ValueError(f"OPUS split_k must be an integer, got {split_k!r}")
-    if split_k < 0:
-        raise ValueError(f"OPUS split_k must be non-negative, got {split_k}")
+    if split_k < -1:
+        raise ValueError(f"OPUS split_k must be at least -1, got {split_k}")
     if layout not in (
         "plain",
         "bpreshuffle",
@@ -182,6 +186,12 @@ def _opus_dispatch(
         split_k,
     )
     route_arch = (instance.arch_prefix or GFX950).lower()
+    if split_k < 0 and not (
+        family == "a8w8_blockscale_bpreshuffle"
+        and instance.bpreshuffle_variant is not None
+        and instance.bpreshuffle_variant.runtime_split_k
+    ):
+        raise ValueError("OPUS split_k=-1 is supported only by runtime bpreshuffle candidates")
 
     if family == "a16w16":
         launch = (
@@ -250,6 +260,7 @@ def _opus_dispatch(
             w_scale,
             Y,
             kid=kid,
+            split_k=split_k,
             workspace=workspace,
             route_arch=route_arch,
             instance=instance,

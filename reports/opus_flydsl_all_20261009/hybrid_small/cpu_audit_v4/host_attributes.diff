@@ -1,0 +1,93 @@
+--- frozen/opus/opus.hpp
++++ cpu_audit_final/host_include/opus/opus.hpp
+@@ -3496,27 +3496,27 @@
+ template<typename FDim, typename Target, index_t I0, index_t... Rest> static constexpr auto pickup_filter(seq<I0, Rest...>) {
+     if constexpr (std::is_same_v<remove_cvref_t<decltype(get<I0>(FDim{}))>, remove_cvref_t<Target>>) return concat_seq(seq<I0>{}, pickup_filter<FDim, Target>(seq<Rest...>{}));
+     else return pickup_filter<FDim, Target>(seq<Rest...>{}); }
+-template<typename Shape, index_t... Fs> OPUS_D static constexpr auto pickup_shape_apply(seq<Fs...>) { return opus::make_tuple(get<Fs>(Shape{})...); }
++template<typename Shape, index_t... Fs> OPUS_H_D static constexpr auto pickup_shape_apply(seq<Fs...>) { return opus::make_tuple(get<Fs>(Shape{})...); }
+ template<typename Shape, typename FDim, typename Target, index_t... Is>
+-OPUS_D static constexpr auto pickup_shape_impl(const Shape&, const FDim&, Target, seq<Is...>) { static_assert(size<Shape>() == size<FDim>()); return pickup_shape_apply<Shape>(pickup_filter<FDim, Target>(seq<Is...>{})); }
++OPUS_H_D static constexpr auto pickup_shape_impl(const Shape&, const FDim&, Target, seq<Is...>) { static_assert(size<Shape>() == size<FDim>()); return pickup_shape_apply<Shape>(pickup_filter<FDim, Target>(seq<Is...>{})); }
+ 
+ template<typename Dim, index_t... Js>
+-OPUS_D constexpr index_t dim_group_size_sum(seq<Js...>) { return (static_cast<index_t>(get<Js>(Dim{}).size()) + ... + 0); }
++OPUS_H_D constexpr index_t dim_group_size_sum(seq<Js...>) { return (static_cast<index_t>(get<Js>(Dim{}).size()) + ... + 0); }
+ 
+ template<typename Shape, typename Dim, index_t DIdx, index_t... Ss>
+-OPUS_D constexpr auto unflatten_shape_group(seq<Ss...>) {
++OPUS_H_D constexpr auto unflatten_shape_group(seq<Ss...>) {
+     constexpr index_t SStart = dim_group_size_sum<Dim>(make_index_seq<DIdx>{});
+     return opus::make_tuple(get<SStart + Ss>(Shape{})...);
+ }
+ 
+ template<typename Shape, typename Dim, index_t... DIs>
+-OPUS_D constexpr auto unflatten_shape_impl(seq<DIs...>) { return opus::make_tuple(unflatten_shape_group<Shape, Dim, DIs>(make_index_seq<get<DIs>(Dim{}).size()>{})...); }
++OPUS_H_D constexpr auto unflatten_shape_impl(seq<DIs...>) { return opus::make_tuple(unflatten_shape_group<Shape, Dim, DIs>(make_index_seq<get<DIs>(Dim{}).size()>{})...); }
+ 
+ template<typename Dim, index_t... Js>
+-OPUS_D constexpr index_t p_count_in(seq<Js...>) { return ((std::is_same_v<remove_cvref_t<decltype(get<Js>(Dim{}))>, p_dim> ? 1 : 0) + ... + 0); }
++OPUS_H_D constexpr index_t p_count_in(seq<Js...>) { return ((std::is_same_v<remove_cvref_t<decltype(get<Js>(Dim{}))>, p_dim> ? 1 : 0) + ... + 0); }
+ 
+ template<typename Dim, typename Coord, index_t... Is>
+-OPUS_D constexpr auto unfold_p_coord_impl(const Coord& coord, seq<Is...>) {
++OPUS_H_D constexpr auto unfold_p_coord_impl(const Coord& coord, seq<Is...>) {
+     return opus::make_tuple( [&]() -> decltype(auto) {
+             if constexpr (std::is_same_v<remove_cvref_t<decltype(get<Is>(Dim{}))>, p_dim>) return get< p_count_in<Dim>(make_index_seq<Is>{}) >(coord);
+             else                                                                           return underscore{};
+@@ -3525,10 +3525,10 @@
+ }
+ 
+ template<typename Dim, index_t... Js>
+-OPUS_D constexpr index_t dim_offset_sum(seq<Js...>) { return (static_cast<index_t>(size<decltype(get<Js>(Dim{}))>()) + ... + 0); }
++OPUS_H_D constexpr index_t dim_offset_sum(seq<Js...>) { return (static_cast<index_t>(size<decltype(get<Js>(Dim{}))>()) + ... + 0); }
+ 
+ template<typename Dim, typename Shape, typename Stride, index_t I>
+-OPUS_D constexpr auto unfold_x_stride_each(const Stride& stride) {
++OPUS_H_D constexpr auto unfold_x_stride_each(const Stride& stride) {
+     constexpr index_t C = dim_offset_sum<Dim>(make_index_seq<I>{});
+     constexpr index_t len = size<decltype(get<I>(Dim{}))>();
+     constexpr auto current_shape = slice(Shape{}, number<C>{}, number<C + len>{});
+@@ -3538,27 +3538,27 @@
+ 
+ template<typename Dim, index_t J, index_t... Gs> constexpr index_t unfold_find_group(seq<Gs...>) {
+     index_t acc = 0, r = 0; ((void)(acc += size<decltype(get<Gs>(Dim{}))>(), (acc <= J ? (void)(r = Gs + 1) : (void)0)), ...); return r; }
+-template<typename Dim, typename Shape, typename Stride, index_t J> OPUS_D constexpr auto unfold_x_stride_at(const Stride& stride) {
++template<typename Dim, typename Shape, typename Stride, index_t J> OPUS_H_D constexpr auto unfold_x_stride_at(const Stride& stride) {
+     constexpr index_t G = unfold_find_group<Dim, J>(make_index_seq<size<Dim>()>{}); constexpr index_t group_end = dim_offset_sum<Dim>(make_index_seq<G + 1>{});
+     return packed_stride_at<Shape, J>(make_index_seq<group_end - J - 1>{}) * get<G>(stride); }
+-template<typename Dim, typename Shape, typename Stride, index_t... Js> OPUS_D constexpr auto unfold_x_stride_flat(const Stride& stride, seq<Js...>) { return opus::make_tuple(unfold_x_stride_at<Dim, Shape, Stride, Js>(stride)...); }
+-template<typename Dim, typename Shape, typename Stride, index_t... Is> OPUS_D constexpr auto unfold_x_stride_impl(const Stride& stride, seq<Is...>) { return unfold_x_stride_flat<Dim, Shape, Stride>(stride, make_index_seq<size<Shape>()>{}); }
++template<typename Dim, typename Shape, typename Stride, index_t... Js> OPUS_H_D constexpr auto unfold_x_stride_flat(const Stride& stride, seq<Js...>) { return opus::make_tuple(unfold_x_stride_at<Dim, Shape, Stride, Js>(stride)...); }
++template<typename Dim, typename Shape, typename Stride, index_t... Is> OPUS_H_D constexpr auto unfold_x_stride_impl(const Stride& stride, seq<Is...>) { return unfold_x_stride_flat<Dim, Shape, Stride>(stride, make_index_seq<size<Shape>()>{}); }
+ }
+ 
+ template<typename Shape, typename Dim, typename Target>
+-OPUS_D static constexpr auto pickup_shape(const Shape&, const Dim&, Target) { return pickup_shape_impl(Shape{}, flatten_tuple(Dim{}), Target{}, make_index_seq<size<Shape>()>{}); }
++OPUS_H_D static constexpr auto pickup_shape(const Shape&, const Dim&, Target) { return pickup_shape_impl(Shape{}, flatten_tuple(Dim{}), Target{}, make_index_seq<size<Shape>()>{}); }
+ 
+ // Shape : tuple<N0, N1, N2, N3, N4, N5>
+ // Dim   : tuple<tuple<*, *>, tuple<*, *, *>, tuple<*>>
+ // =>    : tuple<tuple<N0, N1>, tuple<N2, N3, N4>, tuple<N5>>
+ template<typename Shape, typename Dim, index_t... Ds /* index for Dim not Shape */>
+-OPUS_D constexpr auto unflatten_shape(const Shape&, const Dim&) {
++OPUS_H_D constexpr auto unflatten_shape(const Shape&, const Dim&) {
+     return impl::unflatten_shape_impl<Shape, Dim>(make_index_seq<size<Dim>()>{});
+ }
+ 
+ // coord: tuple<a, b>, dim: tuple<tuple<p_dim, y_dim>, tuple<y_dim, p_dim, y_dim>> -> tuple <a, _, _, b, _>
+ template<typename Dim, typename Coord>
+-OPUS_D constexpr auto unfold_p_coord(const Dim&, const Coord& coord) {
++OPUS_H_D constexpr auto unfold_p_coord(const Dim&, const Coord& coord) {
+     constexpr auto flatten_dim = flatten_tuple(Dim{});
+     using FDim = remove_cvref_t<decltype(flatten_dim)>;
+     static_assert(tuple_count<opus::p_dim>(flatten_dim) == size<Coord>(), "input coord must be same size as p_dim inside Dim");
+@@ -3566,7 +3566,7 @@
+ }
+ 
+ template<typename Dim, typename Shape, typename Stride>
+-OPUS_D constexpr auto unfold_x_stride(const Dim&, const Shape&, const Stride& stride) {
++OPUS_H_D constexpr auto unfold_x_stride(const Dim&, const Shape&, const Stride& stride) {
+     constexpr auto flatten_dim = flatten_tuple(Dim{});
+     static_assert(size<Dim>() == size<Stride>(), "input stride must be same size as x_dim");
+     static_assert(size<Shape>() == size<remove_cvref_t<decltype(flatten_dim)>>(), "input shape must be same size as flattened dim");
