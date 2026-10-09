@@ -334,9 +334,10 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         self.parser.set_defaults(preshuffle=True)
         for action in self.parser._actions:
             if action.dest == "libtype":
+                action.choices = [*action.choices, "opus_flydsl"]
                 action.help = (
                     "backend candidates to tune: ck, cktile, asm, opus, flydsl, both "
-                    "(CK + CKTile), or all"
+                    "(CK + CKTile), opus_flydsl (OPUS + FlyDSL), or all"
                 )
             elif action.dest == "preshuffle":
                 action.help = "accepted for compatibility; always enabled by this tuner"
@@ -470,7 +471,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         args.preshuffle = True
         self.opus_kids = None
         self.flydsl_baseline = args.flydsl_baseline
-        if args.libtype in ("flydsl", "all") and not args.run_config:
+        if args.libtype in ("flydsl", "opus_flydsl", "all") and not args.run_config:
             flydsl_tune.load_baseline(str(self.flydsl_baseline))
         if args.compare or args.update_improved:
             self.parser.error(
@@ -651,7 +652,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def tune(self, untunedf, tunedf, args):
         self.opus_kids = getattr(args, "opus_kids", None)
         requested_kids = set()
-        if args.libtype in ("opus", "all"):
+        if args.libtype in ("opus", "opus_flydsl", "all"):
             for row in untunedf.itertuples(index=False):
                 kids = self._candidate_kids(row.gfx, row.M, row.N, row.K)
                 if args.libtype == "opus" and not kids:
@@ -681,11 +682,11 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 tasks.extend(self.get_gemm_a8w8_blockscale_asm_tune_task(
                     info, args.splitK, 0, True, run_kwargs
                 ))
-            if args.libtype in ("opus", "all"):
+            if args.libtype in ("opus", "opus_flydsl", "all"):
                 tasks.extend(self.get_gemm_a8w8_blockscale_opus_tune_task(
                     info, 0, True, run_kwargs
                 ))
-            if args.libtype in ("flydsl", "all"):
+            if args.libtype in ("flydsl", "opus_flydsl", "all"):
                 tasks.extend(flydsl_tune.get_tune_tasks(
                     self, info, 0, run_kwargs, self.flydsl_baseline
                 ))
