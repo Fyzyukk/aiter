@@ -1,0 +1,56 @@
+{
+  "pipelines": {
+    "pin": {
+      "active_configs": 15,
+      "registered_configs": 15,
+      "header": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_pin_gfx950.cuh"
+    },
+    "tiled": {
+      "active_configs": 20,
+      "registered_configs": 20,
+      "header": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_tiled_gfx950.cuh"
+    },
+    "register": {
+      "active_configs": 13,
+      "registered_configs": 18,
+      "header": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_register_gfx950.cuh"
+    },
+    "lds": {
+      "active_configs": 38,
+      "registered_configs": 49,
+      "header": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_lds_gfx950.cuh"
+    },
+    "large_output": {
+      "active_configs": 3,
+      "registered_configs": 3,
+      "header": "csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_large_output_gfx950.cuh"
+    }
+  },
+  "before": {
+    "producer_headers": 24,
+    "traits_headers": 19,
+    "all_headers": 47,
+    "source_lines": 9838
+  },
+  "after": {
+    "producer_headers": {
+      "files": 5,
+      "lines": 3015
+    },
+    "traits_headers": {
+      "files": 1,
+      "lines": 1224
+    },
+    "all_headers": {
+      "files": 11,
+      "lines": 4950
+    }
+  },
+  "active_compile_configs": 89,
+  "registered_compatibility_configs": 105,
+  "gpu_validation": "stopped by user; no new numerical or performance results",
+  "cpu_regression": {
+    "passed": 100,
+    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q op_tests/test_jit_cache_transaction.py op_tests/test_opus_mixed_compiler.py op_tests/test_opus_bpreshuffle_registry_cpu.py op_tests/test_opus_bpreshuffle_runtime_splitk_cpu.py op_tests/test_opus_bpreshuffle_config_cpu.py"
+  }
+}

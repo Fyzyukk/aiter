@@ -278,7 +278,8 @@ class BpreshuffleRegistryCPU(unittest.TestCase):
                 self.assertTrue((OPUS / "include" / row["traits_header"]).is_file())
         # BM160 stays distinct from the similarly named BM96 geometry entries.
         self.assertEqual(self.variants[92020].fixed_k, self.variants[92003].fixed_k)
-        self.assertNotEqual(self.variants[92020].kernel, self.variants[92003].kernel)
+        self.assertEqual(self.variants[92020].kernel, self.variants[92003].kernel)
+        self.assertNotEqual(self.variants[92020].traits, self.variants[92003].traits)
         self.assertEqual((self.variants[92020].tile_m, self.variants[92003].tile_m), (160, 96))
 
     def test_shape_boundaries_match_frozen_contracts(self):
@@ -416,7 +417,8 @@ class BpreshuffleRegistryCPU(unittest.TestCase):
             instance = self.registry[kid]
             descriptor = self.variants[kid]
             with self.subTest(kid=kid):
-                self.assertIn(f'using {instance.name}_Traits = {descriptor.traits};', source)
+                self.assertIn(f'using {instance.name}_Traits = '
+                              f'opus_gemm_mxscale_bpreshuffle_pipeline_traits<{descriptor.traits}, {descriptor.schedule}>;', source)
                 self.assertIn(f'#include "{descriptor.pipeline_header}"', source)
                 self.assertEqual(source.count(f'#include "{descriptor.traits_header}"'), 2)
                 self.assertIn("static_assert(std::is_same_v<D_C, bf16_t>);", source)
@@ -468,12 +470,12 @@ class BpreshuffleRegistryCPU(unittest.TestCase):
                 self.assertEqual(complete_call.count("aiter::getCurrentHIPStream()"), 2)
                 self.assertIn("reinterpret_cast<const float*>(args.ptr_c)", complete_call)
                 self.assertIn("reinterpret_cast<opus::bf16_t*>(Y.data_ptr())", complete_call)
-        reducer_source = (OPUS / "include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh").read_text()
+        reducer_source = (OPUS / "include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_lds_gfx950.cuh").read_text()
         reducer_source = reducer_source[reducer_source.index("void opus_gemm_mxscale_bpreshuffle_reduce_kernel"):]
         self.assertIn("static_for<SplitK>", reducer_source)
         self.assertIn("cast<bf16_t>", reducer_source)
         self.assertIn("static_cast<int64_t>(decltype(split)::value) * elements", reducer_source)
-        register_source = (OPUS / "include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_register_split_gfx950.cuh").read_text()
+        register_source = (OPUS / "include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_register_gfx950.cuh").read_text()
         self.assertIn("reinterpret_cast<float*>(args.ptr_c) + static_cast<int64_t>(split)", register_source)
         self.assertIn("__shared__ float partials", register_source)
 

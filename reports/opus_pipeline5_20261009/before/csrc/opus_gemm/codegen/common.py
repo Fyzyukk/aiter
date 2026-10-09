@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
+"""Cross-arch shared codegen helpers + emit registry.
+
+Each arch module under codegen/ self-registers its emit functions at import
+time via register_emit(arch, kernel_tag, fn).  The entry-point gen_instances.py
+imports each arch module (triggering registration) and dispatches via
+dispatch_emit(cg, k, **kwargs).  Adding a new arch (e.g. gfx1250) = one new
+file + one new import; entry point itself is arch-agnostic.
+"""
+
+WARP_SIZE = 64
+
+# Paired gfx942 kernels (nosplit_tag -> splitk_tag) share one <Traits, Kargs> template.
+W3_KERNEL_PAIRS = {
+    "a16w16_kbuf2v": "a16w16_kbuf2v_sk",
+    "a16w16_kbuf2v_bk128": "a16w16_kbuf2v_bk128_sk",
+    "a16w16_quad_mfma32_kbuf1": "a16w16_quad_mfma32_kbuf1_sk",
+}
+_NOSPLIT = tuple(W3_KERNEL_PAIRS.keys())
+_GFX942_SPLITK_ONLY = ("a16w16_kbuf1_sk",)
+_SPLITK = tuple(W3_KERNEL_PAIRS.values()) + _GFX942_SPLITK_ONLY
+_GFX942_A16W16_TAGS = (
+    _SPLITK
+    + (
+        "a16w16_em3en4_lds1_pgr2_sk",
+        "a16w16_kbuf1_large_tile",
+        "a16w16_wave_k_coop",
+        "a16w16_wave_k_coop_accum",
+    )
+    + _NOSPLIT
+)
+_A16W16_CO_TAGS = (
+    "a16w16_4wave_co",
+    "a16w16_4wave_wl_co",
+    "a16w16_4wave_wlr_co",
+)
+_A16W16_TAGS = (
+    "a16w16",
+    "a16w16_flatmm",
+    "a16w16_flatmm_splitk",
+    "a16w16_persistent",
+    "a16w16_mono_tile",
+    # gfx1250 cluster/TDM split-K (exact-kid typed workspace + reduce kernel).
+    "a16w16_cluster_tdm_splitk_ws",
+    # gfx1250 CLUSTER-LAUNCH (multicast) TDM split-K (typed workspace + reduce).
+    "a16w16_clusterlaunch_tdm_splitk_ws",
+    # gfx1250 fused in-cluster reduction source (currently unregistered). When
+    # enabled it consumes caller-owned typed workspace without a second reduce.
+    "a16w16_clusterlaunch_tdm_splitk_fuse",
+    # Pre-built gfx1250 device images. Their generated host launchers reuse the
+    # ordinary five-argument non-workspace exact-kid ABI.
+    *_A16W16_CO_TAGS,
+) + _GFX942_A16W16_TAGS
+
+EMIT_REGISTRY = {}
+
+# Per-arch map registry: {(arch, map_name): dict}. Each arch module registers
+# its overrides at import time; gen_instances merges them into the cross-arch
+# default maps.
+ARCH_MAP_REGISTRY = {}
+
+_SPLITK_WORKSPACE_TYPES = {
+    "bf16_t": ("bf16_t", "__bf16", "AITER_DTYPE_bf16"),
+    "fp32_t": ("fp32_t", "float", "AITER_DTYPE_fp32"),
+}
+
+
+def splitk_workspace_type(k):
+    """Return C++ storage, pointer, and Aiter dtype tokens declared by a kid."""
+    dtype = k.splitk_workspace_dtype
+    try:
+        return _SPLITK_WORKSPACE_TYPES[dtype]
+    except KeyError as exc:
+        raise ValueError(
+            f"workspace instance {getattr(k, 'name', '<unknown>')} must declare "
+            f"splitk_workspace_dtype as bf16_t or fp32_t, got {dtype!r}"
+        ) from exc
+
+
+def register_arch_map(arch, map_name, mapping):
+    key = (arch, map_name)
+    if key in ARCH_MAP_REGISTRY:
+        raise RuntimeError(f"arch map already registered for {key}")
+    ARCH_MAP_REGISTRY[key] = mapping
+
+
+def get_arch_map(arch, map_name):
+    """Return the registered map, or {} if none."""
+    return ARCH_MAP_REGISTRY.get((arch, map_name), {})
+
+
+def kid_arch(k):
+    """Resolve a kid's target arch_prefix (defaults to gfx950 for legacy kids)."""
+    return (k.arch_prefix or "gfx950").lower()
+
+
+def register_emit(arch, kernel_tag, fn):
+    """Register a per-(arch, kernel_tag) emit function. Called at arch-module import."""
+    key = (arch, kernel_tag)
+    if key in EMIT_REGISTRY:
+        raise RuntimeError(f"emit already registered for {key}")
+    EMIT_REGISTRY[key] = fn
+
+
+def dispatch_emit(cg, k, **kwargs):
+    """Lookup (kid_arch(k), k.kernel_tag) -> call registered emit."""
+    key = (kid_arch(k), k.kernel_tag)
+    fn = EMIT_REGISTRY.get(key)
+    if fn is None:
+        raise KeyError(
+            f"No emit registered for {key}. "
+            f"Available: {sorted(EMIT_REGISTRY.keys())}"
+        )
+    return fn(cg, k, **kwargs)

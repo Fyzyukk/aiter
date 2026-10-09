@@ -1,7 +1,8 @@
 # OPUS GEMM and BMM Python interfaces
 
 OPUS exposes strict exact-kid functions for logical 2D GEMM and batch-first 3D
-BMM, plus the retained shape-driven `gemm_a16w16_opus` compatibility entry.
+BMM, plus the parameterized `opus_gemm_bpreshuffle` interface and the retained
+shape-driven `gemm_a16w16_opus` compatibility entry.
 The exact functions never select a kernel from the shape; the compatibility
 entry resolves an A16W16 kid before entering the same exact path.
 
@@ -122,7 +123,7 @@ to the same `_execute_a16w16` planner/executor used by A16W16 GEMM.
 | `a8w8` | gfx950 kid 2 | GEMM only; FP8 `XQ/WQ`, FP32 `Y`, plain WQ, no scales |
 | `a8w8_blockscale` | gfx950 kid 1 | GEMM only; FP8 `XQ/WQ`, FP32 `Y`, plain WQ, two FP32 scales |
 | `a8w8_blockscale_bpreshuffle` | gfx942 kid 11000 | GEMM only; FP8 `XQ/WQ`, BF16 `Y`, pre-shuffled WQ, two FP32 scales |
-| `a8w8_mxscale_gemm_bpreshuffle` | gfx950, 105 registered IDs / 89 default tuning configurations | GEMM only; FP8 E4M3FN inputs, BF16 `Y`, pre-shuffled WQ, native E8M0 scales; nine IDs accept runtime global split-K and optional FP32 workspace |
+| `a8w8_mxscale_gemm_bpreshuffle` | gfx950, five pipelines / 89 compile configurations / 105 compatibility IDs | GEMM only; FP8 E4M3FN inputs, BF16 `Y`, pre-shuffled WQ, native E8M0 scales; nine IDs accept runtime global split-K and optional FP32 workspace |
 | `a8w8_mxscale_bmm` | gfx950 global kids 8000--8653 (45 registered ids) | BMM only; batch-first FP8 inputs, E8M0 scales, BF16 or FP32 output, optional split-K Torch workspace |
 
 Empty family tables on another architecture are valid capability states. A
@@ -194,34 +195,45 @@ explicit OPUS exact-kid call above.
 
 ### gfx950 native-E8M0 MXFP8 bpreshuffle GEMM
 
-The caller selects an exact registered kid and supplies already shuffled FP8
-weights. This family uses logical 2D tensors and `layout="bpreshuffle"`.
-A scales have logical shape `[M,K/128]` with dense column-major strides
-`(1,M)`; B scales are contiguous `[N/128,K/128]`. Both are one-byte E8M0.
-Inputs and BF16 output are contiguous and on the same device. Kid-specific
-shape, alignment, and byte limits still apply.
+Select one of five pipelines with an exact configuration object or named
+compile parameters. The wrapper resolves the internal launcher ID. The
+configuration catalog filters by `(M,N,K)` before tuning; tile/wave/stage/load
+policies remain compile-time parameters. Partial named parameters must identify
+one registered tuple. Arbitrary unregistered tuples are rejected.
+
+A scales have logical shape `[M,K/128]` with dense column-major strides `(1,M)`;
+B scales are contiguous `[N/128,K/128]`. Both are one-byte E8M0. FP8 inputs
+and BF16 output are contiguous and on the same device. Configuration-specific
+shape, alignment, and byte limits apply.
 
 ```python
-from aiter.ops.opus import opus_gemm
+from aiter.ops.opus import opus_gemm_bpreshuffle
 from aiter.ops.shuffle import shuffle_weight
+from csrc.opus_gemm.opus_gemm_bpreshuffle_config import pipeline_configs
 
-# Existing gfx950 tensors: XQ [M,K], WQ [N,K], native E8M0 x_scale/w_scale.
-# Kid 92310 requires M <= 512, N divisible by 128, and K divisible by 128.
+# Existing tensors; this register configuration accepts M <= 512,
+# N divisible by 128 and K divisible by 128.
 WQ_shuffled = shuffle_weight(WQ, layout=(16, 16))
 Y = torch.empty((M, N), device=XQ.device, dtype=torch.bfloat16)
-
-# Literal global split count three; K must contain at least three K128 tiles.
-opus_gemm(
-    XQ, WQ_shuffled, Y, kid=92310, layout="bpreshuffle",
-    x_scale=x_scale, w_scale=w_scale, split_k=3,
+opus_gemm_bpreshuffle(
+    XQ, WQ_shuffled, Y, x_scale, w_scale,
+    pipeline="register", tile_m=16, tile_n=16, wave_k=1, split_k=3,
 )
 
-# The exact kid stays 92310; only its split count uses the shape/CU heuristic.
-opus_gemm(
-    XQ, WQ_shuffled, Y, kid=92310, layout="bpreshuffle",
-    x_scale=x_scale, w_scale=w_scale, split_k=-1,
+# A tuner iterates configs, measures them, and saves the winning parameters.
+configs = pipeline_configs((M, N, K), pipelines=["register", "lds"])
+# Given a measured selection `best_config` and literal `best_split`:
+opus_gemm_bpreshuffle(
+    XQ, WQ_shuffled, Y, x_scale, w_scale,
+    pipeline=best_config.pipeline, config=best_config, split_k=best_split,
 )
 ```
+
+`config` also accepts its complete parameter mapping or `config.to_json()`.
+The lower-level `opus_gemm(..., kid=..., layout="bpreshuffle")` remains available
+for existing callers. Kernel source, parameter mapping, tuning CSV metadata and
+verification are documented in the
+[five-pipeline report](../../../reports/opus_pipeline5_20261009/README.md).
 
 Runtime split-K is supported by register IDs 92310/92311/92320/92321/92330/92340
 and fine LDS IDs 92410/92420/92430. Positive `split_k` values are literal counts
@@ -229,7 +241,8 @@ in `1..min(16,K/128)`. Zero preserves the historical default: register four,
 fine one; the register default may include empty partitions for short K.
 Minus one chooses an optional grid/CU heuristic using M/N/K and the input
 device CU count. It has not been measured as the fastest split. Tile geometry
-and local WaveK remain static, and `kid` is always mandatory.
+and local WaveK remain static. The exact `opus_gemm` interface requires `kid`;
+`opus_gemm_bpreshuffle` resolves it from pipeline parameters.
 
 Split one writes BF16 directly and requires `workspace=None`. Larger splits
 use `split_k * M * N` FP32 workspace elements and a shared reducer. Python
@@ -239,12 +252,9 @@ from input/output. Fine IDs 92411/92421/92431 retain their fixed-split-two
 compatibility paths and require public `split_k=0`, as do other fixed-split
 bpreshuffle IDs.
 
-The [runtime split-K report](../../../reports/opus_runtime_splitk_20261009/README.md)
-records the 89 active configurations and 105 registered IDs. New runtime
-paths have offline header and CPU layout checks; complete runtime integration
-verification passed there. GPU numerical and performance tests remain
-stopped. The examples describe future calls and were not executed during this
-documentation update.
+All 105 compatibility configurations compiled offline after consolidation,
+and the host/router/link checks passed. GPU numerical and performance tests
+remain stopped. These examples were not executed during this update.
 
 ### gfx950 MXFP8 BMM
 

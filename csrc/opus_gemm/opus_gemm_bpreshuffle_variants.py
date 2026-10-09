@@ -34,6 +34,7 @@ class BpreshuffleVariant:
     sfa_alignment: int = 16
     c_alignment: int = 16
     runtime_split_k: bool = False
+    schedule: int = 0
 
 
 _HEADER_PREFIX = "gfx950/opus_gemm_"
@@ -145,7 +146,24 @@ def _variants():
             _SYMBOL + f"large_output_{name}_kernel",
             _SYMBOL + f"large_output_{name}_traits",
             192, 256, 4, 2, m_align=64, fixed_k=1536))
-    return tuple(sorted(entries, key=lambda entry: entry.kid))
+    # Five producer templates own all retained configurations. Schedule selects
+    # a compile-time load/wait policy inside a shared body, not another kernel.
+    policies = {
+        "geometry": ("tiled", 2), "tile_order": ("tiled", 4),
+        "shortk": ("tiled", 2), "pin_fixed": ("pin", 0),
+        "pad_pin_fixed": ("pin", 2), "register_split": ("register", 1),
+        "fine_lds": ("lds", 0), "small_direct_b": ("lds", 2),
+        "large_output": ("large_output", 0),
+    }
+    result = []
+    for entry in entries:
+        pipeline, schedule = policies[entry.family]
+        if entry.kid == 92501:
+            schedule = 1
+        result.append(replace(entry, pipeline_header=_pipeline(pipeline),
+                              traits_header=_HEADER_PREFIX + "traits_a8w8_mxscale_bpreshuffle_gfx950.cuh",
+                              kernel=_SYMBOL + pipeline + "_kernel", schedule=schedule))
+    return tuple(sorted(result, key=lambda entry: entry.kid))
 
 
 NEW_BPRESHUFFLE_VARIANTS = _variants()

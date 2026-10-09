@@ -10,6 +10,46 @@ from torch import Tensor
 from .dispatch import _opus_dispatch
 
 
+def opus_gemm_bpreshuffle(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    *,
+    pipeline: str,
+    config=None,
+    split_k: int = 0,
+    workspace: Tensor | None = None,
+    **compile_params,
+) -> Tensor:
+    """Launch native-E8M0 GEMM by pipeline and static compile parameters.
+
+    The five pipelines are ``pin``, ``tiled``, ``register``, ``lds`` and
+    ``large_output``. ``config`` accepts an enumerated BpreshuffleConfig, its
+    complete JSON payload, or its parameter mapping. Named compile parameters
+    can instead identify one registered configuration. Tile, wave and queue
+    parameters select compiled specializations; runtime split-K is a separate
+    launch argument. The internal compatibility ID is resolved automatically.
+    """
+    from csrc.opus_gemm.opus_gemm_bpreshuffle_config import resolve_config
+
+    selected = resolve_config(pipeline, config, **compile_params)
+    return _opus_dispatch(
+        "opus_gemm",
+        2,
+        XQ,
+        WQ,
+        Y,
+        kid=selected.legacy_kid,
+        layout="bpreshuffle",
+        x_scale=x_scale,
+        w_scale=w_scale,
+        split_k=split_k,
+        workspace=workspace,
+    )
+
+
 def opus_gemm(
     XQ: Tensor,
     WQ: Tensor,
@@ -113,4 +153,5 @@ __all__ = [
     "gemm_a16w16_opus",
     "opus_bmm",
     "opus_gemm",
+    "opus_gemm_bpreshuffle",
 ]

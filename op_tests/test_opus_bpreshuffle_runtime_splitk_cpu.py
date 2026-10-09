@@ -33,6 +33,26 @@ FINE_IDS = frozenset({92410, 92420, 92430})
 ALIAS_IDS = {92411: 92410, 92421: 92420, 92431: 92430}
 INT32_MAX = 2**31 - 1
 INT64_MAX = 2**63 - 1
+PIPELINES = frozenset({"pin", "tiled", "register", "lds", "large_output"})
+FROZEN_PRODUCER_POLICIES = {
+    "gemm_a8w8_mxfp8_scale_kernel": ("pin", 0),
+    "gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel": ("pin", 1),
+    "opus_gemm_mxscale_bpreshuffle_pin_fixed_kernel": ("pin", 0),
+    "opus_gemm_mxscale_bpreshuffle_pad_pin_fixed_kernel": ("pin", 2),
+    "gemm_a8w8_mxfp8_scale_8wave_192x256_kernel": ("tiled", 0),
+    "gemm_a8w8_mxfp8_scale_4wave_128x128_kernel": ("tiled", 1),
+    "gemm_a8w8_mxfp8_scale_4wave_160x128_kernel": ("tiled", 2),
+    "opus_gemm_mxscale_bpreshuffle_geometry_kernel": ("tiled", 2),
+    "opus_gemm_mxscale_bpreshuffle_shortk_kernel": ("tiled", 2),
+    "gemm_a8w8_mxfp8_scale_4wave_64x128_kernel": ("tiled", 3),
+    "gemm_a8w8_mxfp8_scale_4wave_64x64_kernel": ("tiled", 4),
+    "gemm_a8w8_mxfp8_scale_small_register_kernel": ("register", 0),
+    "gemm_a8w8_mxfp8_scale_small_lds_kernel": ("lds", 0),
+    "opus_gemm_mxscale_bpreshuffle_small_direct_b_kernel": ("lds", 2),
+    "gemm_a8w8_mxfp8_scale_8wave_192x256_large_output_kernel": ("large_output", 0),
+    "opus_gemm_mxscale_bpreshuffle_large_output_panel16_kernel": ("large_output", 0),
+    "opus_gemm_mxscale_bpreshuffle_large_output_direct_b_kernel": ("large_output", 1),
+}
 
 
 class _RejectGPUImports(importlib.abc.MetaPathFinder):
@@ -188,8 +208,11 @@ def _generate(common, source_path, helper_path, kids):
                              _host_instantiations=[], _device_instantiations=[])
         for kid in sorted(kids):
             instance = registry[kid]
-            generator(cg, instance, pipeline_header="unused", traits_header="unused",
-                      kernel_func="unused", traits_name="unused",
+            generator(cg, instance,
+                      pipeline_header="gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh",
+                      traits_header="gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh",
+                      kernel_func="gemm_a8w8_mxfp8_scale_kernel",
+                      traits_name="opus_gemm_mxscale_bpreshuffle_4wave_traits_gfx950",
                       kargs_name="opus_gemm_mxscale_bpreshuffle_kargs_gfx950",
                       instance_impl_preamble=helpers["instance_impl_preamble"],
                       make_a8w8_bpreshuffle_host_decl=helpers["_make_a8w8_bpreshuffle_host_decl"])
@@ -199,6 +222,31 @@ def _generate(common, source_path, helper_path, kids):
                 device=cg._device_instantiations[-1]["device_decl"],
             )
     return outputs
+
+
+def _consolidated_frozen_launcher(frozen):
+    """Apply only the reviewed header/symbol/policy changes to frozen text.
+
+    Every guard, shape dispatch branch, launch dimension, workspace operation,
+    argument write and traits parameter must otherwise remain byte-for-byte.
+    """
+    declaration = re.search(r"__global__ void (\w+)\(", frozen.source)
+    pipeline, schedule = FROZEN_PRODUCER_POLICIES[declaration.group(1)]
+    symbol_pattern = r"\b(" + "|".join(FROZEN_PRODUCER_POLICIES) + r")\b"
+
+    def symbols(source):
+        return re.sub(symbol_pattern,
+                      lambda match: "opus_gemm_mxscale_bpreshuffle_"
+                      + FROZEN_PRODUCER_POLICIES[match.group(1)][0] + "_kernel", source)
+
+    source = re.sub(r'#include "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle[^"\n]*"',
+                    '#include "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"', frozen.source)
+    source = re.sub(r'#include "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle[^"\n]*"',
+                    f'#include "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_{pipeline}_gfx950.cuh"', source)
+    source = re.sub(r"^(using \w+ = )(.+);$",
+                    lambda match: match.group(1) + "opus_gemm_mxscale_bpreshuffle_pipeline_traits<"
+                    + match.group(2) + f", {schedule}>;", source, flags=re.M)
+    return SimpleNamespace(source=symbols(source), host=frozen.host, device=symbols(frozen.device))
 
 
 class RuntimeSplitKCPU(unittest.TestCase):
@@ -232,7 +280,8 @@ class RuntimeSplitKCPU(unittest.TestCase):
 
     def test_nonruntime_metadata_names_and_generated_launchers_are_preserved(self):
         old_fields = [field.name for field in fields(self.before.OpusGemmInstance)]
-        descriptor_fields = [field.name for field in fields(next(iter(self.before.NEW_BPRESHUFFLE_VARIANTS)))]
+        descriptor_fields = [field.name for field in fields(next(iter(self.before.NEW_BPRESHUFFLE_VARIANTS)))
+                             if field.name not in {"pipeline_header", "traits_header", "kernel"}]
         for kid, frozen in self.before.a8w8_mxscale_gemm_bpreshuffle_kernels_list.items():
             if kid in RUNTIME_IDS:
                 continue
@@ -245,9 +294,44 @@ class RuntimeSplitKCPU(unittest.TestCase):
                     else:
                         self.assertEqual(getattr(current, name), getattr(frozen, name), name)
                 self.assertEqual(current.name, frozen.name)
-                self.assertEqual(self.generated[kid].source, self.generated_before[kid].source)
-                self.assertEqual(self.generated[kid].host, self.generated_before[kid].host)
-                self.assertEqual(self.generated[kid].device, self.generated_before[kid].device)
+                expected = _consolidated_frozen_launcher(self.generated_before[kid])
+                self.assertEqual(self.generated[kid].source, expected.source)
+                self.assertEqual(self.generated[kid].host, expected.host)
+                self.assertEqual(self.generated[kid].device, expected.device)
+
+    def test_five_compute_headers_and_entry_names_cover_every_configuration(self):
+        expected_headers = {f"opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_{name}_gfx950.cuh"
+                            for name in PIPELINES}
+        expected_symbols = {f"opus_gemm_mxscale_bpreshuffle_{name}_kernel" for name in PIPELINES}
+        actual_headers = {path.name for path in INCLUDE.glob("opus_gemm_pipeline*bpreshuffle*.cuh")}
+        self.assertEqual(actual_headers, expected_headers)
+        self.assertEqual({path.name for path in INCLUDE.glob("opus_gemm_traits*bpreshuffle*.cuh")},
+                         {"opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"})
+        source_symbols = set()
+        for filename in sorted(expected_headers):
+            source = (INCLUDE / filename).read_text()
+            self.assertNotRegex(source, r'#include "[^"\n]*pipeline[^"\n]*bpreshuffle')
+            source_symbols.update(re.findall(r"\bvoid (opus_gemm_mxscale_bpreshuffle_\w+_kernel)\(", source))
+        self.assertEqual(source_symbols - {"opus_gemm_mxscale_bpreshuffle_reduce_kernel"}, expected_symbols)
+        generated_symbols, generated_headers = set(), set()
+        for kid, output in self.generated.items():
+            kernels = set(re.findall(r"\b(opus_gemm_mxscale_bpreshuffle_\w+_kernel)<[^;]+?<<<", output.source))
+            self.assertEqual(len(kernels & expected_symbols), 1, kid)
+            generated_symbols |= kernels & expected_symbols
+            generated_headers.update(re.findall(r'#include "gfx950/(opus_gemm_pipeline[^"\n]+)"', output.source))
+            if kid not in RUNTIME_IDS:
+                declaration = re.search(r"__global__ void (\w+)\(", self.generated_before[kid].source)
+                pipeline, schedule = FROZEN_PRODUCER_POLICIES[declaration.group(1)]
+                self.assertEqual(kernels & expected_symbols,
+                                 {f"opus_gemm_mxscale_bpreshuffle_{pipeline}_kernel"}, kid)
+                if kid in self.variants:
+                    self.assertEqual(self.variants[kid].schedule, schedule, kid)
+            else:
+                self.assertEqual(kernels & expected_symbols,
+                                 {"opus_gemm_mxscale_bpreshuffle_lds_kernel" if kid in FINE_IDS
+                                  else "opus_gemm_mxscale_bpreshuffle_register_kernel"}, kid)
+        self.assertEqual(generated_headers, expected_headers)
+        self.assertEqual(generated_symbols, expected_symbols)
 
     def test_all_literal_partitions_are_enumerated_and_cap_at_16_k128_tiles(self):
         choose = self.common.bpreshuffle_candidate_split_k
@@ -523,15 +607,18 @@ class RuntimeSplitKCPU(unittest.TestCase):
         self.assertNotIn("BPRESHUFFLE_RUNTIME_KID_DISPATCH", gfx942_arch)
 
     def test_kernel_sources_use_shared_partition_helper_and_runtime_count(self):
-        fine = (INCLUDE / "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_runtime_gfx950.cuh").read_text()
-        register = (INCLUDE / "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_register_runtime_gfx950.cuh").read_text()
-        self.assertIn("gemm_a8w8_mxfp8_scale_small_lds_runtime_kernel", fine)
-        self.assertIn("opus_gemm_mxscale_bpreshuffle_register_runtime_kernel", register)
-        self.assertIn("balanced_partition(total_loops", fine)
-        self.assertIn("balanced_partition(total_tiles", register)
+        fine = (INCLUDE / "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_lds_gfx950.cuh").read_text()
+        register = (INCLUDE / "opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_register_gfx950.cuh").read_text()
+        self.assertIn("opus_gemm_mxscale_bpreshuffle_lds_kernel", fine)
+        self.assertIn("opus_gemm_mxscale_bpreshuffle_register_kernel", register)
+        self.assertRegex(fine, r"balanced_partition\(\s*total_loops")
+        self.assertRegex(register, r"balanced_partition\(\s*total_tiles")
         self.assertIn("args.split_k", fine)
         self.assertIn("args.split_k", register)
-        self.assertIn("balanced_partition(global.count", register)
+        self.assertRegex(register, r"balanced_partition\(\s*global_tiles, T::WAVE_K, wk")
+        self.assertIn("constexpr bool DirectB = T::SCHEDULE == 2", fine)
+        self.assertEqual(fine.count("auto consume ="), 1)
+        self.assertEqual(register.count("auto compute ="), 1)
 
     def test_tuner_records_each_literal_split_and_forwards_it_to_the_operation(self):
         path = OPUS / "opus_gemm_mxscale_bpreshuffle_tune.py"
@@ -559,7 +646,9 @@ class RuntimeSplitKCPU(unittest.TestCase):
         }
         exec(compile(ast.fix_missing_locations(ast.Module(body=[extracted_class], type_ignores=[])), str(path), "exec"), namespace)
         scalar = namespace["ScalarTuner"]()
-        scalar._candidate_kids = lambda *args: [92310, 92410, 9000]
+        scalar._candidate_configs = lambda *args: [
+            SimpleNamespace(legacy_kid=kid) for kid in (92310, 92410, 9000)
+        ]
         tasks = scalar.get_gemm_a8w8_blockscale_opus_tune_task(("gfx950", 256, 256, 256, 384), 0, True, {})
         choices = [(task[0][1], task[0][2]) for task in tasks]
         self.assertEqual(choices, [(92310, 1), (92310, 2), (92310, 3),

@@ -20,7 +20,7 @@ from codegen.common import (
 # ---------------- gfx950 arch-override maps ----------------
 
 PIPELINE_HEADER_MAP = {
-    "a8w8_mxscale_gemm_bpreshuffle": "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh",
+    "a8w8_mxscale_gemm_bpreshuffle": "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_pin_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_bmm_pipeline_a8w8_mxscale_gfx950.cuh",
     "a8w8_mxscale": "gfx950/opus_bmm_pipeline_a8w8_mxscale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_pipeline_a8w8_noscale_gfx950.cuh",
@@ -2868,101 +2868,49 @@ def gen_mxscale_bpreshuffle_instance(
     register_tail_pipeline = not variant and k.name_tag.startswith("register_tail")
     large_output = k.name_tag == "large_output"
     merged = not variant and k.name_tag in {"main", "small", "narrow", "large_output", "tiny"}
+    # Exact IDs remain compatibility ABI keys; configurations instantiate only
+    # five producer templates. A schedule is a compile-time policy, not a file.
     if variant:
-        pipeline_header = variant.pipeline_header
-        traits_header = variant.traits_header
-        kernel_func = variant.kernel
+        compute_pipeline = variant.kernel.removeprefix("opus_gemm_mxscale_bpreshuffle_").removesuffix("_kernel")
+        schedule = variant.schedule
         traits_name = variant.traits
         large_output = variant.family == "large_output"
-        assert (k.B_M, k.B_N) == (variant.tile_m, variant.tile_n)
-        assert k.m_align == variant.m_align and k.max_m == variant.max_m
-        assert k.bpreshuffle_fixed_k == variant.fixed_k
-        assert k.bpreshuffle_split_k == variant.split_k
-    elif register_tail_pipeline:
-        assert k.pad_m and k.m_align == 1 and k.max_m == 512
-        assert k.bpreshuffle_fixed_k == 7168 and (k.T_M, k.T_N) == (1, 1)
-        pipeline_header = "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh"
-        traits_header = "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh"
-        kernel_func = "gemm_a8w8_mxfp8_scale_small_register_kernel"
+        assert (k.B_M, k.B_N, k.m_align, k.max_m) == (
+            variant.tile_m, variant.tile_n, variant.m_align, variant.max_m)
+        assert (k.bpreshuffle_fixed_k, k.bpreshuffle_split_k) == (variant.fixed_k, variant.split_k)
+    elif register_tail_pipeline or (small_pipeline and k.name_tag.startswith("small_register")):
+        compute_pipeline, schedule = "register", 0
         traits_name = _bpreshuffle_compact_traits(k)
-    elif fine_pipeline:
-        assert k.pad_m and k.m_align == 1 and k.max_m == 2048
-        pipeline_header = "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_fine_lds_gfx950.cuh"
-        traits_header = "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_fine_gfx950.cuh"
-        kernel_func = "gemm_a8w8_mxfp8_scale_small_lds_kernel"
-        traits_name = _bpreshuffle_compact_traits(k)
-    elif small_pipeline:
-        assert k.pad_m and k.m_align == 1 and k.max_m in (512, 2048)
-        implementation = "small_register" if k.name_tag.startswith("small_register") else "small_lds"
-        pipeline_header = (
-            "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
-            f"{implementation}_gfx950.cuh"
-        )
-        traits_header = "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh"
-        kernel_func = f"gemm_a8w8_mxfp8_scale_{implementation}_kernel"
+    elif fine_pipeline or small_pipeline:
+        compute_pipeline, schedule = "lds", 0
         traits_name = _bpreshuffle_compact_traits(k)
     elif merged:
         family = k.name_tag
-        assert k.max_k == 16384
-        assert k.m_align == (
-            1 if family in {"narrow", "tiny"} or (family == "small" and k.B_M == 128)
-            else 16 if family in {"main", "small"} else 64
-        )
-        assert k.pad_m
-        if family in {"main", "large_output"}:
-            assert (k.B_M, k.B_N, k.BLOCK_SIZE, k.T_M, k.T_N) == (192, 256, 512, 4, 2)
-        elif family == "tiny":
-            assert k.B_M in (16, 32) and k.B_N == 64
-            assert k.BLOCK_SIZE == 128 and (k.T_M, k.T_N) == (1, 2)
-        else:
-            assert k.BLOCK_SIZE == 256 and (k.T_M, k.T_N) == (2, 2)
-            if family == "small":
-                assert k.B_M in (128, 160) and k.B_N == 128
-            else:
-                assert k.B_M == 64 and k.B_N in (64, 128)
-        # Keep registry tags (and public kernelName values) stable while naming
-        # private pipeline/traits/kernel symbols by waves and tile geometry.
-        implementation = {
-            "main": "8wave_192x256",
-            "small": f"4wave_{k.B_M}x{k.B_N}",
-            "narrow": f"4wave_{k.B_M}x{k.B_N}",
-            "large_output": "8wave_192x256_large_output",
-            "tiny": f"2wave_{k.B_M}x{k.B_N}",
-        }[family]
-        pipeline_header = (
-            "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
-            f"{implementation}_gfx950.cuh"
-        )
-        kernel_func = f"gemm_a8w8_mxfp8_scale_{implementation}_kernel"
-        traits_header = (
-            "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_"
-            f"{implementation}_gfx950.cuh"
-        )
+        compute_pipeline = "large_output" if large_output else "tiled"
+        schedule = (0 if family in {"main", "large_output"} else
+                    1 if family == "small" and k.B_M == 128 else
+                    2 if family == "small" else 3 if k.B_N == 128 else 4)
+        implementation = ("8wave_192x256_large_output" if large_output else
+                          "8wave_192x256" if family == "main" else
+                          f"4wave_{k.B_M}x{k.B_N}")
         traits_name = f"opus_gemm_mxscale_bpreshuffle_{implementation}_traits_gfx950"
     else:
-        assert k.BLOCK_SIZE == 256
-        assert (k.B_M, k.B_N) == (256, 256)
-        assert (k.T_M, k.T_N) == (2, 2)
+        assert (k.B_M, k.B_N, k.BLOCK_SIZE) == (256, 256, 256)
+        compute_pipeline, schedule = "pin", int(k.pad_m)
+        traits_name = "opus_gemm_mxscale_bpreshuffle_4wave"
         if k.pad_m:
-            assert (k.B_M, k.B_N) == (256, 256) and k.has_oob
-            pipeline_header = (
-                "gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_"
-                "4wave_256x256_padded_m_gfx950.cuh"
-            )
-            kernel_func = "gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel"
-            traits_header = (
-                "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_"
-                "4wave_256x256_padded_m_gfx950.cuh"
-            )
-            traits_name = (
-                "opus_gemm_mxscale_bpreshuffle_4wave_256x256_padded_m_traits_gfx950"
-            )
-        assert k.bpreshuffle_loop_unroll in (2, 4)
+            traits_name += "_256x256_padded_m"
+        traits_name += "_traits_gfx950"
         if k.bpreshuffle_loop_unroll == 4:
             traits_name = traits_name.removesuffix("_gfx950") + "_unroll4_gfx950"
         if k.bpreshuffle_scale_reset:
-            assert not k.pad_m and k.bpreshuffle_loop_unroll == 2
             traits_name = traits_name.removesuffix("_gfx950") + "_scale_reset_gfx950"
+    pipeline_header = f"gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_{compute_pipeline}_gfx950.cuh"
+    traits_header = "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"
+    kernel_func = f"opus_gemm_mxscale_bpreshuffle_{compute_pipeline}_kernel"
+    def policy_traits(base):
+        return f"opus_gemm_mxscale_bpreshuffle_pipeline_traits<{base}, {schedule}>"
+    traits_name = policy_traits(traits_name)
     if runtime_split_k:
         kargs_name = "opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950"
     n_align = k.GROUP_N if k.bpreshuffle_pad_n else max(k.B_N, k.GROUP_N)
@@ -2985,6 +2933,7 @@ __global__ void {kernel_func}({kargs_name} kargs);
         kernel_template = "typename Traits, bool Partial" if runtime_fine else "typename Traits"
         split = f"""#ifdef OPUS_FUSED_HOST_TU
 #include "{traits_header}"
+#include "gfx950/opus_gemm_mxscale_bpreshuffle_runtime_kargs_gfx950.cuh"
 template<{kernel_template}>
 __global__ void {kernel_func}({kargs_name} kargs);
 template<int Vec, int Block>
@@ -3087,7 +3036,7 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
             assert choice.max_m == k.max_m and choice.m_align == k.m_align
             assert choice.GROUP_N == k.GROUP_N and choice.GROUP_K == k.GROUP_K
             if not declared:
-                traits_alias += f"\nusing {alias} = {_bpreshuffle_compact_traits(choice)};"
+                traits_alias += f"\nusing {alias} = {policy_traits(_bpreshuffle_compact_traits(choice))};"
                 device_decl += f"template __global__ void {kernel_func}<{alias}>({kargs_name});\n"
             body = compact_launch(choice, alias)
             if choice.bpreshuffle_split_k > 1:
@@ -3096,7 +3045,7 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
             for index, specialization in reversed(list(enumerate(choice.bpreshuffle_specializations))):
                 fixed_k, _, _, vec, block, _ = specialization
                 fixed_alias = f"{alias}_Fixed{index}"
-                traits_alias += f"\nusing {fixed_alias} = {_bpreshuffle_compact_traits(choice, specialization)};"
+                traits_alias += f"\nusing {fixed_alias} = {policy_traits(_bpreshuffle_compact_traits(choice, specialization))};"
                 device_decl += f"template __global__ void {kernel_func}<{fixed_alias}>({kargs_name});\n"
                 body = (f"if (k == {fixed_k}) {{\n        {compact_launch(choice, fixed_alias)}"
                         f"\n    }} else {{\n        {body}\n    }}")
@@ -3147,7 +3096,7 @@ __global__ void opus_gemm_mxscale_bpreshuffle_reduce_runtime_kernel(
             if identity not in emitted:
                 alias = f"{k.name}_Specialization{index}"
                 emitted[identity] = alias
-                traits_alias += f"\nusing {alias} = {config};"
+                traits_alias += f"\nusing {alias} = {policy_traits(config)};"
                 device_decl += (
                     f"template __global__ void {specialized_kernel}<\n"
                     f"    {alias}>({kargs_name});\n"

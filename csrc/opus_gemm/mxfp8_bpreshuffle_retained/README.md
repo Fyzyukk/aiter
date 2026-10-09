@@ -27,16 +27,21 @@ extern "C" int launch(
 
 `a/b`指向FP8输入，B已采用本项目的B-preshuffle布局；`sfa/sfb`指向E8M0 scale，`c`指向BF16输出，`stream`为HIP stream。各launcher保留相应的shape、对齐和字节范围检查，返回HIP错误码。私有ID未加入生产全局registry；尤其20000段与gfx1250生产ID空间重合，调用时应通过本包对应共享库和[experiments.json](experiments.json)定位。配置中的`registered_opus_ids`声明另外5个生产候选。
 
-从仓库根目录重新构建全部保留库：
+从仓库根目录对全部历史源码做离线编译检查：
 
 ```bash
-python csrc/opus_gemm/mxfp8_bpreshuffle_retained/build_retained.py
+python reports/opus_pipeline5_20261009/rebuild_retained_snapshot.py \
+  --llvm /root/toolchains/yuyzhang512-amdgpu-pin-op-dst-build/bin \
+  --resource-dir /opt/rocm/lib/llvm/lib/clang/20 \
+  --output-dir reports/opus_pipeline5_20261009/retained_compile
 ```
 
-构建使用包内保存的编译命令模板及源码哈希，不再读取旧reports实验源码。默认采用已固定的LLVM工具链；迁移工具链位置时可加`--llvm /path/to/pinned-llvm/bin`，仓库位置可通过`--root /path/to/aiter`指定。脚本只做CPU侧编译与device入口/机器码比对，输出各库`build_manifest.json`以及包级[build_manifest.json](build_manifest.json)、[device_audit.json](device_audit.json)。
+检查脚本验证包内全部38项原始源码哈希及冻结的manifest/audit，将源码复制到新的输出目录，并根据保存的编译命令模板生成9个HIP object。gfx950依赖优先来自`reports/opus_pipeline5_20261009/before/csrc/opus_gemm/include/gfx950/`，不会恢复已删除的生产pipeline。输出目录必须尚不存在；再次检查时指定新的`--output-dir`。工具链位置可通过`--llvm`与`--resource-dir`指定，仓库位置可通过`--root /path/to/aiter`指定。
+
+这项检查只确认历史源码与冻结依赖仍可编译；不链接共享库，不加载GPU runtime，也不重新进行机器码或数值/性能比对。上面的可用LLVM24工具链不同于历史编译记录中的工具链，不表示重新生成实测二进制。本包`build_retained.py`及所有hashed源码、旧manifest/audit保持原始内容；其中依赖当前生产include目录的旧构建指令已由上面的检查指令取代。新结果仅写入输出目录的`verification_receipt.json`、object和编译日志。
 
 所有11个kernel的K均为运行时参数，没有K384、K768、K1024或K1536专属实例。`short_runtime`包含`TileM=128/160`两个实例，`short_runtime_unified`包含`OutputVector=8/4`两个实例，其余库各一个入口。
 
-当前构建与机器码比对记录均为`passed`：[device_audit.json](device_audit.json)记录恰好11个中选device入口，每个入口的instruction bytes与调优时实测kernel一致；共享库整体哈希不要求与裁剪前相同。[retained_manifest.json](retained_manifest.json)保存迁移前实测入口与源码的来源；其中`prepared_not_compiled`描述准备阶段，当前编译状态以`build_manifest.json`和`device_audit.json`为准。
+历史构建与机器码比对记录均为`passed`：[device_audit.json](device_audit.json)记录恰好11个中选device入口，每个入口的instruction bytes与调优时实测kernel一致；共享库整体哈希不要求与裁剪前相同。[retained_manifest.json](retained_manifest.json)保存迁移前实测入口与源码的来源；其中`prepared_not_compiled`描述准备阶段，历史编译状态以`build_manifest.json`和`device_audit.json`为准。此checkout没有包内的9个历史`experiments.so`文件，检查脚本保留这个状态并记录audit中已有的二进制哈希。
 
-共享依赖位于`../include/gfx950/`与`../../include/opus/`。9000的4wave pipeline、公共helpers和基础traits保持原样；192×256 traits还被13163、20000、20100、20128使用。
+历史共享gfx950依赖冻结在`../../../reports/opus_pipeline5_20261009/before/csrc/opus_gemm/include/gfx950/`，包含原9000的4wave pipeline、公共helpers和基础traits；其父目录的`opus_gemm_utils.cuh`也使用冻结版本。`../../include/opus/`的公共头继续使用仓库内未改动的版本。当前生产实现已合并为5个参数化pipeline，见[本次报告](../../../reports/opus_pipeline5_20261009/README.md)；本包的11个私有历史kernel仍以原始源码和原始哈希保存。

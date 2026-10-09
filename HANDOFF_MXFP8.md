@@ -1,6 +1,30 @@
 # MXFP8 B-preshuffle 优化交接
 
-## 2026-10-09：global split-K 改为框架启动参数
+## 2026-10-09：当前整理为 5 个计算 pipeline
+
+当前对外使用 `pin / tiled / register / lds / large_output` 五个 pipeline，
+`tile / wave / stage / B load / scale / schedule` 作为编译配置参数。
+计算头从24个减为5个，traits头从19个集中为1个；包括ABI/layout/reducer/output辅助头共11个，
+此前为47个。计算源码8,223行减为3,015行；所有相关头9,838行减为4,950行。
+这是真正合并重复compute body，内部schedule采用编译期分支。
+
+参数目录：[opus_gemm_bpreshuffle_config.py](csrc/opus_gemm/opus_gemm_bpreshuffle_config.py)。
+调用入口 `opus_gemm_bpreshuffle(..., pipeline="register", tile_m=16, tile_n=16, wave_k=1, split_k=3)`，
+或传完整config对象/JSON。调优使用 `--opus_pipelines register,lds`；输出增加pipeline/config列，
+split保留在splitK列，旧CSV/ID继续兼容。当前只支持已注册参数组合，不会自动JIT任意未注册tuple。
+
+编译配置保留89组（15/20/13/38/3）；内部历史ABI注册105组，16组仅兼容。
+不把配置特化数声称成只有5组。FlyDSL gfx950 BMM实际也为一个参数化kernel body、数百个配置；
+7个fallback M tiers不是7个总配置，split为constexpr；OPUS的9个runtime配置仍用运行时global split。
+
+报告：[五pipeline整理](reports/opus_pipeline5_20261009/README.md)，
+[完整配置映射](reports/opus_pipeline5_20261009/configurations.csv)。
+100项CPU回归通过；105个配置fresh HIP编译、fused host/router/完整pybind编译、
+127个stub的no-undefined链接通过。源码审阅发现并修复tiled变量遮蔽及runtime host缺include；
+相关20个配置再编译通过。机器码/资源分配有变化，不宣称保持历史性能；GPU测试继续停止。
+旧92/runtime split阶段报告、正式745CSV及历史性能结论完整保留。
+
+## 2026-10-09：global split-K 改为框架启动参数（历史阶段）
 
 当前默认调优集合为 **89 个静态配置**，完整注册仍为 **105 个 ID**，其中
 16 个历史兼容/内部 ID 保持可调用。最新入口见
