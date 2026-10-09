@@ -4,8 +4,8 @@
 
 This gfx950 adapter keeps each backend's scale input format: OPUS receives
 random native E8M0 scales, while CK, CKTile and ASM reuse the original
-blockscale tuner's random FP32 scales, reference and accuracy checks. FlyDSL
-uses the upstream quantized E8M0 distribution for MXPSH and B=1 BMM layouts.
+blockscale tuner's random FP32 scales, reference and accuracy checks. OPUS and
+FlyDSL share native E8M0 inputs with caller-prepared MXPSH and B=1 BMM layouts.
 """
 
 import argparse
@@ -312,7 +312,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             description=(
                 "Tune gfx950 FP8 B-preshuffle GEMM across CK, CKTile, ASM and "
                 "OPUS and FlyDSL with BF16 output. CK/CKTile/ASM use random FP32 scales; "
-                "OPUS uses random native E8M0 scales and FlyDSL uses quantized E8M0 scales. Measures backend GPU "
+                "OPUS/FlyDSL share native E8M0 scales, A 1x128 and B 128x128. Measures backend GPU "
                 "time, including internal transforms."
             ),
         )
@@ -334,10 +334,11 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         self.parser.set_defaults(preshuffle=True)
         for action in self.parser._actions:
             if action.dest == "libtype":
-                action.choices = [*action.choices, "opus_flydsl"]
+                action.choices = [*action.choices, "opus_flydsl", "opus_flydsl_baseline"]
                 action.help = (
                     "backend candidates to tune: ck, cktile, asm, opus, flydsl, both "
-                    "(CK + CKTile), opus_flydsl (OPUS + FlyDSL), or all"
+                    "(CK + CKTile), opus_flydsl (OPUS + full FlyDSL space), "
+                    "opus_flydsl_baseline (OPUS + exact saved FlyDSL), or all"
                 )
             elif action.dest == "preshuffle":
                 action.help = "accepted for compatibility; always enabled by this tuner"
@@ -471,7 +472,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         args.preshuffle = True
         self.opus_kids = None
         self.flydsl_baseline = args.flydsl_baseline
-        if args.libtype in ("flydsl", "opus_flydsl", "all") and not args.run_config:
+        if args.libtype in ("flydsl", "opus_flydsl", "opus_flydsl_baseline", "all") and not args.run_config:
             flydsl_tune.load_baseline(str(self.flydsl_baseline))
         if args.compare or args.update_improved:
             self.parser.error(
@@ -545,8 +546,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         extra_args,
         run_kwargs,
         *,
-        gen_data=generate_data,
-        ref_keys=_REF_KEYS,
+        gen_data=flydsl_tune.generate_data,
+        ref_keys=flydsl_tune.OPUS_REF_KEYS,
     ):
         return (
             info,
@@ -555,9 +556,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             func,
             (arg_keys, *extra_args),
             dict(run_kwargs),
-            run_torch,
+            flydsl_tune.reference_from_data,
             (ref_keys,),
-            {"with_bounds": True},
+            {},
             None,
             1e-2,
             1e-2,
@@ -652,7 +653,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def tune(self, untunedf, tunedf, args):
         self.opus_kids = getattr(args, "opus_kids", None)
         requested_kids = set()
-        if args.libtype in ("opus", "opus_flydsl", "all"):
+        if args.libtype in ("opus", "opus_flydsl", "opus_flydsl_baseline", "all"):
             for row in untunedf.itertuples(index=False):
                 kids = self._candidate_kids(row.gfx, row.M, row.N, row.K)
                 if args.libtype == "opus" and not kids:
@@ -682,13 +683,17 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 tasks.extend(self.get_gemm_a8w8_blockscale_asm_tune_task(
                     info, args.splitK, 0, True, run_kwargs
                 ))
-            if args.libtype in ("opus", "opus_flydsl", "all"):
+            if args.libtype in ("opus", "opus_flydsl", "opus_flydsl_baseline", "all"):
                 tasks.extend(self.get_gemm_a8w8_blockscale_opus_tune_task(
                     info, 0, True, run_kwargs
                 ))
             if args.libtype in ("flydsl", "opus_flydsl", "all"):
                 tasks.extend(flydsl_tune.get_tune_tasks(
                     self, info, 0, run_kwargs, self.flydsl_baseline
+                ))
+            if args.libtype == "opus_flydsl_baseline":
+                tasks.extend(flydsl_tune.get_baseline_tasks(
+                    info, 0, run_kwargs, self.flydsl_baseline
                 ))
             if len(tasks) != start:
                 tasks_data.append((len(tasks) - start, ()))
@@ -835,21 +840,27 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                     )
         if not opus_rows.empty:
             _ensure_kids_compiled(set(opus_rows.kernelId))
+        native_data_key, native_data = None, None
         for row in rows.itertuples(index=False):
             kid = row.kernelId
             if row.libtype == "opus":
-                gen_data, ref_keys = generate_data, _REF_KEYS
+                gen_data, ref_keys = flydsl_tune.generate_data, flydsl_tune.OPUS_REF_KEYS
             elif row.libtype == "flydsl":
-                gen_data, ref_keys = flydsl_tune.generate_data, ("x_deq", "w_deq")
+                gen_data, ref_keys = flydsl_tune.generate_data, flydsl_tune.FLYDSL_REF_KEYS
             else:
                 gen_data, ref_keys = generic_tune.generate_data, _CK_REF_KEYS
-            data = gen_data(row.M, row.N, row.K, 0, device="cuda")
+            if row.libtype in ("opus", "flydsl"):
+                key = (row.M, row.N, row.K)
+                if key != native_data_key:
+                    native_data = gen_data(*key, 0, device="cuda")
+                    native_data_key = key
+                data = native_data
+            else:
+                data = gen_data(row.M, row.N, row.K, 0, device="cuda")
             ref_inputs = tuple(data[key] for key in ref_keys)
             ref = (
-                run_torch(*ref_inputs, with_bounds=True)
-                if row.libtype == "opus"
-                else generic_tune.run_torch_e8m0(*ref_inputs)
-                if row.libtype == "flydsl"
+                flydsl_tune.reference_from_data(*ref_inputs)
+                if row.libtype in ("opus", "flydsl")
                 else generic_tune.run_torch(*ref_inputs)
             )
             data["out"].fill_(float("nan"))

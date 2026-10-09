@@ -13,6 +13,8 @@ DEFAULT_BASELINE = str(
 )
 MXPSH_KEYS = ("x", "weight_shuffle", "x_scale_shuf", "w_scale_shuf", "out")
 BMM_KEYS = ("x", "weight_shuffle", "x_scale_bmm", "w_scale_bmm", "out")
+OPUS_REF_KEYS = ("reference_bounds",)
+FLYDSL_REF_KEYS = ("reference_bf16",)
 
 
 @functools.lru_cache(maxsize=8)
@@ -104,40 +106,41 @@ def bmm_candidates(m, n, k, baseline_path=DEFAULT_BASELINE):
 
 
 def generate_data(m, n, k, seed, device="cuda"):
-    """Upstream E8M0 data distribution with both MXPSH and BMM scale layouts."""
-    import torch
+    """Shared native OPUS E8M0 inputs, caller-prepared layouts and one oracle.
 
+    A scales are logical [M,K/128] with column-major storage; B scales are
+    row-major [N/128,K/128]. BMM views those same bytes. MXPSH needs a layout
+    shuffle of the logical scales, prepared here before any GEMM is timed.
+    No scale dtype conversion or FP32-to-E8M0 quantization occurs.
+    """
     from aiter.ops.shuffle import (
         shuffle_scale_blockscale_a,
         shuffle_scale_blockscale_b,
-        shuffle_weight,
     )
-    from aiter.utility import dtypes, fp4_utils
+    from csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune import (
+        generate_data as generate_native_data,
+    )
+    from csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune import run_torch
 
-    torch.manual_seed(seed)
-    x = (torch.rand((m, k), dtype=dtypes.fp16, device=device) / 10).to(dtypes.fp8)
-    weight = (torch.rand((n, k), dtype=dtypes.fp16, device=device) / 10).to(dtypes.fp8)
+    if n % 128:
+        raise ValueError("Shared OPUS/FlyDSL blockscale inputs require N divisible by 128")
+    data = generate_native_data(m, n, k, seed, device=device)
+    data["weight_shuffle"] = data["w"]
+    data["x_scale_bmm"] = data["x_scale"].T.view(m, k // 128)
+    data["w_scale_bmm"] = data["w_scale"]
+    data["x_scale_shuf"] = shuffle_scale_blockscale_a(data["x_scale"], k)
+    data["w_scale_shuf"] = shuffle_scale_blockscale_b(data["w_scale"], n, k)
+    data["reference_bounds"] = run_torch(
+        data["x"], data["w_reference"], data["x_scale"], data["w_scale"],
+        with_bounds=True,
+    )
+    data["reference_bf16"] = data["reference_bounds"][0].to(data["out"].dtype)
+    return data
 
-    def quant(scale):
-        return fp4_utils.f32_to_mx_e8m0_scale(
-            scale * 448.0, dtype=fp4_utils.MxDtypeInt.FP8_E4M3,
-        )
 
-    x_scale = quant(torch.rand((m, k // 128), dtype=dtypes.fp32, device=device))
-    w_scale = quant(torch.rand((n // 128, k // 128), dtype=dtypes.fp32, device=device))
-    xs = fp4_utils.e8m0_to_f32(x_scale).repeat_interleave(128, dim=1)[:, :k]
-    ws = fp4_utils.e8m0_to_f32(w_scale).repeat_interleave(128, dim=0).repeat_interleave(128, dim=1)[:n, :k]
-    return {
-        "x": x,
-        "weight_shuffle": shuffle_weight(weight, layout=(16, 16)),
-        "x_scale_shuf": shuffle_scale_blockscale_a(x_scale, k),
-        "w_scale_shuf": shuffle_scale_blockscale_b(w_scale, n, k),
-        "x_scale_bmm": x_scale.T.contiguous().view(m, k // 128),
-        "w_scale_bmm": w_scale,
-        "out": torch.empty((m, n), dtype=dtypes.bf16, device=device),
-        "x_deq": x.to(dtypes.fp32) * xs,
-        "w_deq": weight.to(dtypes.fp32) * ws,
-    }
+def reference_from_data(reference):
+    """Return the caller-prepared oracle; switching backend adds no matmul."""
+    return reference
 
 
 def run_bmm(x, weight_shuffle, x_scale, w_scale, out, kernel_name):
@@ -153,9 +156,36 @@ def run_bmm(x, weight_shuffle, x_scale, w_scale, out, kernel_name):
     return out
 
 
+def get_baseline_tasks(info_keys, seed, run_kwargs, baseline_path=DEFAULT_BASELINE):
+    """Replay only the exact saved FlyDSL identities of this shape as candidates."""
+    from csrc.ck_gemm_a8w8_blockscale import gemm_a8w8_blockscale_tune as generic
+
+    gfx, _, m, n, k = info_keys
+    if gfx != "gfx950":
+        return []
+    tasks = []
+    for row in load_baseline(str(baseline_path)):
+        if (int(row["M"]), int(row["N"]), int(row["K"])) != (m, n, k):
+            continue
+        kid = "bmm" if row["kernelId"] == "bmm" else int(row["kernelId"])
+        sk, name = int(row["splitK"]), row["kernelName"]
+        validate_candidate(kid, name, sk, m, n, k)
+        runner, keys = (
+            (run_bmm, BMM_KEYS) if kid == "bmm"
+            else (generic.run_gemm_a8w8_blockscale_flydsl, MXPSH_KEYS)
+        )
+        tasks.append((
+            (info_keys, kid, sk, name, "flydsl", True), generate_data, (m, n, k, seed),
+            runner, (keys, name), dict(run_kwargs), reference_from_data,
+            (FLYDSL_REF_KEYS,), {}, None, 1e-2, 0.01, None, None, ("out",),
+        ))
+    if not tasks:
+        raise ValueError(f"No exact FlyDSL baseline identities for {(m, n, k)}")
+    return tasks
+
+
 def get_tune_tasks(tuner, info_keys, seed, run_kwargs, baseline_path=DEFAULT_BASELINE):
     """Reuse upstream MXPSH tasks and accuracy/reference contract for both paths."""
-    from aiter.utility import dtypes
     from csrc.ck_gemm_a8w8_blockscale import gemm_a8w8_blockscale_tune as generic
 
     gfx, _, m, n, k = info_keys
@@ -164,16 +194,20 @@ def get_tune_tasks(tuner, info_keys, seed, run_kwargs, baseline_path=DEFAULT_BAS
     tasks = tuner.get_gemm_a8w8_blockscale_flydsl_tune_task(info_keys, seed, True, run_kwargs)
     if not tasks:
         raise RuntimeError("Latest FlyDSL MXPSH catalog is unavailable or has no legal candidates")
-    # Extending data preparation leaves the upstream reference, tolerances and
-    # timed MXPSH runner unchanged. Both contracts share one dequantized reference.
-    tasks = [(task[0], generate_data, *task[2:]) for task in tasks]
+    # Keep the upstream BF16 oracle and tolerances, using the shared native
+    # reference plane already computed for OPUS's accumulation-bounds check.
+    tasks = [
+        (task[0], generate_data, *task[2:6], reference_from_data,
+         (FLYDSL_REF_KEYS,), {}, *task[9:])
+        for task in tasks
+    ]
     present = {task[0][3] for task in tasks}
 
     def make_task(kid, sk, name, runner, keys):
         return (
             (info_keys, kid, sk, name, "flydsl", True), generate_data, (m, n, k, seed),
-            runner, (keys, name), dict(run_kwargs), generic.run_torch_e8m0,
-            (("x_deq", "w_deq"), dtypes.bf16), {}, None,
+            runner, (keys, name), dict(run_kwargs), reference_from_data,
+            (FLYDSL_REF_KEYS,), {}, None,
             1e-2, 0.01, None, None, ("out",),
         )
 
