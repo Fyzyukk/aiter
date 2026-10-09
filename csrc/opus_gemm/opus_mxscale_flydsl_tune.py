@@ -105,7 +105,7 @@ def bmm_candidates(m, n, k, baseline_path=DEFAULT_BASELINE):
     return result
 
 
-def generate_data(m, n, k, seed, device="cuda"):
+def _generate_data(m, n, k, seed, device="cuda", *, prepare_mxpsh=True):
     """Shared native OPUS E8M0 inputs, caller-prepared layouts and one oracle.
 
     A scales are logical [M,K/128] with column-major storage; B scales are
@@ -128,14 +128,37 @@ def generate_data(m, n, k, seed, device="cuda"):
     data["weight_shuffle"] = data["w"]
     data["x_scale_bmm"] = data["x_scale"].T.view(m, k // 128)
     data["w_scale_bmm"] = data["w_scale"]
-    data["x_scale_shuf"] = shuffle_scale_blockscale_a(data["x_scale"], k)
-    data["w_scale_shuf"] = shuffle_scale_blockscale_b(data["w_scale"], n, k)
+    if prepare_mxpsh:
+        data["x_scale_shuf"] = shuffle_scale_blockscale_a(data["x_scale"], k)
+        data["w_scale_shuf"] = shuffle_scale_blockscale_b(data["w_scale"], n, k)
     data["reference_bounds"] = run_torch(
         data["x"], data["w_reference"], data["x_scale"], data["w_scale"],
         with_bounds=True,
     )
     data["reference_bf16"] = data["reference_bounds"][0].to(data["out"].dtype)
     return data
+
+
+def generate_data(m, n, k, seed, device="cuda"):
+    return _generate_data(m, n, k, seed, device=device)
+
+
+def generate_bmm_data(m, n, k, seed, device="cuda"):
+    """Native shared storage for OPUS/BMM, without unused MXPSH shuffles."""
+    return _generate_data(m, n, k, seed, device=device, prepare_mxpsh=False)
+
+
+def get_bmm_tune_tasks(info_keys, seed, run_kwargs, baseline_path=DEFAULT_BASELINE):
+    gfx, _, m, n, k = info_keys
+    if gfx != "gfx950":
+        return []
+    return [
+        ((info_keys, kid, sk, name, "flydsl", True), generate_bmm_data,
+         (m, n, k, seed), run_bmm, (BMM_KEYS, name), dict(run_kwargs),
+         reference_from_data, (FLYDSL_REF_KEYS,), {}, None,
+         1e-2, 0.01, None, None, ("out",))
+        for kid, sk, name in bmm_candidates(m, n, k, baseline_path)
+    ]
 
 
 def reference_from_data(reference):

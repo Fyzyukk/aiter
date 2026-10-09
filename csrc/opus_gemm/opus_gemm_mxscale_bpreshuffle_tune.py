@@ -334,10 +334,11 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         self.parser.set_defaults(preshuffle=True)
         for action in self.parser._actions:
             if action.dest == "libtype":
-                action.choices = [*action.choices, "opus_flydsl", "opus_flydsl_baseline"]
+                action.choices = [*action.choices, "opus_flydsl", "opus_flydsl_bmm", "opus_flydsl_baseline"]
                 action.help = (
                     "backend candidates to tune: ck, cktile, asm, opus, flydsl, both "
                     "(CK + CKTile), opus_flydsl (OPUS + full FlyDSL space), "
+                    "opus_flydsl_bmm (OPUS + full FlyDSL BMM space), "
                     "opus_flydsl_baseline (OPUS + exact saved FlyDSL), or all"
                 )
             elif action.dest == "preshuffle":
@@ -472,7 +473,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         args.preshuffle = True
         self.opus_kids = None
         self.flydsl_baseline = args.flydsl_baseline
-        if args.libtype in ("flydsl", "opus_flydsl", "opus_flydsl_baseline", "all") and not args.run_config:
+        if args.libtype in ("flydsl", "opus_flydsl", "opus_flydsl_bmm", "opus_flydsl_baseline", "all") and not args.run_config:
             flydsl_tune.load_baseline(str(self.flydsl_baseline))
         if args.compare or args.update_improved:
             self.parser.error(
@@ -646,14 +647,16 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                     _BENCH_KEYS,
                     (kid,),
                     run_kwargs,
+                    gen_data=(flydsl_tune.generate_bmm_data if getattr(self, "flydsl_bmm_only", False) else flydsl_tune.generate_data),
                 )
             )
         return tasks
 
     def tune(self, untunedf, tunedf, args):
         self.opus_kids = getattr(args, "opus_kids", None)
+        self.flydsl_bmm_only = args.libtype == "opus_flydsl_bmm"
         requested_kids = set()
-        if args.libtype in ("opus", "opus_flydsl", "opus_flydsl_baseline", "all"):
+        if args.libtype in ("opus", "opus_flydsl", "opus_flydsl_bmm", "opus_flydsl_baseline", "all"):
             for row in untunedf.itertuples(index=False):
                 kids = self._candidate_kids(row.gfx, row.M, row.N, row.K)
                 if args.libtype == "opus" and not kids:
@@ -683,13 +686,17 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 tasks.extend(self.get_gemm_a8w8_blockscale_asm_tune_task(
                     info, args.splitK, 0, True, run_kwargs
                 ))
-            if args.libtype in ("opus", "opus_flydsl", "opus_flydsl_baseline", "all"):
+            if args.libtype in ("opus", "opus_flydsl", "opus_flydsl_bmm", "opus_flydsl_baseline", "all"):
                 tasks.extend(self.get_gemm_a8w8_blockscale_opus_tune_task(
                     info, 0, True, run_kwargs
                 ))
             if args.libtype in ("flydsl", "opus_flydsl", "all"):
                 tasks.extend(flydsl_tune.get_tune_tasks(
                     self, info, 0, run_kwargs, self.flydsl_baseline
+                ))
+            if args.libtype == "opus_flydsl_bmm":
+                tasks.extend(flydsl_tune.get_bmm_tune_tasks(
+                    info, 0, run_kwargs, self.flydsl_baseline
                 ))
             if args.libtype == "opus_flydsl_baseline":
                 tasks.extend(flydsl_tune.get_baseline_tasks(
@@ -841,12 +848,15 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         if not opus_rows.empty:
             _ensure_kids_compiled(set(opus_rows.kernelId))
         native_data_key, native_data = None, None
+        native_generator = (flydsl_tune.generate_bmm_data
+                            if not (rows.libtype.eq("flydsl") & rows.kernelId.astype(str).ne("bmm")).any()
+                            else flydsl_tune.generate_data)
         for row in rows.itertuples(index=False):
             kid = row.kernelId
             if row.libtype == "opus":
-                gen_data, ref_keys = flydsl_tune.generate_data, flydsl_tune.OPUS_REF_KEYS
+                gen_data, ref_keys = native_generator, flydsl_tune.OPUS_REF_KEYS
             elif row.libtype == "flydsl":
-                gen_data, ref_keys = flydsl_tune.generate_data, flydsl_tune.FLYDSL_REF_KEYS
+                gen_data, ref_keys = native_generator, flydsl_tune.FLYDSL_REF_KEYS
             else:
                 gen_data, ref_keys = generic_tune.generate_data, _CK_REF_KEYS
             if row.libtype in ("opus", "flydsl"):
