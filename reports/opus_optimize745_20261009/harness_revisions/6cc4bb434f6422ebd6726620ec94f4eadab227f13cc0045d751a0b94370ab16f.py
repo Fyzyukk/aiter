@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""Current-source signed/guard validation and matched complete-call measurements.
+
+Invoked only by watch.py after an owner-free GPU has been claimed.
+"""
+import argparse
+import ctypes
+import ctypes.util
+import gc
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import random
+import statistics
+import sys
+import time
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+sys.path.insert(0, str(ROOT))
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def save(path, value):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(value, indent=2) + "\n")
+    tmp.replace(path)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--plan", type=Path, required=True)
+    ap.add_argument("--cases", type=Path, required=True)
+    ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--phase", choices=("smoke", "baseline", "tune", "tune_splits", "replay"), required=True)
+    args = ap.parse_args()
+    tuning = args.phase in ("tune", "tune_splits")
+    assert not args.output.exists()
+    plan = json.loads(args.plan.read_text())
+    for name, expected in {**plan["source_sha256"], **plan["input_sha256"]}.items():
+        assert sha(ROOT / name) == expected, f"Source/input changed: {name}"
+    import torch
+    import flydsl
+    import aiter
+    from aiter.utility import dtypes
+    aiter.dtypes = dtypes
+    from aiter.ops.opus import opus_gemm_bpreshuffle
+    from aiter.ops.opus.bpreshuffle_runtime import ensure_config
+    from aiter.jit import core
+    from aiter.test_common import run_perftest
+    from aiter.ops.flydsl.batched_gemm_a8w8_gfx950 import run_bmm_a8w8_mxfp8_gfx950
+    from csrc.opus_gemm import opus_gemm_mxscale_bpreshuffle_tune as tune
+    from csrc.opus_gemm.opus_gemm_bpreshuffle_config import construct_config, kernel_instance_from_config
+    from csrc.opus_gemm.opus_gemm_common import bpreshuffle_launch_plan
+
+    assert flydsl.__version__ == "0.3.4.1"
+    assert "opus_flydsl_comparison_20261008/python_packages" in flydsl.__file__
+    hip = ctypes.CDLL(ctypes.util.find_library("amdhip64") or "/opt/rocm/lib/libamdhip64.so")
+    buffer = ctypes.create_string_buffer(64)
+    assert hip.hipDeviceGetPCIBusId(buffer, len(buffer), 0) == 0
+    normalize = lambda x: x.lower().lstrip("0")
+    assert normalize(buffer.value.decode()) == normalize(os.environ["OPUS_EXPECTED_GPU_BDF"])
+    prop = torch.cuda.get_device_properties(0)
+    assert prop.gcnArchName.split(":")[0] == "gfx950" and prop.multi_processor_count == 256
+    cases = json.loads(args.cases.read_text())
+    configs = {i: construct_config(r["pipeline"], config=r["compile_params"])
+               for i, r in plan["configs"].items()}
+    result = {"status": "running", "phase": args.phase, "started_unix": time.time(),
+              "gpu_bdf": buffer.value.decode(), "gpu": str(prop), "pid": os.getpid(),
+              "script_sha256": sha(__file__), "plan_sha256": sha(args.plan),
+              "cases_sha256": sha(args.cases), "modules": {}, "rows": [],
+              "protocol": {"reference": "independent FP32 with absolute-product accumulation bounds",
+                           "signed_seeds": [29, 101], "guard_elements": 4096,
+                           "timing": "torch profiler, full GPU activities/call, warmup5/iters51",
+                           "confirmation_rounds": 6, "protocols": ["reuse1", "pool8"],
+                           "scale": "same raw native E8M0 storage, zero-copy BMM descriptor",
+                           "split": "OPUS complete producer + reducer; FlyDSL official BMM API"}}
+    save(args.output, result)
+    prepared = {}
+
+    def prepare(identity):
+        if identity not in prepared:
+            c = configs[identity]
+            p = ensure_config(c)
+            module = core.get_module(p.module_name)
+            prepared[identity] = p
+            result["modules"][identity] = {"path": module.__file__, "sha256": sha(module.__file__),
+                                            "module": p.module_name,
+                                            "pipeline": c.pipeline, "config": json.loads(c.to_json())}
+        return prepared[identity]
+
+    def guarded(elements, dtype):
+        storage = torch.full((elements + 8192,), 31.0, dtype=dtype, device="cuda:0")
+        return storage[4096:-4096], storage
+
+    def guard_ok(storage):
+        return bool((storage[:4096] == 31).all().item() and (storage[-4096:] == 31).all().item())
+
+    def references(data):
+        x, w, sa, sb = (data[k] for k in tune._REF_KEYS)
+        ref = torch.empty((2, x.shape[0], w.shape[0]), dtype=torch.float32, device=x.device)
+        # Dequantize B once for all M chunks. Repeating its full conversion
+        # per chunk consumes the short idle window on wide shapes.
+        b_scale = (sb.float().repeat_interleave(tune._SCALE_GROUP_N, 0)
+                   .repeat_interleave(tune._SCALE_GROUP_K, 1)[:w.shape[0], :w.shape[1]])
+        b = w.float() * b_scale
+        del b_scale
+        absolute_b = b.abs()
+        for start in range(0, x.shape[0], 256):
+            end = min(x.shape[0], start + 256)
+            a_scale = sa[start:end].float().repeat_interleave(tune._SCALE_GROUP_K, 1)[:, :x.shape[1]]
+            a = x[start:end].float() * a_scale
+            torch.mm(a, b.T, out=ref[0, start:end])
+            torch.mm(a.abs(), absolute_b.T, out=ref[1, start:end])
+        return ref
+
+    def compare(ref, out, strict):
+        bad = 0
+        for start in range(0, out.shape[0], 256):
+            end = min(out.shape[0], start + 256)
+            actual = out[start:end]
+            if not bool(torch.isfinite(actual).all().item()):
+                raise ValueError("non-finite or unwritten output")
+            if strict and tune.compare_outputs(ref[:, start:end], actual, printLog=False) != 0:
+                raise ValueError("FP32 accumulation bound violated")
+            expected = ref[0, start:end].to(out.dtype)
+            bad += int((~torch.isclose(actual, expected, rtol=.01, atol=.01)).sum().item())
+        ratio = bad / out.numel()
+        if ratio > .05:
+            raise ValueError(f"Common tolerance violated: {ratio}")
+        return ratio
+
+    for case in cases:
+        start = time.monotonic()
+        m, n, k = (case[x] for x in ("M", "N", "K"))
+        tasks = [case["baseline"]]
+        if args.phase == "replay":
+            tasks += case.get("replay", [])
+        if args.phase == "smoke":
+            # Exercise each applicable pipeline, runtime split1, split2 and an
+            # uneven split3, along with the historical parent on tail shapes.
+            chosen = set()
+            for task in case["candidates"]:
+                c = configs[task["config"]]
+                key = (c.pipeline, c.schedule, c.b_direct, c.fixed_k > 0, c.wave_k,
+                       task["split_k"] if c.runtime_split_k else c.split_k,
+                       c.c_chunk_rows if c.pipeline == "large_output" else 0)
+                if key in chosen or c.runtime_split_k and task["split_k"] not in (1, 2, 3):
+                    continue
+                chosen.add(key)
+                tasks.append(task)
+        elif tuning:
+            tasks += case.get("replay", [])
+            for task in case["candidates"]:
+                c = configs[task["config"]]
+                if args.phase == "tune_splits" or not c.runtime_split_k or task["split_k"] in (1, 2, 4, 8, 16):
+                    tasks.append(task)
+        tasks = list({(t["config"], t["split_k"]): t for t in tasks}.values())
+        # Compilation finishes before preparing input pools or measuring any
+        # candidate. Failed compilation is recorded and excluded, never timed.
+        invalid = []
+        accepted = []
+        for task in tasks:
+            try:
+                prepare(task["config"])
+                accepted.append(task)
+            except Exception as error:
+                invalid.append({"task": task, "stage": "build", "error": repr(error)})
+                if not tuning or task == case["baseline"]:
+                    raise
+        tasks = accepted
+        workspace_extents = {t["config"]+":"+str(t["split_k"]):
+            bpreshuffle_launch_plan(kernel_instance_from_config(configs[t["config"]]),
+                                    m, n, k, t["split_k"]).workspace_elements for t in tasks}
+        workspace_extents["flydsl_bmm"] = 0
+        maxws = max(bpreshuffle_launch_plan(kernel_instance_from_config(configs[t["config"]]),
+                                            m, n, k, t["split_k"]).workspace_elements for t in tasks)
+        entry = {"shape": [m, n, k], "baseline": case["baseline"], "flydsl_name": case["flydsl_name"],
+                 "checks": {}, "invalid": invalid, "screen": [], "records": []}
+        result["rows"].append(entry)
+
+        def workspace_tail_ok(tag, values):
+            ws = values[5]
+            required = workspace_extents[tag]
+            if ws is None or required >= ws.numel():
+                return True
+            return bool(torch.isnan(ws[required:required+4096]).all().item())
+
+        def make_pool(seed, count):
+            data = tune.generate_data(m, n, k, seed, device="cuda:0")
+            gen = torch.Generator(device="cuda:0").manual_seed(seed)
+            for name in ("x", "w_reference"):
+                signs = torch.randint(0, 2, data[name].shape, device="cuda:0", generator=gen) * 2 - 1
+                data[name] = (data[name].float() * signs).to(data[name].dtype)
+            data["w"] = tune.shuffle_weight(data["w_reference"], layout=(16, 16))
+            ref = references(data)
+            output, output_storage = guarded(m*n, torch.bfloat16)
+            ws, ws_storage = guarded(maxws, torch.float32) if maxws else (None, None)
+            values = [data["x"], data["w"], data["x_scale"], data["w_scale"],
+                      output.view(m, n), ws]
+            footprint = sum(v.untyped_storage().nbytes() for v in values if v is not None)
+            if count > 1:
+                free = torch.cuda.mem_get_info()[0]
+                count = min(count, 1 + int(free * .45 / footprint))
+                assert count >= 2, "insufficient free VRAM for matched rotated inputs"
+            pool = [(values, output_storage, ws_storage)]
+            for _ in range(count - 1):
+                ov, og = guarded(m*n, torch.bfloat16)
+                wv, wg = guarded(maxws, torch.float32) if maxws else (None, None)
+                pool.append(([v.clone(memory_format=torch.preserve_format) for v in values[:4]]
+                             + [ov.view(m, n), wv], og, wg))
+            return data, ref, pool
+
+        def variant(task, pool):
+            if task is None:
+                def run(index):
+                    a, b, sa, sb, out, _ = pool[index][0]
+                    descriptor = sa.T.view(m, 1, k//128)
+                    assert descriptor.is_contiguous() and descriptor.data_ptr() == sa.data_ptr()
+                    return run_bmm_a8w8_mxfp8_gfx950(
+                        a.view(m, 1, k), b.view(1, n, k), descriptor,
+                        sb.view(1, n//128, k//128), out.view(m, 1, n),
+                        kernel_name=case["flydsl_name"], x_scale_transposed=True).view(m, n)
+                return "flydsl_bmm", run
+            config = configs[task["config"]]
+            p = prepared[task["config"]]
+            required = bpreshuffle_launch_plan(kernel_instance_from_config(config), m, n, k,
+                                               task["split_k"]).workspace_elements
+
+            def run(index):
+                a, b, sa, sb, out, ws = pool[index][0]
+                return p.launch(a.unsqueeze(0), b.unsqueeze(0), sa, sb, out.unsqueeze(0),
+                                ws[:required] if required else None, task["split_k"]).view(m, n)
+            return task["config"] + ":" + str(task["split_k"]), run
+
+        data, ref, pool = make_pool(29, 1)
+        # Verify actual public parameter API on each shape before fast prepared
+        # launches are used by the kernel profiler.
+        b = case["baseline"]
+        bc = configs[b["config"]]
+        baseline_ws = bpreshuffle_launch_plan(kernel_instance_from_config(bc), m, n, k, b["split_k"]).workspace_elements
+        a, w, sa, sb, out, ws = pool[0][0]
+        out.fill_(float("nan"))
+        opus_gemm_bpreshuffle(a, w, out, sa, sb, config=bc, split_k=b["split_k"],
+                             workspace=ws[:baseline_ws] if baseline_ws else None)
+        torch.cuda.synchronize()
+        compare(ref, out, True)
+        del a, w, sa, sb, out, ws
+        variants = [variant(None, pool)] + [variant(task, pool) for task in tasks]
+        valid = []
+        for tag, fn in variants:
+            try:
+                checks = []
+                for repeat in range(3):
+                    pool[0][0][4].fill_(float("nan"))
+                    if pool[0][0][5] is not None:
+                        pool[0][0][5].fill_(float("nan"))
+                    out = fn(0)
+                    torch.cuda.synchronize()
+                    error = compare(ref, out, tag != "flydsl_bmm")
+                    assert guard_ok(pool[0][1]), "output guard overwritten"
+                    assert pool[0][2] is None or guard_ok(pool[0][2]), "workspace guard overwritten"
+                    assert workspace_tail_ok(tag, pool[0][0]), "candidate workspace extent overwritten"
+                    checks.append({"seed": 29, "repeat": repeat, "error_ratio": error})
+                entry["checks"][tag] = checks
+                valid.append(tag)
+            except Exception as error:
+                entry["invalid"].append({"tag": tag, "stage": "numerical", "error": repr(error)})
+                if not tuning or tag in ("flydsl_bmm", b["config"] + ":0"):
+                    raise
+        variants = [(tag, fn) for tag, fn in variants if tag in valid]
+        baseline_tag = b["config"] + ":" + str(b["split_k"])
+        assert baseline_tag in valid and "flydsl_bmm" in valid
+        finalists = [t for t in tasks if t["config"] + ":" + str(t["split_k"]) in valid]
+        if tuning:
+            # Screen two opposite orders, then confirm only the best complete
+            # calls plus the original parent. Screening never makes a win claim.
+            order = list(variants)
+            random.Random(29+m+n+k).shuffle(order)
+            times = {tag: [] for tag, _ in order}
+            for round_id in range(2):
+                for tag, fn in order if round_id == 0 else reversed(order):
+                    _, us = run_perftest(lambda: fn(0), num_warmup=5, num_iters=21, num_rotate_args=1)
+                    assert math.isfinite(us) and us > 0
+                    times[tag].append(us)
+                    entry["screen"].append({"round": round_id, "variant": tag, "us": us})
+            rank = sorted((t for t in finalists if t != b),
+                          key=lambda t: statistics.median(times[t["config"]+":"+str(t["split_k"])]))
+            finalists = [b] + rank[:3]
+        if tuning:
+            del order, times
+        del variants, ref, data, pool, out
+        fn = None
+        _ = None
+        gc.collect()
+        torch.cuda.empty_cache()
+        data, ref, pool = make_pool(101, 8)
+        variants = [variant(None, pool)] + [variant(t, pool) for t in finalists]
+        verified = []
+        for tag, fn in variants:
+            try:
+                for index in range(len(pool)):
+                    pool[index][0][4].fill_(float("nan"))
+                    if pool[index][0][5] is not None:
+                        pool[index][0][5].fill_(float("nan"))
+                    out = fn(index)
+                    torch.cuda.synchronize()
+                    error = compare(ref, out, tag != "flydsl_bmm")
+                    assert guard_ok(pool[index][1]) and (pool[index][2] is None or guard_ok(pool[index][2]))
+                    assert workspace_tail_ok(tag, pool[index][0]), "candidate workspace extent overwritten"
+                    entry["checks"][tag].append({"seed": 101, "pool_index": index, "error_ratio": error})
+                verified.append((tag, fn))
+            except (ValueError, AssertionError) as error:
+                entry["invalid"].append({"tag": tag, "stage": "confirmation_numerical", "error": repr(error)})
+                if not tuning or tag in ("flydsl_bmm", baseline_tag):
+                    raise
+        variants = verified
+        finalists = [t for t in finalists if t["config"]+":"+str(t["split_k"]) in {tag for tag, _ in variants}]
+        assert baseline_tag in {tag for tag, _ in variants} and len(variants) >= 2
+        del ref, out
+        entry["pool_count"] = len(pool)
+        if args.phase == "smoke":
+            entry["finalists"] = finalists
+            entry["seconds"] = time.monotonic() - start
+            save(args.output, result)
+            print(json.dumps({"shape": [m, n, k], "phase": "smoke",
+                              "numerical_variants_passed": len(variants), "seconds": entry["seconds"]}), flush=True)
+            del variants, verified, data, pool
+            fn = None
+            gc.collect()
+            torch.cuda.empty_cache()
+            continue
+        for round_id in range(6):
+            order = [(tag, fn, protocol, count) for tag, fn in variants
+                     for protocol, count in (("reuse1", 1), ("pool8", len(pool)))]
+            random.Random(20261009 + round_id//2 + m+n+k).shuffle(order)
+            if round_id % 2:
+                order.reverse()
+            for oi, (tag, fn, protocol, count) in enumerate(order):
+                cursor = 0
+
+                def timed():
+                    nonlocal cursor
+                    index = cursor % count
+                    cursor += 1
+                    return fn(index)
+
+                _, us = run_perftest(timed, num_warmup=5, num_iters=51, num_rotate_args=1)
+                assert math.isfinite(us) and us > 0
+                assert all(guard_ok(p[1]) and (p[2] is None or guard_ok(p[2])) for p in pool)
+                entry["records"].append({"round": round_id, "order": oi, "variant": tag,
+                                          "protocol": protocol, "us": float(us)})
+        entry["medians"] = {protocol: {tag: statistics.median(r["us"] for r in entry["records"]
+                                            if r["variant"] == tag and r["protocol"] == protocol)
+                                       for tag, _ in variants} for protocol in ("reuse1", "pool8")}
+        entry["finalists"] = finalists
+        entry["seconds"] = time.monotonic() - start
+        save(args.output, result)
+        print(json.dumps({"shape": [m, n, k], "phase": args.phase, "medians": entry["medians"],
+                          "seconds": entry["seconds"]}), flush=True)
+        del timed, variants, verified, data, pool, order, _
+        fn = None
+        gc.collect()
+        torch.cuda.empty_cache()
+    for identity, row in result["modules"].items():
+        assert sha(row["path"]) == row["sha256"]
+    result.update(status="completed", ended_unix=time.time())
+    save(args.output, result)
+
+
+if __name__ == "__main__":
+    main()

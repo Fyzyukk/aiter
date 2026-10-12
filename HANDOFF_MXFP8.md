@@ -1,5 +1,47 @@
 # MXFP8 B-preshuffle 优化交接
 
+## 2026-10-09：恢复 GPU 等待与完整745 OPUS / FlyDSL BMM 优化（当前）
+
+用户已恢复 GPU 测试，并要求空闲后持续优化全部745个shape。
+恢复起点 `4aea3e5e`，继续五pipeline参数化流程。
+新入口：[745优化记录](reports/opus_optimize745_20261009/README.md)。
+历史 BMM 单独口径为428快/317慢；此前411/334包含compact mxpsh。
+当前源码已有6shape数值smoke通过，共124variant/118公开API/1364signed检查，尚无性能结果；历史时间不作新结果。
+
+已准备204组compile config，其中新增133组合法参数，全部133 fresh HIP离线编译通过，
+207个kernel实例无scratch/spill；已有131项CPU回归通过。
+完整204组实际runtime模块已CPU编译，309个设备kernel的完整资源/SHA审计完成，
+旧9023/9024的runtime分支各SGPR spill22到VGPR，其余无spill、全部scratch0。
+FlyDSL453组官方compile-only对照缓存及fresh进程run-only重载均通过，无GPU上下文。
+等待期间另准备10组register、6组LDS、6组local-WaveK register融合split-K候选及参数一致公开对照，
+候选编译/ISA检查通过，无scratch/spill，数值和性能待GPU；生产源码及正式CSV未改。
+`watch.py` 已启动持续空闲检查，最新进程与状态以
+`reports/opus_optimize745_20261009/status.json` 为准。
+当前v19补齐每个公开候选/最终选择的公开API与每轮计时后数值检查，融合smoke覆盖七种K、2126项任务，
+实际adapter的CPU参数/workspace/error-path检查通过，GPU验证仍待空闲卡。
+v17新增按物理BDF映射的KFD队列/显存占用检查，领取GPU前与worker运行中均复查，
+AMD-SMI空进程列表不能绕过KFD owner；未知读取状态不作为空闲。
+v18进一步拒绝仍存在但元数据缺失的KFD队列，新增回归通过；
+v19修复private register M范围和counter对齐、private LDS scale对齐，三库重编译22个device镜像不变；
+实际C++ host launcher通过88合法调用/279拒绝检查，参数块与device均120bytes。
+最新恢复：[RESUME_V19.md](reports/opus_optimize745_20261009/RESUME_V19.md)，
+监听PID2059925、exec session23410、日志`watch_stdout_v19.log`，启动后确认存活。
+18:14–18:15空闲窗口补完4个有效数值worker，normal smoke进度6/9；
+最新GPU恢复：[RESUME_GPU_PROGRESS_1816.md](reports/opus_optimize745_20261009/RESUME_GPU_PROGRESS_1816.md)。
+两次新外部占用由KFD检测后停止本worker、保留无效收据；112shape重试通过，1024shape待下一窗口。
+18:41 UTC 恢复核验仍在等待：前四卡各有外部 owner、KFD 队列和 100% 活动；
+本轮无新 GPU 结果，normal smoke 仍 6/9，当前性能 0/745。
+最新等待记录：[RESUME_WAIT_1841.md](reports/opus_optimize745_20261009/RESUME_WAIT_1841.md)。
+六份有效收据重新审计无失败，三份受干扰收据排除；PID2059925确认存活且未重启。
+18:43 UTC 第三轮相同占用等待经独立 AMD-SMI/KFD 查询确认，没有授权空闲卡；
+目标按三轮阻塞审计标记 blocked，现有 watcher 继续运行并在空闲后自动续跑。
+最新恢复：[RESUME_BLOCKED_1843.md](reports/opus_optimize745_20261009/RESUME_BLOCKED_1843.md)。
+只使用最近约束的物理前四卡，空进程/活动/显存/lock/KFD owner检查通过后自动执行
+smoke、745同卡基线、实测慢项参数/全split调优、合法M域未解决项融合调优和745完整回放；
+private winner须后续生产集成和公开API745回放，外部占用导致无效的批次保留并重试。
+后续还需根据实测unresolved项继续优化机制，目标未完成。
+此前各节的“GPU停止”均是历史阶段记录，已被本次用户恢复指令撤销。
+
 ## 2026-10-09：补齐参数生成、按需编译与 shape 选型（当前）
 
 按用户确认的“少数 pipeline，配置作为参数调优”继续补齐框架流程。

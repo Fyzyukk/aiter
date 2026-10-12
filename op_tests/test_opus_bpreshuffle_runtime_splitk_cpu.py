@@ -884,6 +884,7 @@ class RuntimeSplitKCPU(unittest.TestCase):
         namespace = {
             "__builtins__": {**vars(builtins), "__import__": importer},
             "_SUPPORTED_LIBTYPES": {"opus", "ck", "cktile", "asm"},
+            "_NATIVE_LIBTYPES": {"opus", "flydsl", "flydsl_bmm"},
             "candidate_kids_for_shape": self.common.a8w8_mxscale_bpreshuffle_candidate_kids,
             "bpreshuffle_launch_plan": self.common.bpreshuffle_launch_plan,
             "a8w8_mxscale_gemm_bpreshuffle_kernels_list": self.registry,

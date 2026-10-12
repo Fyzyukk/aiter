@@ -143,6 +143,40 @@ and their original reports.
 Use [`opus_gemm_mxscale_bpreshuffle_tune.py`](opus_gemm_mxscale_bpreshuffle_tune.py)
 from the checkout root. The latest remote setup, source map, full-shape command,
 and replay instructions are at the top of [HANDOFF_MXFP8.md](../../HANDOFF_MXFP8.md).
+The unified tuner now supports six backend labels:
+
+| `libtype` | Candidate identity and tuning flow |
+| --- | --- |
+| `opus` | Five OPUS pipelines, compile parameters, and legal runtime splits |
+| `flydsl_bmm` | `kernelId=bmm`; full `flydsl_bmm_*` name carries BMM launch parameters |
+| `flydsl` | Numeric mxpsh ID; candidates and launch functions reused from the common blockscale tuner |
+| `ck`, `cktile`, `asm` | Existing common blockscale tuner candidates and accuracy contracts |
+
+`--libtype all` includes all six; `--libtype opus_flydsl` includes OPUS and both
+FlyDSL paths. `both` retains CK + CKTile. The numeric-ID FlyDSL catalog is
+[`flydsl_gemm_mxscale_preshuffle_common.py`](../../aiter/ops/flydsl/gemm_tune/flydsl_gemm_mxscale_preshuffle_common.py).
+The common blockscale tuner preserves existing BMM rows when tuning mxpsh;
+it does not enumerate BMM launch parameters. The unified tuner adds that
+search using the BMM runtime's name builder and legality checker.
+
+FlyDSL BMM defaults to `--flydsl-bmm-search balanced`. `full` broadens the
+explicit local parameter space to irregular M/N tiles, 2–12 buffers, and
+B-ahead distances 1–4. Both modes search tile-K 128/256/512, wave grids,
+scale preload/per-stage scales, temporal/non-temporal loads, XCD order, and
+legal power-of-two splits up to 32. They filter excessive M padding and
+split grids that already fill the CUs; neither reconstructs upstream tuning
+history. The runtime heuristic is also a candidate. Use `--flydsl-bmm-kernels`
+with exact comma-separated names to restrict candidates or bypass search
+pruning, and `--flydsl-kids` to restrict numeric-ID mxpsh candidates.
+
+OPUS and both FlyDSL paths share FP8 operands and logical E8M0 scale values.
+BMM uses native column-major A-scale bytes; mxpsh receives separately shuffled
+logical scales. These conversions happen before measurement. OPUS retains
+its strict accumulation-bounds check; FlyDSL retains the common tuner's BF16
+reference and 1% relative/absolute tolerances with `--errRatio` controlling
+the allowed mismatch fraction. CK/CKTile/ASM retain their FP32-scale inputs
+and checks. Timed official FlyDSL calls include internal split-K reduction.
+
 For all 745 gfx950/256-CU shapes:
 
 The current compiler policy uses the minimal local Clang 23 at
@@ -166,22 +200,36 @@ build remains available. The original upstream tune compiler is unconfirmed;
 Clang 23 establishes a new measured baseline.
 
 ```bash
+cd /root/workspace/aiter-opus-mxfp8-bpreshuffle
+
+AITER_AOT_IMPORT=1 \
+PYTHONPATH="$PWD/reports/opus_flydsl_comparison_20261008/python_packages:$PWD" \
 ROCR_VISIBLE_DEVICES=0 \
 HIP_CLANG_PATH=/opt/rocm-llvm23-46fcb339/bin \
 OPUS_BASELINE_HIP_CLANG_PATH=/opt/rocm-llvm23-46fcb339/bin \
-OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
-AITER_JIT_DIR=/absolute/path/to/fresh-jit-dir \
-python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
-  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv \
-  -o /tmp/dsv4_opus_tuned.csv -o2 /tmp/dsv4_opus_profile.csv \
+OPUS_HIP_CLANG_PATH=/root/toolchains/yuyzhang512-amdgpu-pin-op-dst-build/bin \
+AITER_JIT_DIR=/tmp/opus-flydsl-unified-jit \
+/opt/venv/bin/python3 -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  -i reports/gfx950_blockscale_vs_mxscale_20261012/opus_tuned_20261008.csv \
+  -o /tmp/dsv4_unified_tuned.csv -o2 /tmp/dsv4_unified_profile.csv \
+  --opus_configs reports/opus_optimize745_20261009/extra_configs.json \
   --libtype all --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
 ```
+
+The local default environment has FlyDSL 0.2.2, which is too old for these
+paths. The command selects the previously validated isolated 0.3.4.1 package
+directory. `AITER_AOT_IMPORT=1` avoids unrelated optional attention imports;
+it does not enable compile-only mode. Use a fresh JIT directory for each
+source/compiler baseline. Run GPU sweeps only after the existing GPU ownership
+checks pass. This integration has CPU validation; it has no new 745-shape
+performance results.
 
 The [complete tuned CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)
 contains the latest 745-shape compiler-split all-backend results from
 [tuned_all_config.csv](../../reports/opus_clang23_mixed_retune_20261008/tuned_all_config.csv):
 693 OPUS, 8 CK, 10 CKTile, and 34 ASM rows.
-OPUS uses native E8M0 scales; CK/CKTile/ASM use FP32 scales; all outputs are BF16.
+Those historical results predate unified FlyDSL tuning. OPUS uses native E8M0
+scales; CK/CKTile/ASM use FP32 scales; all outputs are BF16.
 The production table reports bandwidth in TB/s; raw reports retain GB/s.
 The 13-column schema is retained. See the [complete measured report](../../reports/opus_clang23_mixed_retune_20261008/README.md)
 for compiler receipts, same-run comparison, historical timings, and raw accuracy results.
@@ -203,7 +251,10 @@ pipeline candidates; each selected pipeline enumerates its supported compile
 configurations and legal runtime split counts. The legacy `--opus-kids` and
 `--opus-families` filters remain accepted for tuning and debugging.
 `--run_config` replays the saved rows and ignores candidate filters, including
-`--opus_pipelines`.
+`--opus_pipelines`, `--flydsl-kids`, and `--flydsl-bmm-kernels`. It accepts legacy
+`libtype=flydsl,kernelId=bmm` rows and normalizes them to `flydsl_bmm`. BMM replay
+validates the complete name, shape, and exact split; numeric-ID mxpsh replay
+validates ID, name, split and shape before any compilation or measurement.
 
 New `-o` and `-o2` files add `pipeline` and canonical JSON `config` columns.
 Runtime split remains in `splitK`; `kernelId` is a compatibility ABI key, with
@@ -226,8 +277,13 @@ Use `--opus_configs extra.json` to add configurations to the default search:
 The tuner filters these configurations by shape and pipeline, enumerates legal
 runtime splits, prepares independent modules before timing, and saves complete
 parameters. This option adds configurations to the existing search; the JSON
-does not register more compute pipelines. GPU tuning remains stopped until the
-user resumes it.
+does not register more compute pipelines. It also accepts the Oct 9
+[`extra_configs.json`](../../reports/opus_optimize745_20261009/extra_configs.json)
+directly, validating its optional `legacy_kid` and `identity` metadata. Private
+fused experimental pipeline bodies in that report remain outside this tuner.
+Historical experiment plans bind source hashes; regenerate a plan for this
+changed tuner before resuming a plan-bound benchmark. Historical receipts
+and performance tables retain their original source baseline.
 
 | Default ID | Configurations consolidated into it |
 |---:|---|

@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+"""Wait for an owner-free physical GPU, validate, benchmark, tune and replay.
+
+The watcher uses AMD SMI until it can claim an idle device. Every completed
+subprocess gets a receipt. Interrupted data is retained and never selected.
+"""
+import argparse
+import csv
+import fcntl
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+
+
+def import_file(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def save(path, value):
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value, indent=2) + "\n")
+    temporary.replace(path)
+
+
+def eligible(gpu):
+    return (gpu["smi_index"] in (0, 1, 2, 3) and gpu.get("hip_index") is not None
+            and gpu.get("peak_gfx") is not None and gpu["peak_gfx"] <= 2
+            and gpu["used_gib"] <= 8 and gpu["free_gib"] >= 16
+            and gpu.get("processes") == [])
+
+
+def stop(child):
+    if child.poll() is None:
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait()
+
+
+def winner(row):
+    """Choose by matched rotated-input median; retain both timing protocols."""
+    med = row["medians"]["pool8"]
+    choices = []
+    for tag in med:
+        if tag == "flydsl_bmm":
+            continue
+        identity, split = tag.split(":")
+        task = {"config": identity, "split_k": int(split)}
+        both = all(row["medians"][p][tag] < row["medians"][p]["flydsl_bmm"] for p in ("pool8", "reuse1"))
+        rounds = {p: sum(next(r["us"] for r in row["records"] if r["round"] == i
+                               and r["variant"] == tag and r["protocol"] == p)
+                         < next(r["us"] for r in row["records"] if r["round"] == i
+                                and r["variant"] == "flydsl_bmm" and r["protocol"] == p)
+                         for i in range(6)) for p in ("pool8", "reuse1")}
+        stable = both and all(count >= 5 for count in rounds.values())
+        choices.append({"task": task, "tag": tag, "both_protocols_faster": both,
+                        "stable_win": stable, "winning_rounds": rounds,
+                        "speedup": {p: row["medians"][p]["flydsl_bmm"] / row["medians"][p][tag]
+                                    for p in ("pool8", "reuse1")}})
+    return min(choices, key=lambda c: (not c["stable_win"], not c["both_protocols_faster"], med[c["tag"]]))
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--check-only", action="store_true")
+    args = ap.parse_args()
+    plan_path = HERE / "plan.json"
+    plan = json.loads(plan_path.read_text())
+    picker = import_file("opt745_idle", ROOT / ".claude/skills/validate-kernel-pr/pick-idle-gpu.py")
+    owner = import_file("opt745_owner", ROOT / "reports/opus_flydsl_comparison_20261008/run_when_idle_strict.py")
+    smi = picker.import_amdsmi()
+    smi.amdsmi_init()
+    global_lock = (HERE / "watch.lock").open("a")
+    try:
+        fcntl.flock(global_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit("A watcher for this experiment is already running")
+    child = None
+    device_lock = None
+    log_path = HERE / "activity.jsonl"
+
+    def log(event, **value):
+        row = {"event": event, "time": time.time(), **value}
+        with log_path.open("a") as stream:
+            stream.write(json.dumps(row) + "\n")
+        if event != "monitor":
+            print(json.dumps(row), flush=True)
+
+    def status(state, **value):
+        save(HERE / "status.json", {"status": state, "time": time.time(), "watch_pid": os.getpid(), **value})
+
+    def snapshot():
+        devices, _ = picker.sample(smi, 3, 1)
+        handles = smi.amdsmi_get_processor_handles()
+        for gpu in devices:
+            gpu["processes"] = smi.amdsmi_get_gpu_process_list(handles[gpu["smi_index"]])
+        log("snapshot", devices=devices, eligible=[g["smi_index"] for g in devices if eligible(g)])
+        return devices, handles
+
+    def claim():
+        nonlocal device_lock
+        while True:
+            devices, handles = snapshot()
+            with (HERE / "cache_build.lock").open("a") as cache_lock:
+                try:
+                    fcntl.flock(cache_lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    status("waiting_for_cpu_cache_build", latest_devices=devices)
+                    time.sleep(15)
+                    continue
+            for gpu in sorted(devices, key=lambda g: (g["used_gib"], g["smi_index"])):
+                if not eligible(gpu):
+                    continue
+                fd = open(f"/tmp/gpu-{gpu['hip_index']}.lock", "a")
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    fd.close()
+                    continue
+                handle = handles[gpu["smi_index"]]
+                gfx, _ = picker.read_activity(smi, handle)
+                processes = smi.amdsmi_get_gpu_process_list(handle)
+                if gfx is None or gfx > 2 or processes:
+                    fd.close()
+                    continue
+                device_lock = fd
+                log("claimed", gpu=gpu)
+                return gpu, handle
+            status("waiting_for_idle_gpu", latest_devices=devices)
+            time.sleep(15)
+
+    def run(phase, name, cases):
+        nonlocal child, device_lock
+        dependency_sha256 = {}
+        if phase.startswith("fused_") or any(t["config"] not in plan["configs"]
+                                             for c in cases for t in c.get("replay", [])):
+            for path in (HERE / "fused_register").iterdir():
+                if path.suffix in (".hip", ".cuh", ".so") or path.name == "build.json":
+                    dependency_sha256[str(path)] = sha(path)
+        for receipt in sorted(HERE.glob(name + ".*.receipt.json"), reverse=True):
+            record = json.loads(receipt.read_text())
+            if (record["valid_for_analysis"] and record["plan_sha256"] == sha(plan_path)
+                    and record["script_sha256"] == sha(HERE / "benchmark.py")
+                    and record.get("dependency_sha256", {}) == dependency_sha256
+                    and record["cases_sha256"] == hashlib.sha256(json.dumps(cases, indent=2).encode()).hexdigest()):
+                output = Path(record["output"])
+                if output.exists() and sha(output) == record["output_sha256"]:
+                    return json.loads(output.read_text())
+        attempt = 0
+        while True:
+            for source, expected in {**plan["source_sha256"], **plan["input_sha256"]}.items():
+                assert sha(ROOT / source) == expected, f"Source/input changed: {source}"
+            gpu, handle = claim()
+            stamp = str(time.time_ns())
+            cases_path = HERE / (name + "." + stamp + ".cases.json")
+            cases_path.write_text(json.dumps(cases, indent=2))
+            output = HERE / (name + "." + stamp + ".json")
+            item = {"name": name, "argv": [sys.executable, str(HERE / "benchmark.py"),
+                    "--plan", str(plan_path), "--cases", str(cases_path),
+                    "--output", str(output), "--phase", phase]}
+            environment = {k: v for k, v in os.environ.items() if k not in
+                           ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL")}
+            environment.update(plan["env"])
+            environment.update(HIP_VISIBLE_DEVICES=str(gpu["hip_index"]), OPUS_EXPECTED_GPU_BDF=gpu["bdf"])
+            log("start", command=item, gpu=gpu)
+            script_sha256 = sha(HERE / "benchmark.py")
+            status("running", phase=phase, name=name, gpu=gpu, output=str(output))
+            contaminated = False
+            identity = None
+            external = []
+            try:
+                with output.with_suffix(".log").open("x") as stream:
+                    try:
+                        child, identity = owner.launch_owned_python(item, environment, stream)
+                    except (OSError, ValueError, RuntimeError, KeyError) as error:
+                        log("owner_identity_unresolved", error=str(error))
+                        contaminated = True
+                    if child is not None:
+                        log("owner_identity", **identity)
+                        while True:
+                            processes = smi.amdsmi_get_gpu_process_list(handle)
+                            external = [p for p in processes if p["pid"] != identity["host_pid"]]
+                            if external:
+                                contaminated = True
+                                log("external_work_started", external=external, child_pid=child.pid)
+                                stop(child)
+                                break
+                            if child.poll() is not None:
+                                break
+                            log("monitor", name=name, child_pid=child.pid, processes=processes)
+                            time.sleep(2)
+                        code = child.wait()
+                    else:
+                        code = 75
+                valid = not contaminated and code == 0 and script_sha256 == sha(HERE / "benchmark.py")
+                valid = valid and all(sha(path) == expected for path, expected in dependency_sha256.items())
+                if valid:
+                    result = json.loads(output.read_text())
+                    valid = result["status"] == "completed" and len(result["rows"]) == len(cases)
+                receipt = {"valid_for_analysis": valid, "returncode": code, "contaminated": contaminated,
+                           "external": external, "owner": identity, "gpu": gpu, "output": str(output),
+                           "plan_sha256": sha(plan_path), "script_sha256": script_sha256,
+                           "dependency_sha256": dependency_sha256,
+                           "cases_sha256": sha(cases_path),
+                           "output_sha256": sha(output) if output.exists() else None, "time": time.time()}
+                save(output.with_suffix(".receipt.json"), receipt)
+                log("end", name=name, **receipt)
+                if valid:
+                    return result
+                if not contaminated:
+                    status("needs_fix", phase=phase, output=str(output), returncode=code)
+                    raise RuntimeError(f"{phase}/{name} failed; see {output.with_suffix('.log')}")
+            finally:
+                if child is not None:
+                    stop(child)
+                child = None
+                if device_lock is not None:
+                    device_lock.close()
+                    device_lock = None
+            attempt += 1
+            status("waiting_after_external_work", phase=phase, attempt=attempt)
+            time.sleep(15)
+
+    def shard_run(phase, cases, batch=8):
+        rows = []
+        for start in range(0, len(cases), batch):
+            part = cases[start:start+batch]
+            identity = hashlib.sha256(json.dumps(part, sort_keys=True).encode()).hexdigest()[:12]
+            result = run(phase, f"{phase}_{start:04d}_{identity}", part)
+            rows.extend(result["rows"])
+            save(HERE / (phase + "_progress.json"), {"completed": len(rows), "total": len(cases), "rows": rows})
+            # Device contexts from the preceding worker must settle before the
+            # next claim. An occupied device simply returns to the idle wait.
+            time.sleep(3)
+        return rows
+
+    def handle_stop(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, handle_stop)
+    try:
+        if args.check_only:
+            devices, _ = snapshot()
+            return 0 if any(eligible(gpu) for gpu in devices) else 75
+        for name, expected in {**plan["source_sha256"], **plan["input_sha256"]}.items():
+            assert sha(ROOT / name) == expected, f"Source/input changed: {name}"
+        log("watch_started", pid=os.getpid(), plan_sha256=sha(plan_path), allowed_smi_indices=[0, 1, 2, 3])
+        cases = plan["cases"]
+        fused_build = json.loads((HERE / "fused_register/build.json").read_text())
+        assert fused_build["returncode"] == 0
+        fused_lookup = {"fused_"+str(r["id"]): r for r in fused_build["configurations"]}
+        config_lookup = {**plan["configs"], **{r["identity"]:{**r,"legacy_kid":-1}
+                                              for r in fused_build["configurations"]}}
+        wanted = {(1, 768, 7168), (16, 2048, 7168), (48, 7168, 16384),
+                  (112, 768, 7168), (672, 7168, 384), (1088, 7168, 768),
+                  (1024, 7168, 16384), (16384, 65536, 1536), (256, 7168, 7168)}
+        smoke = [c for c in cases if (c["M"], c["N"], c["K"]) in wanted]
+        assert len(smoke) == len(wanted)
+        shard_run("smoke", smoke, batch=1)
+        # All seven workload K lengths exercise register queue prologues,
+        # uneven partitions, multiwave tiles and the M tail before timing.
+        fused_smoke_shapes = {(1,768,7168), (112,768,7168), (16,2048,7168),
+                              (48,7168,384), (16,7168,768), (32,7168,1024),
+                              (64,16384,1536), (80,7168,3072), (48,7168,16384)}
+        fused_smoke = [c for c in cases if (c["M"],c["N"],c["K"]) in fused_smoke_shapes]
+        assert len(fused_smoke) == len(fused_smoke_shapes)
+        shard_run("fused_smoke", fused_smoke, batch=1)
+        baseline = shard_run("baseline", cases)
+        by_shape = {tuple(r["shape"]): r for r in baseline}
+        save(HERE / "baseline_summary.json", {"shapes": len(baseline),
+            "stable_wins": sum(winner(r)["stable_win"] for r in baseline),
+            "both_protocols_faster": sum(winner(r)["both_protocols_faster"] for r in baseline)})
+        # Only newly measured losses/unstable results direct the first search.
+        pending = [c for c in cases if not winner(by_shape[c["M"], c["N"], c["K"]])["stable_win"]]
+        pending.sort(key=lambda c: min(winner(by_shape[c["M"], c["N"], c["K"]])["speedup"].values()))
+        if pending:
+            tuned = shard_run("tune", pending, batch=1)
+            by_shape.update({tuple(r["shape"]): r for r in tuned})
+        remaining = [{**c, "replay": [winner(by_shape[c["M"], c["N"], c["K"]])["task"]]}
+                     for c in cases if not winner(by_shape[c["M"], c["N"], c["K"]])["stable_win"]]
+        if remaining:
+            split_tuned = shard_run("tune_splits", remaining, batch=1)
+            by_shape.update({tuple(r["shape"]): r for r in split_tuned})
+        fusion_pending = [{**c, "replay":[winner(by_shape[c["M"],c["N"],c["K"]])["task"]]}
+                          for c in cases if c["M"] <= 512 and
+                          not winner(by_shape[c["M"],c["N"],c["K"]])["stable_win"]]
+        if fusion_pending:
+            fused_rows = shard_run("fused_tune", fusion_pending, batch=1)
+            by_shape.update({tuple(r["shape"]): r for r in fused_rows})
+        replay = [{**c, "replay": [winner(by_shape[c["M"], c["N"], c["K"]])["task"]]}
+                  for c in cases]
+        final = shard_run("replay", replay)
+        unresolved = [r for r in final if not winner(r)["stable_win"]]
+        private_selections = sum(winner(r)["task"]["config"].startswith("fused_") for r in final)
+        with (HERE / "selected745.csv").open("w", newline="") as stream:
+            fields = ["gfx", "cu_num", "M", "N", "K", "libtype", "kernelId", "splitK",
+                      "pipeline", "config", "us", "flydsl_bmm_us", "speedup_pool8", "stable_win"]
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            for row in final:
+                picked = winner(row)
+                identity = picked["task"]["config"]
+                private = identity in fused_lookup
+                config = ({**fused_lookup[identity], "legacy_kid":-1,
+                           "pipeline":"private_register_fused"} if private else config_lookup[identity])
+                writer.writerow({"gfx": "gfx950", "cu_num": 256,
+                    **dict(zip(("M", "N", "K"), row["shape"])), "libtype": "opus_private" if private else "opus",
+                    "kernelId": config["legacy_kid"], "splitK": picked["task"]["split_k"],
+                    "pipeline": config["pipeline"], "config": json.dumps(config["compile_params"], sort_keys=True),
+                    "us": row["medians"]["pool8"][picked["tag"]],
+                    "flydsl_bmm_us": row["medians"]["pool8"]["flydsl_bmm"],
+                    "speedup_pool8": picked["speedup"]["pool8"], "stable_win": picked["stable_win"]})
+        save(HERE / "summary.json", {"shapes": len(final),
+             "stable_wins": len(final)-len(unresolved),
+             "private_selections_requiring_integration": private_selections,
+             "unresolved": [{"shape": r["shape"], **winner(r)} for r in unresolved]})
+        if unresolved:
+            status("more_kernel_optimization_required", completed_shapes=745, unresolved=len(unresolved))
+            log("optimization_round_completed", unresolved=len(unresolved), needs_new_mechanisms=True)
+            return 2
+        if private_selections:
+            status("all_745_stably_faster_private_integration_required", completed_shapes=745,
+                   private_selections=private_selections)
+            return 3
+        status("all_745_stably_faster", completed_shapes=745)
+        return 0
+    except KeyboardInterrupt:
+        status("stopped_by_signal")
+        return 130
+    finally:
+        if child is not None:
+            stop(child)
+        if device_lock is not None:
+            device_lock.close()
+        global_lock.close()
+        smi.amdsmi_shut_down()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

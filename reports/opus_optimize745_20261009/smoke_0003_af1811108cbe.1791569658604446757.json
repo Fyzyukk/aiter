@@ -1,0 +1,31 @@
+{
+  "status": "running",
+  "phase": "smoke",
+  "started_unix": 1791569661.5493846,
+  "gpu_bdf": "0000:05:00.0",
+  "gpu": "_CudaDeviceProperties(name='AMD Instinct MI355X', major=9, minor=5, gcnArchName='gfx950:sramecc+:xnack-', total_memory=294896MB, multi_processor_count=256, uuid=33316131-3432-6235-6136-303831353839, pci_bus_id=5, pci_device_id=0, pci_domain_id=0, L2_cache_size=4MB)",
+  "pid": 2063656,
+  "script_sha256": "241f31ba7d183ece6dcd83f8ad5b5566130f097730618f1e3267f5cf67b8d18e",
+  "plan_sha256": "44c9e8c0a3ac5235886e797da107a6c0c7a2ee493e863d1d5cf1a0a5f0bb16a6",
+  "cases_sha256": "f16ccca477c32370821427cf2b4805f1059795054da6de1fd108034de03d9521",
+  "modules": {},
+  "rows": [],
+  "protocol": {
+    "reference": "independent FP32 with absolute-product accumulation bounds",
+    "signed_seeds": [
+      29,
+      101
+    ],
+    "guard_elements": 4096,
+    "timing": "torch profiler, full GPU activities/call, warmup5/iters51",
+    "confirmation_rounds": 6,
+    "protocols": [
+      "reuse1",
+      "pool8"
+    ],
+    "post_timing_checks": "each touched output against FP32 bounds after each timing round",
+    "public_api": "every public task with seed29; every finalist with seed101",
+    "scale": "same raw native E8M0 storage, zero-copy BMM descriptor",
+    "split": "OPUS complete producer + reducer; FlyDSL official BMM API"
+  }
+}

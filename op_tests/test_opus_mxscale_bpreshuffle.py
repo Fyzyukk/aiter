@@ -147,6 +147,39 @@ def test_tuner_preserves_external_accuracy_contract(backend, monkeypatch):
             assert new[4] == old[4]
 
 
+@pytest.mark.parametrize("shape", [(1, 128, 128), (17, 256, 384), (128, 256, 1024)])
+def test_unified_tuner_native_scale_layouts_on_cpu(shape):
+    from csrc.opus_gemm import opus_gemm_mxscale_bpreshuffle_tune as tune
+
+    m, n, k = shape
+    data = tune.generate_data(m, n, k, 17, True, device="cpu")
+    original = tune.generate_data(m, n, k, 17, device="cpu")
+    for key in ("x", "w", "x_scale", "w_scale"):
+        assert torch.equal(data[key].view(torch.uint8), original[key].view(torch.uint8))
+    assert data["x_scale_bmm"].is_contiguous()
+    assert data["x_scale_bmm"].data_ptr() == data["x_scale"].data_ptr()
+    assert data["out_bmm"].data_ptr() == data["out"].data_ptr()
+    assert torch.equal(data["x_scale_bmm"].view(torch.uint8).flatten(),
+                       data["x_scale"].T.view(torch.uint8).flatten())
+
+    # Independently decode the scale permutation, checking logical rows and
+    # neutral padding. Ragged M and K=384 expose transpose/padding defects.
+    rows, kb = (m + 31) // 32 * 32, (k + 255) // 256
+    decoded = (data["x_scale_shuf"].view(torch.uint8)
+               .reshape(rows // 32, kb, 16, 2, 2)
+               .permute(0, 4, 2, 1, 3).reshape(rows, 2 * kb))
+    assert torch.equal(decoded[:m, :k // 128], data["x_scale"].view(torch.uint8))
+    assert (decoded[m:] == 127).all()
+    assert (decoded[:, k // 128:] == 127).all()
+    decoded_b = data["w_scale_shuf"].view(torch.uint8).reshape(n // 128, kb, 2, 2)
+    assert torch.equal(decoded_b[..., 0], decoded_b[..., 1])
+    assert torch.equal(decoded_b[..., 0].reshape(n // 128, 2 * kb)[:, :k // 128],
+                       data["w_scale"].view(torch.uint8))
+    ref = tune.run_torch(*(data[key] for key in tune._REF_KEYS), with_bounds=True)
+    assert ref.shape == (2, m, n) and torch.isfinite(ref).all()
+    assert tune.compare_flydsl_outputs(ref, ref[0].to(torch.bfloat16), printLog=False) == 0
+
+
 def test_tuner_selects_with_backend_accuracy_limits_and_keeps_raw_errors(tmp_path):
     import argparse
     import csv
