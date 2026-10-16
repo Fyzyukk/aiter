@@ -44,6 +44,7 @@ inline uint64_t validate(const ShapeContract (&contracts)[Count],
 #define OPUS_BP_HOST_CONTRACT_PIPELINE_BASE
 // SPDX-License-Identifier: Apache-2.0
 
+#include <climits>
 #include "opus_gemm_blockscale_mxscale_bpreshuffle_support_gfx950.cuh"
 
 #endif
