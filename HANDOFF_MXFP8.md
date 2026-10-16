@@ -1,8 +1,175 @@
 # MXFP8 B-preshuffle 优化交接
 
-## 2026-09-29：最新分支迁移与重新 tune
+## 2026-10-10：745-shape tune 已完成，继续优化
 
-分支为 `Fyzyukk/aiter:aiter-opus-mxfp8-bpreshuffle`。本节是最新测试入口；
+当前生产注册表已追加到 **140 个配置，9000–9139**，仍为六个 pipeline / 六个
+traits 头文件。9137 是既有 8-wave 短 K swizzle 特化；9138 是 192×256、1×4 waves、
+FixedK7168 的独立 B-direct 计算流程，放在现有 LDS-ring 文件对中；9139 是既有
+9030 的 FixedK7168 配置，64×128×128 tile、4×2 waves、6 stages、cluster=2，
+复用 LDS-ring 计算流程。旧 9000–9138
+的 key 和 traits 保持不变，普通候选筛选决定是否测量，没有强制 winner 路由。
+
+完整 tune 与五轮当前对照已经完成；既有全量结果为 **332/745 OPUS 当前同轮中位数
+胜出，413 负**。按 `min(当前最强 FlyDSL 中位数, 原 CSV 耗时)` 作为保守门槛，
+同一批数据经 CPU 重分类为 **323/745**，剔除9项原同轮胜出；这不是新一轮GPU结果。
+每个shape取当前最强有效FlyDSL后，仍有132项慢于原CSV，其中19项慢超过5%。
+同名同配置原候选的统计才是445项在±5%、260项快超过5%、40项慢超过5%。
+5%仅为描述性分层，不是放宽基线或允许用变慢的FlyDSL宣布OPUS胜出的标准。详见
+[完整745复核](reports/opus_parameterized745_20261009T164517Z/full745_revalidation_conditioned/analysis/README.md)。
+逐项保守比较见[基线偏差分析](reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/deltas/README.md)。
+目前的局部优化结果不能直接加到这些全量统计中。
+
+**更正此前“基线已对齐”的声明：配置和CSV身份核对曾被错误表述为实测性能已复现。**
+原CSV已追溯到PR #5896初始提交 `ef0297e4`；该提交的BMM源代码与merge/current并非
+完全相同，原记录采用同进程候选与CK/asm交替的perftest中位数，完整原始脚本和环境仍缺失。
+当前编译后端也不同：OPUS使用LLVM `49c41889`，已安装FlyDSL wheel内置后端为LLVM
+`e2a39f50`；设置 `HIP_CLANG_PATH` 不会把FlyDSL切换成OPUS后端。现已独立构建同49c的
+MLIR工具，直接链接原OPUS的LLVM库，并通过隔离编译验证三个慢代表：1536×7168×384、
+64×6144×7168、8×65536×1536。它们在初始/当前源码及两套后端/链接器下的计算函数、
+descriptor、资源均相同；这三个配置可排除上述源码和编译器生成代码变化的原因。
+同后端不等于同前端或全部编译选项；1536的最终后端O2→O3也未改变代码。参见
+[原PR来源](reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/origin/README.md)和
+[编译器调查](reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/README.md)。
+进一步对原CSV与当前最强BMM的1490条shape/角色映射去重，完成621个编译特化的对照：
+479个执行代码/ABI/装载语义相同，142个函数指令不同，其中25个资源记录变化。
+这不是621个shape，也不是重新tune。142个异码涉及17/132个回退shape，
+其中只有2/19个慢超过5%的shape涉及异码；不能用统一LLVM解释全部历史差距。
+初始sweep的dump路径也有变化；后续四个代表采用同一prebinary、同一最终pass和同一
+LLD23控制，均确认实际LLVM后端会生成异码，并排除了这四例的旧cache、dump与linker因素。
+这四例再仅将共同后端的O2改为O3，整个HSACO均逐字节相同；这不等于HIP与DSL前端和全部选项相同。
+这些CPU结果本身不证明数值正确或性能改善。见
+[四例控制](reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/differing_backend_controls4/summary.json)和
+[慢shape映射](reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/common_backend_slow_mapping/README.md)。
+四例异码GPU对照随后完成8个串行进程，48次seed检查、80次预检、80条计时和4080个
+保留输出全部通过，实际装载及调用的A/D代码身份一致。原后端A与共同49后端D的成对
+耗时变化分别为−1.447%、−0.049%、+0.636%、−0.151%（256×2048×7168、
+64×65536×1536、480×7168×3072、16384×6144×7168），不能据此主张普遍提速。
+前两项保持原CSV配置，D中位耗时仍比原CSV慢6.999%和2.039%，两个独立进程均未
+补回差距；后两项配置不同于历史，且A已快于CSV，不能将历史收益归因于D。详见
+[同后端实测及历史对照](reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/backend_gpu_probe4/historical_comparison/README.md)。
+此结果只覆盖四例，不更新745项胜负；频率和占用为稀疏采样，不能证明每次微秒级调用的状态。
+1536的六组计时参数对照通过120条测量、9120个保留输出检查，改回2 warmup/101 iterations
+后仍比原CSV慢；没有以挑选计时参数替换基线。详见
+[计时协议诊断](reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/timer_probe/analysis/README.md)。
+CK交替诊断已复用通过的三个seed（33,030,144个值），完成两个反序性能进程。
+40条计时、40次预检、2040个保留输出全部通过，误差比例均为0；CK先行相对OPUS先行
+只改善配对中位数0.3202%，两进程的BMM中位耗时仍比原10.82us慢10.71%–12.80%。
+这排除了该诊断下companion选择能恢复此项历史差距；原外部中断记录仍保留。详见
+[CK交替实测](reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/companion_probe/performance_resume_after_external_20261010T0248Z/analysis/README.md)。
+这些排除结论只覆盖所测配置和因素，历史性能差距的根因仍未确定，完整复现尚未完成。
+
+140配置阶段的CPU catalog/codegen测试已由root运行，**17项通过**。
+独立 `jit_optimized140` 已构建；public9139的实际15920B指令、descriptor和资源与
+局部FixedK实验一致，无spill，动态LDS为155704B（K7168）。旧public9030设备代码保持不变。
+**public9139公共入口的GPU数值与性能验收待执行**，CPU字节一致不能代替验收。参见
+[构建结果](reports/opus_parameterized745_20261009T164517Z/jit_optimized140/build_result.json)和
+[设备代码审计](reports/opus_parameterized745_20261009T164517Z/jit_optimized140/public9139_code_audit.json)。
+此前局部FixedK的13-shape筛选已完成335条测量、17085个保留输出检查；13项均改善
+runtime9030中位数，但只在2项击败固定最强BMM、1项击败BMM逐轮包络的中位数，
+没有一项五轮全胜。这是局部实验而非public9139验收，见
+[delta13审计](reports/opus_parameterized745_20261009T164517Z/lds_ring64x128_w4x2_fixedk7168_delta13/analysis.json)。
+
+此前139配置阶段，9138已通过16项CPU catalog/codegen测试并构建独立 `jit_optimized139`，实际指令与
+通过验证的native原型逐字节相同、无spill。公共入口228次数值检查、3个非法shape拒绝，
+以及196条性能记录的9996个保留输出全部通过。在两代表shape的14轮中，对public9132
+均14/14胜，配对中位减少7.269%/8.609%；对同轮最强FlyDSL分别10/14、13/14胜，
+配对中位减少1.068%/1.309%，仍非每轮都赢。详见
+[公共入口验收](reports/opus_parameterized745_20261009T164517Z/hybrid_192x256_public139/performance_all_bmm/audit.md)。
+旧 `jit_optimized138`、`jit_optimized139` 和所有基线保留不变。优化目标尚未完成，两份skill
+仍为报告内草稿。当前后续工作以 `reports/opus_parameterized745_20261009T164517Z` 为准。
+
+下面的参数化迁移与旧实验段落保留各自当时的配置数量、编号和验证范围。
+
+## 2026-10-09：参数化注册与顺序编号
+
+当前配置、参数表、factory、枚举、shape 筛选及精确 metadata 均在
+`csrc/opus_gemm/opus_gemm_common.py`，唯一注册表是
+`a8w8_mxscale_gemm_bpreshuffle_kernels_list`。完整参数域有 **137 个唯一配置**，
+在固定 `ALL_PIPELINES` 顺序中自动分配 **9000–9136**，并检查不超过保留区间
+9000–9999。先完成全域编号，再按 pipeline 或 shape 筛选，筛选不会改变 ID。
+每个 ID 只启动一个配置；runtime-K 与 FixedK 变体分别编号，FixedK 必须匹配实际 K。
+旧的手工 9xxx 字典、别名映射及按 shape 选择 tile/prefetch/FixedK 的 host wrapper 已移除。
+
+完整参数域包含此前 74 个生成配置和 63 个唯一的手工基础/特化配置。
+各 family 数量为 quadrant 2、register 23、LDS ring 53、packed 4-wave 16、
+LDS 4-wave 15、8-wave 26、2-wave 2。默认每个 shape 最多选择 10 个配置，
+每个 pipeline 最多 2 个；这不是 137 个配置的穷举搜索。2-wave 需通过
+`--opus-pipelines` 或显式 ID 启用。`--opus-kids` 和回放使用
+`candidate_kids_for_shape(..., all_candidates=True)` 绕过排序及数量限制，仍检查合法性。
+shape 限制来自实际布局、scale 容量、地址范围及 FixedK；旧的 M≤512/M≤2048
+和 short-K 人工调优限制不再保留。
+
+六个 pipeline 与六个 traits 头文件保持不变；完整参数及新增配置方法见
+[template guide](csrc/opus_gemm/include/gfx950/bpreshuffle_templates.md)。
+`config_key` 对实际 kernel symbol 与解析后的 traits 求 hash，用于去重和 metadata；
+整数 ID 来自顺序枚举。保存 metadata 使用 schema 2。本次没有新增 GPU 正确性、
+性能验证或调优结果，以下历史报告不能作为当前 137 个配置的验证结论。
+本轮 CPU 验证通过 20 项测试及 147 个子测试；全域代码生成得到 137 个唯一 GEMM
+实例和 6 个去重后的 reduction 实例，配置覆盖与迁移前的有效组合完全一致。
+上述参数化迁移阶段未执行 GPU 编译、数值测试或调优。后续 745-shape 全量重新
+tune 已开始，记录在 `reports/opus_parameterized745_20261009T164517Z`；目前仍在
+构建/调优流程中，尚无本轮完整基线的正确性或性能结论。
+
+### 当前候选说明与调优入口
+
+CPU 候选说明入口保持在现有 tuner 中，不加载 GPU runtime：
+
+```bash
+python csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py --explain-candidates --shape 64 256 384 --explain
+```
+
+GPU 调优须使用 gfx950、提供原生 `torch.float8_e8m0fnu` 的 ROCm/PyTorch 环境、
+FlyDSL BMM 依赖，以及支持 `clang::amdgpu_pin_agpr` 的编译器。
+将 `OPUS_HIP_CLANG_PATH` 替换为目标机的实际 clang `bin/`，更新候选后重新构建 OPUS JIT。
+当前源 CSV 共 861 行：gfx950/256 CU 有 745 行、gfx942/80 CU 有 105 行、
+gfx1250/256 CU 有 11 行；历史记录中的 1042 行属于更早的数据集。
+现有 tuner 只接受 `--libtype opus` 或 `--libtype flydsl_bmm`，两后端分别运行，
+使用各自独立的结果和 profile CSV。在 checkout 根目录从唯一注册表生成全部 137 个
+OPUS ID，再通过 `--opus-kids` 显式穷举每个 shape 的合法配置：
+
+```bash
+OPUS_KIDS=$(python - <<'PY'
+from csrc.opus_gemm.opus_gemm_common import a8w8_mxscale_gemm_bpreshuffle_kernels_list
+print(",".join(map(str, sorted(a8w8_mxscale_gemm_bpreshuffle_kernels_list))))
+PY
+)
+
+ROCR_VISIBLE_DEVICES=0 \
+OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv \
+  -o /tmp/dsv4_opus_tuned.csv -o2 /tmp/dsv4_opus_profile.csv \
+  --libtype opus --opus-kids "$OPUS_KIDS" \
+  --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
+
+ROCR_VISIBLE_DEVICES=0 \
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv \
+  -o /tmp/dsv4_flydsl_bmm_tuned.csv -o2 /tmp/dsv4_flydsl_bmm_profile.csv \
+  --libtype flydsl_bmm \
+  --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
+```
+
+`--all` 强制重新测量 shape，不表示穷举配置；仅增大 `--opus-max-candidates` 也不会
+穷举配置。上方显式 ID 列表包含全部七个 pipeline，绕过默认排序和数量上限，仍逐 shape
+检查合法性。OPUS 输出保存当前 ID、名称和完整配置 metadata；两后端分别回放本轮新结果：
+
+```bash
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  --libtype opus --run_config /tmp/dsv4_opus_tuned.csv --mp 1 --warmup 5 --iters 51
+
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  --libtype flydsl_bmm --run_config /tmp/dsv4_flydsl_bmm_tuned.csv \
+  --mp 1 --warmup 5 --iters 51
+```
+
+**旧 CSV 的 ID、名称和调优选择不提供兼容回放。** 旧 CSV 仍可通过 `-i` 提供 shape，
+但必须重新 tune。下方按日期保留的记录使用各自当时的源码、候选编号及测试状态；
+其中“当前”“最新”及回放说明仅适用于对应历史版本。
+
+## 2026-09-29：历史分支迁移与重新 tune
+
+分支为 `Fyzyukk/aiter:aiter-opus-mxfp8-bpreshuffle`。本节记录当时的测试入口；
 下方按日期保留的记录描述各自当时的源码、候选编号和测试状态。
 
 当前分支包含此前的大 M pipeline 优化，以及通用小 M 候选 **9040–9046**。
@@ -25,10 +192,10 @@
 | `csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py` | 正式 tune 和保存结果回放入口 |
 | `csrc/opus_gemm/opus_gemm_common.py` | 15 个公开候选的注册及 shape 支持范围 |
 | `csrc/opus_gemm/codegen/gen_instances_gfx950.py` | 生成入口、边界检查和 kernel launch |
-| `csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_small_gfx950.cuh` | 9040–9046 的固定 tile 和 pipeline 参数 |
-| `csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh` | 9040–9042 的寄存器预取 pipeline |
-| `csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh` | 9043–9046 的 LDS pipeline |
-| `csrc/opus_gemm/include/gfx950/opus_gemm_mxscale_bpreshuffle_small_output_gfx950.cuh` | 小 M MFMA16 配对写回 |
+| `csrc/opus_gemm/include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_register_prefetch_gfx950.cuh` | 9040–9042 的 tile 和寄存器预取参数 |
+| `csrc/opus_gemm/include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_lds_ring_gfx950.cuh` | 9043–9046 的 tile 和 LDS pipeline 参数 |
+| `csrc/opus_gemm/include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_register_prefetch_gfx950.cuh` | 9040–9042 的寄存器预取 pipeline，以及与 LDS ring 共用的 MFMA16 配对写回 |
+| `csrc/opus_gemm/include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_lds_ring_gfx950.cuh` | 9043–9046 的 LDS pipeline |
 
 ### 获取分支和准备环境
 

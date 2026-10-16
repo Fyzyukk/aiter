@@ -44,7 +44,8 @@ moving this family back to JIT later is a branch in
 
 ```
 gen_co/
-├── co_kernels.json        # THE source of truth (see below)
+├── co_kernels_gfx1250.json # gfx1250 source of truth (see below)
+├── co_kernels_gfx950.json # gfx950 pin AGPR candidate manifest
 ├── build_co.py            # the producer
 └── gfx1250/
     ├── <launcher_name>.co  # bare amdhsa ELF, one kernel each   (tracked)
@@ -66,7 +67,7 @@ same function deletes `gen_co/*/asm/` from the copy — being `.gitignored` does
 nothing for a filesystem copy, so otherwise every wheel built in a tree that had
 run `build_co.py` would carry a few MB of listings.
 
-## `co_kernels.json`
+## `co_kernels_gfx1250.json`
 
 One entry per pre-compiled variant, read by BOTH `opus_gemm_common.py` (which
 turns it into the kid table the JIT codegen consumes) and `build_co.py`. Adding
@@ -116,7 +117,7 @@ instead: `B_K = 256` doubles the budget at no cost to the grid. That is what the
 `64x64x256` and `32x64x256` entries are, and they took 8 shapes off the `_ws`
 families when they were added. The loader asserts that, and asserts each `kid` is in band.
 
-A **missing** `co_kernels.json` leaves the family empty rather than breaking the
+A **missing** `co_kernels_gfx1250.json` leaves the family empty rather than breaking the
 build — a data file that failed to ship should cost the co kids, not all of opus.
 An entry whose **`.co` is not on disk** degrades the same way: `_load_co_kernels`
 drops that kid (with a warning on stderr) so it can never reach the codegen, the

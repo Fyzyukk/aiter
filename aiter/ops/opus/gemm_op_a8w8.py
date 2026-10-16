@@ -369,7 +369,9 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
     if instance is None:
         from csrc.opus_gemm.opus_gemm_common import kernels_list
         instance = kernels_list[resolved_kid]
-    if instance.bpreshuffle_split_k > 1:
+    from csrc.opus_gemm.opus_gemm_common import bpreshuffle_workspace_bytes
+    required_workspace = bpreshuffle_workspace_bytes(instance, XQ.shape[-2], WQ.shape[-2], XQ.shape[-1])
+    if required_workspace:
         # Allocate through PyTorch so stream lifetime and graph pools are tracked.
         # Shape/dtype/device checks precede allocation; C++ also checks every
         # physical workspace contract for direct raw-ABI callers.
@@ -390,8 +392,11 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
                 or w_scale.shape != (n // 128, k // 128) or not w_scale.is_contiguous()):
             raise ValueError("OPUS bpreshuffle requires column-major E8M0 A scales and row-major E8M0 B scales")
         if workspace is None:
-            workspace = torch.empty(
-                instance.bpreshuffle_split_k * m * n, device=XQ.device, dtype=torch.float32,
+            zero_init = bool(instance.bpreshuffle_entry and
+                             instance.bpreshuffle_entry.get('workspace_zero_init'))
+            allocate = torch.zeros if zero_init else torch.empty
+            workspace = allocate(
+                (required_workspace + 3) // 4, device=XQ.device, dtype=torch.float32,
             )
     elif workspace is not None:
         raise ValueError("this OPUS bpreshuffle kid does not use workspace")

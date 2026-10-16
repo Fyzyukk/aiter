@@ -4,6 +4,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -855,6 +856,16 @@ void
 
         for arch, rows in host_by_arch.items():
             impl_includes = sorted({row["kid_name"] for row in rows})
+            bpreshuffle_headers = ""
+            if arch == 'gfx950':
+                from codegen.gen_instances_gfx950 import bpreshuffle_host_headers
+                from opus_gemm_common import bpreshuffle_implementation
+                implementations = [bpreshuffle_implementation(kid)
+                    for kid,k in kernels_list.items() if k.name in impl_includes
+                    and k.kernel_tag=='a8w8_mxscale_gemm_bpreshuffle'
+                    and k.bpreshuffle_co is None and k.bpreshuffle_entry is None]
+                if implementations:
+                    bpreshuffle_headers = bpreshuffle_host_headers(implementations)
             host_body = "".join(row["host_decl"] for row in rows)
             reduce_abi = SPLITK_REDUCE_ABI_MAP[arch]
             extra_reduce = SPLITK_REDUCE_EXTRA_MAP.get(arch, {})
@@ -886,6 +897,7 @@ void
                 '#include "aiter_stream.h"\n'
                 "#include <optional>\n"
                 + forward_decls
+                + bpreshuffle_headers
                 + "".join(f'#include "impl/{name}.cuh"\n' for name in impl_includes)
                 + host_body
                 + "#endif // host pass only\n"
@@ -914,8 +926,11 @@ void
         (see _own_arch_device_pass_guard).
         """
         for row in self._device_instantiations:
+            if not row["device_decl"].strip():
+                continue
             name = row["kid_name"]
             dtype = row["dtype"]
+            full_host = row.get('full_host', False)
             guard_open, guard_close = _own_arch_device_pass_guard(_kid_name_arch(name))
             # Include the kid's .cuh -- it transitively pulls in the full pipeline header (because
             # OPUS_FUSED_HOST_TU is NOT defined here) an...
@@ -928,10 +943,10 @@ void
                 "// Device-only translation unit for one (kid, dtype) pair.\n"
                 "// Keep both JIT and prebuild host passes on the minimal branch --\n"
                 "// no torch and no full HIP runtime.\n"
-                "#ifndef __HIPCC_RTC__\n"
-                "#define __HIPCC_RTC__ 1\n"
-                "#endif\n"
+                + ("#undef __HIPCC_RTC__\n" if full_host else
+                   "#ifndef __HIPCC_RTC__\n#define __HIPCC_RTC__ 1\n#endif\n")
                 + guard_open
+                + row.get('device_prefix', '')
                 + f'#include "impl/{name}.cuh"\n'
                 + row["device_decl"]
                 + guard_close
@@ -1056,8 +1071,38 @@ void
         self._host_instantiations = []
         self._device_instantiations = []
 
+        emitted_bpreshuffle_names = set()
         for k in kernels_dict.values():
+            if k.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle":
+                if k.name in emitted_bpreshuffle_names:
+                    continue
+                emitted_bpreshuffle_names.add(k.name)
             self.gen_instance(k)
+
+        # Distinct configurations can share a reduction specialization. Emit
+        # each device symbol once while keeping every configuration's launcher.
+        bpreshuffle_symbols = set()
+        for row in self._device_instantiations:
+            name = row["kid_name"]
+            if "a8w8_mxscale_gemm_bpreshuffle" not in name:
+                continue
+            if row.get('full_host'):
+                continue
+            impl = Path(self.impl_path, f"{name}.cuh").read_text()
+            aliases = dict(re.findall(r"^using\s+(\w+)\s*=\s*(.+);$", impl, re.M))
+            declarations = re.findall(r"template __global__ void\s+[^;]+;\s*", row["device_decl"])
+            if "".join(declarations).strip() != row["device_decl"].strip():
+                raise ValueError(f"Unrecognized B-preshuffle device declaration: {name}")
+            unique = []
+            for declaration in declarations:
+                resolved = declaration
+                for alias, traits in aliases.items():
+                    resolved = re.sub(r"\b" + re.escape(alias) + r"\b", lambda _: traits, resolved)
+                identity = re.sub(r"\s+", "", resolved)
+                if identity not in bpreshuffle_symbols:
+                    bpreshuffle_symbols.add(identity)
+                    unique.append(declaration)
+            row["device_decl"] = "".join(unique)
 
         # Emit one fused HOST TU + N device TUs (one per kid, dtype) + one dedicated splitk_reduce.device.cu.
         self._emit_fused_host_tu()

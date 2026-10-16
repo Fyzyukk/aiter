@@ -5,130 +5,204 @@ The public Python contract is documented in
 Python `opus_gemm(..., kid=...)` and `opus_bmm(..., kid=...)` entries; the
 public operation split does not duplicate C++ launchers or kernels.
 
-The [latest gfx950 results](../../reports/opus_current745_tables_20260930/REPORT.md)
-list all 26 default MXFP8 B-preshuffle candidates and their win counts, with
-per-shape timings in milliseconds against the original CSV. The
+The [2026-09-30 gfx950 results](../../reports/opus_current745_tables_20260930/REPORT.md)
+list the 26 default MXFP8 B-preshuffle candidates of that revision and their win
+counts, with per-shape timings in milliseconds against the original CSV. The
 [same-run comparison](../../reports/opus_current745_tables_20260930/SAME_RUN.md)
 compares OPUS with the fastest valid CK/CKTile/ASM candidate for all 745 shapes.
 The reports also quantify timing changes for matching historical configurations.
+Their IDs and measurements are historical; they do not validate the current
+parameterized catalog or provide replayable choices for its sequential IDs.
 
-## MXFP8 B-preshuffle pipeline and traits headers
+## Current MXFP8 status: 2026-10-10
 
-The original eight gfx950 candidates follow 9000's `template<class Traits>` structure:
-pipeline headers contain device execution, and traits headers contain geometry,
-storage sizes, and layout constants. The files live in `include/gfx950/`.
+The registry contains **140 configurations, IDs 9000–9139**, in the existing
+six pipeline/traits header pairs. New 9139 is the FixedK7168 version of
+LDS-ring 9030: 64×128×128, 4×2 waves, 6 stages, cluster 2. The existing catalog/codegen
+tests passed **17/17**. The independent
+[`jit_optimized140` build](../../reports/opus_parameterized745_20261009T164517Z/jit_optimized140/build_result.json)
+and [CPU device-code audit](../../reports/opus_parameterized745_20261009T164517Z/jit_optimized140/public9139_code_audit.json)
+passed: public9139's actual function bytes, descriptor and resources match the
+local FixedK prototype, and old public 9030 is unchanged. **Public 9139 GPU
+numerical and performance acceptance is still pending.** The completed local
+[13-shape screen](../../reports/opus_parameterized745_20261009T164517Z/lds_ring64x128_w4x2_fixedk7168_delta13/analysis.json)
+contains 335 measurements and 17085 retained-output checks; it is not public-entry
+acceptance. Its FixedK candidate improves the runtime 9030 median on 13 shapes,
+beats the strongest fixed BMM median on 2 and the BMM round-envelope median on 1,
+and wins no shape in every round against that envelope.
 
-| ID | Tile M×N×K / waves | Pipeline | Traits |
-|---|---|---|---|
-| 9000 | 256×256×128 / 4 | [4wave](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_gfx950.cuh) | [original traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh) |
-| 9010 | 256×256×128 / 4, padded M | [4wave_256x256_padded_m](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh) | [padded-M traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_256x256_padded_m_gfx950.cuh) |
-| 9020 | 192×256×128 / 8 | [8wave_192x256](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh) | [192×256 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_gfx950.cuh) |
-| 9021 | 128×128×128 / 4 | [4wave_128x128](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh) | [128×128 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_128x128_gfx950.cuh) |
-| 9022 | 160×128×128 / 4 | [4wave_160x128](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh) | [160×128 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_160x128_gfx950.cuh) |
-| 9023 | 64×128×128 / 4 | [4wave_64x128](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh) | [64×128 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x128_gfx950.cuh) |
-| 9024 | 64×64×128 / 4 | [4wave_64x64](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh) | [64×64 traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_64x64_gfx950.cuh) |
-| 9030 | 192×256×128 / 8, large output | [8wave_192x256_large_output](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh) | [large-output traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_8wave_192x256_large_output_gfx950.cuh) |
+The full 745-shape tune and conditioned five-round comparison are **complete**:
+[the frozen same-run result](../../reports/opus_parameterized745_20261009T164517Z/full745_revalidation_conditioned/analysis/README.md)
+is **332 OPUS median wins / 413 losses**. Reclassifying those existing timings
+against `min(current strongest BMM median, original CSV us)` gives **323 wins**;
+this is CPU analysis, not new GPU evidence. The current strongest FlyDSL remains
+slower than the original CSV on 132 shapes, including 19 by more than 5%. The older
+445 within ±5% / 260 faster >5% / 40 slower >5% counts refer to the same original
+kernel name/configuration. Five percent is descriptive, not a relaxed acceptance
+rule. Local optimization results do not change these full 745-shape counts; see the
+[historical-ceiling analysis](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/deltas/README.md).
 
-Except for 9000's original naming, the same suffix identifies each
-pipeline, traits file, traits type, and device kernel:
+**Correction: the earlier claim that the baseline was aligned incorrectly
+presented configuration/CSV identity checks as measured performance reproduction.**
+The [original PR #5896 source](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/origin/README.md)
+already contained the table at `ef0297e4`, before source changes retained by the
+merge; its documented CK/asm companion protocol and full original environment
+have not been recreated. The [current compiler identities](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/compiler_identity.json)
+also differ: OPUS uses LLVM `49c41889`, while the installed FlyDSL wheel embeds
+LLVM `e2a39f50`. `HIP_CLANG_PATH` does not select FlyDSL's embedded backend.
+An independent MLIR build now uses the original OPUS LLVM library. Three slow
+representatives (1536×7168×384, 64×6144×7168, 8×65536×1536) have identical kernel
+functions, descriptors and resources across initial/current source and the two
+backend/linker combinations. This excludes those code-generation differences
+for these configurations; it does not establish the original run environment.
+The frontend and original compiler options remain distinct; changing final
+backend O2 to O3 also leaves the 1536 case unchanged. See the
+[compiler investigation](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/README.md).
+The broader comparison covers 621 unique compile specializations from 1490
+shape/role mappings: 479 have identical executable code, ABI and loading
+semantics; 142 have different functions, including 25 resource changes. The
+changed products touch 17 of the 132 slower shapes, and only 2 of the 19
+slowdowns over 5%. Four controlled representatives reproduce the old cache and
+isolate actual backend differences with the same prebinary IR, final pass and
+LLD23, excluding dump/linker effects for those four. This CPU evidence alone
+does not establish numerical correctness or performance. See the
+[four-case controls](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/differing_backend_controls4/summary.json)
+and [slow-shape mapping](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/common_backend_slow_mapping/README.md).
+Changing only the common final backend from O2 to O3 also preserves the entire
+HSACO for all four; this does not equate HIP/DSL frontends or all compiler flags.
+The subsequent four-case GPU comparison passed 48 seed gates, 80 prechecks,
+80 timing rows and 4080 retained outputs, with actual A/D loading and call
+bindings verified. Paired common49/original-backend changes were −1.447%,
+−0.049%, +0.636% and −0.151% for 256×2048×7168, 64×65536×1536,
+480×7168×3072 and 16384×6144×7168. The first two retain the original CSV
+configuration and remain 6.999% and 2.039% slower than it under common49;
+neither independent process recovers the gap. The other two use different
+current configurations and were already faster than the CSV under the original
+backend. See the [measured historical comparison](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/compilers/backend_gpu_probe4/historical_comparison/README.md).
+These four cases do not update the full745 score. Sparse occupancy/clock
+samples do not certify the state during each microsecond kernel.
+The [six-arm timer diagnostic](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/timer_probe/analysis/README.md)
+passed 120 timing rows and 9120 retained-output checks; the original timer's
+default 2 warmups/101 iterations did not recover that case's CSV time.
+The CK companion diagnostic subsequently completed both reversed-order
+processes: 40 timing rows, 40 prechecks and 2040 retained outputs passed with
+zero error ratios. CK preceding BMM improves the paired median by only 0.3202%;
+the per-process BMM medians remain 10.71%–12.80% slower than the original10.82us.
+That companion choice does not recover this gap. The initial external
+interruption remains preserved. See the [companion result](../../reports/opus_parameterized745_20261009T164517Z/baseline_cause_investigation/companion_probe/performance_resume_after_external_20261010T0248Z/analysis/README.md).
+Historical performance reproduction and the all-745-shape OPUS optimization
+target remain unfinished.
+
+## Blockscale / MX-scale B-preshuffle pipeline and traits headers
+
+All gfx950 B-preshuffle calculation headers and internal template symbols use
+`opus_gemm_blockscale_mxscale_bpreshuffle_`. `blockscale` identifies the logical
+scale groups (A: 1×128; B: 128×128), `mxscale` identifies native E8M0 scaled MFMA,
+and `bpreshuffle` identifies the required B layout. Each logical K128 scale is
+reused across the native 16×16×128 MFMA's four K32 scale groups.
+
+Pipeline headers contain device execution; traits headers contain geometry,
+storage sizes, and layout constants. Six pipeline headers contain eight GEMM
+calculation bodies, supported by six matching traits headers (12 B-preshuffle
+headers total). Shared helpers and argument definitions are contained in these
+existing headers. The generated configurations use the following implementations.
+Kernel suffixes in the table follow the common prefix above and end in `_kernel`.
+
+| Configuration family | Tile M×N×K / waves | Pipeline | Traits | Kernel suffix |
+|---|---|---|---|---|
+| `quadrant_4wave` | 256×256×128 / 4, `pad_m=false/true` | [4wave_pin_agpr](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_4wave_pin_agpr_gfx950.cuh) | [4wave_pin_agpr traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_4wave_pin_agpr_gfx950.cuh) | `4wave` |
+| `register` | parameterized M/N / 1–8 waves | [register_prefetch](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_register_prefetch_gfx950.cuh) | [register_prefetch traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_register_prefetch_gfx950.cuh) | `register_prefetch` |
+| `lds_ring` | parameterized M/N / 4 or 8 waves | [lds_ring](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_lds_ring_gfx950.cuh) | [lds_ring traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_lds_ring_gfx950.cuh) | `lds_ring` |
+| `packed_4wave` | 64×{64,128}×128 / 4 | [4wave](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_4wave_gfx950.cuh) | [4wave traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_4wave_gfx950.cuh) | `4wave_packed` |
+| `lds_4wave` | {128,160}×128×128 / 4 | [4wave](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_4wave_gfx950.cuh) | [4wave traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_4wave_gfx950.cuh) | `4wave_lds` |
+| `panel_8wave` | {128,192}×{128,256}×128 / 8 | [8wave](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_8wave_gfx950.cuh) | [8wave traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_8wave_gfx950.cuh) | `8wave_panel` |
+| `b_direct_4wave` | 192×256×128 / 4, FixedK7168 | [lds_ring](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_lds_ring_gfx950.cuh) | [lds_ring traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_lds_ring_gfx950.cuh) | `b_direct_4wave` |
+| `panel_2wave` | {16,32}×64×128 / 2, opt-in | [2wave](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_2wave_gfx950.cuh) | [2wave traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_2wave_gfx950.cuh) | `2wave` |
+
+Each pipeline header has a matching traits header. Their shared `<suffix>`
+is `2wave`, `4wave_pin_agpr`, `4wave`, `8wave`, `register_prefetch`, or `lds_ring`:
 
 ```text
-opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_<suffix>_gfx950.cuh
-opus_gemm_traits_a8w8_mxscale_bpreshuffle_<suffix>_gfx950.cuh
-opus_gemm_mxscale_bpreshuffle_<suffix>_traits_gfx950
-gemm_a8w8_mxfp8_scale_<suffix>_kernel
+opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_<suffix>_gfx950.cuh
+opus_gemm_blockscale_mxscale_bpreshuffle_traits_<suffix>_gfx950.cuh
+opus_gemm_blockscale_mxscale_bpreshuffle_<suffix>_traits_gfx950
+opus_gemm_blockscale_mxscale_bpreshuffle_<kernel>_kernel
 ```
 
-9000's `gemm_a8w8_mxfp8_scale_kernel` contains only the unpadded 256×256 flow.
-9010 owns `gemm_a8w8_mxfp8_scale_4wave_256x256_padded_m_kernel`, including bounded
-A/C views, checked prefetch offsets, A-scale tail handling, and guarded output.
-Its geometry traits and layout/AGPR helpers are shared with 9000; its complete
-device body is defined in the padded-M pipeline. The 9000 pipeline and traits
-contain no `PAD_M` switch.
+The `4wave_pin_agpr` pipeline contains the pinned-AGPR implementation; `4wave`
+contains the ordinary packed and LDS-output implementations. Kernel symbols
+retain their established names. Traits types follow their pipeline suffixes,
+except the independent `b_direct_4wave` type stored in the existing LDS-ring pair.
+It uses four A LDS slots and four B register sets, retiring each B column after
+its 12 MFMA consumers. Its current domain fixes K=7168, accepts M divisible by 4
+and N divisible by 256, and uses a flattened grid padded to eight workgroups.
+Static LDS is 110608 bytes; dynamic LDS is zero. Legal eligibility does not
+guarantee a performance win, and no winner routing is hard-coded.
+`config_key` hashes the actual kernel symbol and resolved traits arguments for
+metadata and deduplication; public IDs come from catalog enumeration.
 
-Each of 9021, 9022, 9023, and 9024 owns an independent pipeline body and a
-fixed-geometry traits type. Their matrix rings retain three, two, three, and
-four stages respectively. This gives eight pipeline entry headers and eight
-device template bodies for eight registered candidates.
-Every pipeline uses runtime K and the shared 96-byte kargs ABI. Existing layout
-and AGPR helpers remain in the original 9000 header.
+9000 selects `opus_gemm_blockscale_mxscale_bpreshuffle_4wave_kernel` with
+`opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits_gfx950<false>`. Its unpadded
+256×256×128 flow uses four Wave64 waves, alternating A/B LDS stages, four
+128×128 output quadrants, and pinned AGPR operands/accumulators. It accumulates
+in FP32 and stages BF16 output through LDS. Its calculation and pinned-compiler
+requirement are preserved by the shared template.
 
-The independent pipeline bodies follow 9000's internal organization:
+9001 instantiates the same body with `4wave_pin_agpr_traits_gfx950<true>`. Compile-time
+`PAD_M` branches select bounded A/C views, checked prefetch offsets, A-scale tail
+handling, and guarded output. Both configurations share the same main loop,
+MFMA order, and prefetch/wait/barrier schedule. Their existing M alignments
+remain 256 and 64 respectively; template sharing does not relax shape guards.
 
-```text
-types and tile/thread coordinates
-  -> global-memory views
-  -> matrix layouts
-  -> LDS views
-  -> MMA and register fragments
-  -> address, prefetch, scale and operand helpers
-  -> Prologue
-  -> Main loop
-  -> Epilogue
-  -> Output writeback
-```
+The compact LDS-output and packed families each share a calculation body, with
+stage count and scale-panel size set by configuration. The eight-wave family
+shares its panel body, with compile-time `interleaved` and `synchronized` schedules preserving their
+prefetch/wait/barrier order and output addressing. The remaining calculation
+headers are [register_prefetch](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_register_prefetch_gfx950.cuh),
+[lds_ring](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_lds_ring_gfx950.cuh),
+and [2wave](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_2wave_gfx950.cuh),
+with matching [register_prefetch traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_register_prefetch_gfx950.cuh),
+[lds_ring traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_lds_ring_gfx950.cuh),
+and [2wave traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_2wave_gfx950.cuh).
 
-Type and coordinate names use `D_A`, `D_B`, `D_C`, `D_ACC`, `D_SF`,
-`D_SF_PACK`, `wave_id`, and `lane_id`. The reorganized candidates use `v_c`
-for accumulators and `p_coord_c`, `u_gc`, and `gc_offsets` for C layout.
-Matrix address helpers use `ga_offset`, `gb_offset`, `sa_offset`, and
-`sb_offset`; the four scale offsets are grouped beside them. Matrix prefetch
-uses `issue_matrix_prefetch`. Setup and loading helpers precede the Prologue.
-All five global views include their own batch stride and tile base offset.
+Shared layout functions live at the beginning of the existing
+[4wave](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_4wave_gfx950.cuh)
+and [8wave](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_8wave_gfx950.cuh)
+pipelines. Shared MFMA16 output packing lives in
+[register_prefetch](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_register_prefetch_gfx950.cuh).
+Other pipelines include these owners to reuse the helpers. Shared parameters,
+kernel arguments and ceiling division live in the
+[4wave_pin_agpr traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_4wave_pin_agpr_gfx950.cuh),
+which the other traits include. This keeps six pipeline and six traits headers,
+with each shared definition owned once. The B-direct body is independent of
+the existing A+B LDS-ring body.
+The common kargs ABI remains 96 bytes. Runtime-K and supported FixedK variants
+use the same configuration schema, with a separate ID for each resolved variant.
 
-9021/9022 place their advancing schedule directly in the runtime main loop.
-9020/9030 keep the two static-stage calls in their U2 loop, with `advance_tile`
-defined in the helper section. 9023/9024 use operand-load helpers at the same
-last-use replacement points as before. Stage counts, wait instructions,
-barriers, AGPR pins, scale layouts, and output strategies remain specific to
-each geometry. In particular, 9020/9030 retain fused final MFMA/BF16 staging,
-and 9023/9024 retain direct global output stores.
+[`opus_gemm_common.py`](opus_gemm_common.py) owns `BpreshuffleConfig`, parameter
+tables, the instance factory, canonical enumeration, shape selection and exact
+configuration metadata. Its single
+`a8w8_mxscale_gemm_bpreshuffle_kernels_list` contains 140 unique configurations
+with sequential IDs 9000–9139. It enumerates the complete `ALL_PIPELINES` domain
+before pipeline or shape filtering, so filters do not renumber candidates.
+The reserved 9000–9999 range is checked for overflow. Each ID launches exactly
+one configuration; there are no old-ID aliases or shape-selected host variants.
+[`opus_gemm_mxscale_bpreshuffle_tune.py`](opus_gemm_mxscale_bpreshuffle_tune.py)
+provides the CPU report CLI through `--explain-candidates`. Generated names and
+saved metadata describe the selected configuration. Existing CSV IDs and names
+are not compatibility inputs; rerun tuning before replaying saved choices with
+this registry. Historical reports retain their original source paths and symbol
+names. See the
+[template and configuration guide](include/gfx950/bpreshuffle_templates.md)
+for supported parameter axes and generation details.
 
-9020 and 9030 each define their complete fixed 192×256 geometry, storage
-constants, and static assertions in their own traits file, without inheritance.
-Their declarations follow 9000's grouping: threads/waves, B/T/W geometry,
-half tiles and geometry checks, E/VEC/GROUP constants, then LDS and scale
-storage. Each constant has its own declaration. Address computations belong
-to the pipeline's layout helpers, not traits. 9020 reuses 9000's `make_layout_ga_scale`,
-`make_layout_sa_scale`, and bulk `async_load` for A. Its eight-wave register
-reader uses a matching affine layout with the original 32-byte LDS padding.
-Scale A's global and LDS copies share a regular layout: four threads per K128
-group cover 192 rows in three 64-row passes, with only the group stride differing.
-Its reader and scale packing retain the existing three M-repeat scales.
-These local layouts live in `opus_gemm_8wave_192x256_layout`. Its kernel
-declares all five `g_*` views and twelve `u_*` layouts before LDS/register setup;
-the loading helpers consume these layouts. Its obsolete traits helper has been
-removed. B's global view uses the same typed-pointer construction as 9000.
-9020 specifies packed B scales (`SFB_BYTES=512`, `B_SCALE_PACKS=1`,
-`LDS_BYTES=143360`). 9030 retains its byte scale panel (`256`, `2`, `143104`)
-and extends C addressing with a 64-bit base and a buffer range restricted to
-the current tile. Its A/B extents and tile-local offsets keep signed 32-bit
-limits. The older generic `192x256` traits template remains for retained
-experimental sources; neither current candidate includes or inherits it.
+## Historical validation and performance records
 
-9021, 9022, 9023, 9024, and 9030 also define their local layouts with explicit
-shape/dim/unfold expressions and lane/wave coordinates. All matrix and scale
-layouts are declared before the loading helpers. 9021/9022 retain their A/C
-AGPR pins. 9023/9024 retain XOR A addressing, prepacked u16 A scales, replicated
-u32 B scales, and direct global C stores. 9030 retains its byte B scales and
-its own U2 prefetch schedule. Their source cleanup and CPU address/resource
-checks are recorded in the [five-candidate report](../../reports/opus_9021_9030_style_20260928/RESULTS.md).
+The following records describe the IDs, source organizations and validation
+performed at their recorded revisions. They make no validation or performance
+claim for the current 140-configuration catalog.
 
-9021/9022 reuse 9000's RA helper directly. 9023/9024 reuse 9000's GA helper
-with the original lane XOR. 9030 reuses 9020's eight-wave RA, and
-9021/9022/9030 share 9020's parameterized raw-byte SFA reader. Their includes
-expose the existing helpers without merging their independent kernel bodies.
-For 9023/9024, scale layouts describe positions within a K128 group, while
-the four scale offset helpers advance the group/panel; this preserves the
-original dynamic address computation and avoids retaining complete scale
-byte addresses across the main loop.
-
-Codegen maps the existing registry tags to these internal names. Candidate IDs,
-public `kernelName` values, and support guards are unchanged, so existing
-current-ID tuning CSVs remain valid. Historical reports retain their original
-source paths and symbol names.
-
-The latest complete all-backend sweep found valid winners for all 305 input
+The 2026-09-28 complete all-backend sweep found valid winners for all 305 input
 shapes: OPUS won 299, CK 2, and CKTile 4. All 1,955 OPUS measurements passed
 the numerical check; the ten shapes omitted from the historical 295-shape
 subset all selected 9030. See the
@@ -148,7 +222,8 @@ Wave-coordinate and runtime-K calculations retain their original evaluation
 points to preserve compiler lowering. No source refactor ran another GPU tune.
 The [per-candidate optimization summary](../../reports/opus_pipeline_structure_20260928/OPTIMIZATION_SUMMARY.md)
 describes each candidate's target, retained optimization steps, and measured scope.
-The latest change separates 9000's unpadded body from 9010's padded-M body.
+A later change in that historical sequence separated 9000's unpadded body from
+9010's padded-M body.
 Both actual device TUs compiled once each; their instruction bytes and complete
 resource metadata (excluding symbol names) match the prior implementations.
 Public names, registry entries, and host guards also match; see the
@@ -185,68 +260,81 @@ numerical or timing result; see the
 Use [`opus_gemm_mxscale_bpreshuffle_tune.py`](opus_gemm_mxscale_bpreshuffle_tune.py)
 from the checkout root. The latest remote setup, source map, full-shape command,
 and replay instructions are at the top of [HANDOFF_MXFP8.md](../../HANDOFF_MXFP8.md).
-For all 745 gfx950/256-CU shapes:
+The tuner accepts `--libtype opus` or `--libtype flydsl_bmm`; each backend needs
+separate result and profile CSVs. For all 745 gfx950/256-CU shapes, enumerate the
+full 140-configuration OPUS registry explicitly, then run each backend:
 
 ```bash
+OPUS_KIDS=$(python - <<'PY'
+from csrc.opus_gemm.opus_gemm_common import a8w8_mxscale_gemm_bpreshuffle_kernels_list
+print(",".join(map(str, sorted(a8w8_mxscale_gemm_bpreshuffle_kernels_list))))
+PY
+)
+
 ROCR_VISIBLE_DEVICES=0 \
 OPUS_HIP_CLANG_PATH=/absolute/path/to/llvm-pin-build/bin \
 python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
-  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv \
   -o /tmp/dsv4_opus_tuned.csv -o2 /tmp/dsv4_opus_profile.csv \
-  --libtype all --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
+  --libtype opus --opus-kids "$OPUS_KIDS" \
+  --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
+
+ROCR_VISIBLE_DEVICES=0 \
+python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
+  -i aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv \
+  -o /tmp/dsv4_flydsl_bmm_tuned.csv -o2 /tmp/dsv4_flydsl_bmm_profile.csv \
+  --libtype flydsl_bmm \
+  --splitK --shape_grouped --mp 1 --warmup 5 --iters 51 --all
 ```
 
-The [complete tuned CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)
-contains the fastest valid candidate per shape, using the same 13-column format as
-the [original CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv).
-The original CSV contains 1042 rows across architectures, including these 745
-gfx950/256-CU shapes. Either CSV can be passed to `-i`; the tuner selects the
+The [historical tuned CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)
+contains the fastest valid candidate per shape for its recorded revision, using
+the same 13-column format as the
+[original CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv).
+The current source CSV contains 861 rows: 745 gfx950/256-CU shapes,
+105 gfx942/80-CU shapes and 11 gfx1250/256-CU shapes. The 1042-row count in
+dated records describes an earlier dataset. Either CSV can be passed to `-i`; the tuner selects the
 current gfx/CU shapes and ignores the input timings and candidate choices.
 `-o` saves the fastest valid candidate per shape and `-o2` saves the candidate
-profile. OPUS candidates are compiled before the sweep; external backends use
-their existing JIT paths. `--shape_grouped` measures each shape's candidates
-on the same GPU. Omitting `--opus-kids` includes 26 consolidated MXFP8
-B-preshuffle candidates: 9000, 9010, 9020–9024, 9030, 9040–9047, 9049,
-9051–9055, and 9060–9063. The later candidates share two device templates:
-[register](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_register_gfx950.cuh)
-and [LDS](include/gfx950/opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_small_lds_gfx950.cuh).
-K length and tile-grid size select prefetch, tile geometry, and reduction
-configurations inside each family; K remains runtime up to 16384. This reduces
-tuning IDs and duplicated implementation, while retaining useful compiled variants.
-The 13 historical IDs remain callable with their original names and shape/workspace
-contracts, and can be explicitly selected by `--opus-kids`. Saved tables can still
-be replayed. Rebuild the OPUS JIT after changing the candidate set.
+profile, including exact OPUS configuration metadata. OPUS candidates are
+compiled before the sweep; FlyDSL BMM uses its existing JIT path.
+`--shape_grouped` measures each shape's candidates on the same GPU.
 
-| Default ID | Configurations consolidated into it |
-|---:|---|
-| 9041 | 9041 / 9050, register-prefetch depth |
-| 9042 | runtime-K fallback plus 9071 / 9073 N48 tiles at K=7168 |
-| 9044 | 9044 / 9056, LDS queue depth |
-| 9047 | 9048 removed from default tuning; 9047 retained |
-| 9052 | runtime-K fallback plus 9070 at K=7168 |
-| 9053 | runtime-K fallback plus 9072 at K=7168 |
-| 9062 | 9062 / 9064, two FP32 partitions, M80 / M96 tiles |
-| 9063 | 9063 / 9065–9069, four FP32 partitions, M48–M128 tiles |
+Omitting `--opus-kids` ranks legal configurations and selects at most ten per
+shape, with at most two from each pipeline. This is a bounded search over the
+parameterized catalog, not exhaustive tuning of all 140 configurations.
+`panel_2wave` remains opt-in through `--opus-pipelines` or explicit IDs; the other
+seven families are enabled by default. The explicit registry list above includes
+all eight families, then filters each shape for legality. Increasing
+`--opus-max-candidates` alone does not make the search exhaustive. Explicit
+`--opus-kids` and replay bypass ranking through
+`candidate_kids_for_shape(..., all_candidates=True)`, while retaining all
+configuration and shape legality checks.
 
-9043–9046, 9055 and 9060–9063 accept M <= 2048; the other default 904x/905x
-candidates accept M <= 512. 9000/9010 retain their original implementations.
+One ID fixes tile geometry, prefetch/stages, scale policy, FixedK, global Split-K
+and reduction settings. A FixedK ID requires its exact K; runtime-K variants
+have separate IDs. Shape checks derive from the selected configuration's
+layout, scale capacity and addressing limits. The former manual M≤512/M≤2048
+and short-K tuning caps do not constrain this registry.
 
-The renumbering maps old 9020 to 9010 and old 9060–9064 to 9020–9024;
-9000 is unchanged. Historical CSVs and JIT binaries retain their old meanings.
-Use the current-ID CSV and rebuild the OPUS JIT before executing these new IDs.
+Retune old CSV choices and rebuild the OPUS JIT for the new IDs. Historical CSVs
+remain usable as shape inputs through `-i`; their IDs and names cannot be
+replayed as current configurations. `--all` forces remeasurement of input
+shapes and does not request exhaustive configuration enumeration.
 
-CK/CKTile/ASM reuse the original blockscale tuner's input generator: FP16
-uniform random operands divided by 10 and cast to FP8, plus independently
-random FP32 scales. OPUS uses the same operand generation with independently
-random native E8M0 scales. External backends do not decode OPUS scales.
-Tuning and replay compute a reference for each dataset and retain the existing
-error checks. The adapter selects the existing reference-recomputation path in
-the shared tuner; `aiter/utility/mp_tuner.py` remains unchanged.
-
-Use a ROCm/PyTorch environment with native `torch.float8_e8m0fnu`, initialize
-the CK submodule, and point `OPUS_HIP_CLANG_PATH` to a clang `bin/` supporting
+OPUS and FlyDSL BMM use FP8 operands and the same native E8M0 scale layouts;
+BMM adds batch-one views. Tuning and replay retain each backend's reference and
+error checks. Use a ROCm/PyTorch environment with native
+`torch.float8_e8m0fnu` and the FlyDSL BMM dependencies, and point
+`OPUS_HIP_CLANG_PATH` to a clang `bin/` supporting
 `clang::amdgpu_pin_agpr`. The known compiler source is `yuyzhang512/llvm-project`
 at `49c41889681640665400cb01c9fbb4c0a024cde4`.
+
+The completed full-shape tune and subsequent optimization are recorded in
+`reports/opus_parameterized745_20261009T164517Z`. The current status above
+separates completed same-run measurements, unresolved original-baseline
+reproduction, and pending public 9139 acceptance. Registering 140 configurations
+does not mean that this newest catalog has undergone another complete sweep.
 
 ## Exact-id architecture
 
@@ -446,7 +534,8 @@ specialization that writes partial sums. Its direct BF16/FP32
 | Path | Role |
 |---|---|
 | `opus_bmm.cu` / `include/opus_bmm.h` | MXFP8 BMM exact-kid family entry and Torch-workspace forwarding |
-| `opus_gemm_common.py` | canonical registry, unique route map and compile-floor constants |
+| `opus_gemm_common.py` | canonical registry, B-preshuffle configurations, catalog, CPU candidate ranking and exact metadata, unique route map and compile-floor constants |
+| `opus_gemm_mxscale_bpreshuffle_tune.py` | B-preshuffle tuning, exact CSV replay and CPU candidate report CLI |
 | `gen_instances.py` | subset selection, manifests and typed dispatch generation |
 | `codegen/gen_instances_gfx*.py` | exact-instance host launchers and generated input checks |
 | `gen_co/` | offline CO manifest/builder, build metadata and packaged gfx1250 ELF images |
@@ -456,30 +545,20 @@ specialization that writes partial sums. Its direct BF16/FP32
 | `include/gfx*/**/opus_gemm_traits*.cuh` | kernel arguments and traits |
 
 
-## Fine-M tiles and global split-K (9060–9069)
+## Fine-M tiles and global split-K
 
 These configurations use the common LDS pipeline through
-[fine traits](include/gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_fine_gfx950.cuh).
-Normal tuning enumerates 9060–9063. The table lists the individual configurations;
-9064–9069 remain available for explicit calls and historical-table replay.
-They accept M ≤ 2048, K ≤ 16384, N divisible by 128 and K divisible by 128,
-including arbitrary positive M tails. Each ID fixes its global K partition count.
+[LDS-ring traits](include/gfx950/opus_gemm_blockscale_mxscale_bpreshuffle_traits_lds_ring_gfx950.cuh).
+`fine_m_loads` handles partial A-copy passes; `split_k` independently sets
+the global partition count. The catalog contains multiple M tiles, wave
+layouts, stages and reduction policies, each under its own sequential ID.
+These configurations require K ≤ 16384, N divisible by 128 and K divisible by
+128, with arbitrary positive M tails subject to addressing limits. FixedK
+configurations additionally require exact K equality.
 
-| ID | M×N tile | Waves | Global split-K |
-|---|---|---:|---:|
-| 9060 | 80×128 | 4 | 1 |
-| 9061 | 96×128 | 8 | 1 |
-| 9062 | 80×128 | 4 | 2 |
-| 9063 | 80×128 | 4 | 4 |
-| 9064 | 96×128 | 8 | 2 |
-| 9065 | 96×128 | 8 | 4 |
-| 9066 | 96×128 | 4 | 4 |
-| 9067 | 128×128 | 4 | 4 |
-| 9068 | 112×128 | 4 | 4 |
-| 9069 | 48×128 | 4 | 4 |
-
-Use the existing `opus_gemm(..., kid=9063, layout="bpreshuffle", x_scale=..., w_scale=...)`
-route. A scales remain native E8M0 logical `[M,K/128]` in dense column-major storage;
+Select the desired ID using the candidate report, then use
+`opus_gemm(..., kid=kid, layout="bpreshuffle", x_scale=..., w_scale=...)`.
+A scales remain native E8M0 logical `[M,K/128]` in dense column-major storage;
 B scales remain contiguous `[N/128,K/128]`. K128 tiles are balanced over partitions,
 including uneven and empty partitions. Partial sums and the reduction stay FP32
 until the final BF16 conversion.
@@ -494,29 +573,31 @@ support graph capture/replay. The original raw launch ABI remains available;
 workspace candidates use a separate checked raw entry.
 
 The public `split_k` argument and tuned CSV `splitK` column remain zero for these
-fixed-ID candidates; the actual partition count is encoded in the kernel name.
-9060 specializes K=3072/7168, 9062/9063 specialize K=16384, and 9069 specializes
-K=7168. Their other legal K values use the general pipeline. Performance comparisons
-include both the producer and reduction kernels. See the
-[latest 745-shape all-backend comparison](../../reports/opus_current745_tables_20260930/SAME_RUN.md).
+fixed-ID candidates; the actual partition count is part of the configuration
+and saved metadata. Runtime-K and K=3072/7168/16384 specializations are separate
+configurations. Comparisons for global Split-K must include both the producer
+and reduction kernels. The
+[2026-09-30 comparison](../../reports/opus_current745_tables_20260930/SAME_RUN.md)
+records historical measurements only.
 
-## Fixed-K register tiles (9070–9073)
+## Fixed-K register tiles
 
-These historical single-launch IDs are now private choices of the general
-9042/9052/9053 families and use the common register pipeline. Explicit calls to
-9070–9073 still require `1 <= M <= 512`, `N % 128 == 0`, and
-`K == 7168`. K waves write FP32 partials to LDS; each output fragment is reduced
-and converted to BF16 by one wave. They use no global workspace.
+FixedK configurations use the common register pipeline and have separate IDs
+from runtime-K configurations. The following K=7168 parameter combinations are
+included in the catalog. They require `N % 128 == 0` and `K == 7168`, with M
+subject to their memory-addressing limits. K waves write FP32 partials to LDS;
+each output fragment is reduced and converted to BF16 by one wave. They use no
+global workspace.
 
-| ID | M×N tile | K waves | Register prefetch | B cache |
-|---:|---:|---:|---:|---:|
-| 9070 | 16×32 | 8 | 3 | 3 |
-| 9071 | 16×48 | 4 | 4 | 3 |
-| 9072 | 32×32 | 4 | 4 | 3 |
-| 9073 | 32×48 | 4 | 3 | 0 |
+| M×N tile | K waves | Register prefetch | B cache |
+|---:|---:|---:|---:|
+| 16×32 | 8 | 3 | 3 |
+| 16×48 | 4 | 4 | 3 |
+| 32×32 | 4 | 4 | 3 |
+| 32×48 | 4 | 3 | 0 |
 
 N32 tiles reuse the B scale across their N16 fragments. N48 tiles load each
 fragment's scale separately and mask the last N tile, including when `N` is not
 divisible by 48. Use the same native E8M0 `opus_gemm(..., layout="bpreshuffle")`
-entry; public `split_k` remains zero. Their parent families support other legal K
-values through the existing runtime-K configurations.
+entry; public `split_k` remains zero. Use a runtime-K configuration's own ID for
+other supported K values.
