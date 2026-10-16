@@ -6,7 +6,9 @@ OPUS and FlyDSL BMM share FP8 operands and native E8M0 scales: A 1x128 and
 B 128x128. Both consume the same preshuffled B storage; BMM adds batch=1
 views. The default --libtype both searches both backends on the same GPU
 per shape and immediately writes their best valid timings to one CSV.
-Single-backend tuning remains available. No scale conversion is performed.
+Single-backend tuning remains available. --compare-upstream additionally
+searches upstream OPUS BMM and FlyDSL GEMM. Its OPUS BMM A-scale layout
+is prepared outside timing with the same scale values.
 """
 
 import argparse
@@ -80,6 +82,7 @@ from aiter.utility.base_tuner import GemmCommonTuner
 import aiter.utility.mp_tuner as mp_workers
 from csrc.opus_gemm.opus_gemm_common import (
     CONFIG_COLUMNS,
+    a8w8_mxscale_bmm_kernels_list,
     a8w8_mxscale_gemm_bpreshuffle_kernels_list,
     candidate_kids_for_shape,
     canonical_output_dtype,
@@ -105,8 +108,8 @@ _DEFAULT_HIP_CLANG_PATH = "/root/toolchains/llvm-amdgpu-pin-op-dst-49c41889-buil
 _BENCH_KEYS = ("x", "w", "out", "x_scale", "w_scale")
 _SCALE_GROUP_N = 128
 _SCALE_GROUP_K = 128
-_OPUS_LIBTYPES = frozenset(("opus",))
-_SUPPORTED_LIBTYPES = _OPUS_LIBTYPES | {"flydsl"}
+_OPUS_LIBTYPES = frozenset(("opus", "opus_bmm"))
+_SUPPORTED_LIBTYPES = _OPUS_LIBTYPES | {"flydsl", "flydsl_gemm"}
 _COMPARISON_COLUMNS = (
     "opus_backend", "opus_kernelId", "opus_splitK", "opus_us",
     "opus_kernelName", "opus_errRatio",
@@ -114,6 +117,13 @@ _COMPARISON_COLUMNS = (
     "flydsl_kernelId", "flydsl_splitK", "flydsl_us",
     "flydsl_kernelName", "flydsl_errRatio",
     "winner", "BMM_over_OPUS", "OPUS_speedup_pct", "comparison_status",
+)
+_UPSTREAM_COMPARISON_COLUMNS = (
+    *(backend + "_" + column
+      for backend in ("opus_bmm", "flydsl_gemm")
+      for column in ("kernelId", "splitK", "us", "kernelName", "errRatio")),
+    "opus_bmm_over_OPUS", "flydsl_gemm_over_OPUS",
+    "upstream_best_backend", "upstream_best_us", "upstream_over_OPUS",
 )
 
 
@@ -385,6 +395,7 @@ _FLYDSL_BASELINE = str(
     / "aiter/configs/model_configs/dsv4_a8w8_blockscale_mxscale_bpreshuffle_tuned_gemm.csv"
 )
 _FLYDSL_BMM_KEYS = ("x", "weight_shuffle", "x_scale_bmm", "w_scale_bmm", "out")
+_UPSTREAM_OPUS_KEYS = ("x", "weight_shuffle", "x_scale_upstream", "w_scale", "out")
 _OPUS_REF_KEYS = ("reference_bounds",)
 _FLYDSL_REF_KEYS = ("reference_bf16",)
 
@@ -457,7 +468,65 @@ def flydsl_bmm_candidates(m, n, k, baseline_path=_FLYDSL_BASELINE):
     return result
 
 
-def generate_native_tune_data(m, n, k, seed, device="cuda"):
+@functools.lru_cache(maxsize=1024)
+def upstream_opus_candidates(m, n, k):
+    from csrc.opus_gemm.opus_bmm_mxscale_tune import _TUNE_POLICY, _applicable
+    from aiter.ops.opus.launch_plan import _get_cached_a8w8_mxscale_bmm_plan
+
+    candidates = []
+    for kid, instance in a8w8_mxscale_bmm_kernels_list.items():
+        if (not instance.needs_preshuffled_b
+                or instance.needs_shuffle_scale is not None
+                or instance.needs_mpacked_sfa is not None
+                or (instance.GROUP_N, instance.GROUP_K) != (128, 128)):
+            continue
+        for split in _applicable(kid, 1, m, n, k, "preb",
+                                 split_ks=_TUNE_POLICY.get(kid, [1])):
+            try:
+                plan = _get_cached_a8w8_mxscale_bmm_plan(
+                    "gfx950", kid, torch.bfloat16, m, 1, n, k, split,
+                )
+            except ValueError:
+                continue
+            numel = plan.workspace_spec.shape[0] if plan.workspace_spec else 0
+            candidates.append((kid, split, instance.name, numel))
+    return tuple(candidates)
+
+
+@functools.lru_cache(maxsize=1024)
+def upstream_flydsl_gemm_candidates(m, n, k):
+    from aiter.ops.flydsl.gemm_tune.flydsl_gemm_mxscale_preshuffle_common import (
+        MXFP8_ROW_W128X128_PIPELINES,
+    )
+    return tuple(
+        (kid, instance.split_k, instance.name)
+        for pipeline in MXFP8_ROW_W128X128_PIPELINES
+        for kid, instance in pipeline.kernels_list.items()
+        if pipeline.fits(instance, m, n, k)
+    )
+
+
+def upstream_flydsl_bmm_candidates(m, n, k, seeds):
+    from csrc.gemm_a8w8_mxfp8_bpreshuffle.gemm_a8w8_mxfp8_bpreshuffle_tune import bmm_candidates
+    from aiter.ops.flydsl.batched_gemm_a8w8_gfx950 import parse_bmm_kernel_name
+
+    result = {name: split for name, split in seeds}
+    for name in bmm_candidates(m, n, k, "128x128", seeds=tuple(result)):
+        split = parse_bmm_kernel_name(name)["splits"]
+        try:
+            validate_flydsl_candidate("bmm", name, split, m, n, k)
+        except ValueError:
+            continue
+        result[name] = split
+    return tuple(sorted(result.items()))
+
+
+@functools.lru_cache(maxsize=1)
+def _upstream_workspaces():
+    return {}
+
+
+def generate_native_tune_data(m, n, k, seed, include_upstream=False, device="cuda"):
     """Prepare native shared storage and a reference before timing kernels.
 
     A scales are logical [M,K/128] with physical [K/128,M] storage. BMM
@@ -492,6 +561,15 @@ def generate_native_tune_data(m, n, k, seed, device="cuda"):
                     buffers[buffer_key] = allocate(
                         (size+3)//4,dtype=torch.float32,device=data['x'].device)
                 workspaces[key] = buffers[buffer_key]
+    if include_upstream:
+        data["x_scale_upstream"] = data["x_scale"].view(torch.uint8).contiguous().view(torch.float8_e8m0fnu)
+        upstream_workspaces = _upstream_workspaces()
+        upstream_workspaces.clear()
+        max_numel = max((entry[3] for entry in upstream_opus_candidates(m, n, k)), default=0)
+        if max_numel:
+            upstream_workspaces[(device_index, m, n, k)] = torch.empty(
+                max_numel, dtype=torch.float32, device=data["x"].device,
+            )
     return data
 
 
@@ -531,6 +609,32 @@ def run_flydsl_bmm(x, weight_shuffle, x_scale, w_scale, out, kernel_name):
     return out
 
 
+def run_upstream_opus_bmm(x, weight_shuffle, x_scale, w_scale, out, kid, split):
+    from aiter.ops.opus.gemm_op_a8w8 import _opus_gemm_a8w8_mxscale_bmm_launch_raw
+    from aiter.ops.opus.launch_plan import _get_cached_a8w8_mxscale_bmm_plan
+
+    m, k = x.shape
+    n = out.shape[1]
+    plan = _get_cached_a8w8_mxscale_bmm_plan("gfx950", kid, out.dtype, m, 1, n, k, split)
+    workspace = (_upstream_workspaces()[(x.device.index, m, n, k)]
+                 if plan.workspace_spec else None)
+    _opus_gemm_a8w8_mxscale_bmm_launch_raw(
+        x.view(m, 1, k), weight_shuffle.view(1, n, k), out.view(m, 1, n),
+        x_scale.view(m, 1, k // 128), w_scale.view(1, n // 128, k // 128),
+        workspace, kid, plan.abi_split_k,
+    )
+    return out
+
+
+def run_upstream_flydsl_gemm(x, weight_shuffle, x_scale, w_scale, out, kernel_name):
+    from aiter.ops.flydsl.mxscale_preshuffle_kernels import run_gemm_a8w8_mxfp8_gfx950
+
+    return run_gemm_a8w8_mxfp8_gfx950(
+        x, weight_shuffle, x_scale, w_scale, out, kernel_name,
+        w_scale_block="128x128",
+    )
+
+
 class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     ARG_DEFAULTS: ClassVar[dict] = {
         **generic_tune.GemmA8W8BlockScaleTuner.ARG_DEFAULTS,
@@ -546,6 +650,8 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
     def __init__(self):
         self.opus_all_candidates = False
         self._compare_backends = False
+        self._compare_upstream = False
+        self._comparison_columns = _COMPARISON_COLUMNS
         self._sort_output = True
         self.opus_kids = None
         self.opus_pipelines = None
@@ -581,6 +687,10 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         self.parser.add_argument(
             "--opus-all-candidates", action="store_true",
             help="search every formal OPUS configuration registered for the shape",
+        )
+        self.parser.add_argument(
+            "--compare-upstream", action="store_true",
+            help="with --libtype both, also compare upstream OPUS BMM and FlyDSL GEMM",
         )
         self.parser.add_argument(
             "--opus-kids", "--opus_kids",
@@ -677,6 +787,13 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                         f"{best.comparison_status}; saved {output}",
                         flush=True,
                     )
+                    if self._compare_upstream:
+                        print(
+                            f"Upstream OPUS BMM={best.opus_bmm_us}us, "
+                            f"FlyDSL GEMM={best.flydsl_gemm_us}us, "
+                            f"best upstream={best.upstream_best_backend}/{best.upstream_best_us}us",
+                            flush=True,
+                        )
         except KeyboardInterrupt:
             status = "Interrupted"
         except Exception:
@@ -769,7 +886,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         if df.empty:
             return df
         if self._compare_backends:
-            missing = set(_COMPARISON_COLUMNS).difference(df.columns)
+            missing = set(self._comparison_columns).difference(df.columns)
             if missing:
                 raise ValueError("--libtype both requires a combined -o CSV; choose a new output path")
         return self._with_configuration_metadata(
@@ -818,8 +935,15 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
 
     def pre_process(self, args):
         self._compare_backends = args.libtype == "both" and not args.run_config
+        self._compare_upstream = bool(args.compare_upstream)
+        if self._compare_upstream and args.libtype != "both":
+            self.parser.error("--compare-upstream requires --libtype both")
+        self._comparison_columns = (
+            _COMPARISON_COLUMNS + _UPSTREAM_COMPARISON_COLUMNS
+            if self._compare_upstream else _COMPARISON_COLUMNS
+        )
         self._sort_output = args.sort
-        self.columns = self.backend_columns + (list(_COMPARISON_COLUMNS) if self._compare_backends else [])
+        self.columns = self.backend_columns + (list(self._comparison_columns) if self._compare_backends else [])
         self.success = pd.DataFrame(columns=self.columns)
         self.failed = pd.DataFrame(columns=self.columns)
         self.opus_all_candidates = args.opus_all_candidates
@@ -979,6 +1103,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             info = (info_keys, kid, 0, kernel.name, "opus", True)
             tasks.append(self._make_task(
                 info, m, n, k, seed, run_bench, _BENCH_KEYS, (kid,), run_kwargs,
+                gen_extra_args=(self._compare_upstream,),
             ))
         return tasks
 
@@ -1000,6 +1125,10 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                         f"{(row.M, row.N, row.K)}"
                     )
                 requested_kids.update(kids)
+                if self._compare_upstream:
+                    requested_kids.update(
+                        kid for kid, _, _, _ in upstream_opus_candidates(row.M, row.N, row.K)
+                    )
         if requested_kids:
             _ensure_kids_compiled(requested_kids)
 
@@ -1014,17 +1143,36 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                     info, 0, True, run_kwargs
                 ))
             if args.libtype in ("both", "flydsl_bmm"):
-                if self.opus_all_candidates:
-                    for name, split in bpreshuffle_bmm_candidates(row.M, row.N, row.K):
+                if self.opus_all_candidates or self._compare_upstream:
+                    candidates = bpreshuffle_bmm_candidates(row.M, row.N, row.K)
+                    if self._compare_upstream:
+                        candidates = upstream_flydsl_bmm_candidates(
+                            row.M, row.N, row.K, candidates,
+                        )
+                    for name, split in candidates:
                         validate_flydsl_candidate("bmm", name, split, row.M, row.N, row.K)
                         tasks.append(self._make_task(
                             (info, "bmm", split, name, "flydsl", True), row.M, row.N, row.K, 0,
                             run_flydsl_bmm, _FLYDSL_BMM_KEYS, (name,), run_kwargs,
                             ref_keys=_FLYDSL_REF_KEYS, compare_fn=None,
+                            gen_extra_args=(self._compare_upstream,),
                         ))
                 else:
                     tasks.extend(get_flydsl_bmm_tune_tasks(
                         info, 0, run_kwargs, self.flydsl_baseline
+                    ))
+            if self._compare_upstream:
+                for kid, split, name, _ in upstream_opus_candidates(row.M, row.N, row.K):
+                    tasks.append(self._make_task(
+                        (info, kid, split, name, "opus_bmm", True), row.M, row.N, row.K, 0,
+                        run_upstream_opus_bmm, _UPSTREAM_OPUS_KEYS, (kid, split), run_kwargs,
+                        gen_extra_args=(True,),
+                    ))
+                for kid, split, name in upstream_flydsl_gemm_candidates(row.M, row.N, row.K):
+                    tasks.append(self._make_task(
+                        (info, kid, split, name, "flydsl_gemm", True), row.M, row.N, row.K, 0,
+                        run_upstream_flydsl_gemm, _FLYDSL_BMM_KEYS, (name,), run_kwargs,
+                        ref_keys=_FLYDSL_REF_KEYS, compare_fn=None, gen_extra_args=(True,),
                     ))
             if args.libtype == "both":
                 backends = {task[0][4] for task in tasks[start:]}
@@ -1064,13 +1212,13 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 if not (math.isfinite(us) and us > 0 and math.isfinite(error)
                         and 0 <= error <= self._error_limit(info[4], args)):
                     continue
-                backend = "opus" if info[4] in _OPUS_LIBTYPES else "flydsl"
+                backend = info[4]
                 if backend not in best or us < best[backend][1]:
                     best[backend] = result
             winner = min(best, key=lambda backend: best[backend][1]) if best else None
             selected = best[winner] if winner else (results[0][0], self.INVALID_TIME, 1.0)
             row = self.result_to_df([selected]).iloc[0].to_dict()
-            row.update(dict.fromkeys(_COMPARISON_COLUMNS))
+            row.update(dict.fromkeys(self._comparison_columns))
             for backend, result in best.items():
                 saved = self.result_to_df([result]).iloc[0]
                 for column in ("kernelId", "splitK", "us", "kernelName", "errRatio"):
@@ -1079,17 +1227,30 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                     row["opus_backend"] = saved.libtype
                     for column in CONFIG_COLUMNS:
                         row["opus_" + column] = saved[column]
-            if len(best) == 2:
+            required = ("opus", "flydsl", "opus_bmm", "flydsl_gemm") if self._compare_upstream else ("opus", "flydsl")
+            if all(backend in best for backend in required):
                 ratio = best["flydsl"][1] / best["opus"][1]
                 row.update(
-                    winner="tie" if ratio == 1 else winner,
+                    winner="tie" if sum(result[1] == best[winner][1] for result in best.values()) > 1 else winner,
                     BMM_over_OPUS=ratio, OPUS_speedup_pct=(ratio - 1) * 100,
                     comparison_status="ok",
                 )
             else:
-                missing = [backend for backend in ("opus", "flydsl") if backend not in best]
+                missing = [backend for backend in required if backend not in best]
                 row.update(winner="unavailable", comparison_status="no_valid_" + "_and_".join(missing))
                 logger.error(f"Incomplete comparison for {shape}: {row['comparison_status']}")
+            if self._compare_upstream:
+                available = [backend for backend in required[1:] if backend in best]
+                if available:
+                    upstream = min(available, key=lambda backend: best[backend][1])
+                    row["upstream_best_backend"] = upstream
+                    row["upstream_best_us"] = best[upstream][1]
+                    if "opus" in best:
+                        row["upstream_over_OPUS"] = best[upstream][1] / best["opus"][1]
+                if "opus" in best:
+                    for backend in ("opus_bmm", "flydsl_gemm"):
+                        if backend in best:
+                            row[backend + "_over_OPUS"] = best[backend][1] / best["opus"][1]
             rows.append(row)
         return pd.DataFrame(rows, columns=self.columns)
 
@@ -1167,6 +1328,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
         if libType == "opus":
             kernel = a8w8_mxscale_gemm_bpreshuffle_kernels_list.get(kernel_id)
             return None if kernel is None else kernel.name
+        if libType == "opus_bmm":
+            kernel = a8w8_mxscale_bmm_kernels_list.get(kernel_id)
+            return None if kernel is None else kernel.name
         # BMM names carry their launch parameters and are supplied by tasks.
         return None
 
@@ -1201,7 +1365,7 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             raise ValueError(
                 f"Saved MXFP8 replay does not support libtype(s): {sorted(unsupported)}"
             )
-        opus_rows = rows[rows.libtype.eq("opus")]
+        opus_rows = rows[rows.libtype.isin(_OPUS_LIBTYPES)]
         for row in rows.itertuples(index=False):
             if row.gfx != self.get_gfx() or row.cu_num != self.get_cu_num():
                 raise ValueError(
@@ -1224,6 +1388,13 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
                 validate_flydsl_candidate(
                     row.kernelId, str(saved_name), row.splitK, row.M, row.N, row.K,
                 )
+            elif row.libtype == "flydsl_gemm":
+                if (row.kernelId, row.splitK, saved_name) not in upstream_flydsl_gemm_candidates(row.M, row.N, row.K):
+                    raise ValueError(f"Saved FlyDSL GEMM configuration is incompatible with {row}")
+            elif row.libtype == "opus_bmm":
+                if not any((row.kernelId, row.splitK, saved_name) == entry[:3]
+                           for entry in upstream_opus_candidates(row.M, row.N, row.K)):
+                    raise ValueError(f"Saved upstream OPUS BMM configuration is incompatible with {row}")
             elif pd.notna(saved_name) and str(saved_name).strip():
                 expected_name = self.getKernelName(row.kernelId, row.libtype, True)
                 if saved_name != expected_name:
@@ -1238,7 +1409,9 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             ref_keys = _OPUS_REF_KEYS if row.libtype in _OPUS_LIBTYPES else _FLYDSL_REF_KEYS
             key = (row.M, row.N, row.K)
             if key != native_data_key:
-                native_data = generate_native_tune_data(*key, 0, device="cuda")
+                native_data = generate_native_tune_data(
+                    *key, 0, include_upstream=rows.libtype.eq("opus_bmm").any(), device="cuda",
+                )
                 native_data_key = key
             data = native_data
             ref = reference_from_data(*(data[key] for key in ref_keys))
@@ -1246,6 +1419,14 @@ class OpusMxscaleBpreshuffleTuner(generic_tune.GemmA8W8BlockScaleTuner):
             if row.libtype == "opus":
                 bench, bench_args = run_bench, (
                     *(data[key] for key in _BENCH_KEYS), kid,
+                )
+            elif row.libtype == "opus_bmm":
+                bench, bench_args = run_upstream_opus_bmm, (
+                    *(data[key] for key in _UPSTREAM_OPUS_KEYS), kid, row.splitK,
+                )
+            elif row.libtype == "flydsl_gemm":
+                bench, bench_args = run_upstream_flydsl_gemm, (
+                    *(data[key] for key in _FLYDSL_BMM_KEYS), row.kernelName,
                 )
             else:
                 bench = run_flydsl_bmm
