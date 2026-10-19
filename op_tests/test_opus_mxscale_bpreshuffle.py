@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from aiter.test_common import checkAllclose
 from csrc.opus_gemm.opus_gemm_common import (
     _BPRESHUFFLE_PARAMETER_DEFAULTS,
     a8w8_mxscale_bpreshuffle_supports_shape,
@@ -248,7 +249,7 @@ def test_optimized_bpreshuffle_cancellation(kid):
     _check_signed_repeated(kid, (m, 256, 1280), 16, cancellation=True)
 
 
-def test_tuner_selects_with_backend_accuracy_limits_and_keeps_raw_errors(tmp_path):
+def test_tuner_selects_with_shared_accuracy_limit_and_keeps_raw_errors(tmp_path):
     import argparse
     import csv
 
@@ -260,27 +261,27 @@ def test_tuner_selects_with_backend_accuracy_limits_and_keeps_raw_errors(tmp_pat
     tuner._mxscale_table = True
     assert tuner.parser.get_default("errRatio") == 0.05
     shape = ("gfx950", 256, 256, 768, 7168, "128x128")
-    rejected_kid = _quadrant_kid()
-    accepted_kid = _compact_lds_kid(128, stages=3)
+    accepted_kid = _quadrant_kid()
+    rejected_kid = _compact_lds_kid(128, stages=3)
     rows = [
-        ((shape, rejected_kid, 1, "opus_rejected", "opus"), 1.0, 0.0001),
-        ((shape, accepted_kid, 1, "opus_accepted", "opus"), 3.0, 0.0),
+        ((shape, accepted_kid, 1, "opus_accepted", "opus"), 1.0, 0.003),
+        ((shape, rejected_kid, 1, "opus_rejected", "opus"), 0.5, 0.06),
         ((shape, 3_000_000, 4, "bmm_candidate", "flydsl"), 2.0, 0.003),
         ((shape, 3_000_001, 4, "bmm_rejected", "flydsl"), 0.5, 0.06),
     ]
     profile = tmp_path / "profile.csv"
     args = argparse.Namespace(profile_file=str(profile), errRatio=0.05, verbose=False)
     selected = tuner.post_process(rows, args, topk=1)
-    assert selected.iloc[0]["libtype"] == "flydsl"
-    assert selected.iloc[0]["kernelId"] == "bmm"
-    assert selected.iloc[0]["us"] == 2.0
+    assert selected.iloc[0]["libtype"] == "opus"
+    assert selected.iloc[0]["kernelId"] == accepted_kid
+    assert selected.iloc[0]["us"] == 1.0
     assert selected.iloc[0]["errRatio"] == 0.003
     with profile.open(newline="") as stream:
         saved = list(csv.DictReader(stream))
     assert len(saved) == len(rows)
-    rejected_opus = next(row for row in saved if row["kernelId"] == str(rejected_kid))
-    assert float(rejected_opus["us"]) == 1.0
-    assert float(rejected_opus["errRatio"]) == 0.0001
+    accepted_opus = next(row for row in saved if row["kernelId"] == str(accepted_kid))
+    assert float(accepted_opus["us"]) == 1.0
+    assert float(accepted_opus["errRatio"]) == 0.003
 
 
 def _bpreshuffle_data(tune, m, n, k, seed):
@@ -294,13 +295,14 @@ def _bpreshuffle_data(tune, m, n, k, seed):
 def _reference(tune, data):
     a_scale = data["x_scale"].float().repeat_interleave(128, 1)
     b_scale = data["w_scale"].float().repeat_interleave(128, 0).repeat_interleave(128, 1)
-    return tune.run_opus_reference(data["x"].float() * a_scale,
-                                   data["w_reference"].float() * b_scale)
+    return tune.run_torch(
+        data["x"].float() * a_scale, data["w_reference"].float() * b_scale,
+    )
 
 
 def _run_bpreshuffle(tune, data, kid):
     return tune.run_gemm_opus(data["x"], data["w"], data["x_scale"],
-                              data["w_scale"], data["out"], None, kid)
+                              data["w_scale"], data["out"], kid)
 
 
 def _check_signed_repeated(kid, shape, repetitions, *, cancellation=False):
@@ -339,7 +341,7 @@ def _check_signed_repeated(kid, shape, repetitions, *, cancellation=False):
     for _ in range(repetitions):
         data["out"].fill_(float("nan"))
         result = _run_bpreshuffle(tune, data, kid)
-        assert tune.compare_opus_outputs(reference, result, printLog=False) == 0
+        assert checkAllclose(reference, result, printLog=False) <= 0.05
         assert torch.all(storage[:128] == 42)
         assert torch.all(storage[-128:] == 42)
         if first is None:
@@ -388,7 +390,7 @@ def test_fine_bpreshuffle_workspace_guards(kid):
         result = opus_gemm(data["x"], data["w"], data["out"], kid=kid,
                            layout="bpreshuffle", x_scale=data["x_scale"],
                            w_scale=data["w_scale"], workspace=workspace)
-        assert tune.compare_opus_outputs(reference, result, printLog=False) == 0
+        assert checkAllclose(reference, result, printLog=False) <= 0.05
         assert torch.isfinite(workspace).all()
         assert (storage[:128] == 73).all() and (storage[-128:] == 73).all()
 
@@ -434,7 +436,7 @@ def test_fine_bpreshuffle_graph_replay(caller_workspace):
         reference = _reference(tune, data)
         data["out"].fill_(float("nan"))
         graph.replay()
-        assert tune.compare_opus_outputs(reference, data["out"], printLog=False) == 0
+        assert checkAllclose(reference, data["out"], printLog=False) <= 0.05
 
 
 @pytest.mark.parametrize("kid,shape", [

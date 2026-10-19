@@ -96,7 +96,7 @@ target remain unfinished.
 ## Blockscale / MX-scale B-preshuffle pipeline and traits headers
 
 The current large-shape worktree retains four gfx950 B-preshuffle pipelines:
-`pin_agpr`, `b_direct`, `lds_panel` and `b_direct_overlap`. They serve 136, 81,
+`pin_agpr`, `prefetch_b_vgpr`, `pingpong_lds` and `prefetch_b_vgpr_overlap`. They serve 136, 81,
 69 and 8 of the 294 final selections in round58, respectively. Each has an
 explicit device entry and pipeline header; legal geometry, register placement,
 cache policy and output layouts remain configuration parameters.
@@ -187,13 +187,10 @@ python -u csrc/gemm_a8w8_mxfp8_bpreshuffle/gemm_a8w8_mxfp8_bpreshuffle_tune.py \
   --shape_grouped --mp 8 --warmup 5 --iters 101 --all
 ```
 
-The [historical tuned CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)
-contains the fastest valid candidate per shape for its recorded revision, using
-the same 13-column format as the
-[original CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv).
-The current source CSV contains 861 rows: 745 gfx950/256-CU shapes,
+The [source CSV](../../aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv)
+uses the original 13-column format and contains 861 rows: 745 gfx950/256-CU shapes,
 105 gfx942/80-CU shapes and 11 gfx1250/256-CU shapes. The 1042-row count in
-dated records describes an earlier dataset. Either CSV can be passed to `-i`; the tuner selects the
+dated records describes an earlier dataset. This CSV can be passed to `-i`; the tuner selects the
 current gfx/CU shapes and ignores the input timings and candidate choices.
 `-o` saves the fastest valid candidate per shape and `-o2` saves the candidate
 profile. OPUS rows retain `libtype=opus`, the exact numeric `kernelId` and

@@ -15,15 +15,17 @@ and losses against the external references.
 | Pipeline | Header suffix | Fixed execution schedule | Selected shapes | Registered configurations |
 | --- | --- | --- | ---: | ---: |
 | `pin_agpr` | [`4wave_pin_agpr`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh) | Pinned A/B/C quadrant schedule; groups 2–4 before the matrix wait, group 5 before the barrier, groups 6–7 after it | 136 | 53 CO |
-| `b_direct` | [`b_direct`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_b_direct_gfx950.cuh) | A LDS ring and B register ring; read current A, issue future A, consume current operands | 81 | 56 CO + 2505 JIT |
-| `lds_panel` | [`lds_panel`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_lds_panel_gfx950.cuh) | A/B LDS panels with operand reads overlapped with MFMA | 69 | 46 CO |
-| `b_direct_overlap` | [`b_direct_overlap`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_b_direct_overlap_gfx950.cuh) | Retain A across iterations and replace fragments after their last MFMA consumer | 8 | 6 CO |
+| `prefetch_b_vgpr` | [`prefetch_b_vgpr`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_prefetch_b_vgpr_gfx950.cuh) | A LDS ring and B register ring; read current A, issue future A, consume current operands | 81 | 56 CO + 2505 JIT |
+| `pingpong_lds` | [`pingpong_lds`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_pingpong_lds_gfx950.cuh) | A/B LDS panels with operand reads overlapped with MFMA | 69 | 46 CO |
+| `prefetch_b_vgpr_overlap` | [`prefetch_b_vgpr_overlap`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_gfx950.cuh) | Retain A across iterations and replace fragments after their last MFMA consumer | 8 | 6 CO |
 
 Headers use the prefix `opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_` and suffix
-`_gfx950.cuh`. Shared traits, kernel arguments, layout and fragment helpers live
-in [`opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh`](opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh).
-The MFMA16 packed-output helper remains shared by B-direct and LDS-panel, even
-though its historical namespace contains `register_prefetch`.
+`_gfx950.cuh`. Each pipeline has a matching `opus_gemm_traits_...` header;
+its layout, fragment-loading and output helpers live in the pipeline header.
+The launch ABI is shared in
+[`opus_gemm_kargs_a8w8_mxscale_bpreshuffle_gfx950.cuh`](opus_gemm_kargs_a8w8_mxscale_bpreshuffle_gfx950.cuh).
+The overlap traits inherit the ordinary B-prefetch geometry and add their own
+publication-point constraint.
 
 `pin_agpr_early`, `register_prefetch` and `lds_ring` had zero final selections
 in round58. Their headers, exclusive traits and 3597 registered configurations

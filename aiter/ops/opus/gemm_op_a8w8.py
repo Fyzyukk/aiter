@@ -117,25 +117,6 @@ def _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
 ) -> Tensor: ...
 
 
-def _gen_opus_gemm_bpreshuffle_workspace_fake(
-    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor,
-    Y: Tensor, kid: int, workspace: Tensor,
-) -> Tensor:
-    return Y
-
-
-@compile_ops(
-    "module_deepgemm_opus",
-    fc_name="opus_gemm_a8w8_blockscale_bpreshuffle_workspace_launch",
-    gen_fake=_gen_opus_gemm_bpreshuffle_workspace_fake,
-    develop=True,
-)
-def _opus_gemm_bpreshuffle_workspace_raw(
-    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor,
-    Y: Tensor, kid: int, workspace: Tensor,
-) -> Tensor: ...
-
-
 def opus_gemm_a8w8_blockscale_bpreshuffle_tune(
     XQ: Tensor,
     WQ: Tensor,
@@ -229,16 +210,18 @@ def _launch_a8w8_backend(
         return
 
     if family == _A8W8_BPRESHUFFLE_FAMILY:
-        if split_k != 0:
-            raise RuntimeError("bpreshuffle split-K is fixed by the kernel ID")
-        if workspace is None:
-            _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
-                XQ, WQ, x_scale, w_scale, Y, kid,
+        if workspace is not None or split_k != 0:
+            raise RuntimeError(
+                "A8W8 blockscale-bpreshuffle backend received split-K state"
             )
-        else:
-            _opus_gemm_bpreshuffle_workspace_raw(
-                XQ, WQ, x_scale, w_scale, Y, kid, workspace,
-            )
+        _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
+            XQ,
+            WQ,
+            x_scale,
+            w_scale,
+            Y,
+            kid,
+        )
         return
 
     if family == _A8W8_MXSCALE_BMM_FAMILY:
@@ -345,7 +328,6 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
     Y: Tensor,
     *,
     kid: int,
-    workspace: Tensor | None = None,
     route_arch: str | None = None,
     instance: object | None = None,
 ) -> Tensor:
@@ -370,47 +352,13 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
             kid=kid,
             output_dtype=Y.dtype,
         )
-    if instance is None:
-        from csrc.opus_gemm.opus_gemm_common import kernels_list
-        instance = kernels_list[resolved_kid]
-    from csrc.opus_gemm.opus_gemm_common import bpreshuffle_workspace_bytes
-    required_workspace = bpreshuffle_workspace_bytes(instance, XQ.shape[-2], WQ.shape[-2], XQ.shape[-1])
-    if required_workspace:
-        # Allocate through PyTorch so stream lifetime and graph pools are tracked.
-        # Shape/dtype/device checks precede allocation; C++ also checks every
-        # physical workspace contract for direct raw-ABI callers.
-        from csrc.opus_gemm.opus_gemm_common import a8w8_mxscale_bpreshuffle_supports_shape
-        m, k = XQ.shape
-        n = WQ.shape[0]
-        if (WQ.shape[1] != k or Y.shape != (m, n)
-                or not a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k)):
-            raise ValueError("OPUS bpreshuffle input/output shapes are unsupported")
-        if XQ.dtype != torch.float8_e4m3fn or WQ.dtype != XQ.dtype or Y.dtype != torch.bfloat16:
-            raise ValueError("OPUS native bpreshuffle requires FP8 E4M3FN inputs and BF16 output")
-        if any(t.device != XQ.device for t in (WQ, Y, x_scale, w_scale)):
-            raise ValueError("OPUS bpreshuffle tensors must be on the same device")
-        if any(not t.is_contiguous() for t in (XQ, WQ, Y)):
-            raise ValueError("OPUS bpreshuffle XQ/WQ/Y must be contiguous")
-        if (x_scale.dtype not in _E8M0_DTYPES or w_scale.dtype not in _E8M0_DTYPES
-                or x_scale.shape != (m, k // 128) or x_scale.stride() != (1, m)
-                or w_scale.shape != (n // 128, k // 128) or not w_scale.is_contiguous()):
-            raise ValueError("OPUS bpreshuffle requires column-major E8M0 A scales and row-major E8M0 B scales")
-        if workspace is None:
-            zero_init = bool(instance.bpreshuffle_entry and
-                             instance.bpreshuffle_entry.get('workspace_zero_init'))
-            allocate = torch.zeros if zero_init else torch.empty
-            workspace = allocate(
-                (required_workspace + 3) // 4, device=XQ.device, dtype=torch.float32,
-            )
-    elif workspace is not None:
-        raise ValueError("this OPUS bpreshuffle kid does not use workspace")
     _launch_a8w8_backend(
         XQ.unsqueeze(0),
         WQ.unsqueeze(0),
         Y.unsqueeze(0),
         x_scale,
         w_scale,
-        workspace,
+        None,
         _A8W8_BPRESHUFFLE_FAMILY,
         resolved_kid,
         0,

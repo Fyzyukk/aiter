@@ -84,7 +84,6 @@ def _resolve_contract(
 
     family = launch_plan._validate_a8w8_public_contract(
         kernel_tag=instance.kernel_tag,
-        bpreshuffle_split_k=instance.bpreshuffle_split_k,
         kid=kid,
         input_dtype=input_dtype,
         weight_dtype=weight_dtype,
@@ -250,7 +249,6 @@ def _opus_dispatch(
             w_scale,
             Y,
             kid=kid,
-            workspace=workspace,
             route_arch=route_arch,
             instance=instance,
         )

@@ -250,14 +250,13 @@ python -u -m csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune \
 每个候选都执行数值比较，`-o` 保存最快有效选择，`-o2` 保存候选 profile，日志保存失败详情。
 OPUS 使用原生随机 E8M0 scale，其他后端使用原 tuner 的随机 FP32 scale，分别对照各自 reference。
 
-### 使用最新完整调优表
+### 使用输入 shape 表
 
-最新的 [745 行调优表](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_opus_tuned_gemm.csv)
-采用基线的 13 列格式，每个 shape 保留最快有效候选。也可以将此文件传给上方命令的 `-i`，
-tuner 会读取 shape 并重新枚举候选。
+可将 [原始 shape 表](aiter/configs/model_configs/dsv4_a8w8_blockscale_bpreshuffle_tuned_gemm.csv)
+传给上方命令的 `-i`，tuner 会按当前 `gfx/cu_num` 筛选 shape 并重新枚举候选。
 
-只看 OPUS 时可将 `--libtype all` 改为 `--libtype opus`。全量 745 项包含 290 个 M≤512 shape。
-上述 CSV 的 `cu_num` 为 256；其他 CU 规格的 gfx950
+只看 OPUS 时可将 `--libtype all` 改为 `--libtype opus`。gfx950/256-CU 的 745 项包含 290 个 M≤512 shape。
+其他 CU 规格的 gfx950
 可提供仅含 `M,N,K` 的 CSV，tuner 会填入当前 GPU 的 `gfx/cu_num`。
 
 四卡时将 `ROCR_VISIBLE_DEVICES` 改成实际空闲的四张卡，例如 `0,1,2,3`，并用 `--mp 4`；

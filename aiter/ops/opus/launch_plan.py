@@ -534,7 +534,6 @@ def _validate_a8w8_public_contract(
     has_bias: bool,
     has_workspace: bool,
     split_k: int,
-    bpreshuffle_split_k: int = 1,
 ) -> str:
     """Validate immutable options for the public A8W8 operation routers."""
     try:
@@ -582,13 +581,6 @@ def _validate_a8w8_public_contract(
             raise ValueError("OPUS a8w8_mxscale_bmm requires x_scale and w_scale")
         if split_k == 0 and has_workspace:
             raise ValueError("OPUS a8w8_mxscale_bmm split_k=0 does not use workspace")
-        return family
-
-    if family == _A8W8_BPRESHUFFLE_FAMILY and bpreshuffle_split_k > 1:
-        if split_k != 0:
-            raise ValueError("OPUS bpreshuffle split-K is fixed by the kernel ID")
-        if not has_x_scale:
-            raise ValueError("OPUS bpreshuffle requires x_scale and w_scale")
         return family
 
     if has_workspace:
@@ -748,11 +740,6 @@ def _build_a8w8_mxscale_bmm_plan(
             tiles_n = (N + instance.B_N - 1) // instance.B_N
             padded_m = tiles_m * instance.B_M
             padded_n = tiles_n * instance.B_N
-            if padded_m * padded_n > (1 << 31) - 1:
-                raise ValueError(
-                    f"OPUS BMM kid {resolved_kid} split-K workspace batch stride "
-                    "must fit signed int32"
-                )
             partial_numel = abi_split_k * batch * padded_m * padded_n
             if tag == "a8w8_mxscale_bmm_fused":
                 counter_offset = (partial_numel * 4 + 255) & ~255

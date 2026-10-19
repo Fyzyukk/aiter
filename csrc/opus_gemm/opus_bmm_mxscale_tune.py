@@ -112,38 +112,38 @@ _TUNE_POLICY = {
     # flatmm_splitk family: the M=16/32 last-mile tiles, the mid-M SFA/SFB-preload
     # tiles and the 64x* tiles. All are split-K capable via the fused reduce tail,
     # except kid646 whose persistent DIRECT_ONLY schedule requires splitK == 1.
-    60032: _SK,
-    60064: _SK,
-    60138: _SK,
-    60139: _SK,
-    60256: _SK,
-    60311: _SK,
-    60312: _SK,
-    60313: _SK,
-    60314: _SK,
-    60316: _SK,
-    60317: _SK,
-    60318: _SK,
-    60319: _SK,
-    60320: _SK,
-    60321: _SK,
-    60322: _SK,
-    60323: _SK,
-    60324: _SK,
-    60326: _SK,
-    60327: _SK,
-    60640: _SK,
-    60642: _SK,
-    60646: [1],
-    60650: _SK,
-    60653: _SK,
+    8032: _SK,
+    8064: _SK,
+    8138: _SK,
+    8139: _SK,
+    8256: _SK,
+    8311: _SK,
+    8312: _SK,
+    8313: _SK,
+    8314: _SK,
+    8316: _SK,
+    8317: _SK,
+    8318: _SK,
+    8319: _SK,
+    8320: _SK,
+    8321: _SK,
+    8322: _SK,
+    8323: _SK,
+    8324: _SK,
+    8326: _SK,
+    8327: _SK,
+    8640: _SK,
+    8642: _SK,
+    8646: [1],
+    8650: _SK,
+    8653: _SK,
     # fused single-tile launcher.
-    60100: [1],
+    8100: [1],
     # pipeline family; kid158 preloads both the per-token SFA and the block SFB
     # panel into LDS.
-    60149: [1],
-    60150: [1],
-    60158: [1],
+    8149: [1],
+    8150: [1],
+    8158: [1],
     149: [1],
     150: [1],
     158: [1],
@@ -204,34 +204,34 @@ _TUNE_POLICY = {
     # bdirect_tilen variants remain registered outside the default policy.
     196: [1],
     # monolithic mouter / wave pipelines.
-    60131: [1],
-    60132: [1],
-    60134: [1],
-    60142: [1],
-    60144: [1],
-    60148: [1],
-    60160: [1],
-    60161: [1],
+    8131: [1],
+    8132: [1],
+    8134: [1],
+    8142: [1],
+    8144: [1],
+    8148: [1],
+    8160: [1],
+    8161: [1],
     # minterleave only exists in split-K form.
-    60162: [1],
-    60163: [1],
+    8162: [1],
+    8163: [1],
     # 128x128x128 flatmm tiles use splitK=1 in the default policy.
-    60128: [1],
-    60137: [1],
-    60325: [1],
+    8128: [1],
+    8137: [1],
+    8325: [1],
     # Single-wave decode kernels load operands directly into registers.
     # The default policy considers splitK=1 and splitK=4.
-    60440: [1, 4],
-    60441: [1, 4],
-    60442: [1, 4],
-    60443: [1, 4],
-    60444: [1, 4],
-    60445: [1, 4],
-    60446: [1, 4],
-    60447: [1, 4],
+    8440: [1, 4],
+    8441: [1, 4],
+    8442: [1, 4],
+    8443: [1, 4],
+    8444: [1, 4],
+    8445: [1, 4],
+    8446: [1, 4],
+    8447: [1, 4],
     # B_N=16 decode variants with additional split-K choices.
-    60448: [1, 2, 4],
-    60449: [1, 2, 4],
+    8448: [1, 2, 4],
+    8449: [1, 2, 4],
 }
 
 # Derive preshuffled-B/LDS counterparts from the plain flatmm policy.
@@ -692,14 +692,6 @@ def run_bmm_mxscale_bench(
     All layouts and any split-K workspace are prepared by the data generator;
     this function performs no layout conversion or workspace allocation."""
     inst = _CODEGEN_BMM[kernelId]
-    if splitK > 1:
-        padded_m = (A_mx.size(0) + inst.B_M - 1) // inst.B_M * inst.B_M
-        padded_n = (W_mx.size(1) + inst.B_N - 1) // inst.B_N * inst.B_N
-        if padded_m * padded_n > (1 << 31) - 1:
-            raise ValueError(
-                f"OPUS BMM kid {kernelId} split-K workspace batch stride "
-                "must fit signed int32"
-            )
     Wb = W_sh if inst.needs_preshuffled_b else W_mx
     # A, its plain scale and Y all arrive [M, batch, ...] contiguous, which is
     # both what the launcher takes and what a serving stack holds.
@@ -726,8 +718,8 @@ def _bmm_ref_passthrough(ref):
 # Tuner
 # ---------------------------------------------------------------------------
 BMM_BENCH_KEYS = (0, 1, 2, 3, 4, 5, 7)
-BMM_DATA_KIDS = {128: 60179, 32: 61179}
-BMM_BLOCK_DATA_KIDS = {"128x128": 60179, "32x32": 61179, "1x32": 61704}
+BMM_DATA_KIDS = {128: 8179, 32: 9179}
+BMM_BLOCK_DATA_KIDS = {"128x128": 8179, "32x32": 9179, "1x32": 9704}
 
 
 def make_bmm_tuning_task(

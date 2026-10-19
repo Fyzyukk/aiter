@@ -575,7 +575,7 @@ def resolve_a16w16_caller_candidate(
 
 # ---- gfx950 MXFP8 BMM tuned-row and heuristic policy ---------------------
 
-_MXSCALE_BMM_KID_OFFSET = 60000
+_MXSCALE_BMM_KID_OFFSET = 8000
 # Upper end of the pre-globalisation id space a tuned CSV may still be written
 # in. Raised past 653 for the GROUP_N=GROUP_K=32 twins, which sit at their
 # mirror's id plus 1000. Still unambiguous: every local id stays below the 8000
@@ -643,8 +643,6 @@ def _load_mxscale_bmm_tuned(
 
     # Normalize legacy local ids, then validate each complete saved launch.
     opus_kids = pd.to_numeric(df.loc[opus_rows, "kernelId"], errors="coerce")
-    upstream_rows = opus_kids.between(8000, 8000 + _MXSCALE_BMM_LOCAL_KID_MAX)
-    opus_kids.loc[upstream_rows] += _MXSCALE_BMM_KID_OFFSET - 8000
     legacy_rows = opus_kids.between(0, _MXSCALE_BMM_LOCAL_KID_MAX)
     opus_kids.loc[legacy_rows] += _MXSCALE_BMM_KID_OFFSET
     integer_kids = (
@@ -796,14 +794,14 @@ def _heuristic_mxscale_bmm_kid(
         and divisible(k, 128)
         and (m >= 2048 or (m >= 1024 and g >= 8))
     ):
-        return 60158 if 4096 <= k <= 8192 else 60150
+        return 8158 if 4096 <= k <= 8192 else 8150
     if m < 64:
-        return offset + (60640 if divisible(n, 64) and divisible(k, 256) else 60653)
+        return offset + (8640 if divisible(n, 64) and divisible(k, 256) else 8653)
     if m <= 256 and k <= 1024 and divisible(n, 32) and divisible(k, 256):
-        return offset + 60320
+        return offset + 8320
     if divisible(n, 64) and divisible(k, 128):
-        return offset + 60653
-    return offset + 60000
+        return offset + 8653
+    return offset + 8000
 
 
 # Preshuffled-B fallback candidates by M band, in local ids (GROUP_K=128 adds
@@ -852,10 +850,10 @@ def _heuristic_mxscale_bmm_bpreshuffle_kid(
         # output tiles. Smaller grids retain the decode tiles; tuned rows can
         # additionally choose split-K. Keep K128/N16 alignment fallbacks.
         wide_tiles = g * ((m + 63) // 64) * (n // 64)
-        preferred = (61713,) if m >= 64 and wide_tiles >= 256 else ()
+        preferred = (9713,) if m >= 64 and wide_tiles >= 256 else ()
         if m >= 256:
-            preferred += (61703,)
-        for kid in (*preferred, 61700, 61704, 61708, 61710):
+            preferred += (9703,)
+        for kid in (*preferred, 9700, 9704, 9708, 9710):
             try:
                 _get_cached_a8w8_mxscale_bmm_plan(
                     get_gfx(), kid, output_dtype, m, g, n, k, 1
@@ -864,7 +862,7 @@ def _heuristic_mxscale_bmm_bpreshuffle_kid(
                 continue
             return kid
         return None
-    base = 61000 if group_size == 32 else 60000
+    base = 9000 if group_size == 32 else 8000
     candidates = next(
         c for bound, c in _BPRESHUFFLE_FALLBACK_BANDS if bound is None or m <= bound
     )

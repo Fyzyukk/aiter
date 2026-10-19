@@ -3,8 +3,6 @@
 """Generate gfx950 OPUS launchers."""
 
 import os
-import re
-from math import lcm
 from pathlib import Path
 
 from opus_gemm_common import OpusGemmInstance
@@ -59,7 +57,7 @@ PIPELINE_HEADER_MAP_4G_SAFE = {
 }
 
 TRAITS_HEADER_MAP = {
-    "a8w8_mxscale_gemm_bpreshuffle": "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh",
+    "a8w8_mxscale_gemm_bpreshuffle": "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
     "a8w8_mxscale_bmm_bpreshuffle_compact": "gfx950/opus_bmm_traits_mxscale_compact_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh",
     "a8w8_mxscale": "gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh",
@@ -3219,7 +3217,6 @@ _BPRESHUFFLE_ARGUMENTS = r"""
 def _gen_bpreshuffle_co(cg, k, instance_impl_preamble, make_host_decl):
     entry = k.bpreshuffle_co
     symbol = entry.get("symbol", f"opus_gemm_gfx950_pin_agpr_{entry['kid']}")
-    image = symbol
     if "launches" in entry:
         rows = ["{" + ",".join(map(str, (*map(int, shape.split(",")), *launch["grid"],
                          *launch["block"], launch.get("dynamic_lds_bytes", 0)))) + "}"
@@ -3261,19 +3258,17 @@ def _gen_bpreshuffle_co(cg, k, instance_impl_preamble, make_host_decl):
     )
     if alignment_check:
         grid_setup += f'\n    AITER_CHECK({alignment_check}, "CO pointer alignment differs");'
-    preamble = instance_impl_preamble('\n#include <climits>\n#include <type_traits>\n#include "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"')
+    preamble = instance_impl_preamble('\n#include <climits>\n#include <type_traits>\n#include "gfx950/opus_gemm_kargs_a8w8_mxscale_bpreshuffle_gfx950.cuh"')
     source = f'''{preamble}
 #if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
 #include "gfx950/opus_co_launch_gfx950.cuh"
 template<typename D_C>
 void {k.name}(aiter_tensor_t& XQ, aiter_tensor_t& WQ,
-              aiter_tensor_t& x_scale, aiter_tensor_t& w_scale, aiter_tensor_t& Y,
-              std::optional<aiter_tensor_t> workspace) {{
+              aiter_tensor_t& x_scale, aiter_tensor_t& w_scale, aiter_tensor_t& Y) {{
     static_assert(std::is_same_v<D_C, opus::bf16_t>);
 {_BPRESHUFFLE_ARGUMENTS}
-    AITER_CHECK(!workspace.has_value(), "direct CO does not use workspace");
     {grid_setup}
-    static AiterAsmKernelFast& kernel = opus_gfx950_co::co_kernel("{image}", "{symbol}");
+    static AiterAsmKernelFast& kernel = opus_gfx950_co::co_kernel("{symbol}");
     opus_co_launch_gfx950(kernel, grid, block, args, aiter::getCurrentHIPStream(), dynamic_lds);
 }}
 #endif
@@ -3282,12 +3277,6 @@ void {k.name}(aiter_tensor_t& XQ, aiter_tensor_t& WQ,
     cg._kid_pipeline_header[k.name] = "gfx950/opus_co_launch_gfx950.cuh"
     cg._host_instantiations.append(dict(
         kid_name=k.name, dtype="bf16_t", host_decl=make_host_decl(k.name, "bf16_t", "")))
-
-
-
-
-
-
 
 
 def _bpreshuffle_headers(entry):
@@ -3316,13 +3305,12 @@ def _emit_bpreshuffle_host(cg, k, instance_impl_preamble, make_host_decl,
     checks.append(f"k / {k.B_K} >= {k.bpreshuffle_split_k}")
     checks.append(f"2ULL * (m < {k.B_M} ? m : {k.B_M}) * n <= INT32_MAX")
     input_limit = min(2147483647, k.max_tensor_bytes)
-    output_bytes = 4 * k.bpreshuffle_split_k if k.bpreshuffle_split_k > 1 else 2
     checks.extend((f"m * k <= {input_limit}", f"n * k <= {input_limit}",
-                   f"{output_bytes}ULL * m * n <= {k.max_tensor_bytes}"))
+                   f"2ULL * m * n <= {k.max_tensor_bytes}"))
     shape_check = 'AITER_CHECK(' + ' && '.join(checks) + ', "shape exceeds this pipeline configuration");'
     preamble = instance_impl_preamble('\n#include <climits>\n#include <type_traits>\n#include "opus_gemm_common.cuh"')
     source = f'''{preamble}
-#include "gfx950/opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh"
+#include "{entry["headers"][0].replace("_pipeline_", "_traits_", 1)}"
 #ifdef OPUS_FUSED_HOST_TU
 {declarations}
 #else
@@ -3332,8 +3320,7 @@ struct {alias} : {entry["traits"]} {{}};
 #if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
 template<class D_C>
 void {k.name}(aiter_tensor_t& XQ, aiter_tensor_t& WQ,
-              aiter_tensor_t& x_scale, aiter_tensor_t& w_scale, aiter_tensor_t& Y,
-              std::optional<aiter_tensor_t> workspace) {{
+              aiter_tensor_t& x_scale, aiter_tensor_t& w_scale, aiter_tensor_t& Y) {{
     static_assert(std::is_same_v<D_C, opus::bf16_t>);
 {_BPRESHUFFLE_ARGUMENTS}
     {shape_check}
@@ -3364,42 +3351,10 @@ def _gen_bpreshuffle_tile(cg, k, instance_impl_preamble, make_host_decl):
     lds = "Traits::lds_bytes(k)" if entry.get("dynamic_lds") else "0"
     _emit_bpreshuffle_host(cg, k, instance_impl_preamble, make_host_decl,
         _bpreshuffle_declaration(kernel, "class Traits", abi),
-        f'''    AITER_CHECK(!workspace.has_value(), "this configuration does not use workspace");
-    const unsigned tiles_m = (m + Traits::B_M - 1) / Traits::B_M;
+        f'''    const unsigned tiles_m = (m + Traits::B_M - 1) / Traits::B_M;
     const unsigned tiles_n = {n_tiles}, tiles = tiles_m * tiles_n;
     {kernel}<{alias}><<<{grid}, dim3(Traits::BLOCK_SIZE), {lds}, aiter::getCurrentHIPStream()>>>(args);''',
         f"template __global__ void {kernel}<{alias}>({abi});")
-
-
-def _gen_bpreshuffle_reduce(cg, k, instance_impl_preamble, make_host_decl):
-    entry = k.bpreshuffle_entry
-    kernel, reducer, alias = entry["kernel"], entry["reduce_kernel"], f"{k.name}_Traits"
-    abi = "opus_gemm_blockscale_mxscale_bpreshuffle_kargs_gfx950"
-    reduce_abi = "const float* __restrict__, opus::bf16_t* __restrict__, int"
-    reduce_arguments = "reinterpret_cast<const float*>(args.ptr_c), reinterpret_cast<opus::bf16_t*>(Y.data_ptr()), int(m * n)"
-    reduce_parameters = "int SplitK, int Vec, int Block"
-    reduce_templates = f"{alias}::SPLIT_K, {alias}::REDUCE_VEC, {alias}::REDUCE_BLOCK"
-    lds = "Traits::lds_bytes(k)" if entry.get("dynamic_lds") else "0"
-    _emit_bpreshuffle_host(cg, k, instance_impl_preamble, make_host_decl,
-        _bpreshuffle_declaration(kernel, "class Traits", abi) + "\n" +
-        _bpreshuffle_declaration(reducer, reduce_parameters, reduce_abi),
-        f'''    if constexpr(Traits::SPLIT_K > 1) {{
-        AITER_CHECK(workspace.has_value(), "split-K requires workspace");
-        args.ptr_c = opus_validate_workspace(*workspace, Y, AITER_DTYPE_fp32,
-            uint64_t(Traits::SPLIT_K) * m * n, 16, "opus_bpreshuffle");
-        AITER_CHECK(m * n <= INT32_MAX, "reducer element count exceeds int32");
-    }} else {{
-        AITER_CHECK(!workspace.has_value(), "this configuration does not use workspace");
-    }}
-    {kernel}<{alias}><<<dim3(n / Traits::B_N, (m + Traits::B_M - 1) / Traits::B_M, Traits::SPLIT_K),
-        dim3(Traits::BLOCK_SIZE), {lds}, aiter::getCurrentHIPStream()>>>(args);
-    if constexpr(Traits::SPLIT_K > 1) {{
-        {reducer}<{reduce_templates}><<<dim3((uint64_t(m) * n + Traits::REDUCE_VEC * Traits::REDUCE_BLOCK - 1) /
-            (Traits::REDUCE_VEC * Traits::REDUCE_BLOCK)), dim3(Traits::REDUCE_BLOCK), 0,
-            aiter::getCurrentHIPStream()>>>({reduce_arguments});
-    }}''',
-        f"template __global__ void {kernel}<{alias}>({abi});\n"
-        f"template __global__ void {reducer}<{reduce_templates}>({reduce_abi});")
 
 
 def gen_mxscale_bpreshuffle_instance(
@@ -3410,8 +3365,7 @@ def gen_mxscale_bpreshuffle_instance(
     if k.bpreshuffle_co is not None:
         _gen_bpreshuffle_co(cg, k, instance_impl_preamble, make_a8w8_bpreshuffle_host_decl)
         return
-    emitters = {"tile": _gen_bpreshuffle_tile, "reduce": _gen_bpreshuffle_reduce}
-    emitters[k.bpreshuffle_entry["host_kind"]](
+    _gen_bpreshuffle_tile(
         cg, k, instance_impl_preamble, make_a8w8_bpreshuffle_host_decl)
 
 

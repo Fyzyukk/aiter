@@ -4,8 +4,6 @@ import argparse
 import glob
 import json
 import os
-import re
-import shutil
 import sys
 from pathlib import Path
 
@@ -450,7 +448,7 @@ def _make_a8w8_bpreshuffle_host_decl(kid_name, dtype, _host_extra_params):
         f"    aiter_tensor_t &WQ,\n"
         f"    aiter_tensor_t &x_scale,\n"
         f"    aiter_tensor_t &w_scale,\n"
-        f"    aiter_tensor_t &Y, std::optional<aiter_tensor_t> workspace);\n"
+        f"    aiter_tensor_t &Y);\n"
     )
 
 
@@ -891,7 +889,7 @@ void
     aiter_tensor_t &WQ,
     aiter_tensor_t &x_scale,
     aiter_tensor_t &w_scale,
-    aiter_tensor_t &Y, std::optional<aiter_tensor_t> workspace);
+    aiter_tensor_t &Y);
 """
         # a8w8 noscale (3 args, no splitK) has its own exact-kid table.
         MANIFEST_NOSCALE_3ARG = """
@@ -1048,8 +1046,6 @@ void
         (see _own_arch_device_pass_guard).
         """
         for row in self._device_instantiations:
-            if not row["device_decl"].strip():
-                continue
             name = row["kid_name"]
             dtype = row["dtype"]
             guard_open, guard_close = _own_arch_device_pass_guard(_kid_name_arch(name))
@@ -1064,7 +1060,9 @@ void
                 "// Device-only translation unit for one (kid, dtype) pair.\n"
                 "// Keep both JIT and prebuild host passes on the minimal branch --\n"
                 "// no torch and no full HIP runtime.\n"
-                "#ifndef __HIPCC_RTC__\n#define __HIPCC_RTC__ 1\n#endif\n"
+                "#ifndef __HIPCC_RTC__\n"
+                "#define __HIPCC_RTC__ 1\n"
+                "#endif\n"
                 + guard_open
                 + f'#include "impl/{name}.cuh"\n'
                 + row["device_decl"]
@@ -1193,12 +1191,7 @@ void
         self._host_instantiations = []
         self._device_instantiations = []
 
-        emitted_bpreshuffle_names = set()
         for k in kernels_dict.values():
-            if k.kernel_tag == "a8w8_mxscale_gemm_bpreshuffle":
-                if k.name in emitted_bpreshuffle_names:
-                    continue
-                emitted_bpreshuffle_names.add(k.name)
             self.gen_instance(k)
 
         # Emit one fused HOST TU + N device TUs (one per kid, dtype) + one dedicated splitk_reduce.device.cu.
