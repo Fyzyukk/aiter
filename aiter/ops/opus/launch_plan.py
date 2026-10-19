@@ -748,6 +748,11 @@ def _build_a8w8_mxscale_bmm_plan(
             tiles_n = (N + instance.B_N - 1) // instance.B_N
             padded_m = tiles_m * instance.B_M
             padded_n = tiles_n * instance.B_N
+            if padded_m * padded_n > (1 << 31) - 1:
+                raise ValueError(
+                    f"OPUS BMM kid {resolved_kid} split-K workspace batch stride "
+                    "must fit signed int32"
+                )
             partial_numel = abi_split_k * batch * padded_m * padded_n
             if tag == "a8w8_mxscale_bmm_fused":
                 counter_offset = (partial_numel * 4 + 255) & ~255

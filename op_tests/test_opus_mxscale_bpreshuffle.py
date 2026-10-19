@@ -2,15 +2,22 @@ import pytest
 import torch
 
 from csrc.opus_gemm.opus_gemm_common import (
-    BpreshuffleConfig,
+    _BPRESHUFFLE_PARAMETER_DEFAULTS,
     a8w8_mxscale_bpreshuffle_supports_shape,
     a8w8_mxscale_gemm_bpreshuffle_kernels_list,
-    config_id,
+    candidate_kids_for_shape,
 )
 
 
 def _kid(pipeline, bm, bn, wm, wn, **parameters):
-    return config_id(BpreshuffleConfig(pipeline, bm, bn, wm, wn, **parameters))
+    requested = {**_BPRESHUFFLE_PARAMETER_DEFAULTS, **parameters,
+                 "pipeline": pipeline, "block_m": bm, "block_n": bn,
+                 "wave_m": wm, "wave_n": wn}
+    for kid, instance in a8w8_mxscale_gemm_bpreshuffle_kernels_list.items():
+        entry = instance.bpreshuffle_entry or {}
+        if entry.get("parameters") == requested:
+            return kid
+    raise ValueError(f"unregistered B-preshuffle parameters: {requested}")
 
 
 def _register_kid(bm, bn, wave_k, prefetch, **parameters):
@@ -98,7 +105,7 @@ _FIXED_PARTITION_KIDS = (
 def test_grouped_bpreshuffle_contract():
     kernels = a8w8_mxscale_gemm_bpreshuffle_kernels_list
     instance = kernels[_panel_kid()]
-    assert instance.bpreshuffle_config.pipeline == "panel_8wave"
+    assert instance.bpreshuffle_entry["pipeline"] == "panel_8wave"
     assert len({kernel.name for kernel in kernels.values()}) == len(kernels)
     for shape in (
         (352, 65536, 1536),
@@ -130,10 +137,6 @@ def test_grouped_bpreshuffle_signed_tails(shape):
 
 
 def test_small_bpreshuffle_registry():
-    from csrc.opus_gemm.opus_gemm_mxscale_bpreshuffle_tune import (
-        candidate_kids_for_shape,
-    )
-
     kernels = a8w8_mxscale_gemm_bpreshuffle_kernels_list
     assert len({instance.name for instance in kernels.values()}) == len(kernels)
     for kid in (*_SMALL_REGISTER_KIDS, *_SMALL_LDS_KIDS):
@@ -240,66 +243,36 @@ def test_extended_bpreshuffle_signed_tails(kid, shape):
     _lds_kid(64, 64, 2, 2, stages=8, cluster=2, early_scale_loads=True),
 ])
 def test_optimized_bpreshuffle_cancellation(kid):
-    config = a8w8_mxscale_gemm_bpreshuffle_kernels_list[kid].bpreshuffle_config
-    m = 513 if config.pipeline == "lds_ring" and not config.register_scales else 97
+    parameters = a8w8_mxscale_gemm_bpreshuffle_kernels_list[kid].bpreshuffle_entry["parameters"]
+    m = 513 if parameters["pipeline"] == "lds_ring" and not parameters["register_scales"] else 97
     _check_signed_repeated(kid, (m, 256, 1280), 16, cancellation=True)
-
-
-@pytest.mark.parametrize("backend", ["ck", "cktile", "asm"])
-def test_tuner_preserves_external_accuracy_contract(backend, monkeypatch):
-    from pathlib import Path
-
-    from csrc.opus_gemm import opus_gemm_mxscale_bpreshuffle_tune as tune
-
-    generic = tune.generic_tune
-    monkeypatch.setattr(generic, "get_gfx", lambda: "gfx950")
-    monkeypatch.setattr(
-        generic, "get_asm_dir",
-        lambda: str(Path(__file__).resolve().parents[1] / "hsa" / "gfx950"),
-    )
-    tuner = tune.OpusMxscaleBpreshuffleTuner()
-    name = {
-        "ck": "get_gemm_a8w8_blockscale_tune_task",
-        "cktile": "get_gemm_a8w8_blockscale_cktile_tune_task",
-        "asm": "get_gemm_a8w8_blockscale_asm_tune_task",
-    }[backend]
-    params = [("gfx950", 256, 128, 768, 7168), True, 0, True]
-    if backend == "cktile":
-        params.append([1, 2, 3, 4])
-    params.append({"num_warmup": 1, "num_iters": 1})
-    original = getattr(generic.GemmA8W8BlockScaleTuner, name)(tuner, *params)
-    adapted = getattr(tuner, name)(*params)
-    assert len(adapted) == len(original) > 0
-    for old, new in zip(original, adapted):
-        assert new[:4] == old[:4]
-        assert new[5:] == old[5:]
-        assert new[6] is generic.run_torch
-        assert new[12] is None  # The original checkAllclose path.
-        if backend != "cktile":
-            assert new[4] == old[4]
 
 
 def test_tuner_selects_with_backend_accuracy_limits_and_keeps_raw_errors(tmp_path):
     import argparse
     import csv
 
-    from csrc.opus_gemm import opus_gemm_mxscale_bpreshuffle_tune as tune
+    from csrc.gemm_a8w8_mxfp8_bpreshuffle import gemm_a8w8_mxfp8_bpreshuffle_tune as tune
 
-    tuner = tune.OpusMxscaleBpreshuffleTuner()
+    keys = ["gfx", "cu_num", "M", "N", "K", "w_scale_block"]
+    result_columns = ["libtype", "kernelId", "splitK", "us", "kernelName", "tflops", "bw", "errRatio"]
+    tuner = tune.GemmA8W8MXFP8BpreshuffleTuner("mxscale", keys, result_columns)
+    tuner._mxscale_table = True
     assert tuner.parser.get_default("errRatio") == 0.05
-    shape = ("gfx950", 256, 256, 768, 7168)
+    shape = ("gfx950", 256, 256, 768, 7168, "128x128")
     rejected_kid = _quadrant_kid()
     accepted_kid = _compact_lds_kid(128, stages=3)
     rows = [
-        ((shape, rejected_kid, 0, "", "opus", True), 1.0, 0.0001),
-        ((shape, accepted_kid, 0, "", "opus", True), 3.0, 0.0),
-        ((shape, 0, 4, "asm_candidate", "asm", True), 2.0, 0.003),
-        ((shape, 1, 4, "asm_rejected", "asm", True), 0.5, 0.06),
+        ((shape, rejected_kid, 1, "opus_rejected", "opus"), 1.0, 0.0001),
+        ((shape, accepted_kid, 1, "opus_accepted", "opus"), 3.0, 0.0),
+        ((shape, 3_000_000, 4, "bmm_candidate", "flydsl"), 2.0, 0.003),
+        ((shape, 3_000_001, 4, "bmm_rejected", "flydsl"), 0.5, 0.06),
     ]
     profile = tmp_path / "profile.csv"
     args = argparse.Namespace(profile_file=str(profile), errRatio=0.05, verbose=False)
     selected = tuner.post_process(rows, args, topk=1)
-    assert selected.iloc[0]["libtype"] == "asm"
+    assert selected.iloc[0]["libtype"] == "flydsl"
+    assert selected.iloc[0]["kernelId"] == "bmm"
     assert selected.iloc[0]["us"] == 2.0
     assert selected.iloc[0]["errRatio"] == 0.003
     with profile.open(newline="") as stream:
@@ -310,6 +283,26 @@ def test_tuner_selects_with_backend_accuracy_limits_and_keeps_raw_errors(tmp_pat
     assert float(rejected_opus["errRatio"]) == 0.0001
 
 
+def _bpreshuffle_data(tune, m, n, k, seed):
+    data = tune.generate_data(m, n, k, seed, "128x128", device="cuda")
+    data["x_scale"] = data["x_scale_opus"]
+    data["w"] = data["weight_shuffle"]
+    data["w_reference"] = data["weight"]
+    return data
+
+
+def _reference(tune, data):
+    a_scale = data["x_scale"].float().repeat_interleave(128, 1)
+    b_scale = data["w_scale"].float().repeat_interleave(128, 0).repeat_interleave(128, 1)
+    return tune.run_opus_reference(data["x"].float() * a_scale,
+                                   data["w_reference"].float() * b_scale)
+
+
+def _run_bpreshuffle(tune, data, kid):
+    return tune.run_gemm_opus(data["x"], data["w"], data["x_scale"],
+                              data["w_scale"], data["out"], None, kid)
+
+
 def _check_signed_repeated(kid, shape, repetitions, *, cancellation=False):
     if not torch.cuda.is_available():
         pytest.skip("requires gfx950")
@@ -317,11 +310,11 @@ def _check_signed_repeated(kid, shape, repetitions, *, cancellation=False):
         pytest.skip("requires gfx950")
 
     from aiter.ops.shuffle import shuffle_weight
-    from csrc.opus_gemm import opus_gemm_mxscale_bpreshuffle_tune as tune
+    from csrc.gemm_a8w8_mxfp8_bpreshuffle import gemm_a8w8_mxfp8_bpreshuffle_tune as tune
 
-    tune._ensure_kids_compiled({kid})
+    tune.ensure_opus_kids_compiled({kid})
     m, n, k = shape
-    data = tune.generate_data(m, n, k, 17, device="cuda")
+    data = _bpreshuffle_data(tune, m, n, k, 17)
     generator = torch.Generator(device="cuda").manual_seed(29)
     for name in ("x", "w_reference"):
         value = data[name]
@@ -339,16 +332,14 @@ def _check_signed_repeated(kid, shape, repetitions, *, cancellation=False):
             bits = data[name].view(torch.uint8)
             bits[:, k // 256:] = bits[:, :k // 256]
     data["w"] = shuffle_weight(data["w_reference"], layout=(16, 16))
-    reference = tune.run_torch(
-        *(data[name] for name in tune._REF_KEYS), with_bounds=True
-    )
+    reference = _reference(tune, data)
     storage = torch.full((m * n + 256,), 42, device="cuda", dtype=torch.bfloat16)
     data["out"] = storage[128:-128].view(m, n)
     first = None
     for _ in range(repetitions):
         data["out"].fill_(float("nan"))
-        result = tune.run_bench(*(data[name] for name in tune._BENCH_KEYS), kid)
-        assert tune.compare_outputs(reference, result, printLog=False) == 0
+        result = _run_bpreshuffle(tune, data, kid)
+        assert tune.compare_opus_outputs(reference, result, printLog=False) == 0
         assert torch.all(storage[:128] == 42)
         assert torch.all(storage[-128:] == 42)
         if first is None:
@@ -374,8 +365,8 @@ def test_fine_bpreshuffle_cancellation(kid):
 def _fine_data(m=97, n=256, k=640):
     if not torch.cuda.is_available() or not torch.cuda.get_device_properties(0).gcnArchName.startswith("gfx950"):
         pytest.skip("requires gfx950")
-    from csrc.opus_gemm import opus_gemm_mxscale_bpreshuffle_tune as tune
-    return tune, tune.generate_data(m, n, k, 29, device="cuda")
+    from csrc.gemm_a8w8_mxfp8_bpreshuffle import gemm_a8w8_mxfp8_bpreshuffle_tune as tune
+    return tune, _bpreshuffle_data(tune, m, n, k, 29)
 
 
 @pytest.mark.parametrize("kid", [
@@ -390,14 +381,14 @@ def test_fine_bpreshuffle_workspace_guards(kid):
     count = a8w8_mxscale_gemm_bpreshuffle_kernels_list[kid].bpreshuffle_split_k * m * n
     storage = torch.full((count + 256,), 73, dtype=torch.float32, device="cuda")
     workspace = storage[128:-128]
-    reference = tune.run_torch(*(data[key] for key in tune._REF_KEYS), with_bounds=True)
+    reference = _reference(tune, data)
     for _ in range(4):
         workspace.fill_(float("nan"))
         data["out"].fill_(float("nan"))
         result = opus_gemm(data["x"], data["w"], data["out"], kid=kid,
                            layout="bpreshuffle", x_scale=data["x_scale"],
                            w_scale=data["w_scale"], workspace=workspace)
-        assert tune.compare_outputs(reference, result, printLog=False) == 0
+        assert tune.compare_opus_outputs(reference, result, printLog=False) == 0
         assert torch.isfinite(workspace).all()
         assert (storage[:128] == 73).all() and (storage[-128:] == 73).all()
 
@@ -440,10 +431,10 @@ def test_fine_bpreshuffle_graph_replay(caller_workspace):
         opus_gemm(data["x"], data["w"], data["out"], **kwargs)
     for _ in range(3):
         data["x"].copy_((-data["x"].float()).to(data["x"].dtype))
-        reference = tune.run_torch(*(data[key] for key in tune._REF_KEYS), with_bounds=True)
+        reference = _reference(tune, data)
         data["out"].fill_(float("nan"))
         graph.replay()
-        assert tune.compare_outputs(reference, data["out"], printLog=False) == 0
+        assert tune.compare_opus_outputs(reference, data["out"], printLog=False) == 0
 
 
 @pytest.mark.parametrize("kid,shape", [
@@ -481,9 +472,9 @@ def test_register_tail_bpreshuffle_shape_contract(kid):
 @pytest.mark.parametrize("shape,message", [((17, 128, 128), "requires K == 7168")])
 def test_register_tail_bpreshuffle_launcher_rejects_shape(kid, shape, message):
     tune, data = _fine_data(*shape)
-    tune._ensure_kids_compiled({kid})
+    tune.ensure_opus_kids_compiled({kid})
     with pytest.raises(RuntimeError, match=message):
-        tune.run_bench(*(data[key] for key in tune._BENCH_KEYS), kid)
+        _run_bpreshuffle(tune, data, kid)
 
 
 @pytest.mark.parametrize("kid,shape", [

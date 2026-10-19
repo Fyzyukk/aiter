@@ -1,235 +1,79 @@
-# gfx950 blockscale / MX-scale B-preshuffle templates
+# gfx950 MX-scale B-preshuffle pipelines
 
-All calculation headers and internal template symbols use the prefix
-`opus_gemm_blockscale_mxscale_bpreshuffle_`. `blockscale` describes the logical
-scale groups (A: 1×128; B: 128×128), `mxscale` describes the native E8M0 scaled
-MFMA path, and `bpreshuffle` identifies the required B layout. The logical K128
-scale is reused across the hardware MFMA's K32 scale groups.
+Each pipeline has an explicit execution schedule, device entry and header.
+Legal tile dimensions, M/N wave layouts, storage depth, cache policy, addressing
+and output choices remain compile-time parameters. All retained configurations
+use WaveK=1. Shared traits and layout/fragment helpers are allowed; complete
+alternate main loops have distinct pipeline identities.
 
-The configuration catalog contains 140 unique configurations with sequential
-IDs 9000–9139. Each ID selects one resolved kernel/traits configuration.
-Runtime-K and FixedK variants have separate IDs; launchers do not choose a
-different tile, prefetch policy or specialization based on the input shape.
-Old manual IDs, aliases, generated names and saved CSV choices have no
-compatibility mapping. Retune old choices before replaying them.
+## Current large-shape pipelines
 
-Maintain calculation pipelines separately from their compiled configurations.
-Tile dimensions, supported wave layouts, prefetch/stages, scale panels, FixedK,
-Split-K, reduction and swizzle settings are compile-time parameters. Tuning
-selects generated instances. More configurations do not require more
-handwritten pipeline files.
+The latest round58 batch contains 294 shapes with M > 1024. Its selected kernel
+IDs use the four pipelines below. Counts are selections, including both wins
+and losses against the external references.
 
-## Shared calculation templates
+| Pipeline | Header suffix | Fixed execution schedule | Selected shapes | Registered configurations |
+| --- | --- | --- | ---: | ---: |
+| `pin_agpr` | [`4wave_pin_agpr`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh) | Pinned A/B/C quadrant schedule; groups 2–4 before the matrix wait, group 5 before the barrier, groups 6–7 after it | 136 | 53 CO |
+| `b_direct` | [`b_direct`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_b_direct_gfx950.cuh) | A LDS ring and B register ring; read current A, issue future A, consume current operands | 81 | 56 CO + 2505 JIT |
+| `lds_panel` | [`lds_panel`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_lds_panel_gfx950.cuh) | A/B LDS panels with operand reads overlapped with MFMA | 69 | 46 CO |
+| `b_direct_overlap` | [`b_direct_overlap`](opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_b_direct_overlap_gfx950.cuh) | Retain A across iterations and replace fragments after their last MFMA consumer | 8 | 6 CO |
 
-| Configuration pipeline | Pipeline / traits suffix | Supported parameter axes | Catalog count |
-| --- | --- | --- | ---: |
-| `quadrant_4wave` | `4wave_pin_agpr` | `pad_m`; fixed 256×256×128 tile, 2×2 wave layout and pinned schedule | 2 |
-| `register` | `register_prefetch` | M/N tile, M/N/K waves, register prefetch, FixedK, B cache, scale reuse, output packing/N tails | 23 |
-| `lds_ring` | `lds_ring` | M/N tile, M/N waves, stages, cluster, scale placement, drain/read policy, Fine-M loads, FixedK, global Split-K and FP32 reduction | 54 |
-| `packed_4wave` | `4wave`, packed kernel | N tile, stages, scale panel, FixedK, block grouping and fragment-read interleaving | 16 |
-| `lds_4wave` | `4wave`, LDS-output kernel | M tile, stages, scale panel, FixedK and scale-tail load policy | 15 |
-| `panel_8wave` | `8wave` | M/N tile, scale panel, FixedK, schedule and block swizzle | 27 |
-| `b_direct_4wave` | stored in `lds_ring`, independent type/kernel | Fixed 192×256×128, 1×4 waves, four A LDS slots/four B register sets, FixedK7168 | 1 |
-| `panel_2wave` | `2wave` | M tile, scale panel, FixedK; two LDS slots and a 1×2 wave layout; opt-in for tuning | 2 |
+Headers use the prefix `opus_gemm_pipeline_a8w8_mxscale_bpreshuffle_` and suffix
+`_gfx950.cuh`. Shared traits, kernel arguments, layout and fragment helpers live
+in [`opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh`](opus_gemm_traits_a8w8_mxscale_bpreshuffle_gfx950.cuh).
+The MFMA16 packed-output helper remains shared by B-direct and LDS-panel, even
+though its historical namespace contains `register_prefetch`.
 
-The 4-wave packed and LDS-output kernels have different scale and output
-layouts, so they retain two calculation bodies. The 8-wave template shares its
-calculation body and selects `interleaved` or `synchronized` scheduling with
-`if constexpr`, including the prefetch/wait/barrier order. The latter also
-retains large-output addressing and its supported 192×256/panel128 layout.
+`pin_agpr_early`, `register_prefetch` and `lds_ring` had zero final selections
+in round58. Their headers, exclusive traits and 3597 registered configurations
+were removed from this worktree, together with the four retired early-MFMA CO
+images. The resulting registry has 161 CO and 2505 JIT configurations. Registration
+is not a claim that every configuration has passed numerical validation; known
+invalid, unselected ID 9085 is unchanged.
 
-IDs 9000 and 9001 instantiate the pinned kernel with
-`4wave_pin_agpr_traits_gfx950<false>` and `<true>`, respectively. This template
-uses four Wave64 waves, a 256×256×128 block tile, four 128×128 subtiles, and
-pinned AGPR operands/accumulators. `if constexpr (T::PAD_M)` selects bounded A/C
-views, matrix-prefetch address formation, A-scale panel initialization and row
-guards, prologue A addresses, and C row guards. The main loop and pinned-compiler
-requirement are shared.
+## Flow identity and tune parameters
 
-There are eight GEMM bodies in six pipeline headers, with six matching traits
-headers (12 B-preshuffle headers total). Shared layout/output functions and
-argument definitions live in these existing files. Pipeline and traits headers
-share one suffix: `2wave`, `4wave_pin_agpr`, `4wave`, `8wave`,
-`register_prefetch`, or `lds_ring`. Their names follow these forms:
+Historical `quadrant` and `tiled` labels now classify the retained regular pin
+schedule as `pin_agpr`. The overlap entries are IDs 9457–9462. The `EarlyMfma`
+and `OperandOverlap` schedule switches are absent. The registry selects an
+explicit header and device body.
 
-```text
-opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_<suffix>_gfx950.cuh
-opus_gemm_blockscale_mxscale_bpreshuffle_traits_<suffix>_gfx950.cuh
-opus_gemm_blockscale_mxscale_bpreshuffle_<suffix>_traits_gfx950
-```
+Overlap traits derive the geometry/resource contract from B-direct traits and
+add `PublishM`, a legal publication point within that schedule. Pin A/C in
+B-direct remains a register-placement parameter. Stage depth and publication
+point obey each flow's legality constraints. Changing the complete load/MFMA/
+barrier schedule requires a distinct pipeline identity, not a pipeline per shape.
 
-The LDS-ring header pair also owns the independent `b_direct_4wave` type and
-kernel, preserving the existing LDS-ring definitions. Its traits suffix is
-`b_direct_4wave`, while its header suffix remains `lds_ring`. It loads A into
-four LDS slots and B into four register sets; each B column is reused for a
-future K tile after its 12 MFMA consumers. K is fixed at 7168, M must be a
-multiple of 4 and N a multiple of 256, with the signed-32 tensor extent guard.
-The host emits a flattened grid rounded to eight workgroups. Static LDS is
-110608 bytes and dynamic LDS is zero. Performance varies with the shape;
-ordinary tuning determines whether this candidate is useful.
+IDs 9000/9001 retain the 256×256×128, 2×2-wave regular pin configurations,
+without/with padded M. The generalized body also supports other registered
+configurations; it is not a verbatim copy of the specialized original reference.
 
-The pinned M contracts remain 256 for `pad_m=false` and 64 for `pad_m=true`.
-The former uses a floor-sized M grid and unguarded full-tile loads/stores. The
-latter uses a ceiling-sized grid and guards A/C rows, but A scales still load
-16 consecutive bytes after checking only the starting row. M divisible by 16
-keeps each active scale vector within its column and preserves alignment; the
-current 64-row contract is more conservative. Arbitrary M would require a
-byte-safe scale-tail path and boundary validation before relaxing this guard.
+## Registry, build and replay
 
-Shared code is owned once inside the existing pipeline/traits headers:
+[`co_kernels_gfx950.json`](../../gen_co/co_kernels_gfx950.json) binds each CO ID
+through `pipeline`, `pipeline_header`, `body_func`, traits and body arguments.
+`build_co.py` consumes that binding directly. The remaining JIT domain in
+[`opus_gemm_common.py`](../../opus_gemm_common.py) keeps B-direct IDs 39585–42089.
+Removed IDs stay vacant. Every retained ID, symbol, launch contract and parameter
+configuration is unchanged, including all 294 round58 selections.
 
-| Shared definitions | Owning header | Consumers |
-| --- | --- | --- |
-| Fragment reads, scale layouts and safe A-scale tail loads | [`pipeline_4wave`](opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_4wave_gfx950.cuh) | Ordinary 4-wave, 2-wave and LDS ring |
-| A-fragment and panel scale layouts | [`pipeline_8wave`](opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_8wave_gfx950.cuh) | 8-wave, 2-wave and ordinary 4-wave |
-| MFMA16 BF16 output packing | [`pipeline_register_prefetch`](opus_gemm_blockscale_mxscale_bpreshuffle_pipeline_register_prefetch_gfx950.cuh) | Register prefetch and LDS ring |
-| Shared constants, kernel arguments and ceiling division | [`traits_4wave_pin_agpr`](opus_gemm_blockscale_mxscale_bpreshuffle_traits_4wave_pin_agpr_gfx950.cuh) | All six traits/pipeline families |
+`name_family` and exported symbols retain historical spellings for replay; use
+`pipeline` / `bpreshuffle_pipeline(instance)` to classify execution flows. Frozen
+reports and historical CO images retain their original content. No new tuning
+or performance result is implied by removing unused pipelines.
 
-Consumers include the owning header. Each kernel retains its computation and
-synchronization schedule. The common A/B matrix layouts remain in the pinned
-pipeline. The traits owner contains no pinned device code, so including shared
-arguments does not require the pinned-AGPR compiler attribute. The common
-kernel-argument ABI is 96 bytes.
+The shared tuner continues to group candidates by pipeline and geometry. Unused
+per-source compiler patterns for retired B-preshuffle generated filenames were
+removed; effective flags for retained configurations are unchanged.
 
-## Tile size and calculation flow
+## Historical validation before the current registry
 
-All current register-prefetch and LDS-ring configurations use BK=128. Their
-parameter tables include these tile geometries:
+The following record describes earlier registry revisions and their original
+measurements. Its old configuration counts, names and file layouts do not describe
+the current organization above.
 
-| Template | Registered BM×BN | Waves per workgroup |
-| --- | --- | --- |
-| `register_prefetch` | 16×16, 16×32, 16×48, 32×32, 32×48, 32×64 | 1, 4 or 8, depending on configuration |
-| `lds_ring` | {32,64,96}×64; {32,48,64,80,96,112,128}×128 | 4 or 8, depending on configuration |
-
-The register template loads A/B into a register prefetch queue, then executes
-MFMA. When `wave_k>1`, waves compute different K partitions and combine their
-FP32 partials through LDS before BF16 conversion. The LDS-ring template instead
-copies A/B into reusable LDS slots, waits for the required data, reads fragments
-into registers and executes MFMA while prefetching future K tiles.
-
-With the wave layout and policies held fixed, increasing a tile changes the
-fragment counts `E_M=BM/(WaveM*16)` and `E_N=BN/(WaveN*16)`. Each wave executes
-`E_M*E_N` native 16×16×128 MFMA operations per K128 tile assigned to it. Operand
-storage, accumulator count and memory-copy work grow accordingly; the template's
-prefetch/compute/reduction structure remains shared.
-
-For example, register configurations with the same 1×1×8 wave layout,
-`prefetch=2` and `output=3` can use 16×32 or 32×32 tiles. Increasing BM raises
-E_M from 1 to 2, so each wave executes four instead of two MFMA operations per
-assigned K128 tile. Both retain the same register prefetch and final WaveK
-reduction flow. Other table rows may change scheduling or output policies
-alongside geometry; those choices remain explicit configuration parameters.
-
-Stages and cluster control queue depth and barrier cadence; `fine_m_loads`
-handles a final A copy with fewer active waves. Scale placement and output
-policies select their own compile-time paths. Global `split_k` partitions work
-between workgroups and adds an FP32 workspace reduction. It is distinct from
-`wave_k`, which cooperates within one workgroup. The same tile can have several
-such configurations without a new handwritten calculation template.
-
-## Parameter schema and catalog enumeration
-
-[`opus_gemm_common.py`](../../opus_gemm_common.py) owns `BpreshuffleConfig`, the
-pipeline-specific parameter domains, validation, instance factory, enumeration,
-shape ranking and exact configuration metadata. All registrations come from
-these parameters in the single
-`a8w8_mxscale_gemm_bpreshuffle_kernels_list`. There is no second catalog registry
-or manual 9xxx dictionary.
-
-| Parameter group | `BpreshuffleConfig` fields |
-| --- | --- |
-| Geometry | `pipeline`, `block_m`, `block_n`, `wave_m`, `wave_n`, `wave_k` |
-| K specialization | `fixed_k` (`0` for runtime K) |
-| Register queue and output | `prefetch`, `output`, `b_cache`, `pad_n`, `reuse_b_scale` |
-| LDS queue and scheduling | `stages`, `cluster`, `register_scales`, `xor_lds`, `early_scale_loads`, `prefetch_before_read`, `read_only_drain`, `fine_m_loads` |
-| Global Split-K and reduction | `split_k`, `reduce_vec`, `reduce_block`, `store_cache` |
-| Compact/panel layouts | `scale_panel`, `group_m`, `interleave_matrix_reads`, `byte_safe_scale_tail` |
-| Eight-wave scheduling/swizzle | `schedule`, `n_swizzle`, `swizzle_group_n`, `swizzle_group_m` |
-| Pinned M tails | `pad_m` |
-
-`generate_configs` expands coupled geometry and policy rows, rather than a
-Cartesian product of every field. `build_catalog` validates and deduplicates
-resolved configurations, then assigns `9000 + i` in the canonical
-`ALL_PIPELINES` order. This follows the parameter-table/factory/enumeration
-pattern used by other OPUS families, such as persistent IDs `300 + i`.
-Enumeration covers all pipelines before any pipeline or shape filter is
-applied. Selecting fewer pipelines or a different shape cannot change an ID.
-The reserved range is 9000–9999; catalog overflow is rejected.
-
-The domain includes the previous 74 generated configurations plus 63 unique
-configurations from the manual base and specialization variants, for the initial
-137. Later append-only entries added short-K 8-wave swizzle 9137 and B-direct 9138,
-bringing that stage to 139. The current 140th entry, 9139, adds FixedK7168 to the
-existing runtime 9030 configuration: 64×128×128, 4×2 waves, 6 stages, cluster 2,
-output 2, early scale loads and SplitK1. Other policies and old IDs/keys remain
-unchanged. It uses the existing LDS-ring body and adds no header or calculation
-body.
-Equivalent resolved kernel/traits combinations appear once. The family counts
-above describe this domain, not every theoretically legal combination of
-parameters or a promise that each configuration is numerically validated.
-Changing the parameter tables or their order can change subsequent IDs; there
-is no compatibility promise for old tuning outputs.
-
-`config_key` hashes the actual kernel symbol and resolved traits arguments,
-including resolved `None` defaults. It supports metadata and deduplication;
-the integer ID itself is sequential. Generated names use configuration identity
-without translating symbols back to historical aliases. Metadata uses schema
-version 2 and describes exactly the configuration launched by the selected ID.
-
-A parameter row can be constructed and passed through the same instance factory:
-
-```python
-from opus_gemm_common import config_from_dict, instance_from_config
-
-config = config_from_dict(dict(
-    pipeline="lds_ring",
-    block_m=64, block_n=64, wave_m=2, wave_n=2,
-    stages=8, cluster=2, early_scale_loads=True,
-))
-candidate = instance_from_config(config)
-```
-
-To extend the registered domain, add the desired parameter row to the existing
-pipeline domain in `generate_configs`; enumeration assigns its ID. Constructing
-an instance alone does not register it. The generator emits thin traits aliases,
-explicit instantiations and a launcher for the selected configuration using the
-existing template headers. No handwritten ID entry, copied kernel, per-tile C++
-alias or shape-dispatch wrapper is needed.
-
-Python rejects parameters that the chosen pipeline does not consume and checks
-layout, resource and launch-contract agreement. C++ `static_assert`s enforce
-detailed layout and LDS constraints. Stage count is tunable only where the
-schedule supports it. Eight-wave scales load once, so runtime K must fit in its
-scale panel; smaller panel pipelines refill scales for long K. FixedK IDs require
-exact K equality. Shape eligibility uses intrinsic alignment, scale capacity and
-addressing restrictions; the former manual M≤512/M≤2048 and short-K tuning caps
-are removed.
-
-## Candidate selection and replay
-
-The default selector ranks legal configurations and returns at most ten IDs per
-shape, with at most two per pipeline. It considers the seven `DEFAULT_PIPELINES`;
-`panel_2wave` is opt-in. This bounded policy does not exhaustively tune all 140
-configurations. `candidate_kids_for_shape(..., all_candidates=True)` bypasses
-ranking and candidate-count limits for explicit IDs and exact replay while
-retaining shape legality. There is no `include_legacy` selection mode.
-
-[`opus_gemm_mxscale_bpreshuffle_tune.py`](../../opus_gemm_mxscale_bpreshuffle_tune.py)
-provides CPU candidate reports through `--explain-candidates`. From the
-repository root, inspect candidate selection without loading the GPU runtime:
-
-```bash
-python csrc/opus_gemm/opus_gemm_mxscale_bpreshuffle_tune.py --explain-candidates --shape 64 256 384 --explain
-```
-
-The report accepts `--pipelines`, `--max-candidates` and `--per-pipeline`.
-GPU tuning uses `--opus-pipelines`, `--opus-max-candidates` and optional explicit
-`--opus-kids`. Explicit IDs and replay select the same single configuration
-regardless of ranking policy. Old CSVs can supply shapes through `-i`, but their
-IDs/names cannot be replayed against the new registry; save new tuning outputs
-with complete configuration metadata and rebuild the OPUS JIT.
-
-## Validation and subsequent optimization
+### Validation and subsequent optimization
 
 The initial parameterization changed registration and selection without changing
 the six pipeline or six traits headers. It does not establish GPU

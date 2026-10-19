@@ -692,6 +692,14 @@ def run_bmm_mxscale_bench(
     All layouts and any split-K workspace are prepared by the data generator;
     this function performs no layout conversion or workspace allocation."""
     inst = _CODEGEN_BMM[kernelId]
+    if splitK > 1:
+        padded_m = (A_mx.size(0) + inst.B_M - 1) // inst.B_M * inst.B_M
+        padded_n = (W_mx.size(1) + inst.B_N - 1) // inst.B_N * inst.B_N
+        if padded_m * padded_n > (1 << 31) - 1:
+            raise ValueError(
+                f"OPUS BMM kid {kernelId} split-K workspace batch stride "
+                "must fit signed int32"
+            )
     Wb = W_sh if inst.needs_preshuffled_b else W_mx
     # A, its plain scale and Y all arrive [M, batch, ...] contiguous, which is
     # both what the launcher takes and what a serving stack holds.
