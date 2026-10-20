@@ -117,7 +117,7 @@ to the same `_execute_a16w16` planner/executor used by A16W16 GEMM.
 | `a16w16` | gfx942, gfx950, gfx1250 | GEMM or BMM; BF16 `XQ/WQ`, normally BF16 or FP32 `Y`, plain WQ, optional bias/split-K/Torch workspace; gfx942 BF16-workspace exact kids require BF16 `Y` |
 | `a8w8` | gfx950 kid 2 | GEMM only; FP8 `XQ/WQ`, FP32 `Y`, plain WQ, no scales |
 | `a8w8_blockscale` | gfx950 kid 1 | GEMM only; FP8 `XQ/WQ`, FP32 `Y`, plain WQ, two FP32 scales |
-| `a8w8_blockscale_bpreshuffle` | gfx942 kid 11000 | GEMM only; FP8 `XQ/WQ`, BF16 `Y`, pre-shuffled WQ, two FP32 scales |
+| `a8w8_blockscale_bpreshuffle` | gfx942 kid 11000; gfx950 registered MX-scale configurations | GEMM only; FP8 `XQ/WQ`, BF16 `Y`, pre-shuffled WQ; gfx942 uses FP32 scales, gfx950 uses E8M0 scales and may use fixed split-K workspace |
 | `a8w8_mxscale_bmm` | gfx950 global kids 8000--8653 (45 registered ids) | BMM only; batch-first FP8 inputs, E8M0 scales, BF16 or FP32 output, optional split-K Torch workspace |
 
 Empty family tables on another architecture are valid capability states. A
@@ -215,7 +215,7 @@ caller policy.
 The caller caches the final id/split pair per shape: split-one enters the
 checked raw launcher directly, while workspace launches call `opus_bmm`.
 
-### gfx942 blockscale bpreshuffle
+### Blockscale bpreshuffle
 
 ```python
 from aiter.ops.shuffle import shuffle_weight
@@ -237,9 +237,25 @@ shape or strides can prove. Kid 11000 requires batch one, exact 128-wide N/K
 tiles, BF16 output, and its registered scale storage contracts. The high-level
 `gemm_a8w8_blockscale_bpreshuffle` dispatcher enters this OPUS route only when
 the tuned row has `libtype=opus`; CK, CKTile, ASM and Triton rows remain on
-their respective backends. gfx950 currently registers zero OPUS kids for this
-family, so a gfx950 OPUS validation must report it unavailable rather than run
-a non-OPUS fallback as coverage.
+their respective backends.
+
+On gfx950, MX-scale bpreshuffle uses FP8 E4M3FN inputs, BF16 output,
+column-major E8M0 A scales of logical shape `[M,K/128]` and stride `(1,M)`,
+and contiguous E8M0 B scales of shape `[N/128,K/128]`. Both E8M0 tensors and
+their `uint8` views are accepted. The ring pipelines use `Wk=1`; their M/N
+wave layouts and runtime M dimension are independent of the tuning table.
+
+A configuration's `bpreshuffle_split_k` fixes its K partition count. Keep
+the public `split_k=0` argument even for these configurations. Omitting
+`workspace` allocates the required Torch buffer; callers can reuse one by
+querying `bpreshuffle_workspace_bytes(instance, M, N, K)` from
+`csrc.opus_gemm.opus_gemm_common` and allocating that many bytes as contiguous,
+16-byte-aligned FP32 storage on the input device. If
+`instance.bpreshuffle_entry["workspace_zero_init"]` is true, initialize it to
+zero before its first launch; the fused reducer resets its counters for
+subsequent launches on the same stream. Direct configurations reject a
+supplied workspace. Tensor and workspace contracts are checked in C++ on
+every launch, including the native Torch Tensor bridge used on gfx950.
 
 ## Tuning compatibility
 
@@ -308,10 +324,14 @@ validate exact kid and split_k
   -> _launch_a16w16_backend
 ```
 
-There is no process-global Tensor, pointer registry, HIP allocator, or prewarm
-API. The bounded public-contract and A16 launch-plan caches store only registry
-metadata, integers, dtypes, option-presence flags and shapes; they never retain
-Tensor objects, data pointers, devices, streams or workspaces.
+The bounded public-contract and A16 launch-plan caches store registry metadata,
+integers, dtypes, option-presence flags and shapes. The gfx950 fused bpreshuffle
+adapter also keeps up to eight stream-local scratch tensors, each at most
+32 MiB, for ordinary automatic-workspace calls. It keys those buffers by
+device, stream, capacity and counter extent. Calls on one stream are ordered;
+each kernel overwrites its partials and resets its counters before reuse.
+Graph capture allocates separate graph-owned scratch and initializes its
+counters inside the capture. Larger workspaces use per-call allocation.
 
 Let `padded_M=ceil_div(M,B_M)*B_M` and
 `padded_N=ceil_div(N,B_N)*B_N`:
@@ -323,6 +343,13 @@ Let `padded_M=ceil_div(M,B_M)*B_M` and
 | gfx1250 two-stage | `[workspace_capacity_split_k,padded_M,padded_N]` | FP32 |
 | gfx1250 pre-built CO direct | none | none |
 | gfx1250 fused | not publicly registered | factory/emitter/source retained for repair |
+| gfx950 bpreshuffle fused split-K | `[tiles * splitK * B_M * B_N + tiles]` | FP32 partials, trailing 32-bit counters |
+
+The bpreshuffle fused split count belongs to the selected kernel ID. Public
+`split_k` stays zero. An explicit fused workspace needs zero-initialized
+trailing counters; its partials may be uninitialized. The kernel resets those
+counters for subsequent calls on the same stream. Caller-owned workspaces
+must not be used concurrently on different streams.
 
 For gfx942, `abi_split_k` records the converged value passed to the launcher.
 `workspace_capacity_split_k` uses the same value, so automatic allocation

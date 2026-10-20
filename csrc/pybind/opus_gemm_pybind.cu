@@ -9,6 +9,8 @@
 #include "opus_bmm.h"
 #include "opus_gemm.h"
 
+void opus_gemm_bind_tensor_launches(pybind11::module_&);
+
 PYBIND11_MODULE(AITER_EXTENSION_NAME, m)
 {
     AITER_SET_STREAM_PYBIND
@@ -17,6 +19,7 @@ PYBIND11_MODULE(AITER_EXTENSION_NAME, m)
     OPUS_GEMM_A8W8_BLOCKSCALE_LAUNCH_PYBIND;
     OPUS_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_LAUNCH_PYBIND;
     OPUS_GEMM_A8W8_MXSCALE_BMM_LAUNCH_PYBIND;
+    opus_gemm_bind_tensor_launches(m);
 }
 
 #endif // !__HIP_DEVICE_COMPILE__

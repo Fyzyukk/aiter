@@ -474,6 +474,22 @@
       "-amdgpu-function-calls=false",
       "-mllvm",
       "-enable-post-misched=0"
+    ],
+    "flags_22": [
+      "-mllvm",
+      "--amdgpu-kernarg-preload-count=32",
+      "-mllvm",
+      "--amdgpu-mfma-vgpr-form",
+      "-mllvm",
+      "--lsr-drop-solution=1",
+      "-mllvm",
+      "-amdgpu-early-inline-all=true",
+      "-mllvm",
+      "-amdgpu-function-calls=false",
+      "-mllvm",
+      "-enable-post-misched=0",
+      "-fno-gpu-rdc",
+      "-fgpu-flush-denormals-to-zero"
     ]
   },
   "image_suffixes": {
@@ -711,7 +727,14 @@
     "9502737": "k7168_p4_vf0_contig",
     "9502738": "p5_c0x0x2",
     "9502739": "p5_c0x0x2_pinA1B0C0",
-    "9502740": "p5_pinA1B0C1"
+    "9502740": "p5_pinA1B0C1",
+    "9502801": "512x192x256x128_t192_256_16_0_4_0_0_0_flags_21",
+    "9502802": "256x128x128x128_t128_128_64_0_2_0_0_0_flags_21",
+    "9502803": "128x64x64x128_t64_64_6_5_17_1_7168_2_1_1_2_2_128_1_0_1_flags_00",
+    "9502804": "512x192x256x128_t192_256_16_1536_4_0_0_0_0_0_0_0_1_flags_00",
+    "9502860": "512x256x256x128_t256_256_16_1536_4_0_0_0_1_0_0_0_0_flags_00",
+    "9502883": "512x192x256x128_t192_256_16_1536_4_0_0_2_0_0_0_0_1_flags_22",
+    "9502884": "512x256x256x128_t256_256_16_1536_4_0_0_2_1_0_0_0_0_flags_22"
   },
   "pin_groups": [
     {"base": 950111, "kids": {"0": 9502667, "1": 9502668, "4": 950111, "5": 9502669}},
@@ -6403,6 +6426,354 @@
       "body_args": ["CoTraits"],
       "grid_layout": "xcd",
       "pipeline_header": "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh"
+    },
+    {
+      "kid": 9502801,
+      "pipeline": "lds_panel",
+      "block_size": 512,
+      "tile": [
+        192,
+        256,
+        128
+      ],
+      "stages": 2,
+      "wave_layout": [
+        4,
+        2
+      ],
+      "launch_bounds": [
+        512,
+        1
+      ],
+      "device_flags": "flags_21",
+      "pad_m": true,
+      "wide_output": true,
+      "max_k": 2048,
+      "fixed_k": 0,
+      "configKey": "opus_gemm_gfx950_lds_panel_co_512x192x256x128_t192_256_16_0_4_0_0_0_flags_21",
+      "traits": {
+        "name": "opus_gemm_bpreshuffle_lds_panel_traits",
+        "args": [
+          "192",
+          "256",
+          "16",
+          "0",
+          "4",
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "body_func": "opus_gemm_bpreshuffle_lds_panel_body",
+      "symbol": "opus_gemm_gfx950_lds_panel_co_512x192x256x128_t192_256_16_0_4_0_0_0_flags_21",
+      "grid_layout": "n_m",
+      "pipeline_header": "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_panel_gfx950.cuh",
+      "body_args": [
+        "CoTraits"
+      ],
+      "m_align": 16
+    },
+    {
+      "kid": 9502802,
+      "pipeline": "lds_panel",
+      "block_size": 256,
+      "tile": [
+        128,
+        128,
+        128
+      ],
+      "stages": 2,
+      "wave_layout": [
+        2,
+        2
+      ],
+      "launch_bounds": [
+        256,
+        1
+      ],
+      "device_flags": "flags_21",
+      "pad_m": true,
+      "wide_output": true,
+      "max_k": 8192,
+      "fixed_k": 0,
+      "configKey": "opus_gemm_gfx950_lds_panel_co_256x128x128x128_t128_128_64_0_2_0_0_0_flags_21",
+      "traits": {
+        "name": "opus_gemm_bpreshuffle_lds_panel_traits",
+        "args": [
+          "128",
+          "128",
+          "64",
+          "0",
+          "2",
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "body_func": "opus_gemm_bpreshuffle_lds_panel_body",
+      "symbol": "opus_gemm_gfx950_lds_panel_co_256x128x128x128_t128_128_64_0_2_0_0_0_flags_21",
+      "grid_layout": "n_m",
+      "pipeline_header": "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_panel_gfx950.cuh",
+      "body_args": [
+        "CoTraits"
+      ],
+      "m_align": 16
+    },
+    {
+      "kid": 9502803,
+      "pipeline": "b_direct",
+      "block_size": 128,
+      "tile": [
+        64,
+        64,
+        128
+      ],
+      "stages": 6,
+      "wave_layout": [
+        1,
+        2
+      ],
+      "launch_bounds": [
+        128,
+        1
+      ],
+      "device_flags": "flags_00",
+      "pad_m": true,
+      "wide_output": true,
+      "max_k": 7168,
+      "fixed_k": 7168,
+      "configKey": "opus_gemm_gfx950_b_direct_co_128x64x64x128_t64_64_6_5_17_1_7168_2_1_1_2_2_128_1_0_1_flags_00",
+      "traits": {
+        "name": "opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits",
+        "args": [
+          "64",
+          "64",
+          "6",
+          "5",
+          "17",
+          "true",
+          "7168",
+          "2",
+          "1",
+          "1",
+          "2",
+          "2",
+          "128",
+          "true",
+          "false",
+          "true"
+        ]
+      },
+      "body_func": "opus_gemm_b_direct_detail::bulk_panel_body",
+      "body_args": [
+        "CoTraits"
+      ],
+      "symbol": "opus_gemm_gfx950_b_direct_co_128x64x64x128_t64_64_6_5_17_1_7168_2_1_1_2_2_128_1_0_1_flags_00",
+      "grid_layout": "xcd",
+      "pipeline_header": "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh",
+      "m_align": 16
+    },
+    {
+      "kid": 9502804,
+      "pipeline": "lds_panel",
+      "block_size": 512,
+      "tile": [
+        192,
+        256,
+        128
+      ],
+      "stages": 2,
+      "wave_layout": [
+        4,
+        2
+      ],
+      "launch_bounds": [
+        512,
+        1
+      ],
+      "device_flags": "flags_00",
+      "pad_m": true,
+      "wide_output": true,
+      "max_k": 2048,
+      "fixed_k": 1536,
+      "configKey": "opus_gemm_gfx950_lds_panel_co_512x192x256x128_t192_256_16_1536_4_0_0_0_0_0_0_0_1_flags_00",
+      "traits": {
+        "name": "opus_gemm_bpreshuffle_lds_panel_traits",
+        "args": [
+          "192",
+          "256",
+          "16",
+          "1536",
+          "4",
+          "0",
+          "0",
+          "0",
+          "false",
+          "false",
+          "false",
+          "false",
+          "true"
+        ]
+      },
+      "body_func": "opus_gemm_bpreshuffle_lds_panel_body",
+      "symbol": "opus_gemm_gfx950_lds_panel_co_512x192x256x128_t192_256_16_1536_4_0_0_0_0_0_0_0_1_flags_00",
+      "grid_layout": "n_m",
+      "pipeline_header": "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_panel_gfx950.cuh",
+      "body_args": [
+        "CoTraits"
+      ],
+      "m_align": 16
+    },
+    {
+      "kid": 9502860,
+      "pipeline": "lds_panel",
+      "block_size": 512,
+      "tile": [
+        256,
+        256,
+        128
+      ],
+      "stages": 2,
+      "wave_layout": [
+        4,
+        2
+      ],
+      "launch_bounds": [
+        512,
+        1
+      ],
+      "device_flags": "flags_00",
+      "pad_m": true,
+      "wide_output": true,
+      "max_k": 2048,
+      "fixed_k": 1536,
+      "configKey": "opus_gemm_gfx950_lds_panel_co_512x256x256x128_t256_256_16_1536_4_0_0_0_1_0_0_0_0_flags_00",
+      "traits": {
+        "name": "opus_gemm_bpreshuffle_lds_panel_traits",
+        "args": [
+          "256",
+          "256",
+          "16",
+          "1536",
+          "4",
+          "0",
+          "0",
+          "0",
+          "true",
+          "false",
+          "false",
+          "false",
+          "false"
+        ]
+      },
+      "body_func": "opus_gemm_bpreshuffle_lds_panel_body",
+      "symbol": "opus_gemm_gfx950_lds_panel_co_512x256x256x128_t256_256_16_1536_4_0_0_0_1_0_0_0_0_flags_00",
+      "grid_layout": "n_m",
+      "pipeline_header": "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_panel_gfx950.cuh",
+      "body_args": [
+        "CoTraits"
+      ],
+      "m_align": 16
+    },
+    {
+      "kid": 9502883,
+      "pipeline": "lds_panel",
+      "block_size": 512,
+      "tile": [
+        192,
+        256,
+        128
+      ],
+      "stages": 2,
+      "wave_layout": [
+        4,
+        2
+      ],
+      "launch_bounds": [
+        512,
+        1
+      ],
+      "device_flags": "flags_22",
+      "pad_m": true,
+      "m_align": 16,
+      "fixed_k": 1536,
+      "max_k": 1536,
+      "configKey": "opus_gemm_gfx950_lds_panel_co_512x192x256x128_t192_256_16_1536_4_0_0_2_0_0_0_0_1_flags_22",
+      "traits": {
+        "name": "opus_gemm_bpreshuffle_lds_panel_traits",
+        "args": [
+          "192",
+          "256",
+          "16",
+          "1536",
+          "4",
+          "0",
+          "0",
+          "2",
+          "false",
+          "false",
+          "false",
+          "false",
+          "true"
+        ]
+      },
+      "body_func": "opus_gemm_bpreshuffle_lds_panel_body",
+      "symbol": "opus_gemm_gfx950_lds_panel_co_512x192x256x128_t192_256_16_1536_4_0_0_2_0_0_0_0_1_flags_22",
+      "grid_layout": "n_m",
+      "pipeline_header": "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_panel_gfx950.cuh",
+      "body_args": [
+        "CoTraits"
+      ]
+    },
+    {
+      "kid": 9502884,
+      "pipeline": "lds_panel",
+      "block_size": 512,
+      "tile": [
+        256,
+        256,
+        128
+      ],
+      "stages": 2,
+      "wave_layout": [
+        4,
+        2
+      ],
+      "launch_bounds": [
+        512,
+        1
+      ],
+      "device_flags": "flags_22",
+      "pad_m": true,
+      "m_align": 16,
+      "fixed_k": 1536,
+      "max_k": 1536,
+      "configKey": "opus_gemm_gfx950_lds_panel_co_512x256x256x128_t256_256_16_1536_4_0_0_2_1_0_0_0_0_flags_22",
+      "traits": {
+        "name": "opus_gemm_bpreshuffle_lds_panel_traits",
+        "args": [
+          "256",
+          "256",
+          "16",
+          "1536",
+          "4",
+          "0",
+          "0",
+          "2",
+          "true",
+          "false",
+          "false",
+          "false",
+          "false"
+        ]
+      },
+      "body_func": "opus_gemm_bpreshuffle_lds_panel_body",
+      "symbol": "opus_gemm_gfx950_lds_panel_co_512x256x256x128_t256_256_16_1536_4_0_0_2_1_0_0_0_0_flags_22",
+      "grid_layout": "n_m",
+      "pipeline_header": "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_panel_gfx950.cuh",
+      "body_args": [
+        "CoTraits"
+      ]
     }
   ]
 }

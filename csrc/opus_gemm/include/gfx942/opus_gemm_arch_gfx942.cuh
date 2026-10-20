@@ -35,7 +35,7 @@ using OpusA8W8BlockscaleKernel = void (*)(
     aiter_tensor_t&, aiter_tensor_t&);
 using OpusA8W8BlockscaleBpreshuffleKernel = void (*)(
     aiter_tensor_t&, aiter_tensor_t&, aiter_tensor_t&,
-    aiter_tensor_t&, aiter_tensor_t&);
+    aiter_tensor_t&, aiter_tensor_t&, std::optional<aiter_tensor_t>);
 #endif
 
 namespace opus_gfx942_detail

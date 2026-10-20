@@ -82,6 +82,24 @@ void opus_gemm_a8w8_mxscale_bmm_launch(
     int split_k);
 ```
 
+## gfx950 native bpreshuffle
+
+The native Tensor bridge forwards FP8 E4M3FN operands, column-major E8M0 A
+scales, row-major E8M0 B scales and BF16 output to the same checked generated
+launchers. gfx942 keeps its FP32-scale descriptor ABI.
+
+The workspace sibling of `opus_gemm_a8w8_blockscale_bpreshuffle_launch` accepts
+an additional `std::optional<aiter_tensor_t> workspace`. Geometry metadata
+selects direct, two-launch reduction, or XCD-grouped fused split-K emission.
+Fused scratch contains overwritten FP32 partials followed by arrival counters;
+only the counters require initial zeros. Python owns allocation and bounded
+stream-local reuse; captures receive graph-owned allocations.
+
+New small-shape configs extend the existing `include/gfx950` pipeline/traits,
+`codegen/gen_instances_gfx950.py`, registry and `gen_co/gfx950` layout. IDs use
+the branch's `950` architecture prefix. M/N remain runtime dimensions and the
+451-shape performance list does not restrict support.
+
 ## Registry and capability
 
 | Family | gfx942 | gfx950 | gfx1250 |
@@ -89,7 +107,7 @@ void opus_gemm_a8w8_mxscale_bmm_launch(
 | `a16w16` | direct + two-stage | direct + two-stage | two-stage + pre-built BF16 direct; fused source retained but unregistered |
 | `a8w8` | empty | kid 2, FP32 Y | empty |
 | `a8w8_blockscale` | empty | kid 1, FP32 Y | empty |
-| `a8w8_blockscale_bpreshuffle` | kid 11000, BF16 Y | empty | empty |
+| `a8w8_blockscale_bpreshuffle` | kid 11000, BF16 Y | native E8M0 direct + fixed split-K, BF16 Y | empty |
 | `a8w8_mxscale_bmm` | empty | registered BMM ids, including compact ids 8470--8484; BF16/FP32 Y | empty |
 
 Empty tables are explicit capability states. `kernels_list` is the source of

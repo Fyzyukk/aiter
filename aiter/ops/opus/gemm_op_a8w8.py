@@ -8,6 +8,8 @@
 # make it add a dummy CUDA Tensor to every raw launch, which is observable host
 # overhead on short BMM kernels.
 
+from functools import lru_cache
+
 import torch
 from torch import Tensor
 
@@ -15,7 +17,7 @@ from csrc.opus_gemm.opus_gemm_common import (
     a8w8_mxscale_bmm_kernels_list,
 )
 
-from ...jit.core import compile_ops
+from ...jit.core import compile_ops, get_module
 from ._arch import _device_arch
 from .launch_plan import (
     _A8W8_BLOCKSCALE_FAMILY,
@@ -35,6 +37,19 @@ _E8M0_DTYPES = frozenset(
     )
     if dtype is not None
 )
+
+
+@lru_cache(maxsize=8)
+def _cached_bpreshuffle_workspace(
+    device_index: int, stream_handle: int, numel: int, tiles: int,
+) -> Tensor:
+    # Calls on one stream are ordered. Each fused launch overwrites all its
+    # partials and restores its counters, so the next call can reuse both.
+    # The caller excludes captures and limits each entry to 32 MiB.
+    workspace = torch.empty(numel, device=torch.device("cuda", device_index),
+                            dtype=torch.float32)
+    workspace[-tiles:].zero_()
+    return workspace
 
 
 # ---- Low-level A8W8 backend ----------------------------------------------
@@ -115,6 +130,57 @@ def _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
     Y: Tensor,
     kid: int,
 ) -> Tensor: ...
+
+
+def _gen_opus_gemm_bpreshuffle_workspace_fake(
+    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor,
+    Y: Tensor, kid: int, workspace: Tensor,
+) -> Tensor:
+    return Y
+
+
+@compile_ops(
+    "module_deepgemm_opus",
+    fc_name="opus_gemm_a8w8_blockscale_bpreshuffle_workspace_launch",
+    gen_fake=_gen_opus_gemm_bpreshuffle_workspace_fake,
+    develop=True,
+)
+def _opus_gemm_bpreshuffle_workspace_raw(
+    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor,
+    Y: Tensor, kid: int, workspace: Tensor,
+) -> Tensor: ...
+
+
+@compile_ops(
+    "module_deepgemm_opus",
+    fc_name="opus_gemm_a8w8_blockscale_bpreshuffle_tensor_launch",
+    gen_fake=_gen_opus_gemm_a8w8_blockscale_bpreshuffle_launch_fake_tensors,
+)
+def _opus_gemm_bpreshuffle_tensor_raw(
+    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor,
+    Y: Tensor, kid: int,
+) -> Tensor: ...
+
+
+@compile_ops(
+    "module_deepgemm_opus",
+    fc_name="opus_gemm_a8w8_blockscale_bpreshuffle_workspace_tensor_launch",
+    gen_fake=_gen_opus_gemm_bpreshuffle_workspace_fake,
+)
+def _opus_gemm_bpreshuffle_workspace_tensor_raw(
+    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor,
+    Y: Tensor, kid: int, workspace: Tensor,
+) -> Tensor: ...
+
+
+@lru_cache(maxsize=1)
+def _bpreshuffle_has_tensor_launch() -> bool:
+    # Older prebuilt/JIT modules remain usable through the descriptor ABI.
+    try:
+        module = get_module("module_deepgemm_opus")
+    except ModuleNotFoundError:
+        return True  # The first Tensor launch builds the current module.
+    return hasattr(module, "opus_gemm_a8w8_blockscale_bpreshuffle_tensor_launch")
 
 
 def opus_gemm_a8w8_blockscale_bpreshuffle_tune(
@@ -210,18 +276,24 @@ def _launch_a8w8_backend(
         return
 
     if family == _A8W8_BPRESHUFFLE_FAMILY:
-        if workspace is not None or split_k != 0:
-            raise RuntimeError(
-                "A8W8 blockscale-bpreshuffle backend received split-K state"
+        if split_k != 0:
+            raise RuntimeError("bpreshuffle split-K is fixed by the kernel ID")
+        tensor_launch = x_scale.dtype in _E8M0_DTYPES and _bpreshuffle_has_tensor_launch()
+        if not tensor_launch:
+            # Keep the gfx942 FP32-scale and older descriptor-module ABI.
+            XQ, WQ, Y = (t.unsqueeze(0) if t.ndim == 2 else t for t in (XQ, WQ, Y))
+        if workspace is None:
+            launch = (_opus_gemm_bpreshuffle_tensor_raw if tensor_launch
+                      else _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw)
+            launch(
+                XQ, WQ, x_scale, w_scale, Y, kid,
             )
-        _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
-            XQ,
-            WQ,
-            x_scale,
-            w_scale,
-            Y,
-            kid,
-        )
+        else:
+            launch = (_opus_gemm_bpreshuffle_workspace_tensor_raw if tensor_launch
+                      else _opus_gemm_bpreshuffle_workspace_raw)
+            launch(
+                XQ, WQ, x_scale, w_scale, Y, kid, workspace,
+            )
         return
 
     if family == _A8W8_MXSCALE_BMM_FAMILY:
@@ -328,6 +400,7 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
     Y: Tensor,
     *,
     kid: int,
+    workspace: Tensor | None = None,
     route_arch: str | None = None,
     instance: object | None = None,
 ) -> Tensor:
@@ -352,13 +425,71 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
             kid=kid,
             output_dtype=Y.dtype,
         )
+    if instance is None:
+        from csrc.opus_gemm.opus_gemm_common import kernels_list
+        instance = kernels_list[resolved_kid]
+    if workspace is not None:
+        # The C++ launcher validates every supplied tensor and workspace on
+        # each call. Python checks below protect the allocation path only.
+        rule = (instance.bpreshuffle_entry or {}).get("workspace_rule", ("none",))
+        if rule[0] == "none":
+            raise ValueError("this OPUS bpreshuffle kid does not use workspace")
+    else:
+        from csrc.opus_gemm.opus_gemm_common import bpreshuffle_workspace_bytes
+        required_workspace = bpreshuffle_workspace_bytes(instance, XQ.shape[-2], WQ.shape[-2], XQ.shape[-1])
+        if required_workspace:
+            # Allocate through PyTorch so stream lifetime and graph pools are tracked.
+            # Shape/dtype/device checks precede allocation; C++ also checks every
+            # physical workspace contract for direct raw-ABI callers.
+            from csrc.opus_gemm.opus_gemm_common import a8w8_mxscale_bpreshuffle_supports_shape
+            m, k = XQ.shape
+            n = WQ.shape[0]
+            if (WQ.shape[1] != k or Y.shape != (m, n)
+                    or not a8w8_mxscale_bpreshuffle_supports_shape(instance, m, n, k)):
+                raise ValueError("OPUS bpreshuffle input/output shapes are unsupported")
+            if XQ.dtype != torch.float8_e4m3fn or WQ.dtype != XQ.dtype or Y.dtype != torch.bfloat16:
+                raise ValueError("OPUS native bpreshuffle requires FP8 E4M3FN inputs and BF16 output")
+            if any(t.device != XQ.device for t in (WQ, Y, x_scale, w_scale)):
+                raise ValueError("OPUS bpreshuffle tensors must be on the same device")
+            if any(not t.is_contiguous() for t in (XQ, WQ, Y)):
+                raise ValueError("OPUS bpreshuffle XQ/WQ/Y must be contiguous")
+            if (x_scale.dtype not in _E8M0_DTYPES or w_scale.dtype not in _E8M0_DTYPES
+                    or x_scale.shape != (m, k // 128) or x_scale.stride() != (1, m)
+                    or w_scale.shape != (n // 128, k // 128) or not w_scale.is_contiguous()):
+                raise ValueError("OPUS bpreshuffle requires column-major E8M0 A scales and row-major E8M0 B scales")
+            zero_init = bool(instance.bpreshuffle_entry and
+                             instance.bpreshuffle_entry.get('workspace_zero_init'))
+            rule = instance.bpreshuffle_entry["workspace_rule"]
+            tiles = ((m + instance.B_M - 1) // instance.B_M) * (n // instance.B_N)
+            reuse = (zero_init and rule[0] == "tiles"
+                     and required_workspace <= 32 * 1024 * 1024
+                     and not torch.cuda.is_current_stream_capturing())
+            if reuse:
+                stream = torch.cuda.current_stream(XQ.device)
+                workspace = _cached_bpreshuffle_workspace(
+                    XQ.device.index, stream.cuda_stream,
+                    (required_workspace + 3) // 4, tiles,
+                )
+            else:
+                workspace = torch.empty(
+                    (required_workspace + 3) // 4, device=XQ.device, dtype=torch.float32,
+                )
+                if zero_init:
+                    # Partials are overwritten before publication; only the
+                    # trailing counters need zeroing. Captures own this storage.
+                    if rule[0] == "tiles":
+                        workspace[-tiles:].zero_()
+                    else:
+                        workspace.zero_()
+    # The bpreshuffle C++ ABI accepts logical 2D tensors and validates them
+    # directly. Keep their rank here instead of creating three batch-one views.
     _launch_a8w8_backend(
-        XQ.unsqueeze(0),
-        WQ.unsqueeze(0),
-        Y.unsqueeze(0),
+        XQ,
+        WQ,
+        Y,
         x_scale,
         w_scale,
-        None,
+        workspace,
         _A8W8_BPRESHUFFLE_FAMILY,
         resolved_kid,
         0,

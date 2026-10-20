@@ -1290,9 +1290,15 @@ def gemm_a8w8_blockscale_bpreshuffle(
     # FP32 scales use CK / asm below.
     if (
         get_gfx() == "gfx950"
-        and x_scale.dtype == dtypes.fp8_e8m0
-        and w_scale.dtype == dtypes.fp8_e8m0
+        and x_scale.dtype in (dtypes.fp8_e8m0, torch.uint8)
+        and w_scale.dtype in (dtypes.fp8_e8m0, torch.uint8)
     ):
+        # Byte views carry the same E8M0 values; keep them on the native
+        # MX-scale route instead of falling through to FP32-scale backends.
+        if x_scale.dtype == torch.uint8:
+            x_scale = x_scale.view(dtypes.fp8_e8m0)
+        if w_scale.dtype == torch.uint8:
+            w_scale = w_scale.view(dtypes.fp8_e8m0)
         return _gemm_mxscale_bpreshuffle(XQ, WQ, x_scale, w_scale, Y)
 
     # temporarily guard scale that are not fp32.

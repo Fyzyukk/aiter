@@ -286,5 +286,29 @@ def test_mxscale_invalid_tuned_kid_warns_and_uses_heuristic(
         policy._load_mxscale_bmm_tuned.cache_clear()
 
 
+@pytest.mark.parametrize("scale_dtype", [torch.float8_e8m0fnu, torch.uint8])
+def test_gfx950_bpreshuffle_byte_scales_use_mxscale_route(monkeypatch, scale_dtype):
+    calls = []
+
+    def fake_mxscale(x, w, xs, ws, y):
+        calls.append((xs, ws))
+        return y
+
+    monkeypatch.setattr(general_a8w8, "get_gfx", lambda: "gfx950")
+    monkeypatch.setattr(general_a8w8, "_gemm_mxscale_bpreshuffle", fake_mxscale)
+    x = torch.empty((2, 256), dtype=torch.float8_e4m3fn)
+    w = torch.empty((128, 256), dtype=torch.float8_e4m3fn)
+    xs = torch.empty((2, 2), dtype=scale_dtype)
+    ws = torch.empty((1, 2), dtype=scale_dtype)
+    y = torch.empty((2, 128), dtype=torch.bfloat16)
+    result = general_a8w8.gemm_a8w8_blockscale_bpreshuffle(x, w, xs, ws, out=y)
+    assert result is y
+    assert len(calls) == 1
+    for original, passed in zip((xs, ws), calls[0]):
+        assert passed.dtype == torch.float8_e8m0fnu
+        assert passed.data_ptr() == original.data_ptr()
+        assert passed.stride() == original.stride()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
