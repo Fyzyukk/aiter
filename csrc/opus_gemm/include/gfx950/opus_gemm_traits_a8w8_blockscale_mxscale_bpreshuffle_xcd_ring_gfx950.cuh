@@ -5,28 +5,54 @@
 
 // A/B LDS ring with resident scales. SplitK=1 writes C directly; split-K
 // uses the paired xcd_ring grid/workspace contract for XCD-local publication.
-template <int BM, int BN, int WN, int BK, int Stages, int TotalK, int SplitK,
-          int WM = 1, bool CompactScale = false, int BCache = 0>
-struct opus_gemm_bpreshuffle_xcd_ring_traits {
-    static constexpr int B_M = BM, B_N = BN, B_K = BK;
-    static constexpr int T_M = WM, T_N = WN, T_K = 1, BLOCK_SIZE = WM * WN * 64;
-    static constexpr int E_M = BM / (16 * WM), E_N = BN / (16 * WN);
-    static constexpr int W_M = 16, W_N = 16, W_K = 128, WG_PER_CU = 1;
-    static constexpr int SPLIT_K = SplitK, TOTAL_K = TotalK, K = TotalK / SplitK;
-    static constexpr int PANELS = K / BK, KS = BK / 128, SC = K / 128;
-    static constexpr int STAGES = Stages, INITIAL = Stages - 1;
-    static constexpr int A_BYTES = BM * BK, B_BYTES = BN * BK;
-    static constexpr int STAGE_BYTES = A_BYTES + B_BYTES;
-    static constexpr int A_COPIES = A_BYTES / (BLOCK_SIZE * 16);
-    static constexpr int B_COPIES = B_BYTES / (BLOCK_SIZE * 16);
+template <int BM,
+          int BN,
+          int WN,
+          int BK,
+          int Stages,
+          int TotalK,
+          int SplitK,
+          int WM            = 1,
+          bool CompactScale = false,
+          int BCache        = 0>
+struct opus_gemm_bpreshuffle_xcd_ring_traits
+{
+    static constexpr int B_M           = BM;
+    static constexpr int B_N           = BN;
+    static constexpr int B_K           = BK;
+    static constexpr int T_M           = WM;
+    static constexpr int T_N           = WN;
+    static constexpr int T_K           = 1;
+    static constexpr int BLOCK_SIZE    = WM * WN * 64;
+    static constexpr int E_M           = BM / (16 * WM);
+    static constexpr int E_N           = BN / (16 * WN);
+    static constexpr int W_M           = 16;
+    static constexpr int W_N           = 16;
+    static constexpr int W_K           = 128;
+    static constexpr int WG_PER_CU     = 1;
+    static constexpr int SPLIT_K       = SplitK;
+    static constexpr int TOTAL_K       = TotalK;
+    static constexpr int K             = TotalK / SplitK;
+    static constexpr int PANELS        = K / BK;
+    static constexpr int KS            = BK / 128;
+    static constexpr int SC            = K / 128;
+    static constexpr int STAGES        = Stages;
+    static constexpr int INITIAL       = Stages - 1;
+    static constexpr int A_BYTES       = BM * BK;
+    static constexpr int B_BYTES       = BN * BK;
+    static constexpr int STAGE_BYTES   = A_BYTES + B_BYTES;
+    static constexpr int A_COPIES      = A_BYTES / (BLOCK_SIZE * 16);
+    static constexpr int B_COPIES      = B_BYTES / (BLOCK_SIZE * 16);
     static constexpr int MATRIX_ISSUES = A_COPIES + B_COPIES;
     // A compact panel copies four adjacent M scales per lane. Its host support
     // contract requires M and the column stride to be divisible by four.
-    static constexpr int SCALE_COPY = CompactScale ? 4 : 1, B_CACHE = BCache;
+    static constexpr int SCALE_COPY = CompactScale ? 4 : 1;
+    static constexpr int B_CACHE    = BCache;
     static constexpr int SA_COPIES =
         (BM * SC + BLOCK_SIZE * SCALE_COPY - 1) / (BLOCK_SIZE * SCALE_COPY);
-    static constexpr int SA_BYTES = SA_COPIES * BLOCK_SIZE * 4;
-    static constexpr int OFF_SA = STAGES * STAGE_BYTES, OFF_SB = OFF_SA + SA_BYTES;
+    static constexpr int SA_BYTES  = SA_COPIES * BLOCK_SIZE * 4;
+    static constexpr int OFF_SA    = STAGES * STAGE_BYTES;
+    static constexpr int OFF_SB    = OFF_SA + SA_BYTES;
     static constexpr int LDS_BYTES = OFF_SB + BLOCK_SIZE * 4;
     static_assert(WM > 0 && WM * WN <= 8);
     static_assert(BM > 0 && BM % (WM * 16) == 0 && BN > 0 && BN % (WN * 16) == 0);
@@ -42,13 +68,16 @@ struct opus_gemm_bpreshuffle_xcd_ring_traits {
     // Include the separate arrival value stored by the last-workgroup protocol.
     static_assert(LDS_BYTES + sizeof(unsigned) <= 160 * 1024);
 
-    static constexpr int wait(int t) {
+    static constexpr int wait(int t)
+    {
         int issued = INITIAL * MATRIX_ISSUES + SA_COPIES + 1;
-        int ready = (t + 1) * MATRIX_ISSUES + SA_COPIES + 1;
-        for (int i = 0; i < t; ++i) {
-            if (i + INITIAL < PANELS) {
+        int ready  = (t + 1) * MATRIX_ISSUES + SA_COPIES + 1;
+        for(int i = 0; i < t; ++i)
+        {
+            if(i + INITIAL < PANELS)
+            {
                 issued += MATRIX_ISSUES;
-                if (i + INITIAL == t)
+                if(i + INITIAL == t)
                     ready = issued;
             }
         }
