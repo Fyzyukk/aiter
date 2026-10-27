@@ -465,7 +465,9 @@ _CKGEMM_HAS_GFX: dict = {}
 
 
 @functools.lru_cache(maxsize=1024)
-def get_CKGEMM_config(M: int, N: int, K: int, tuned_file=None):
+def get_CKGEMM_config(
+    M: int, N: int, K: int, tuned_file=None, *, gfx=None, cu_num=None
+):
     if tuned_file is None:
         tuned_file = AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_FILE
     if tuned_file not in _CKGEMM_CONFIG_CACHE:
@@ -487,8 +489,8 @@ def get_CKGEMM_config(M: int, N: int, K: int, tuned_file=None):
             ).to_dict("index")
             _CKGEMM_HAS_GFX[tuned_file] = False
 
-    gfx = get_gfx()
-    cu_num = get_cu_num()
+    gfx = get_gfx() if gfx is None else gfx
+    cu_num = get_cu_num() if cu_num is None else cu_num
     has_gfx = _CKGEMM_HAS_GFX[tuned_file]
     padded_M = M
     config = None
@@ -762,6 +764,11 @@ def gemm_a8w8_bpreshuffle(
             dtypes.fp8,
             AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BPRESHUFFLE_FILE,
         )
+    # A K-padded WQ is preshuffled in blocks laid out over K_w, and every
+    # kernel takes a single K for both operands, so run all of them at K_w
+    # with XQ zero-padded to match.
+    if w_k > k:
+        XQ = F.pad(XQ.contiguous(), (0, w_k - k), value=0)
     if config is not None:
         libtype = config["libtype"]
         splitK = int(config["splitK"])
@@ -770,8 +777,6 @@ def gemm_a8w8_bpreshuffle(
         elif libtype == "cktile":
             return gemm_a8w8_bpreshuffle_cktile(XQ, WQ, x_scale, w_scale, Y, splitK)
         elif libtype == "flydsl":
-            if w_k > k:
-                XQ = F.pad(XQ.contiguous(), (0, w_k - k), value=0)
             return gemm_a8w8_bpreshuffle_flydsl(XQ, WQ, x_scale, w_scale, Y, config)
 
     if get_gfx() == "gfx1250":
@@ -790,8 +795,6 @@ def gemm_a8w8_bpreshuffle(
                 f"[gfx1250] gemm_a8w8_bpreshuffle untuned M={m}, N={n}, K={k}; "
                 f"falling back to flydsl kernel '{ki.name}'."
             )
-            if w_k > k:
-                XQ = F.pad(XQ.contiguous(), (0, w_k - k), value=0)
             return gemm_a8w8_bpreshuffle_flydsl(
                 XQ, WQ, x_scale, w_scale, Y, {"kernelName": ki.name}
             )
@@ -899,11 +902,22 @@ def _load_mxscale_bpreshuffle_tuned() -> dict:
     return df.set_index(_MXSCALE_BPRESHUFFLE_KEYS).to_dict("index")
 
 
+def get_mxscale_bpreshuffle_config(
+    m: int, n: int, k: int, w_scale_block: str, *, gfx=None, cu_num=None
+):
+    return _get_mxscale_bpreshuffle_config(
+        m, n, k, w_scale_block,
+        get_gfx() if gfx is None else gfx,
+        get_cu_num() if cu_num is None else cu_num,
+    )
+
+
 @functools.lru_cache(maxsize=1024)
-def get_mxscale_bpreshuffle_config(m: int, n: int, k: int, w_scale_block: str):
+def _get_mxscale_bpreshuffle_config(
+    m: int, n: int, k: int, w_scale_block: str, gfx: str, cu_num: int
+):
     """Tuned row of an e8m0 block-scale GEMM on preshuffled weights, at M or a
     padded M; None when untuned. Cached per shape, so a miss is reported once."""
-    gfx, cu_num = get_gfx(), get_cu_num()
     row, padded_m = find_padded_m_row(
         _load_mxscale_bpreshuffle_tuned(),
         lambda pm: (gfx, cu_num, pm, n, k, w_scale_block),
@@ -941,17 +955,29 @@ def _gemm_mxscale_bpreshuffle(XQ, WQ, x_scale, w_scale, Y):
     n = WQ.shape[0]
     w_scale_block = mxscale_w_scale_block(tuple(w_scale.shape), n, k)
     x_block = k // x_scale.shape[-1]
-    config = get_mxscale_bpreshuffle_config(m, n, k, w_scale_block)
+    from .opus._arch import _device_arch_and_cu
+
+    gfx, cu_num = _device_arch_and_cu(XQ.device)
+    config = get_mxscale_bpreshuffle_config(
+        m, n, k, w_scale_block, gfx=gfx, cu_num=cu_num
+    )
     if config is not None and config["libtype"] == "opus":
         from csrc.opus_gemm.opus_gemm_common import (
+            a8w8_mxscale_bpreshuffle_kernel_name,
             a8w8_mxscale_bpreshuffle_supports_shape,
-            a8w8_mxscale_gemm_bpreshuffle_kernels_list,
+            get_kernel_instance,
         )
 
         kid = int(config["kernelId"])
-        instance = a8w8_mxscale_gemm_bpreshuffle_kernels_list.get(kid)
+        instance = get_kernel_instance(
+            gfx, "a8w8_blockscale_bpreshuffle", kid, Y.dtype, cu_num=cu_num
+        )
         if instance is None:
             raise ValueError(f"Unknown or unavailable OPUS MXFP8 bpreshuffle kid {kid}")
+        name = str(config.get("kernelName", ""))
+        if name not in ("", "nan", "None", instance.name,
+                        a8w8_mxscale_bpreshuffle_kernel_name(instance)):
+            raise ValueError(f"OPUS MXFP8 bpreshuffle kid {kid} does not match {name!r}")
         if (
             w_scale_block == "128x128"
             and x_block == 128
@@ -1194,6 +1220,14 @@ def gemm_a8w8_blockscale_bpreshuffle_fake(
     return torch.empty(XQ.shape[0], WQ.shape[0], dtype=dtype, device=XQ.device)
 
 
+@functools.lru_cache(maxsize=1024)
+def _warn_blockscale_asm_row_not_bf16(n: int, k: int, dtype: torch.dtype):
+    logger.warning(
+        f"gemm_a8w8_blockscale_bpreshuffle N:{n}, K:{k} has asm-tuned rows, which "
+        f"only write bf16; {dtype} output uses the CK heuristic instead."
+    )
+
+
 @torch_compile_guard(gen_fake=gemm_a8w8_blockscale_bpreshuffle_fake)
 def gemm_a8w8_blockscale_bpreshuffle(
     XQ: Tensor,
@@ -1224,6 +1258,19 @@ def gemm_a8w8_blockscale_bpreshuffle(
         Y = out
     else:
         Y = torch.empty(m, n, dtype=dtype, device=XQ.device)
+
+    if (
+        x_scale.dtype == dtypes.fp8_e8m0
+        and w_scale.dtype == dtypes.fp8_e8m0
+        and tuple(x_scale.shape) == (m, k // 32)
+    ):
+        # group32 (1x32 row-major x_scale): the flydsl batched GEMM at B = 1
+        # when the running arch has a kernel for this w_scale block; flydsl
+        # picks it.
+        from .flydsl.batched_gemm_a8w8 import bmm_a8w8_mxfp8_supported
+
+        if bmm_a8w8_mxfp8_supported(mxscale_w_scale_block(tuple(w_scale.shape), n, k)):
+            return _gemm_mxscale_bpreshuffle(XQ, WQ, x_scale, w_scale, Y)
 
     use_gfx1250_flydsl_or_triton_mxfp8_128 = (
         get_gfx() == "gfx1250"
@@ -1344,15 +1391,20 @@ def gemm_a8w8_blockscale_bpreshuffle(
             is_x_scale_tranposed=x_scale.stride(0) != 1,
         )
 
+    from aiter.ops.opus._arch import _device_arch_and_cu
+
+    gfx, cu = _device_arch_and_cu(XQ.device)
     config = get_CKGEMM_config(
         m,
         n,
         k,
         AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE_FILE,
+        gfx=gfx,
+        cu_num=cu,
     )
     # Triton path first: it allocates its own output, so skip the Y buffer the
     # ck/asm paths below need.
-    if (config is not None and config["libtype"] == "triton") or get_gfx() == "gfx1250":
+    if (config is not None and config["libtype"] == "triton") or gfx == "gfx1250":
         # kernelName optionally carries the backend hint ("triton"/"gluon");
         # anything else -> None (auto gluon->triton detection). config=None lets
         # the triton impl load its own tuned config internally. WQ is already
@@ -1390,22 +1442,37 @@ def gemm_a8w8_blockscale_bpreshuffle(
                 XQ, WQ, x_scale, w_scale, Y, kernelName=kernelName
             )
         elif libtype == "asm":
-            splitK = config["splitK"]
-            return gemm_a8w8_blockscale_bpreshuffle_asm(
-                XQ, WQ, Y, x_scale, w_scale, splitK=splitK, kernelName=kernelName
-            )
+            if dtype == dtypes.bf16:
+                splitK = config["splitK"]
+                return gemm_a8w8_blockscale_bpreshuffle_asm(
+                    XQ, WQ, Y, x_scale, w_scale, splitK=splitK, kernelName=kernelName
+                )
+            _warn_blockscale_asm_row_not_bf16(n, k, dtype)
         elif libtype == "opus":
-            kernelId = int(config["kernelId"])
             from aiter.ops.opus import opus_gemm
+            from csrc.opus_gemm.opus_gemm_common import (
+                get_kernel_instance,
+                parse_integer,
+            )
+
+            kid = parse_integer(config["kernelId"], name="saved kernel id")
+            instance = get_kernel_instance(
+                gfx, "a8w8_blockscale_bpreshuffle", kid, cu_num=cu
+            )
+            if instance is None or (
+                kernelName not in ("", "nan", "None") and kernelName != instance.name
+            ):
+                raise ValueError(f"Invalid tuned OPUS kernel {kid}")
 
             return opus_gemm(
                 XQ,
                 WQ,
                 Y,
-                kid=kernelId,
+                kid=kid,
                 layout="bpreshuffle",
                 x_scale=x_scale,
                 w_scale=w_scale,
+                family="a8w8_blockscale_bpreshuffle",
             )
         elif libtype == "flydsl":
             return gemm_a8w8_mxfp8_128_bpreshuffle_flydsl(

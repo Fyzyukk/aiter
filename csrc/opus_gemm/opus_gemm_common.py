@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass, field
+from decimal import Decimal, InvalidOperation
 
 _A16W16_CO_TAGS = frozenset(
     {"a16w16_4wave_co", "a16w16_4wave_wl_co", "a16w16_4wave_wlr_co"}
@@ -132,7 +133,7 @@ class OpusGemmInstance:
     cluster_wg_n: int = 4
 
     # gfx950 a8w8 MXFP8 BMM compile-time axes.  BMM instances live in the
-    # canonical global kid registry, but their generated symbols share the
+    # canonical local kid registry, but their generated symbols share the
     # ``opus_bmm`` root and a uniform exact-kid launcher signature.
     direct_only: bool = False
     prefetch_scale: bool = False
@@ -363,7 +364,7 @@ class OpusGemmInstance:
         elif self.kernel_tag == "a8w8_mxscale_bmm_pipeline_bpreshuffle":
             # opus_bmm_a8w8_mxscale_pipeline_bpreshuffle_<geom>[_preload_sf].
             # Without this branch the tag fell through to the bare default, so
-            # kid196 was named opus_bmm_<geom> alone: it advertised neither the
+            # kid31 was named opus_bmm_<geom> alone: it advertised neither the
             # preshuffled B its caller must pass nor the scale preload, on a
             # codegen that deduplicates instances by name.
             parts.insert(tag_at, "a8w8_mxscale_pipeline_bpreshuffle")
@@ -599,21 +600,8 @@ _BMM_M_ALIGN_TILES = {
     "a8w8_mxscale_bmm_mouter_tunable": 1,
 }
 
-# PR #4320 originally used a private, colliding BMM id namespace.  The current
-# exact-kid router uses one canonical registry, so gfx950 BMM ids occupy the
-# previously empty 8000 band.  The low digits intentionally preserve the
-# upstream id for tuning/debug correlation.
-BMM_MXSCALE_KID_OFFSET = 8000
-# A GROUP_N=GROUP_K=32 kid is its 128 mirror's id plus this, which keeps the low
-# digits the way the 8000 globalisation does: local 321 and 1321 become global
-# 8321 and 9321, so a pair is recognisable on sight in a log or a tuned CSV.
-# Declared here rather than beside the flatmm twins because the preshuffled
-# families twin as well, and they are built earlier in the file.
+# GROUP_N=GROUP_K=32 counterparts use the base local kid plus this stride.
 MX32_KID_STRIDE = 1000
-
-
-def bmm_mxscale_global_kid(upstream_kid: int) -> int:
-    return BMM_MXSCALE_KID_OFFSET + int(upstream_kid)
 
 
 def _a16w16(bs, bm, bn, bk, tn, wm, wn, wk, has_oob=True, cachectl_a=0, cachectl_b=17):
@@ -623,7 +611,7 @@ def _a16w16(bs, bm, bn, bk, tn, wm, wn, wk, has_oob=True, cachectl_a=0, cachectl
     matches the traits-default cache policy for the split-barrier pipeline
     (see opus_gemm_a16w16_traits_gfx950 in
     csrc/opus_gemm/include/gfx950/opus_gemm_traits_a16w16_gfx950.cuh).
-    This is the "legacy" policy used by KID 4..9 and 1004..1009 -- the
+    This is the "legacy" policy used by KID 0..5 and 46..51 -- the
     `_LEGACY_CACHECTL` special-case in OpusGemmInstance.name keeps these
     kids emitting the bare `..._0x0x0` symbol (no `_cA0cB17` suffix) so
     the Python policy and OPUS tuned CSV stay bit-compatible.
@@ -709,7 +697,7 @@ def _a16w16_flatmm(bm, bn, bk, wg_per_cu):
 # fmt: off
 # --- per-pipeline kernel instance lists ---
 a8w8_scale_kernels_list = {
-    1: OpusGemmInstance(512, 256, 256, 128, 4, 2, 16, 16, 128, 16, 16, 4, 1, 128, 128, "a8w8_scale", ["fp32_t"]),
+    0: OpusGemmInstance(512, 256, 256, 128, 4, 2, 16, 16, 128, 16, 16, 4, 1, 128, 128, "a8w8_scale", ["fp32_t"]),
 }
 
 
@@ -742,41 +730,41 @@ def _a8w8_mxscale_bmm_flatmm_splitk(
 
 
 _BMM_MXSCALE_SPLITK_TILES = {
-    316: (16,  32, 256, 2, False, False),
-    317: (16,  32, 256, 2, False, True),
-    318: (16,  32, 128, 2, False, False),
-    319: (16,  32, 256, 4, False, False),
-    314: (16,  32, 512, 2, False, False),
-    313: (16,  64, 256, 2, False, False),
-    312: (16, 128, 256, 1, False, False),
-    311: (16,  32, 512, 2, False, True),
-    321: (32,  32, 256, 2, False, True),
-    323: (32,  32, 128, 2, False, True),
-    320: (64,  32, 256, 2, False, False),
-    322: (64,  32, 256, 1, False, False),
-    640: (32,  64, 256, 2, False, False),
-    642: (32,  64, 256, 1, False, False),
-    646: (32,  64, 256, 2, True,  False),
-    650: (64,  64, 128, 2, False, False),
-    653: (64,  64, 128, 2, False, True),
-    128: (128, 128, 128, 1, False, False),
-    137: (128, 128, 128, 1, False, True),
-    138: (64,  128, 256, 1, False, False),
-    139: (128, 64,  256, 1, False, False),
-    256: (32, 256, 128, 1, False, False),
-    64:  (64, 128, 128, 2, False, False),
+    67: (16,  32, 256, 2, False, False),
+    68: (16,  32, 256, 2, False, True),
+    69: (16,  32, 128, 2, False, False),
+    70: (16,  32, 256, 4, False, False),
+    66: (16,  32, 512, 2, False, False),
+    65: (16,  64, 256, 2, False, False),
+    64: (16, 128, 256, 1, False, False),
+    63: (16,  32, 512, 2, False, True),
+    72: (32,  32, 256, 2, False, True),
+    74: (32,  32, 128, 2, False, True),
+    71: (64,  32, 256, 2, False, False),
+    73: (64,  32, 256, 1, False, False),
+    140: (32,  64, 256, 2, False, False),
+    141: (32,  64, 256, 1, False, False),
+    142: (32,  64, 256, 2, True,  False),
+    143: (64,  64, 128, 2, False, False),
+    144: (64,  64, 128, 2, False, True),
+    4: (128, 128, 128, 1, False, False),
+    8: (128, 128, 128, 1, False, True),
+    9: (64,  128, 256, 1, False, False),
+    10: (128, 64,  256, 1, False, False),
+    62: (32, 256, 128, 1, False, False),
+    2:  (64, 128, 128, 2, False, False),
     0:   (32, 128, 128, 2, False, False),
-    32:  (32, 128, 128, 2, False, False),
+    1:  (32, 128, 128, 2, False, False),
 }
 _bmm_flatmm_local = {
     kid: _a8w8_mxscale_bmm_flatmm_splitk(bm, bn, bk, wg, direct, prefetch)
     for kid, (bm, bn, bk, wg, direct, prefetch) in _BMM_MXSCALE_SPLITK_TILES.items()
 }
 _BMM_MXSCALE_SPLITK_PRELOAD_TILES = {
-    324: (64, 32, 256, 2),
-    325: (128, 128, 128, 1),
-    326: (128, 64, 256, 1),
-    327: (64, 128, 256, 1),
+    75: (64, 32, 256, 2),
+    76: (128, 128, 128, 1),
+    77: (128, 64, 256, 1),
+    78: (64, 128, 256, 1),
 }
 _bmm_flatmm_local.update({
     kid: _a8w8_mxscale_bmm_flatmm_splitk(bm, bn, bk, wg, preload_sf=True)
@@ -846,10 +834,10 @@ def _a8w8_mxscale_bmm_bpreshuffle_bdirect(bm, bn, bk, wg_per_cu, prefetch_scale=
 # producer/consumer split with a 16-row output tile.
 _BMM_MXSCALE_BPRESHUFFLE_BDIRECT_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU)
-    179: (16, 32, 512, 2),
-    173: (16, 32, 256, 2),
-    # kid171 omits the scale panels used by kid172.
-    171: (64, 32, 256, 2),
+    28: (16, 32, 512, 2),
+    26: (16, 32, 256, 2),
+    # kid24 omits the scale panels used by kid25.
+    24: (64, 32, 256, 2),
 }
 _bmm_bpre_bdirect_local = {
     kid: _a8w8_mxscale_bmm_bpreshuffle_bdirect(bm, bn, bk, wg)
@@ -857,7 +845,7 @@ _bmm_bpre_bdirect_local = {
 }
 # Plain-scale panel variant of the BM16 tile. COM_REP_M=1 lets the panel
 # use the caller's row-major scale layout directly.
-_bmm_bpre_bdirect_local[399] = (
+_bmm_bpre_bdirect_local[89] = (
     _a8w8_mxscale_bmm_bpreshuffle_bdirect(
         16, 32, 512, 2, prefetch_scale=False, preload_sf=True
     )
@@ -865,9 +853,9 @@ _bmm_bpre_bdirect_local[399] = (
 
 _BMM_MXSCALE_BPRESHUFFLE_BDIRECT_PRELOAD_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU)
-    172: (64, 32, 256, 2),
+    25: (64, 32, 256, 2),
     # 128x128x128 bdirect tile with preloaded scale panels.
-    184: (128, 128, 128, 1),
+    29: (128, 128, 128, 1),
 }
 # Larger B_K=256 tiles require additional staging and fragment registers.
 # This family uses B_K=128 for its wider tiles to stay within those budgets.
@@ -920,34 +908,33 @@ def _a8w8_mxscale_bmm_bpreshuffle_blds(bm, bn, bk, wg_per_cu, prefetch_scale=Fal
 # Map each plain flatmm tile to its preshuffled-B/LDS counterpart.
 # Keep explicit IDs so existing tuned configurations remain valid.
 _BMM_MXSCALE_BPRESHUFFLE_BLDS_TWIN_OF = {
-    321: 226,
-    653: 227,
-    324: 228,
-    325: 229,
-    326: 230,
-    # IDs 224 and 225 remain unused to avoid ambiguous historical config IDs.
-    32: 251,
-    64: 252,
-    128: 231,
-    137: 232,
-    138: 233,
-    139: 234,
-    256: 235,
-    311: 236,
-    312: 237,
-    313: 238,
-    314: 239,
-    316: 240,
-    317: 241,
-    318: 242,
-    319: 243,
-    320: 244,
-    322: 245,
-    323: 246,
-    327: 247,
-    640: 248,
-    642: 249,
-    650: 250,
+    72: 35,
+    144: 36,
+    75: 37,
+    76: 38,
+    77: 39,
+    1: 60,
+    2: 61,
+    4: 40,
+    8: 41,
+    9: 42,
+    10: 43,
+    62: 44,
+    63: 45,
+    64: 46,
+    65: 47,
+    66: 48,
+    67: 49,
+    68: 50,
+    69: 51,
+    70: 52,
+    71: 53,
+    73: 54,
+    74: 55,
+    78: 56,
+    140: 57,
+    141: 58,
+    143: 59,
 }
 _bmm_bpre_blds_local = {
     twin: _a8w8_mxscale_bmm_bpreshuffle_blds(
@@ -956,10 +943,7 @@ _bmm_bpre_blds_local = {
         preload_sf=plain.preload_sf,
     )
     for plain, twin in (
-        # _bmm_flatmm_local, not the globalized list: the twin map is keyed by
-        # this family's own kid numbers, and the globalized dict does not exist
-        # yet here -- upstream builds it at the bottom of the file, after adding
-        # BMM_MXSCALE_KID_OFFSET (8000) to every id.
+        # The twin map uses this family's local kid numbers.
         (_bmm_flatmm_local[plain_kid], twin_kid)
         for plain_kid, twin_kid in _BMM_MXSCALE_BPRESHUFFLE_BLDS_TWIN_OF.items()
     )
@@ -967,16 +951,16 @@ _bmm_bpre_blds_local = {
 
 # Plain-scale panel variant of the BM16 tile with prefetched A scales.
 # COM_REP_M=1 allows direct panel loads from the caller's scale layout.
-_bmm_bpre_blds_local[398] = (
+_bmm_bpre_blds_local[88] = (
     _a8w8_mxscale_bmm_bpreshuffle_blds(
         32, 32, 256, 2, prefetch_scale=False, preload_sf=True
     )
 )
 
-# kid646 is the DIRECT_ONLY persistent schedule, which carries its own B staging
+# kid142 is the DIRECT_ONLY persistent schedule, which carries its own B staging
 # and rejects the flags this family sets. kid0 is the heuristic default and an
-# alias of kid32's geometry, so kid224 already covers its tile.
-_BLDS_NO_TWIN = {0, 646}
+# alias of kid1's geometry, whose preshuffled twin covers its tile.
+_BLDS_NO_TWIN = {0, 142}
 _blds_untwinned = sorted(
     kid
     for kid in _bmm_flatmm_local
@@ -993,14 +977,14 @@ assert not _blds_untwinned, (
 # Each shuffled-scale variant retains its plain counterpart's geometry.
 _BMM_MXSCALE_BPRESHUFFLE_BLDS_SHUFFLE_SCALE_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU, prefetch_scale)   plain winner it answers
-    385: (16, 32, 256, 4, False),   # kid243
-    386: (32, 32, 256, 2, True),    # kid226
-    # kid387 wins nothing, and neither does its plain twin kid238. Kept only so
-    # kid238's tile stays expressible under the wholesale switch; retire together.
-    387: (16, 64, 256, 2, False),   # kid238
-    # kid239 is the same tile without prefetch and deliberately gets no twin: it
+    270: (16, 32, 256, 4, False),   # kid52
+    271: (32, 32, 256, 2, True),    # kid35
+    # kid272 wins nothing, and neither does its plain twin kid47. Kept only so
+    # kid47's tile stays expressible under the wholesale switch; retire together.
+    272: (16, 64, 256, 2, False),   # kid47
+    # kid48 is the same tile without prefetch and deliberately gets no twin: it
     # wins nothing, so a twin would measure a kid the tuner never picks.
-    392: (16, 32, 512, 2, True),    # kid236
+    274: (16, 32, 512, 2, True),    # kid45
 }
 _bmm_bpre_blds_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_blds(bm, bn, bk, wg, prefetch_scale=pf,
@@ -1012,7 +996,7 @@ _bmm_bpre_blds_local.update({
 # blds variant with an LDS shuffled-scale panel.
 # The registered BM32 tile fully consumes each packed scale word.
 _BMM_MXSCALE_BPRESHUFFLE_BLDS_SHUFFLE_PANEL_TILES = {
-    397: (32, 32, 256, 2, True),    # kid386 + panel
+    276: (32, 32, 256, 2, True),    # kid271 + panel
 }
 _bmm_bpre_blds_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_blds(bm, bn, bk, wg, prefetch_scale=pf,
@@ -1024,23 +1008,23 @@ _bmm_bpre_blds_local.update({
 # The shuffled-scale bdirect twins. A shuffled kid reads its A scale as packed
 # dwords instead of per-subtile bytes, so it replaces the plain LDS scale panel
 # rather than filling it -- one twin therefore answers both the panelled and the
-# un-panelled member of a plain pair (kid216 stands against kid171 and kid172).
+# un-panelled member of a plain pair (kid248 stands against kid24 and kid25).
 #
 # Flags track the plain twin; the per-kid comment names it.
 _BMM_MXSCALE_BPRESHUFFLE_BDIRECT_SHUFFLE_SCALE_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU, prefetch_scale)     twin of
-    216: (64, 32, 256, 2, False),    # kid171 / kid172
-    217: (128, 128, 128, 1, False),  # kid184
+    248: (64, 32, 256, 2, False),    # kid24 / kid25
+    249: (128, 128, 128, 1, False),  # kid29
     # ... and the same two tiles with the scale load hoisted ahead of the LDS wait.
     # PREFETCH_SCALE is only testable here: the wave8n4/wavetm1 pipeline
     # static_asserts !PREFETCH_SCALE.
-    334: (64, 32, 256, 2, True),     # kid216 + prefetch
-    335: (128, 128, 128, 1, True),   # kid217 + prefetch
-    384: (16, 32, 256, 2, False),    # kid173
+    250: (64, 32, 256, 2, True),     # kid248 + prefetch
+    251: (128, 128, 128, 1, True),   # kid249 + prefetch
+    269: (16, 32, 256, 2, False),    # kid26
     # B_K=512, i.e. COM_REP_K=4, which spends two A-scale dwords along K
-    # (SF_GEOM::KD). prefetch_scale is off because kid179 does not have it and
+    # (SF_GEOM::KD). prefetch_scale is off because kid28 does not have it and
     # SF_PREFETCH is gated on COM_REP_K==1 anyway, so it would be inert.
-    391: (16, 32, 512, 2, False),    # kid179
+    273: (16, 32, 512, 2, False),    # kid28
 }
 _bmm_bpre_bdirect_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_bdirect(bm, bn, bk, wg, prefetch_scale=pf,
@@ -1053,7 +1037,7 @@ _bmm_bpre_bdirect_local.update({
 # once so the K loop reads the panel from LDS. SF_SHUF_IN_LDS and
 # SUBTILE_TILE remain separate registered traits.
 _BMM_MXSCALE_BPRESHUFFLE_BDIRECT_SHUFFLE_PANEL_TILES = {
-    393: (16, 32, 512, 2, False),    # kid391 + panel
+    275: (16, 32, 512, 2, False),    # kid273 + panel
 }
 _bmm_bpre_bdirect_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_bdirect(bm, bn, bk, wg, prefetch_scale=pf,
@@ -1066,9 +1050,9 @@ _bmm_bpre_bdirect_local.update({
 # B_M=128 uses B_K=128 to satisfy the minimum prefetch depth.
 _BMM_MXSCALE_BPRESHUFFLE_BDIRECT_ISOLATE = {
     #    (B_M, B_N, B_K, WG_PER_CU)   term moved, and what it moves
-    (336, 337): (64,  32,  128, 2),   # B_K  256->128: COM_REP_K 2->1
-    (338, 339): (128, 32,  128, 2),   # B_M   64->128: COM_REP_M 2->4, vs (336,337)
-    (342, 343): (64,  32,  256, 1),   # WG_PER_CU 2->1: occupancy only, geometry fixed
+    (79, 252): (64,  32,  128, 2),   # B_K  256->128: COM_REP_K 2->1
+    (80, 253): (128, 32,  128, 2),   # B_M   64->128: COM_REP_M 2->4, vs (336,337)
+    (81, 254): (64,  32,  256, 1),   # WG_PER_CU 2->1: occupancy only, geometry fixed
     # (344, 345): (64, 128, 256, 1) -- B_N 32->128, vs (342,343). Unwired, see below.
 }
 # The 64x128x256 bdirect variants are not instantiated because of register
@@ -1089,9 +1073,9 @@ for (_plain_kid, _shuf_kid), (_bm, _bn, _bk, _wg) in (
 # These remain registered but are excluded from the default tuning policy.
 _BMM_MXSCALE_BPRESHUFFLE_BDIRECT_TILEN_TILES = {
     #    (B_M, B_N, B_K, WG_PER_CU, preload_sf)   corresponding shuffled-scale ID
-    388: (64, 32, 256, 1, True),    # kid342 (wg1 + panels)
-    389: (64, 32, 256, 2, True),    # kid172 (wg2 + panels), the family's m<=256 winner
-    390: (64, 32, 256, 2, False),   # kid171 (wg2, no panels), owns the K=1024 end
+    85: (64, 32, 256, 1, True),    # kid81 (wg1 + panels)
+    86: (64, 32, 256, 2, True),    # kid25 (wg2 + panels), the family's m<=256 winner
+    87: (64, 32, 256, 2, False),   # kid24 (wg2, no panels), owns the K=1024 end
 }
 _bmm_bpre_bdirect_tilen_local = {
     kid: _a8w8_mxscale_bmm_bpreshuffle_bdirect(bm, bn, bk, wg, preload_sf=pre,
@@ -1126,13 +1110,13 @@ def _a8w8_mxscale_bmm_bpreshuffle_allwave(bm, bn, bk, wg_per_cu, quant_block=128
 # pipeline needs, so neither is here.
 _BMM_MXSCALE_BPRESHUFFLE_ALLWAVE_TILES = {
     #    (B_M, B_N, B_K, WG_PER_CU)
-    420: (64, 64, 256, 1),
-    422: (64, 64, 128, 2),
-    423: (64, 128, 256, 1),
-    424: (64, 128, 128, 2),
-    425: (128, 64, 256, 1),
-    426: (128, 128, 128, 1),
-    427: (128, 64, 128, 2),
+    100: (64, 64, 256, 1),
+    101: (64, 64, 128, 2),
+    102: (64, 128, 256, 1),
+    103: (64, 128, 128, 2),
+    104: (128, 64, 256, 1),
+    105: (128, 128, 128, 1),
+    106: (128, 64, 128, 2),
 }
 _bmm_bpre_allwave_local = {
     kid: _a8w8_mxscale_bmm_bpreshuffle_allwave(bm, bn, bk, wg)
@@ -1173,10 +1157,10 @@ _bmm_bpre_bdirect_local.update(
 )
 _bmm_bpre_blds_local.update(
     # Exclude group32 variants affected by ROCm 7.2.4 clang-22 register
-    # allocation defects: kid235 fails register-class validation, while
-    # kids231/232 can reload an incomplete spilled MFMA accumulator.
+    # allocation defects: kid44 fails register-class validation, while
+    # kids40/41 can reload an incomplete spilled MFMA accumulator.
     _mx32_twins(_bmm_bpre_blds_local, _a8w8_mxscale_bmm_bpreshuffle_blds,
-                skip=frozenset({235, 231, 232}))
+                skip=frozenset({44, 40, 41}))
 )
 _bmm_bpre_bdirect_tilen_local.update(
     _mx32_twins(_bmm_bpre_bdirect_tilen_local,
@@ -1218,14 +1202,14 @@ def _a8w8_mxscale_bmm_bpreshuffle_wave8n4(bm, bn, bk, wg_per_cu, xcd_wgm=0,
 
 _BMM_MXSCALE_BPRESHUFFLE_WAVE8N4_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU)
-    194: (256, 256, 128, 1),
+    30: (256, 256, 128, 1),
     # Half-M tile satisfying the SCALE_OPSEL COM_REP_M alignment.
-    168: (128, 256, 128, 1),
+    23: (128, 256, 128, 1),
     # 128x128 tile with the wave8n4 schedule.
-    175: (128, 64,  256, 1),
+    27: (128, 64,  256, 1),
     # 128x128 wave8n4 variants at two K tile depths.
-    348: (128, 128, 256, 1),
-    349: (128, 128, 128, 1),
+    83: (128, 128, 256, 1),
+    84: (128, 128, 128, 1),
 }
 _bmm_bpre_wave8n4_local = {
     kid: _a8w8_mxscale_bmm_bpreshuffle_wave8n4(bm, bn, bk, wg)
@@ -1236,11 +1220,11 @@ _bmm_bpre_wave8n4_local = {
 # XCD_WGM selects the M-band height; zero keeps the linear tile order.
 _BMM_MXSCALE_BPRESHUFFLE_WAVE8N4_XCD_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU, XCD_WGM)     twin of
-    346: (256, 256, 128, 1, 4),               # kid194 + FlyDSL's band height
+    82: (256, 256, 128, 1, 4),               # kid30 + FlyDSL's band height
     # Apply band height 4 to the additional 2x4 tiles.
-    401: (128, 64,  256, 1, 4),               # kid175 + band 4
-    402: (128, 128, 256, 1, 4),               # kid348 + band 4
-    # 347: (256, 256, 128, 1, 2),             # kid194 + half of it; noise, see above
+    90: (128, 64,  256, 1, 4),               # kid27 + band 4
+    91: (128, 128, 256, 1, 4),               # kid83 + band 4
+    # 347: (256, 256, 128, 1, 2),             # kid30 + half of it; noise, see above
 }
 _bmm_bpre_wave8n4_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wave8n4(bm, bn, bk, wg, xcd_wgm=wgm)
@@ -1254,9 +1238,9 @@ _bmm_bpre_wave8n4_local.update({
 # M subtiles in each packed scale word.
 _BMM_MXSCALE_BPRESHUFFLE_WAVE8N4_SHUFFLE_SCALE_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU)     twin of
-    213: (256, 256, 128, 1),         # kid194
-    214: (128, 256, 128, 1),         # kid168
-    215: (128, 64,  256, 1),         # kid175 -- also the only COM_REP_K=2 shuffled kid
+    245: (256, 256, 128, 1),         # kid30
+    246: (128, 256, 128, 1),         # kid23
+    247: (128, 64,  256, 1),         # kid27 -- also the only COM_REP_K=2 shuffled kid
 }
 _bmm_bpre_wave8n4_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wave8n4(bm, bn, bk, wg, shuffle_scale=True)
@@ -1268,16 +1252,16 @@ _bmm_bpre_wave8n4_local.update({
 _BMM_MXSCALE_BPRESHUFFLE_WAVE8N4_SHUF_TWIN_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU, XCD_WGM, SF_SHUF_IN_LDS)   twin of
     # -- reg form, the tiles that had no shuffled twin at all --
-    350: (256, 256, 128, 1, 4, False),                    # kid346  (15 rows)
-    351: (128, 128, 256, 1, 0, False),                    # kid348
-    352: (128, 128, 128, 1, 0, False),                    # kid349
-    # -- lds form, one per tile above plus one per kid213/214/215 --
-    360: (256, 256, 128, 1, 0, True),                     # kid194 / kid213
-    361: (128, 256, 128, 1, 0, True),                     # kid168 / kid214
-    362: (128, 64,  256, 1, 0, True),                     # kid175 / kid215
-    363: (256, 256, 128, 1, 4, True),                     # kid346 / kid350
-    364: (128, 128, 256, 1, 0, True),                     # kid348 / kid351
-    365: (128, 128, 128, 1, 0, True),                     # kid349 / kid352
+    255: (256, 256, 128, 1, 4, False),                    # kid82  (15 rows)
+    256: (128, 128, 256, 1, 0, False),                    # kid83
+    257: (128, 128, 128, 1, 0, False),                    # kid84
+    # -- lds form, one per tile above plus one per kid245/246/247 --
+    258: (256, 256, 128, 1, 0, True),                     # kid30 / kid245
+    259: (128, 256, 128, 1, 0, True),                     # kid23 / kid246
+    260: (128, 64,  256, 1, 0, True),                     # kid27 / kid247
+    261: (256, 256, 128, 1, 4, True),                     # kid82 / kid255
+    262: (128, 128, 256, 1, 0, True),                     # kid83 / kid256
+    263: (128, 128, 128, 1, 0, True),                     # kid84 / kid257
 }
 _bmm_bpre_wave8n4_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wave8n4(bm, bn, bk, wg, xcd_wgm=wgm,
@@ -1327,8 +1311,8 @@ def _a8w8_mxscale_bmm_bpreshuffle_wavetm1(block_size, bm, bn, bk, wg_per_cu,
 # family's LDS streaming schedule.
 _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_TILES = {
     #   (BLOCK_SIZE, B_M, B_N, B_K, WG_PER_CU)
-    202: (512, 128, 256, 128, 1),
-    203: (256, 128, 256, 128, 1),
+    32: (512, 128, 256, 128, 1),
+    33: (256, 128, 256, 128, 1),
 }
 _bmm_bpre_wavetm1_local = {
     kid: _a8w8_mxscale_bmm_bpreshuffle_wavetm1(bs, bm, bn, bk, wg)
@@ -1340,8 +1324,8 @@ _bmm_bpre_wavetm1_local = {
 # operands. XCD_WGM selects the band height.
 _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_XCD_TILES = {
     # (BLOCK_SIZE, B_M, B_N, B_K, WG_PER_CU, XCD_WGM)
-    205: (256, 128, 256, 128, 1, 4),   # kid203 with band height 4
-    404: (512, 128, 256, 128, 1, 4),   # = kid202 (1x8) + band 4
+    34: (256, 128, 256, 128, 1, 4),   # kid33 with band height 4
+    92: (512, 128, 256, 128, 1, 4),   # = kid32 (1x8) + band 4
 }
 _bmm_bpre_wavetm1_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wavetm1(bs, bm, bn, bk, wg, xcd_wgm=wgm)
@@ -1349,11 +1333,11 @@ _bmm_bpre_wavetm1_local.update({
     in _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_XCD_TILES.items()
 })
 
-# kid208 uses SFA_MPACK_GLOBAL: the caller supplies the A scale panel
+# kid243 uses SFA_MPACK_GLOBAL: the caller supplies the A scale panel
 # packed along M instead of having the prologue pack ordinary scales.
 _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_MPACK_TILES = {
     #   (BLOCK_SIZE, B_M, B_N, B_K, WG_PER_CU, XCD_WGM)
-    208: (256, 128, 256, 128, 1, 4),
+    243: (256, 128, 256, 128, 1, 4),
 }
 _bmm_bpre_wavetm1_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wavetm1(bs, bm, bn, bk, wg, xcd_wgm=wgm,
@@ -1365,13 +1349,13 @@ _bmm_bpre_wavetm1_local.update({
 # Narrower wavetm1 tiles on the 1x4 compute-wave grid.
 _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_1X4_TILES = {
     #   (BLOCK_SIZE, B_M, B_N, B_K, WG_PER_CU, XCD_WGM)
-    405: (256, 64, 128, 256, 1, 4),
-    406: (256, 128, 128, 128, 1, 4),
-    407: (256, 64, 256, 128, 1, 4),
-    408: (256, 64, 64, 256, 1, 4),
-    409: (256, 128, 64, 256, 1, 4),
-    410: (256, 128, 128, 256, 1, 4),
-    411: (256, 64, 128, 128, 1, 4),
+    93: (256, 64, 128, 256, 1, 4),
+    94: (256, 128, 128, 128, 1, 4),
+    95: (256, 64, 256, 128, 1, 4),
+    96: (256, 64, 64, 256, 1, 4),
+    97: (256, 128, 64, 256, 1, 4),
+    98: (256, 128, 128, 256, 1, 4),
+    99: (256, 64, 128, 128, 1, 4),
 }
 _bmm_bpre_wavetm1_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wavetm1(bs, bm, bn, bk, wg, xcd_wgm=wgm)
@@ -1382,9 +1366,9 @@ _bmm_bpre_wavetm1_local.update({
 # The 1x4 tiles at two workgroups per CU.
 _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_1X4_WG2_TILES = {
     #   (BLOCK_SIZE, B_M, B_N, B_K, WG_PER_CU, XCD_WGM)
-    451: (256, 128, 128, 128, 2, 4),
-    452: (256, 64, 128, 256, 2, 4),
-    453: (256, 64, 256, 128, 2, 4),
+    117: (256, 128, 128, 128, 2, 4),
+    118: (256, 64, 128, 256, 2, 4),
+    119: (256, 64, 256, 128, 2, 4),
 }
 _bmm_bpre_wavetm1_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wavetm1(bs, bm, bn, bk, wg, xcd_wgm=wgm)
@@ -1392,18 +1376,18 @@ _bmm_bpre_wavetm1_local.update({
     in _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_1X4_WG2_TILES.items()
 })
 
-# The 1x4 tiles with B staged through the LDS ring (wavetm1_blds). kid454 is
+# The 1x4 tiles with B staged through the LDS ring (wavetm1_blds). kid120 is
 # flydsl's b2/m2048 tile, 128x128x128 at four slots; the others are the 1x4
 # tiles whose A+B slot still leaves three.
 _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_BLDS_TILES = {
     #   (BLOCK_SIZE, B_M, B_N, B_K, WG_PER_CU, XCD_WGM)
-    454: (256, 128, 128, 128, 1, 4),
-    455: (256, 64, 128, 128, 1, 4),
-    456: (256, 64, 128, 256, 1, 4),
-    457: (256, 128, 256, 128, 1, 4),
+    120: (256, 128, 128, 128, 1, 4),
+    121: (256, 64, 128, 128, 1, 4),
+    122: (256, 64, 128, 256, 1, 4),
+    123: (256, 128, 256, 128, 1, 4),
     # Two-wave decode tiles using the shared A/B LDS staging schedule.
     # The B-LDS variant also participates in the scale-panel residency budget.
-    460: (128, 16, 32, 256, 2, 0),
+    124: (128, 16, 32, 256, 2, 0),
 }
 _bmm_bpre_wavetm1_blds_local = {
     kid: _a8w8_mxscale_bmm_bpreshuffle_wavetm1(bs, bm, bn, bk, wg, xcd_wgm=wgm, blds=True)
@@ -1411,13 +1395,13 @@ _bmm_bpre_wavetm1_blds_local = {
     in _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_BLDS_TILES.items()
 }
 
-# kid210 reads both scales in the shuffle_scale_a / shuffle_scale_b layout.
+# kid244 reads both scales in the shuffle_scale_a / shuffle_scale_b layout.
 # Each scale word packs two M subtiles crossed with two K blocks; B bytes
 # are duplicated for the shared scale_op_sel selection. At B_K=128 the
 # K loop unrolls by two to select the two K blocks in each word.
 _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_SHUFFLE_SCALE_TILES = {
     #   (BLOCK_SIZE, B_M, B_N, B_K, WG_PER_CU, XCD_WGM)
-    210: (256, 128, 256, 128, 1, 4),
+    244: (256, 128, 256, 128, 1, 4),
 }
 _bmm_bpre_wavetm1_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wavetm1(bs, bm, bn, bk, wg, xcd_wgm=wgm,
@@ -1429,13 +1413,13 @@ _bmm_bpre_wavetm1_local.update({
 # Matched plain and shuffled-scale wavetm1 configurations.
 _BMM_MXSCALE_BPRESHUFFLE_WAVETM1_SHUF_TWIN_TILES = {
     #   (BLOCK_SIZE, B_M, B_N, B_K, WG_PER_CU, XCD_WGM, SF_SHUF_IN_LDS)  twin of
-    # -- reg form; kid205's is kid210 above --
-    370: (512, 128, 256, 128, 1, 0, False),                          # kid202
-    371: (256, 128, 256, 128, 1, 0, False),                          # kid203
+    # -- reg form; kid34's is kid244 above --
+    264: (512, 128, 256, 128, 1, 0, False),                          # kid32
+    265: (256, 128, 256, 128, 1, 0, False),                          # kid33
     # -- lds form --
-    380: (256, 128, 256, 128, 1, 4, True),                           # kid205 / kid210
-    381: (512, 128, 256, 128, 1, 0, True),                           # kid202 / kid370
-    382: (256, 128, 256, 128, 1, 0, True),                           # kid203 / kid371
+    266: (256, 128, 256, 128, 1, 4, True),                           # kid34 / kid244
+    267: (512, 128, 256, 128, 1, 0, True),                           # kid32 / kid264
+    268: (256, 128, 256, 128, 1, 0, True),                           # kid33 / kid265
 }
 _bmm_bpre_wavetm1_local.update({
     kid: _a8w8_mxscale_bmm_bpreshuffle_wavetm1(bs, bm, bn, bk, wg, xcd_wgm=wgm,
@@ -1472,13 +1456,13 @@ _bmm_bpre_wavetm1_local.update(
     # The smaller B_K=128 tiles use the ring path when the whole-split scale
     # panel would exceed their residency budget.
     _mx32_wave8_twins(_bmm_bpre_wavetm1_local, _a8w8_mxscale_bmm_bpreshuffle_wavetm1,
-                      "BLOCK_SIZE", skip=frozenset({407, 411, 453}))
+                      "BLOCK_SIZE", skip=frozenset({95, 99, 119}))
 )
 _bmm_bpre_wavetm1_blds_local.update(
     # GROUP_K=32 counterparts of the wave8n4 tiles.
     _mx32_wave8_twins(_bmm_bpre_wavetm1_blds_local,
                       _a8w8_mxscale_bmm_bpreshuffle_wavetm1,
-                      "BLOCK_SIZE", skip=frozenset({457}), blds=True)
+                      "BLOCK_SIZE", skip=frozenset({123}), blds=True)
 )
 
 
@@ -1505,32 +1489,32 @@ def _a8w8_mxscale_bmm_bpreshuffle_wave1(bm, bn, bk, wg_per_cu, ring=0, quant_blo
 # Single-wave decode tiles with several N/K depths and load schedules.
 _BMM_MXSCALE_BPRESHUFFLE_WAVE1_TILES = {
     #   (B_M, B_N, B_K, WG_PER_CU)
-    440: (16, 32, 256, 2),
-    441: (16, 64, 256, 2),
-    442: (16, 32, 512, 2),
-    443: (32, 32, 256, 2),
-    444: (16, 32, 128, 2),
-    445: (16, 32, 256, 1),
-    # kid445 with the ring pinned shallower (default 4 stages, 192 VGPRs).
-    446: (16, 32, 256, 1, 2),
-    447: (16, 32, 256, 1, 3),
+    107: (16, 32, 256, 2),
+    108: (16, 64, 256, 2),
+    109: (16, 32, 512, 2),
+    110: (32, 32, 256, 2),
+    111: (16, 32, 128, 2),
+    112: (16, 32, 256, 1),
+    # kid112 with the ring pinned shallower (default 4 stages, 192 VGPRs).
+    113: (16, 32, 256, 1, 2),
+    114: (16, 32, 256, 1, 3),
     # B_N=16 variants increase the number of N tiles per workgroup row.
-    448: (16, 16, 256, 2),
-    449: (16, 16, 256, 1),
+    115: (16, 16, 256, 2),
+    116: (16, 16, 256, 1),
 }
 _bmm_bpre_wave1_local = {
     kid: _a8w8_mxscale_bmm_bpreshuffle_wave1(*geom)
     for kid, geom in _BMM_MXSCALE_BPRESHUFFLE_WAVE1_TILES.items()
 }
 
-# Independent per-N-row K32 scales. Keep IDs below the gfx942 band at 10000.
+# Independent per-N-row K32 scales.
 _bmm_bpre_wave1_local.update({
-    1700 + kid - 440: _a8w8_mxscale_bmm_bpreshuffle_wave1(
+    kid + 124: _a8w8_mxscale_bmm_bpreshuffle_wave1(
         *geom, quant_block=32, group_n=1
     )
     for kid, geom in _BMM_MXSCALE_BPRESHUFFLE_WAVE1_TILES.items()
 })
-_bmm_bpre_wave1_local[1710] = _a8w8_mxscale_bmm_bpreshuffle_wave1(
+_bmm_bpre_wave1_local[241] = _a8w8_mxscale_bmm_bpreshuffle_wave1(
     16, 16, 128, 2, quant_block=32, group_n=1
 )
 
@@ -1538,15 +1522,15 @@ _bmm_bpre_wave1_local[1710] = _a8w8_mxscale_bmm_bpreshuffle_wave1(
 # Larger per-row K32 tile for shapes with enough output tiles to fill the GPU.
 # A two-stage register ring bounds operand storage while each load feeds more
 # MFMAs than the decode tiles above.
-_bmm_bpre_wave1_local[1713] = _a8w8_mxscale_bmm_bpreshuffle_wave1(
+_bmm_bpre_wave1_local[242] = _a8w8_mxscale_bmm_bpreshuffle_wave1(
     64, 64, 128, 2, 2, quant_block=32, group_n=1
 )
 
 
-# Derive GROUP_N=GROUP_K=32 flatmm variants with IDs offset by
-# MX32_KID_STRIDE. Exclude tiles affected by the ROCm 7.2.4 clang-22
+# Derive GROUP_N=GROUP_K=32 flatmm variants with kid + MX32_KID_STRIDE.
+# Exclude tiles affected by the ROCm 7.2.4 clang-22
 # register-class defect at the larger register footprints.
-_MX32_CLANG_REGCLASS_SKIP = frozenset({128, 139, 256})
+_MX32_CLANG_REGCLASS_SKIP = frozenset({4, 10, 62})
 _bmm_flatmm_local.update({
     kid + MX32_KID_STRIDE: _a8w8_mxscale_bmm_flatmm_splitk(
         bm, bn, bk, wg, direct, prefetch, quant_block=32
@@ -1569,8 +1553,8 @@ _bmm_flatmm_local.update({
 # workspace kargs moved to a direct pointer.  Its splitK=1 BF16/FP32 kernels
 # keep PRELOAD_SF_LDS; only the split-K workspace specialization uses the
 # semantically equivalent non-preload implementation (the same geometry as
-# local kid 139).
-_bmm_flatmm_local[326].workspace_preload_sf = False
+# local kid 10).
+_bmm_flatmm_local[77].workspace_preload_sf = False
 
 
 def _a8w8_mxscale_bmm_minterleave(bm, bn, bk, wg_per_cu, skip_scale_wait=False):
@@ -1585,8 +1569,8 @@ def _a8w8_mxscale_bmm_minterleave(bm, bn, bk, wg_per_cu, skip_scale_wait=False):
 
 
 _bmm_minterleave_local = {
-    162: _a8w8_mxscale_bmm_minterleave(128, 128, 128, 1, False),
-    163: _a8w8_mxscale_bmm_minterleave(128, 128, 128, 1, True),
+    20: _a8w8_mxscale_bmm_minterleave(128, 128, 128, 1, False),
+    21: _a8w8_mxscale_bmm_minterleave(128, 128, 128, 1, True),
 }
 
 
@@ -1604,10 +1588,10 @@ def _a8w8_mxscale_bmm_spec(tag, bm, bn, bk, wg_per_cu, **flags):
 
 
 _bmm_fused_local = {
-    100: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_fused", 32, 128, 128, 2),
+    3: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_fused", 32, 128, 128, 2),
 }
 
-# pipeline (kids 149/150/151/152/158/159/164): BLOCK_SIZE 512, m{128,256}n{128,256}k128, dual
+# pipeline (kids 14/15/151/152/16/17/22): BLOCK_SIZE 512, m{128,256}n{128,256}k128, dual
 # bf16/fp32 traits (output dtype baked into the traits tuple), non-splitk scale
 # kargs. One of the gemm_a8w8_scale_* kernels selected by flags. The wave
 # layout (T_M/T_N/W_*) is derived inside opus_gemm_a8w8_scale_traits_gfx950 from
@@ -1625,13 +1609,13 @@ def _a8w8_mxscale_bmm_pipeline(**flags):
 
 
 _bmm_pipeline_local = {
-    149: _a8w8_mxscale_bmm_pipeline(B_M=128),
-    150: _a8w8_mxscale_bmm_pipeline(),
-    158: _a8w8_mxscale_bmm_pipeline(preload_sf_lds=True),
-    # kid159 uses preloaded scales at the half-M tile.
-    159: _a8w8_mxscale_bmm_pipeline(B_M=128, preload_sf_lds=True),
-    # kid164 uses preloaded scales with the N tile halved.
-    164: _a8w8_mxscale_bmm_pipeline(B_N=128, preload_sf_lds=True),
+    14: _a8w8_mxscale_bmm_pipeline(B_M=128),
+    15: _a8w8_mxscale_bmm_pipeline(),
+    16: _a8w8_mxscale_bmm_pipeline(preload_sf_lds=True),
+    # kid17 uses preloaded scales at the half-M tile.
+    17: _a8w8_mxscale_bmm_pipeline(B_M=128, preload_sf_lds=True),
+    # kid22 uses preloaded scales with the N tile halved.
+    22: _a8w8_mxscale_bmm_pipeline(B_N=128, preload_sf_lds=True),
 }
 
 
@@ -1651,29 +1635,29 @@ def _a8w8_mxscale_bmm_pipeline_bpreshuffle(**flags):
 
 
 _bmm_pipeline_bpre_local = {
-    # kid196: kid158 (preload_sf_lds) with a preshuffled B.
-    196: _a8w8_mxscale_bmm_pipeline_bpreshuffle(preload_sf_lds=True),
+    # kid31: kid16 (preload_sf_lds) with a preshuffled B.
+    31: _a8w8_mxscale_bmm_pipeline_bpreshuffle(preload_sf_lds=True),
 }
 _bmm_mouter_local = {
-    131: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_mouter", 128, 128, 128, 1),
-    144: _a8w8_mxscale_bmm_spec(
+    5: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_mouter", 128, 128, 128, 1),
+    12: _a8w8_mxscale_bmm_spec(
         "a8w8_mxscale_bmm_mouter", 128, 128, 128, 1, skip_scale_wait=True
     ),
 }
 _bmm_mouter_tunable_local = {
-    160: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_mouter_tunable", 128, 128, 128, 1),
-    161: _a8w8_mxscale_bmm_spec(
+    18: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_mouter_tunable", 128, 128, 128, 1),
+    19: _a8w8_mxscale_bmm_spec(
         "a8w8_mxscale_bmm_mouter_tunable", 128, 128, 128, 1,
         skip_scale_wait=True,
     ),
 }
 _bmm_wave8n2_local = {
-    132: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_wave8n2", 128, 128, 128, 1),
+    6: _a8w8_mxscale_bmm_spec("a8w8_mxscale_bmm_wave8n2", 128, 128, 128, 1),
 }
 _BMM_WAVE4M2_TILES = {
-    134: (False, False),
-    142: (True, False),
-    148: (True, True),
+    7: (False, False),
+    11: (True, False),
+    13: (True, True),
 }
 _bmm_wave4m2_local = {
     kid: _a8w8_mxscale_bmm_spec(
@@ -1702,35 +1686,35 @@ def _relaid_scale(inst):
                 or inst.mpack_sfa)
 
 
-def _globalize_bmm_kids(kernels):
+def _bmm_kernel_table(kernels):
     return {
-        bmm_mxscale_global_kid(kid): inst
+        kid: inst
         for kid, inst in kernels.items()
         if BMM_BUILD_RELAID_SCALE_KIDS or not _relaid_scale(inst)
     }
 
 
-a8w8_mxscale_bmm_flatmm_splitk_kernels_list = _globalize_bmm_kids(_bmm_flatmm_local)
-a8w8_mxscale_bmm_bpreshuffle_bdirect_kernels_list = _globalize_bmm_kids(_bmm_bpre_bdirect_local)
-a8w8_mxscale_bmm_bpreshuffle_bdirect_tilen_kernels_list = _globalize_bmm_kids(_bmm_bpre_bdirect_tilen_local)
-a8w8_mxscale_bmm_bpreshuffle_blds_kernels_list = _globalize_bmm_kids(_bmm_bpre_blds_local)
-a8w8_mxscale_bmm_bpreshuffle_allwave_kernels_list = _globalize_bmm_kids(_bmm_bpre_allwave_local)
-a8w8_mxscale_bmm_bpreshuffle_wave8n4_kernels_list = _globalize_bmm_kids(_bmm_bpre_wave8n4_local)
-a8w8_mxscale_bmm_bpreshuffle_wavetm1_kernels_list = _globalize_bmm_kids(_bmm_bpre_wavetm1_local)
-a8w8_mxscale_bmm_bpreshuffle_wavetm1_blds_kernels_list = _globalize_bmm_kids(
+a8w8_mxscale_bmm_flatmm_splitk_kernels_list = _bmm_kernel_table(_bmm_flatmm_local)
+a8w8_mxscale_bmm_bpreshuffle_bdirect_kernels_list = _bmm_kernel_table(_bmm_bpre_bdirect_local)
+a8w8_mxscale_bmm_bpreshuffle_bdirect_tilen_kernels_list = _bmm_kernel_table(_bmm_bpre_bdirect_tilen_local)
+a8w8_mxscale_bmm_bpreshuffle_blds_kernels_list = _bmm_kernel_table(_bmm_bpre_blds_local)
+a8w8_mxscale_bmm_bpreshuffle_allwave_kernels_list = _bmm_kernel_table(_bmm_bpre_allwave_local)
+a8w8_mxscale_bmm_bpreshuffle_wave8n4_kernels_list = _bmm_kernel_table(_bmm_bpre_wave8n4_local)
+a8w8_mxscale_bmm_bpreshuffle_wavetm1_kernels_list = _bmm_kernel_table(_bmm_bpre_wavetm1_local)
+a8w8_mxscale_bmm_bpreshuffle_wavetm1_blds_kernels_list = _bmm_kernel_table(
     _bmm_bpre_wavetm1_blds_local
 )
-a8w8_mxscale_bmm_bpreshuffle_wave1_kernels_list = _globalize_bmm_kids(_bmm_bpre_wave1_local)
-a8w8_mxscale_bmm_pipeline_bpreshuffle_kernels_list = _globalize_bmm_kids(_bmm_pipeline_bpre_local)
-a8w8_mxscale_bmm_fused_kernels_list = _globalize_bmm_kids(_bmm_fused_local)
-a8w8_mxscale_bmm_minterleave_kernels_list = _globalize_bmm_kids(_bmm_minterleave_local)
-a8w8_mxscale_bmm_mouter_kernels_list = _globalize_bmm_kids(_bmm_mouter_local)
-a8w8_mxscale_bmm_mouter_tunable_kernels_list = _globalize_bmm_kids(
+a8w8_mxscale_bmm_bpreshuffle_wave1_kernels_list = _bmm_kernel_table(_bmm_bpre_wave1_local)
+a8w8_mxscale_bmm_pipeline_bpreshuffle_kernels_list = _bmm_kernel_table(_bmm_pipeline_bpre_local)
+a8w8_mxscale_bmm_fused_kernels_list = _bmm_kernel_table(_bmm_fused_local)
+a8w8_mxscale_bmm_minterleave_kernels_list = _bmm_kernel_table(_bmm_minterleave_local)
+a8w8_mxscale_bmm_mouter_kernels_list = _bmm_kernel_table(_bmm_mouter_local)
+a8w8_mxscale_bmm_mouter_tunable_kernels_list = _bmm_kernel_table(
     _bmm_mouter_tunable_local
 )
-a8w8_mxscale_bmm_pipeline_kernels_list = _globalize_bmm_kids(_bmm_pipeline_local)
-a8w8_mxscale_bmm_wave8n2_kernels_list = _globalize_bmm_kids(_bmm_wave8n2_local)
-a8w8_mxscale_bmm_wave4m2_selfload_kernels_list = _globalize_bmm_kids(
+a8w8_mxscale_bmm_pipeline_kernels_list = _bmm_kernel_table(_bmm_pipeline_local)
+a8w8_mxscale_bmm_wave8n2_kernels_list = _bmm_kernel_table(_bmm_wave8n2_local)
+a8w8_mxscale_bmm_wave4m2_selfload_kernels_list = _bmm_kernel_table(
     _bmm_wave4m2_local
 )
 
@@ -1766,25 +1750,25 @@ def _a8w8_mxscale_bmm_bpreshuffle_compact(bm, bn, bk, wm, wn, nb, nt, early_b):
 
 # Explicit local ids keep existing tuned CSVs stable when adding configurations.
 # Arguments: BM, BN, BK, WM, WN, LDS slots, non-temporal B, early B prefetch.
-a8w8_mxscale_bmm_bpreshuffle_compact_kernels_list = _globalize_bmm_kids(
+a8w8_mxscale_bmm_bpreshuffle_compact_kernels_list = _bmm_kernel_table(
     {
-        470: _a8w8_mxscale_bmm_bpreshuffle_compact(64, 64, 256, 2, 2, 4, True, False),
-        471: _a8w8_mxscale_bmm_bpreshuffle_compact(96, 64, 256, 2, 2, 3, False, False),
-        472: _a8w8_mxscale_bmm_bpreshuffle_compact(64, 64, 256, 4, 2, 4, True, False),
-        473: _a8w8_mxscale_bmm_bpreshuffle_compact(
+        125: _a8w8_mxscale_bmm_bpreshuffle_compact(64, 64, 256, 2, 2, 4, True, False),
+        126: _a8w8_mxscale_bmm_bpreshuffle_compact(96, 64, 256, 2, 2, 3, False, False),
+        127: _a8w8_mxscale_bmm_bpreshuffle_compact(64, 64, 256, 4, 2, 4, True, False),
+        128: _a8w8_mxscale_bmm_bpreshuffle_compact(
             192, 128, 128, 2, 4, 3, False, False
         ),
-        474: _a8w8_mxscale_bmm_bpreshuffle_compact(256, 128, 128, 4, 2, 3, True, False),
-        475: _a8w8_mxscale_bmm_bpreshuffle_compact(192, 128, 128, 2, 4, 3, False, True),
-        476: _a8w8_mxscale_bmm_bpreshuffle_compact(256, 128, 128, 4, 2, 3, True, True),
-        477: _a8w8_mxscale_bmm_bpreshuffle_compact(16, 32, 512, 1, 2, 3, False, False),
-        478: _a8w8_mxscale_bmm_bpreshuffle_compact(32, 32, 512, 2, 2, 2, False, False),
-        479: _a8w8_mxscale_bmm_bpreshuffle_compact(16, 64, 512, 1, 4, 2, False, False),
-        480: _a8w8_mxscale_bmm_bpreshuffle_compact(16, 64, 256, 1, 4, 3, False, False),
-        481: _a8w8_mxscale_bmm_bpreshuffle_compact(32, 64, 256, 2, 2, 3, False, False),
-        482: _a8w8_mxscale_bmm_bpreshuffle_compact(64, 32, 256, 2, 2, 3, False, False),
-        483: _a8w8_mxscale_bmm_bpreshuffle_compact(64, 64, 128, 2, 2, 3, False, False),
-        484: _a8w8_mxscale_bmm_bpreshuffle_compact(
+        129: _a8w8_mxscale_bmm_bpreshuffle_compact(256, 128, 128, 4, 2, 3, True, False),
+        130: _a8w8_mxscale_bmm_bpreshuffle_compact(192, 128, 128, 2, 4, 3, False, True),
+        131: _a8w8_mxscale_bmm_bpreshuffle_compact(256, 128, 128, 4, 2, 3, True, True),
+        132: _a8w8_mxscale_bmm_bpreshuffle_compact(16, 32, 512, 1, 2, 3, False, False),
+        133: _a8w8_mxscale_bmm_bpreshuffle_compact(32, 32, 512, 2, 2, 2, False, False),
+        134: _a8w8_mxscale_bmm_bpreshuffle_compact(16, 64, 512, 1, 4, 2, False, False),
+        135: _a8w8_mxscale_bmm_bpreshuffle_compact(16, 64, 256, 1, 4, 3, False, False),
+        136: _a8w8_mxscale_bmm_bpreshuffle_compact(32, 64, 256, 2, 2, 3, False, False),
+        137: _a8w8_mxscale_bmm_bpreshuffle_compact(64, 32, 256, 2, 2, 3, False, False),
+        138: _a8w8_mxscale_bmm_bpreshuffle_compact(64, 64, 128, 2, 2, 3, False, False),
+        139: _a8w8_mxscale_bmm_bpreshuffle_compact(
             128, 128, 128, 2, 2, 2, False, False
         ),
     }
@@ -1811,29 +1795,25 @@ a8w8_mxscale_bmm_kernel_lists = (
     a8w8_mxscale_bmm_wave8n2_kernels_list,
     a8w8_mxscale_bmm_wave4m2_selfload_kernels_list,
 )
-BMM_MXSCALE_KIDS = frozenset(
-    kid for family in a8w8_mxscale_bmm_kernel_lists for kid in family
-)
-assert len(BMM_MXSCALE_KIDS) == sum(map(len, a8w8_mxscale_bmm_kernel_lists))
 
 
 a8w8_kernels_list = {
-    2: OpusGemmInstance(512, 256, 256, 128, 2, 4, 16, 16, 128, 16, 16, 4, 0, 0, 0, "a8w8", ["fp32_t"]),
+    0: OpusGemmInstance(512, 256, 256, 128, 2, 4, 16, 16, 128, 16, 16, 4, 0, 0, 0, "a8w8", ["fp32_t"]),
 }
 
 a16w16_kernels_list = {
     # -- MFMA 16x16x32, T_N=2, BS=256 (2-block/CU capable) --
-    # 3:  _a16w16(256, 128, 128, 32,  2, 16, 16, 32),  # disabled: intermittent accuracy (suspected compiler issue with VGPR=104/AGPR=64)
-    4:  _a16w16(256, 128, 256, 32,  2, 16, 16, 32),
-    5:  _a16w16(256, 256, 128, 32,  2, 16, 16, 32),
+    # disabled: _a16w16(256, 128, 128, 32,  2, 16, 16, 32),  # disabled: intermittent accuracy (suspected compiler issue with VGPR=104/AGPR=64)
+    0:  _a16w16(256, 128, 256, 32,  2, 16, 16, 32),
+    1:  _a16w16(256, 256, 128, 32,  2, 16, 16, 32),
     # -- MFMA 16x16x32, T_N=4, BS=512 (1-block/CU) --
-    6:  _a16w16(512, 128, 128, 64,  4, 16, 16, 32),
-    7:  _a16w16(512, 256, 128, 64,  4, 16, 16, 32),
-    8:  _a16w16(512, 128, 256, 64,  4, 16, 16, 32),
-    9:  _a16w16(512, 256, 256, 64,  4, 16, 16, 32),  # existing / current default
+    2:  _a16w16(512, 128, 128, 64,  4, 16, 16, 32),
+    3:  _a16w16(512, 256, 128, 64,  4, 16, 16, 32),
+    4:  _a16w16(512, 128, 256, 64,  4, 16, 16, 32),
+    5:  _a16w16(512, 256, 256, 64,  4, 16, 16, 32),  # existing / current default
 }
 
-# Removed (kids 100-115, a16w16_flatmm non-splitk): Rationale: the non-splitk a16w16_flatmm
+# Removed a16w16_flatmm non-splitk: Rationale: the non-splitk a16w16_flatmm
 # pipeline has two latent correctness b...
 a16w16_flatmm_kernels_list = {}
 
@@ -1841,38 +1821,38 @@ a16w16_flatmm_kernels_list = {}
 # exactly: * 8 WG_PER_CU=2 tiles (...
 a16w16_flatmm_splitk_kernels_list = {
     # WG_PER_CU=2, cc tile 0..7
-    200: _a16w16_flatmm_splitk( 64,  64,  64, 2),   # cc tile 0: M>=128 sweet spot (default)
-    201: _a16w16_flatmm_splitk( 32,  32,  64, 2),   # cc tile 1
-    202: _a16w16_flatmm_splitk( 32,  32, 128, 2),   # cc tile 2
-    203: _a16w16_flatmm_splitk( 32,  64,  64, 2),   # cc tile 3
-    204: _a16w16_flatmm_splitk( 32, 128,  64, 2),   # cc tile 4
-    205: _a16w16_flatmm_splitk( 64,  32,  64, 2),   # cc tile 5
-    206: _a16w16_flatmm_splitk( 64,  32, 128, 2),   # cc tile 6: recommended for medium M
-    207: _a16w16_flatmm_splitk(128,  32,  64, 2),   # cc tile 7
+    6: _a16w16_flatmm_splitk( 64,  64,  64, 2),   # cc tile 0: M>=128 sweet spot (default)
+    7: _a16w16_flatmm_splitk( 32,  32,  64, 2),   # cc tile 1
+    8: _a16w16_flatmm_splitk( 32,  32, 128, 2),   # cc tile 2
+    9: _a16w16_flatmm_splitk( 32,  64,  64, 2),   # cc tile 3
+    10: _a16w16_flatmm_splitk( 32, 128,  64, 2),   # cc tile 4
+    11: _a16w16_flatmm_splitk( 64,  32,  64, 2),   # cc tile 5
+    12: _a16w16_flatmm_splitk( 64,  32, 128, 2),   # cc tile 6: recommended for medium M
+    13: _a16w16_flatmm_splitk(128,  32,  64, 2),   # cc tile 7
     # WG_PER_CU=1, cc tile 8..10 (160 KB/wg LDS; zero VGPR spill only)
-    208: _a16w16_flatmm_splitk( 64,  64, 128, 1),   # cc tile 8: deep K, high compute/load ratio
-    209: _a16w16_flatmm_splitk(256,  32,  64, 1),   # cc tile 9: very tall, narrow N
-    210: _a16w16_flatmm_splitk( 32, 256,  64, 1),   # cc tile 10: very wide, narrow M
-    # Tile coverage extension (kids 211..223): B_M=96 OR B_N=96 lanes for shapes whose M or N is a
+    14: _a16w16_flatmm_splitk( 64,  64, 128, 1),   # cc tile 8: deep K, high compute/load ratio
+    15: _a16w16_flatmm_splitk(256,  32,  64, 1),   # cc tile 9: very tall, narrow N
+    16: _a16w16_flatmm_splitk( 32, 256,  64, 1),   # cc tile 10: very wide, narrow M
+    # Tile coverage extension (kids 17..29): B_M=96 OR B_N=96 lanes for shapes whose M or N is a
     # multiple of 96.
-    211: _a16w16_flatmm_splitk( 32,  96,  64, 1),   # pfk=9, VGPR=176/512, AGPR=24
-    212: _a16w16_flatmm_splitk( 32,  96,  64, 2),   # pfk=4, VGPR=176/256, AGPR=24
-    213: _a16w16_flatmm_splitk( 32,  96, 128, 1),   # pfk=4, VGPR=288/512, AGPR=24
-    214: _a16w16_flatmm_splitk( 64,  96,  64, 1),   # pfk=7, VGPR=192/512, AGPR=48
-    215: _a16w16_flatmm_splitk( 64,  96,  64, 2),   # pfk=3, VGPR=192/256, AGPR=48
-    216: _a16w16_flatmm_splitk( 64,  96, 128, 1),   # pfk=3, VGPR=320/512, AGPR=48
-    217: _a16w16_flatmm_splitk( 96,  32,  64, 1),   # pfk=9, VGPR=144/512, AGPR=24
-    218: _a16w16_flatmm_splitk( 96,  32,  64, 2),   # pfk=4, VGPR=144/256, AGPR=24
-    219: _a16w16_flatmm_splitk( 96,  32, 128, 1),   # pfk=4, VGPR=224/512, AGPR=24
-    220: _a16w16_flatmm_splitk( 96,  64,  64, 1),   # pfk=7, VGPR=176/512, AGPR=48
-    221: _a16w16_flatmm_splitk( 96,  64,  64, 2),   # pfk=3, VGPR=176/256, AGPR=48
-    222: _a16w16_flatmm_splitk( 96,  64, 128, 1),   # pfk=3, VGPR=288/512, AGPR=48
-    223: _a16w16_flatmm_splitk( 96,  96,  64, 2),   # pfk=3, VGPR=208/256, AGPR=72  (81% VGPR -- watch)
+    17: _a16w16_flatmm_splitk( 32,  96,  64, 1),   # pfk=9, VGPR=176/512, AGPR=24
+    18: _a16w16_flatmm_splitk( 32,  96,  64, 2),   # pfk=4, VGPR=176/256, AGPR=24
+    19: _a16w16_flatmm_splitk( 32,  96, 128, 1),   # pfk=4, VGPR=288/512, AGPR=24
+    20: _a16w16_flatmm_splitk( 64,  96,  64, 1),   # pfk=7, VGPR=192/512, AGPR=48
+    21: _a16w16_flatmm_splitk( 64,  96,  64, 2),   # pfk=3, VGPR=192/256, AGPR=48
+    22: _a16w16_flatmm_splitk( 64,  96, 128, 1),   # pfk=3, VGPR=320/512, AGPR=48
+    23: _a16w16_flatmm_splitk( 96,  32,  64, 1),   # pfk=9, VGPR=144/512, AGPR=24
+    24: _a16w16_flatmm_splitk( 96,  32,  64, 2),   # pfk=4, VGPR=144/256, AGPR=24
+    25: _a16w16_flatmm_splitk( 96,  32, 128, 1),   # pfk=4, VGPR=224/512, AGPR=24
+    26: _a16w16_flatmm_splitk( 96,  64,  64, 1),   # pfk=7, VGPR=176/512, AGPR=48
+    27: _a16w16_flatmm_splitk( 96,  64,  64, 2),   # pfk=3, VGPR=176/256, AGPR=48
+    28: _a16w16_flatmm_splitk( 96,  64, 128, 1),   # pfk=3, VGPR=288/512, AGPR=48
+    29: _a16w16_flatmm_splitk( 96,  96,  64, 2),   # pfk=3, VGPR=208/256, AGPR=72  (81% VGPR -- watch)
 }
 
-# non-OOB variants: kid + 1000, same tile but HAS_OOB=false.
+# non-OOB variants: kid + 46, same tile but HAS_OOB=false.
 a16w16_kernels_list_nooob = {
-    kid + 1000: _a16w16(
+    kid + 46: _a16w16(
         inst.BLOCK_SIZE, inst.B_M, inst.B_N, inst.B_K,
         inst.T_N, inst.W_M, inst.W_N, inst.W_K, has_oob=False,
         cachectl_a=inst.cachectl_a, cachectl_b=inst.cachectl_b,
@@ -1881,14 +1861,12 @@ a16w16_kernels_list_nooob = {
 }
 
 # CPOL variants for a16w16: 3 policies per kid, tuner picks best per shape.
-# Explicit OOB/nooob offsets preserve the previously visible ids. The old
-# offset+1000 mirrors collided with the next policy and the +5000 4g_safe
-# family. Only those shadowed variants move to the unused 7000 band.
+# Explicit local OOB/nooob ranges keep the cache policies disjoint.
 _CACHECTL_CONFIGS = [
     # (oob_offset, nooob_offset, cachectl_a, cachectl_b, tag)
-    (2000, 3000,  1, 17, "Mheavy"),
-    (7000, 4000, 17,  1, "Nheavy"),
-    (7100, 7200,  0,  0, "balanced"),
+    (97, 103, 1, 17, "Mheavy"),
+    (140, 109, 17, 1, "Nheavy"),
+    (146, 152, 0, 0, "balanced"),
 ]
 a16w16_kernels_list_cpol = {}
 for offset, _nooob_offset, ca, cb, _tag in _CACHECTL_CONFIGS:
@@ -1913,7 +1891,7 @@ for _oob_offset, offset, ca, cb, _tag in _CACHECTL_CONFIGS:
         a16w16_kernels_list_cpol_nooob[kid + offset] = new_inst
 
 a16w16_flatmm_splitk_kernels_list_nooob = {
-    kid + 1000: _a16w16_flatmm_splitk(
+    kid + 46: _a16w16_flatmm_splitk(
         inst.B_M, inst.B_N, inst.B_K, inst.WG_PER_CU, has_oob=False,
     )
     for kid, inst in a16w16_flatmm_splitk_kernels_list.items()
@@ -1953,7 +1931,7 @@ _PERSISTENT_TILES = [
 
 # Legacy (300..303): cachectl == (0, 17).
 a16w16_persistent_kernels_list = {
-    300 + i: _a16w16_persistent(bm, bn, bk)
+    30 + i: _a16w16_persistent(bm, bn, bk)
     for i, (bm, bn, bk) in enumerate(_PERSISTENT_TILES)
 }
 
@@ -1961,9 +1939,9 @@ a16w16_persistent_kernels_list = {
 # compact base offset per cpol group.
 _PERSISTENT_CPOL_GROUPS = [
     # (base_kid, cachectl_a, cachectl_b)
-    (304,  1, 17),   # Mheavy
-    (308, 17,  1),   # Nheavy
-    (312,  0,  0),   # balanced
+    (34, 1, 17),   # Mheavy
+    (38, 17, 1),   # Nheavy
+    (42, 0, 0),    # balanced
 ]
 a16w16_persistent_kernels_list_cpol = {}
 for _base, _ca, _cb in _PERSISTENT_CPOL_GROUPS:
@@ -1975,14 +1953,14 @@ for _base, _ca, _cb in _PERSISTENT_CPOL_GROUPS:
 # Nooob mirrors at +1000 for both legacy (1300..1303) and cpol (1304..1315).
 # Explicit cachectl inheritance keeps name() consistent with parents.
 a16w16_persistent_kernels_list_nooob = {
-    kid + 1000: _a16w16_persistent(
+    kid + 46: _a16w16_persistent(
         inst.B_M, inst.B_N, inst.B_K, has_oob=False,
         cachectl_a=inst.cachectl_a, cachectl_b=inst.cachectl_b,
     )
     for kid, inst in a16w16_persistent_kernels_list.items()
 }
 a16w16_persistent_kernels_list_cpol_nooob = {
-    kid + 1000: _a16w16_persistent(
+    kid + 46: _a16w16_persistent(
         inst.B_M, inst.B_N, inst.B_K, has_oob=False,
         cachectl_a=inst.cachectl_a, cachectl_b=inst.cachectl_b,
     )
@@ -2023,11 +2001,7 @@ def _a16w16_mono_tile(bm, bn, bk):
     )
 
 
-# 5 mono-tile tiles, kids 1400..1404. Kid range deliberately starts at
-# 1400 (above the persistent +1000 nooob mirror range that ends at 1323)
-# and below the next reserved family slot. No "base/nooob" mirror split:
-# mono-tile is non-OOB by construction, so kids land in the >=1000 band
-# the way other families' nooob mirrors do.
+# 1 mono-tile tiles, local kids 92..96.
 #
 # B_K=128 tiles (e.g. (64,256,128), (128,128,128)) are intentionally
 # excluded: the pipeline uses 2x smem_a + 3x smem_b (A double-buffered,
@@ -2036,14 +2010,14 @@ def _a16w16_mono_tile(bm, bn, bk):
 # pipeline drops B to two slots.
 _MONO_TILE_TILES = [
     # (B_M, B_N, B_K)
-    (192, 256, 64),   # 1400
-    (128, 256, 64),   # 1401
-    (192, 128, 64),   # 1402
-    (128, 128, 64),   # 1403
-    ( 64, 128, 64),   # 1404
+    (192, 256, 64),   # 92
+    (128, 256, 64),   # 93
+    (192, 128, 64),   # 94
+    (128, 128, 64),   # 95
+    ( 64, 128, 64),   # 96
 ]
 a16w16_mono_tile_kernels_list = {
-    1400 + i: _a16w16_mono_tile(bm, bn, bk)
+    92 + i: _a16w16_mono_tile(bm, bn, bk)
     for i, (bm, bn, bk) in enumerate(_MONO_TILE_TILES)
 }
 
@@ -2063,7 +2037,6 @@ a16w16_mono_tile_kernels_list = {
 # from their parent (M/N tail is absorbed by the per-WG BR num_records, so
 # the per-thread predicate is structurally a no-op for valid in-tile threads;
 # we still emit both has_oob variants for consistency with the legacy axis).
-_FOUR_G_SAFE_OFFSET = 5000
 
 
 def _make_4g_safe(inst: "OpusGemmInstance") -> "OpusGemmInstance":
@@ -2076,29 +2049,28 @@ def _make_4g_safe(inst: "OpusGemmInstance") -> "OpusGemmInstance":
 
 
 a16w16_kernels_list_4g_safe = {
-    kid + _FOUR_G_SAFE_OFFSET: _make_4g_safe(inst)
-    for kid, inst in a16w16_kernels_list.items()
+    115 + i: _make_4g_safe(inst)
+    for i, inst in enumerate(a16w16_kernels_list.values())
 }
 a16w16_kernels_list_4g_safe_nooob = {
-    kid + _FOUR_G_SAFE_OFFSET: _make_4g_safe(inst)
-    for kid, inst in a16w16_kernels_list_nooob.items()
+    125 + i: _make_4g_safe(inst)
+    for i, inst in enumerate(a16w16_kernels_list_nooob.values())
 }
 a16w16_persistent_kernels_list_4g_safe = {
-    kid + _FOUR_G_SAFE_OFFSET: _make_4g_safe(inst)
-    for kid, inst in a16w16_persistent_kernels_list.items()
+    121 + i: _make_4g_safe(inst)
+    for i, inst in enumerate(a16w16_persistent_kernels_list.values())
 }
 a16w16_persistent_kernels_list_4g_safe_nooob = {
-    kid + _FOUR_G_SAFE_OFFSET: _make_4g_safe(inst)
-    for kid, inst in a16w16_persistent_kernels_list_nooob.items()
+    131 + i: _make_4g_safe(inst)
+    for i, inst in enumerate(a16w16_persistent_kernels_list_nooob.values())
 }
 a16w16_mono_tile_kernels_list_4g_safe = {
-    kid + _FOUR_G_SAFE_OFFSET: _make_4g_safe(inst)
-    for kid, inst in a16w16_mono_tile_kernels_list.items()
+    135 + i: _make_4g_safe(inst)
+    for i, inst in enumerate(a16w16_mono_tile_kernels_list.values())
 }
 
 
-# -- gfx942 kernel lists ------------------------------------------------ Kid offset: gfx942
-GFX942_KID_OFFSET = 10000
+# -- gfx942 kernel lists ------------------------------------------------
 
 # Split-K launch policy is consumed by both the Python Torch-workspace planner
 # and the generated host launcher.  Keep it beside the canonical instances so
@@ -2122,7 +2094,7 @@ GFX942_BF16WS_EXACT_N = frozenset({64, 128, 256, 384, 512, 1024, 2048})
 
 
 def _a16w16_gfx942(bs, bm, bn, bk, tn, wm, wn, wk):
-    """Factory for gfx942 a16w16 kbuf1-large-tile kid instances (kid 10000,
+    """Factory for gfx942 a16w16 kbuf1-large-tile kid instances (local kid 0,
     MFMA 16x16x16). Same algorithm family as kbuf1 (4-phase, 2 barriers/iter)
     but with a larger tile + BS=512 + inline LDS-staged epilogue.
     """
@@ -2311,35 +2283,35 @@ def _a8w8_blockscale_bpreshuffle_singlebuf_gfx942(
 # gfx942 kid registry -- per-family flat maps.
 
 gfx942_nosplit_kernels_list = {
-    10000: _a16w16_gfx942        (512, 128, 128,  64,    4, 16, 16, 16),   # kbuf1_large_tile (4-phase, big tile)
-    10001: _a16w16_p1_gfx942     (256,  64,  64,  64,    2, 16, 16, 16),   # P1 depth=2 sibling of 10201
-    10003: _a16w16_kbuf2v_bk128_gfx942(256, 64,  64, 128,    2, 16, 16, 16),   # P1 B_K=128 sibling of 10203
-    10006: _a16w16_quad_mfma32_gfx942(256, 256, 256, 32, 2, 2, 32, 32, 8), # quad MFMA32 pipeline
-    10300: _a16w16_wave_k_coop_gfx942(512, 16, 16, 64,    1, 16, 16, 16),  # wave-K-coop 16x16, T_K=8
-    10301: _a16w16_wave_k_coop_gfx942(512, 16, 32, 32,    1, 16, 16, 16),  # WKC 16x32, B_K=32
-    10302: _a16w16_wave_k_coop_gfx942(512, 32, 16, 64,    1, 16, 16, 16),  # WKC 32x16, aliased partial
-    10303: _a16w16_wave_k_coop_gfx942(256, 32, 32, 64,    1, 16, 16, 16),  # WKC 32x32, T_K=4
-    10305: _a16w16_wave_k_coop_gfx942(512, 16, 32, 64,    1, 16, 16, 16),  # WKC 16x32, B_K=64
-    10310: _a16w16_wave_k_coop_accum_gfx942(256, 16, 16, 64, 1, 16, 16, 16),  # WKC 16x16 split8 atomic accumulate
-    10311: _a16w16_wave_k_coop_accum_gfx942(512, 16, 32, 32, 1, 16, 16, 16),  # WKC 16x32 split8 atomic accumulate
-    10312: _a16w16_wave_k_coop_accum_gfx942(512, 32, 16, 64, 1, 16, 16, 16),  # WKC 32x16 split8 atomic accumulate
-    10313: _a16w16_wave_k_coop_accum_gfx942(256, 32, 32, 64, 1, 16, 16, 16),  # WKC 32x32 split8 atomic accumulate
-    10314: _a16w16_wave_k_coop_accum_gfx942(256, 64, 16, 64, 1, 16, 16, 16),  # WKC 64x16 split8 atomic accumulate
+    0: _a16w16_gfx942        (512, 128, 128,  64,    4, 16, 16, 16),   # kbuf1_large_tile (4-phase, big tile)
+    1: _a16w16_p1_gfx942     (256,  64,  64,  64,    2, 16, 16, 16),   # P1 depth=2 sibling of 10201
+    2: _a16w16_kbuf2v_bk128_gfx942(256, 64,  64, 128,    2, 16, 16, 16),   # P1 B_K=128 sibling of 10203
+    3: _a16w16_quad_mfma32_gfx942(256, 256, 256, 32, 2, 2, 32, 32, 8), # quad MFMA32 pipeline
+    12: _a16w16_wave_k_coop_gfx942(512, 16, 16, 64,    1, 16, 16, 16),  # wave-K-coop 16x16, T_K=8
+    13: _a16w16_wave_k_coop_gfx942(512, 16, 32, 32,    1, 16, 16, 16),  # WKC 16x32, B_K=32
+    14: _a16w16_wave_k_coop_gfx942(512, 32, 16, 64,    1, 16, 16, 16),  # WKC 32x16, aliased partial
+    15: _a16w16_wave_k_coop_gfx942(256, 32, 32, 64,    1, 16, 16, 16),  # WKC 32x32, T_K=4
+    16: _a16w16_wave_k_coop_gfx942(512, 16, 32, 64,    1, 16, 16, 16),  # WKC 16x32, B_K=64
+    17: _a16w16_wave_k_coop_accum_gfx942(256, 16, 16, 64, 1, 16, 16, 16),  # WKC 16x16 split8 atomic accumulate
+    18: _a16w16_wave_k_coop_accum_gfx942(512, 16, 32, 32, 1, 16, 16, 16),  # WKC 16x32 split8 atomic accumulate
+    19: _a16w16_wave_k_coop_accum_gfx942(512, 32, 16, 64, 1, 16, 16, 16),  # WKC 32x16 split8 atomic accumulate
+    20: _a16w16_wave_k_coop_accum_gfx942(256, 32, 32, 64, 1, 16, 16, 16),  # WKC 32x32 split8 atomic accumulate
+    21: _a16w16_wave_k_coop_accum_gfx942(256, 64, 16, 64, 1, 16, 16, 16),  # WKC 64x16 split8 atomic accumulate
 }
 
 gfx942_splitk_kernels_list = {
-    10200: _a16w16_kbuf1_sk_gfx942      (512, 128, 128,  64,    4, 16, 16, 16),                # legacy 4-phase large tile
-    10201: _a16w16_kbuf2v_sk_gfx942     (256,  64,  64,  64,    2, 16, 16, 16),                # P1 depth=2 + V-dbuf
-    10203: _a16w16_kbuf2v_bk128_sk_gfx942(256, 64,  64, 128,    2, 16, 16, 16),                # P1 B_K=128 sub-K decomp
-    10204: _a16w16_em3en4_lds1_pgr2_sk_gfx942 (256, 128,  96, 128,    2, 16, 16, 16),                # EM3EN4 LDS1/PGR2 hipb-orientation (host 128M x 96N)
-    10205: _a16w16_kbuf1_sk_gfx942      (512,  64, 128,  64,    4, 16, 16, 16),                # legacy 4-phase M64 x N128
-    10210: _a16w16_kbuf1_sk_bf16ws_gfx942(512, 128, 128,  64,    4, 16, 16, 16),                # legacy 4-phase large tile + bf16 workspace
-    10213: _a16w16_kbuf2v_bk128_sk_bf16ws_gfx942(256, 64,  64, 128,    2, 16, 16, 16),           # P1 B_K=128 + bf16 workspace
-    10216: _a16w16_quad_mfma32_sk_bf16ws_gfx942(256, 256, 256, 32, 2, 2, 32, 32, 8, group_m=6),  # 10006 bf16 splitK sibling, group-M=6
+    4: _a16w16_kbuf1_sk_gfx942      (512, 128, 128,  64,    4, 16, 16, 16),                # legacy 4-phase large tile
+    5: _a16w16_kbuf2v_sk_gfx942     (256,  64,  64,  64,    2, 16, 16, 16),                # P1 depth=2 + V-dbuf
+    6: _a16w16_kbuf2v_bk128_sk_gfx942(256, 64,  64, 128,    2, 16, 16, 16),                # P1 B_K=128 sub-K decomp
+    7: _a16w16_em3en4_lds1_pgr2_sk_gfx942 (256, 128,  96, 128,    2, 16, 16, 16),                # EM3EN4 LDS1/PGR2 hipb-orientation (host 128M x 96N)
+    8: _a16w16_kbuf1_sk_gfx942      (512,  64, 128,  64,    4, 16, 16, 16),                # legacy 4-phase M64 x N128
+    9: _a16w16_kbuf1_sk_bf16ws_gfx942(512, 128, 128,  64,    4, 16, 16, 16),                # legacy 4-phase large tile + bf16 workspace
+    10: _a16w16_kbuf2v_bk128_sk_bf16ws_gfx942(256, 64,  64, 128,    2, 16, 16, 16),           # P1 B_K=128 + bf16 workspace
+    11: _a16w16_quad_mfma32_sk_bf16ws_gfx942(256, 256, 256, 32, 2, 2, 32, 32, 8, group_m=6),  # 3 bf16 splitK sibling, group-M=6
 }
 
 gfx942_a8w8_kernels_list = {
-    11000: _a8w8_blockscale_bpreshuffle_singlebuf_gfx942(
+    0: _a8w8_blockscale_bpreshuffle_singlebuf_gfx942(
         512, 128, 128, 128, 4, 2, 16, 16, 32, vec=16),
 }
 # NOTE: 10402 (a16w16_naive_64x64) was removed -- 32.85us never matched WKC's
@@ -2348,14 +2320,11 @@ gfx942_a8w8_kernels_list = {
 gfx942_kernels_list = {
     **gfx942_nosplit_kernels_list,
     **gfx942_splitk_kernels_list,
-    **gfx942_a8w8_kernels_list,
 }
 
 # -- gfx1250 kernel lists ----------------------------------------------------
-# Kid offset: gfx1250 kids live in the 20000+ range, disjoint from gfx950
-# (<10000) and gfx942. Both #4246 families are represented: two-stage
+# Both #4246 families are represented: two-stage
 # cluster/TDM kids and fused in-cluster-reduce kids.
-GFX1250_KID_OFFSET = 20000
 
 
 def _a16w16_cluster_tdm_splitk_ws_gfx1250(bm, bn, bk, layout, num_slots=3, wg_per_cu=2):
@@ -2475,7 +2444,7 @@ _GFX1250_CTDM_TILES = [
     #    _ctdm_pick_configs() still drops any tile whose per-TDM direct-copy
     #    request hits the 256-request limit (those deadlock the no-cluster TDM
     #    engine -- they remain available only via the multicast clusterlaunch
-    #    variant). New kids are 20088+ (idx*8), clear of the clusterlaunch band.
+    #    variant).
     (16, 64, 256, "tileN"),
     (16, 128, 256, "tileN"),
     (16, 256, 128, "tileN"),
@@ -2496,7 +2465,7 @@ _GFX1250_CTDM_TILES = [
 ]
 
 # Kid numbering is stable for tuned CSVs and the Python heuristic:
-#   plain (no-cluster) kids occupy [20000, 20100), ONE P=3 kid per tile (P=2 is
+#   plain (no-cluster) local kids start at 0, ONE P=3 kid per tile (P=2 is
 #   dropped -- unvalidated). Tiles the picker rejects (>=256-request TDM
 #   direct-copy, now FIXED) fall back to P=3, 1 WG/CU so every no-spill tile still
 #   emits a plain kid (LDS(P=3) <= 320 KB for this set).
@@ -2504,7 +2473,7 @@ _GFX1250_CTDM_TILES = [
 # The consumer kExpN stability guard (previously _GFX1250_MAX_KEXPN=8) is removed.
 gfx1250_kernels_list = {}
 GFX1250_PLAIN_KID_OF = {}  # (B_M,B_N,B_K) -> kid (P=3; tuner + Python heuristic)
-_GFX1250_KID_BASE = 20000
+_GFX1250_KID_BASE = 0
 _p_kid = _GFX1250_KID_BASE
 for _bm, _bn, _bk, _layout in _GFX1250_CTDM_TILES:
     # P=3 only (P=2 kids removed -- not validated); fall back to (P=3, 1 WG/CU)
@@ -2516,7 +2485,6 @@ for _bm, _bn, _bk, _layout in _GFX1250_CTDM_TILES:
         )
         GFX1250_PLAIN_KID_OF[(_bm, _bn, _bk)] = _p_kid
         _p_kid += 1
-assert _p_kid <= 20100, f"plain gfx1250 kids overflow the [20000,20100) band: {_p_kid}"
 
 GFX1250_BASE_KIDS = frozenset(gfx1250_kernels_list.keys())
 
@@ -2527,8 +2495,7 @@ GFX1250_BASE_KIDS = frozenset(gfx1250_kernels_list.keys())
 # A/B TDM loads via CLUSTER_LOAD_ASYNC multicast (named-barrier producer/consumer
 # handshake, same as the plain base). The host launcher rounds the grid up to the
 # cluster dims; surplus workgroups take the pipeline's uniform tile_oob exit.
-# Logical workspace strides use the unrounded tile counts. Clusterlaunch kids
-# occupy [20100, 21000), separate from plain kids in [20000, 20100).
+# Logical workspace strides use the unrounded tile counts.
 def _a16w16_clusterlaunch_tdm_splitk_ws_gfx1250(
     bm, bn, bk, layout, cwm, cwn, num_slots=3, wg_per_cu=2
 ):
@@ -2568,8 +2535,8 @@ _GFX1250_CLUSTERLAUNCH_TILES = [
     (128, 128, 128, 1),
 ]
 _GFX1250_CLUSTERLAUNCH_P = 3            # all tiles use prefetch depth P=3
-# Clusterlaunch kids occupy [20100, 21000) (plain uses [20000, 20100)).
-_GFX1250_CLUSTERLAUNCH_KID_BASE = 20100
+# Clusterlaunch local kids follow the plain table.
+_GFX1250_CLUSTERLAUNCH_KID_BASE = _p_kid
 _GFX1250_MAX_MULTICAST_WG = 5          # TDM multicast fan-out limit (WGs per group)
 
 
@@ -2598,9 +2565,8 @@ def _gfx1250_valid_cluster_dims():
     return dims
 
 
-# Deterministic kid numbering: 20100 + running index over (tile outer, then
-# cluster dim (cwn outer, cwm inner)). Kid numbers are provisional -- a global
-# renumber is pending. The kExpN stability guard has been removed, so ALL 26
+# Deterministic local numbering over (tile outer, then
+# cluster dim (cwn outer, cwm inner)). The kExpN stability guard has been removed, so ALL 26
 # no-spill tiles are expanded (incl. B_N=256 tileM -> kExpN=16). The multicast
 # clusterlaunch path is not bound by the no-cluster 256-request TDM limit, so no
 # per-TDM request drop is applied here.
@@ -2619,7 +2585,6 @@ for _bm, _bn, _bk, _wg in _GFX1250_CLUSTERLAUNCH_TILES:
         GFX1250_CLUSTERLAUNCH_KID_OF[(_bm, _bn, _bk, _cwm, _cwn)] = _cl_kid
         _cl_kid += 1
 
-assert _cl_kid <= 21000, f"clusterlaunch gfx1250 kids overflow [20100,21000): {_cl_kid}"
 GFX1250_CLUSTERLAUNCH_KIDS = frozenset(gfx1250_clusterlaunch_kernels_list.keys())
 
 
@@ -2633,8 +2598,7 @@ GFX1250_CLUSTERLAUNCH_KIDS = frozenset(gfx1250_clusterlaunch_kernels_list.keys()
 #
 # The final #4246 decision leaves this family unregistered until its pipeline
 # is fixed. The factory, emitter, and device source remain available, but no kid
-# is visible to exact dispatch/capability queries. Its reserved band starts at
-# 27000 because pre-compiled CO kids own [21000, 27000).
+# is visible to exact dispatch/capability queries.
 def _a16w16_splitk_fuse_gfx1250(
     bm,
     bn,
@@ -2669,9 +2633,7 @@ def _a16w16_splitk_fuse_gfx1250(
 GFX1250_SPLITK_FUSE_ENABLED = False
 
 gfx1250_splitk_fuse_kernels_list = {}
-GFX1250_SPLITK_FUSE_KID_BASE = 27000
 GFX1250_SPLITK_FUSE_KID_OF = {}
-_sf_kid = GFX1250_SPLITK_FUSE_KID_BASE
 
 # The bounded LDS ring used by the fused reducer must fit inside the traits'
 # shared allocation. These constants mirror the fused pipeline.
@@ -2693,43 +2655,6 @@ def _fuse_ring_lds_ok(bm, bn, bk, wg, ws_bytes):
 # 16-WG cluster budget and each axis stays within its hardware limit.
 _FUSE_WS_SWEEP = (("bf16_t", 2, 15), ("fp32_t", 4, 8))
 _FUSE_MAX_NCLUSTER = 5
-_fuse_tiles_seen = set()
-_fuse_tiles = _GFX1250_CLUSTERLAUNCH_TILES if GFX1250_SPLITK_FUSE_ENABLED else ()
-for _bm, _bn, _bk, _wg in _fuse_tiles:
-    if (_bm, _bn, _bk) in _fuse_tiles_seen:
-        continue
-    _fuse_tiles_seen.add((_bm, _bn, _bk))
-    _layout = "tileN" if _bm == 16 else "tileM"
-    for _ws, _ws_bytes, _sk_hi in _FUSE_WS_SWEEP:
-        if not _fuse_ring_lds_ok(_bm, _bn, _bk, _wg, _ws_bytes):
-            continue
-        for _nc in range(1, _FUSE_MAX_NCLUSTER + 1):
-            for _sk in range(2, _sk_hi + 1):
-                if _sk * _nc > 16:
-                    continue
-                gfx1250_splitk_fuse_kernels_list[_sf_kid] = (
-                    _a16w16_splitk_fuse_gfx1250(
-                        _bm,
-                        _bn,
-                        _bk,
-                        _layout,
-                        split_k=_sk,
-                        n_cluster=_nc,
-                        ws_dtype=_ws,
-                        wg_per_cu=_wg,
-                    )
-                )
-                GFX1250_SPLITK_FUSE_KID_OF[
-                    (_bm, _bn, _bk, _layout, _sk, _nc, _ws)
-                ] = _sf_kid
-                _sf_kid += 1
-
-assert _sf_kid <= 30000, (
-    "splitk_fuse gfx1250 kids overflow [27000,30000): "
-    f"ended at {_sf_kid - 1}"
-)
-GFX1250_SPLITK_FUSE_KIDS = frozenset(gfx1250_splitk_fuse_kernels_list.keys())
-assert bool(GFX1250_SPLITK_FUSE_KIDS) == GFX1250_SPLITK_FUSE_ENABLED
 
 
 # -- gfx1250 symmetric 4-wave compute, pre-compiled .co ---------------------
@@ -2737,16 +2662,10 @@ assert bool(GFX1250_SPLITK_FUSE_KIDS) == GFX1250_SPLITK_FUSE_ENABLED
 # this host-launcher registry. The device kernels need compiler facilities not
 # available in the release JIT toolchain, so gen_instances emits host launchers
 # only and loads the matching image at runtime.
-GFX1250_4WAVE_CO_KID_BASE = 21000
-GFX1250_4WAVE_CO_KID_END = 27000
 CO_KERNELS_JSON = os.path.join(
     os.path.dirname(__file__), "gen_co", "co_kernels_gfx1250.json"
 )
 
-_CO_KID_BANDS = {
-    tag: (GFX1250_4WAVE_CO_KID_BASE, GFX1250_4WAVE_CO_KID_END)
-    for tag in _A16W16_CO_TAGS
-}
 _CO_DTYPE_BYTES = {
     "bf16_t": 2,
     "fp16_t": 2,
@@ -2845,12 +2764,10 @@ def _load_co_kernels(path, require_image=True):
         for entry in entries:
             kid = entry["kid"]
             tag = entry["tag"]
-            if tag not in _CO_KID_BANDS:
+            if tag not in _A16W16_CO_TAGS:
                 raise ValueError(f"unsupported CO kernel tag {tag!r} for kid {kid}")
-            lo, hi = _CO_KID_BANDS[tag]
-            assert lo <= kid < hi, (
-                f"co kid {kid} (tag {tag}) outside its band [{lo},{hi})"
-            )
+            if type(kid) is not int or kid < 0:
+                raise ValueError(f"invalid local CO kid {kid}")
             assert kid not in instances, f"duplicate co kid {kid} in {path}"
             instance = _co_instance_from_json(arch, entry)
             _validate_co_instance(kid, instance)
@@ -2889,6 +2806,46 @@ gfx1250_4wave_co_kernels_declared = {
     ).items()
     if instance.kernel_tag in _A16W16_CO_TAGS
 }
+
+GFX1250_SPLITK_FUSE_KID_BASE = max(
+    (*gfx1250_kernels_list, *gfx1250_clusterlaunch_kernels_list,
+     *gfx1250_4wave_co_kernels_declared), default=-1,
+) + 1000
+_sf_kid = GFX1250_SPLITK_FUSE_KID_BASE
+_fuse_tiles_seen = set()
+_fuse_tiles = _GFX1250_CLUSTERLAUNCH_TILES if GFX1250_SPLITK_FUSE_ENABLED else ()
+for _bm, _bn, _bk, _wg in _fuse_tiles:
+    if (_bm, _bn, _bk) in _fuse_tiles_seen:
+        continue
+    _fuse_tiles_seen.add((_bm, _bn, _bk))
+    _layout = "tileN" if _bm == 16 else "tileM"
+    for _ws, _ws_bytes, _sk_hi in _FUSE_WS_SWEEP:
+        if not _fuse_ring_lds_ok(_bm, _bn, _bk, _wg, _ws_bytes):
+            continue
+        for _nc in range(1, _FUSE_MAX_NCLUSTER + 1):
+            for _sk in range(2, _sk_hi + 1):
+                if _sk * _nc > 16:
+                    continue
+                gfx1250_splitk_fuse_kernels_list[_sf_kid] = (
+                    _a16w16_splitk_fuse_gfx1250(
+                        _bm,
+                        _bn,
+                        _bk,
+                        _layout,
+                        split_k=_sk,
+                        n_cluster=_nc,
+                        ws_dtype=_ws,
+                        wg_per_cu=_wg,
+                    )
+                )
+                GFX1250_SPLITK_FUSE_KID_OF[
+                    (_bm, _bn, _bk, _layout, _sk, _nc, _ws)
+                ] = _sf_kid
+                _sf_kid += 1
+
+GFX1250_SPLITK_FUSE_KIDS = frozenset(gfx1250_splitk_fuse_kernels_list.keys())
+assert bool(GFX1250_SPLITK_FUSE_KIDS) == GFX1250_SPLITK_FUSE_ENABLED
+
 GFX1250_4WAVE_CO_KID_OF = {
     instance.name: kid for kid, instance in gfx1250_4wave_co_kernels_list.items()
 }
@@ -3034,8 +2991,8 @@ def _bpreshuffle_register(pipeline, kernel, traits, bm, bn, bk, wm, wn, *,
     global _BPRESHUFFLE_NEXT_SERIAL
     while True:
         if _BPRESHUFFLE_NEXT_SERIAL >= 1_000_000:
-            raise ValueError("gfx950 kernel IDs exceed the 950 + six-digit serial range")
-        kid = int(f"950{_BPRESHUFFLE_NEXT_SERIAL}")
+            raise ValueError("gfx950 local kernel IDs exceed the six-digit serial range")
+        kid = _BPRESHUFFLE_NEXT_SERIAL
         _BPRESHUFFLE_NEXT_SERIAL += 1
         if kid not in gfx950_co_kernels_declared:
             break
@@ -3134,952 +3091,952 @@ def _bpreshuffle_register_ring(kid, geometry, traits, entry, *, fixed_k=0,
         bpreshuffle_split_k=split_k, bpreshuffle_fixed_k=fixed_k,
         bpreshuffle_entry={"kid": kid, "traits": traits, **entry})
 
-_bpreshuffle_register_ring(9502805, (128, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2805, (128, 128, 128, 4, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_traits<128, 128, 4, 2, 3, 1, 2, 1, 0, 0>',
     {'pipeline': 'lds_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_kernel', 'config_name': 'lds_ring_128x128x128_w4x2x1_p3_o2_ba0_sk1_wg1_cA0cB0_k0_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',), 'host_kind': 'reduce', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'dynamic_lds': True, 'reduce_kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_reduce', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',)},
     fixed_k=0, max_k=16384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502806, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2806, (192, 128, 128, 4, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_traits<192, 128, 4, 2, 3, 1, 2, 1, 1, 17>',
     {'pipeline': 'lds_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_kernel', 'config_name': 'lds_ring_192x128x128_w4x2x1_p3_o2_ba0_sk1_wg1_cA1cB17_k0_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',), 'host_kind': 'reduce', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'dynamic_lds': True, 'reduce_kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_reduce', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',)},
     fixed_k=0, max_k=16384, split_k=1, wg=1, ca=1, cb=17)
 
-_bpreshuffle_register_ring(9502807, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2807, (192, 128, 128, 4, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_traits<192, 128, 4, 2, 3, 1, 2, 1, 17, 1>',
     {'pipeline': 'lds_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_kernel', 'config_name': 'lds_ring_192x128x128_w4x2x1_p3_o2_ba0_sk1_wg1_cA17cB1_k0_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',), 'host_kind': 'reduce', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'dynamic_lds': True, 'reduce_kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_reduce', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',)},
     fixed_k=0, max_k=16384, split_k=1, wg=1, ca=17, cb=1)
 
-_bpreshuffle_register_ring(9502808, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2808, (192, 128, 128, 4, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_traits<192, 128, 4, 2, 3, 2, 0, 1, 17, 1>',
     {'pipeline': 'lds_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_kernel', 'config_name': 'lds_ring_192x128x128_w4x2x1_p3_o0_ba0_sk2_wg1_cA17cB1_k0_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',), 'host_kind': 'reduce', 'workspace_rule': ['mn', 8, 0], 'workspace_zero_init': False, 'm_align': 16, 'dynamic_lds': True, 'reduce_kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_reduce', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',)},
     fixed_k=0, max_k=16384, split_k=2, wg=1, ca=17, cb=1)
 
-_bpreshuffle_register_ring(9502809, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2809, (192, 128, 128, 4, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_traits<192, 128, 4, 2, 3, 4, 0, 1, 0, 0>',
     {'pipeline': 'lds_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_kernel', 'config_name': 'lds_ring_192x128x128_w4x2x1_p3_o0_ba0_sk4_wg1_cA0cB0_k0_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',), 'host_kind': 'reduce', 'workspace_rule': ['mn', 16, 0], 'workspace_zero_init': False, 'm_align': 16, 'dynamic_lds': True, 'reduce_kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_reduce', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh',)},
     fixed_k=0, max_k=16384, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502810, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2810, (48, 64, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<48, 64, 4, 2, 1, true, 1536, 4, 2, 17>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_48x64x256_w1x4x1_p4_o0_ba2_sk1_wg2_cA17cB1_k1536_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=2, ca=17, cb=1)
 
-_bpreshuffle_register_ring(9502811, (64, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2811, (64, 64, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 64, 4, 2, 1, true, 1536, 4, 1, 17>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x64x256_w1x4x1_p4_o0_ba2_sk1_wg1_cA17cB1_k1536_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=17, cb=1)
 
-_bpreshuffle_register_ring(9502812, (96, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2812, (96, 64, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 64, 3, 1, 1, true, 1536, 4, 2, 17>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x64x256_w1x4x1_p3_o0_ba1_sk1_wg2_cA17cB1_k1536_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=2, ca=17, cb=1)
 
-_bpreshuffle_register_ring(9502813, (32, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2813, (32, 64, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<32, 64, 4, 2, 0, true, 7168, 4, 1, 0>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_32x64x256_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502814, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2814, (48, 64, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<48, 64, 4, 2, 17, true, 7168, 4, 2, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_48x64x256_w1x4x1_p4_o0_ba2_sk1_wg2_cA1cB17_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=1, cb=17)
 
-_bpreshuffle_register_ring(9502815, (64, 64, 256, 1, 2),
+_bpreshuffle_register_ring(2815, (64, 64, 256, 1, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 64, 4, 2, 0, true, 7168, 2, 1, 0>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x64x256_w1x2x1_p4_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502816, (64, 128, 256, 1, 8),
+_bpreshuffle_register_ring(2816, (64, 128, 256, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 3, 1, 17, true, 7168, 8, 1, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x8x1_p3_o0_ba1_sk1_wg1_cA1cB17_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=1, cb=17)
 
-_bpreshuffle_register_ring(9502817, (64, 128, 256, 1, 8),
+_bpreshuffle_register_ring(2817, (64, 128, 256, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 3, 1, 1, true, 7168, 8, 1, 17>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x8x1_p3_o0_ba1_sk1_wg1_cA17cB1_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=17, cb=1)
 
-_bpreshuffle_register_ring(9502818, (64, 128, 256, 1, 8),
+_bpreshuffle_register_ring(2818, (64, 128, 256, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 3, 1, 0, true, 7168, 8, 2, 0>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x8x1_p3_o0_ba1_sk1_wg2_cA0cB0_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502819, (64, 128, 256, 1, 8),
+_bpreshuffle_register_ring(2819, (64, 128, 256, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 3, 1, 17, true, 7168, 8, 2, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x8x1_p3_o0_ba1_sk1_wg2_cA1cB17_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=1, cb=17)
 
-_bpreshuffle_register_ring(9502820, (64, 128, 256, 1, 8),
+_bpreshuffle_register_ring(2820, (64, 128, 256, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 4, 2, 0, true, 7168, 8, 1, 0>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x8x1_p4_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502821, (64, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2821, (64, 64, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 64, 4, 2, 0, false, 768, 4, 2, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x64x256_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k768_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=768, max_k=768, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502822, (64, 128, 256, 1, 4),
+_bpreshuffle_register_ring(2822, (64, 128, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 4, 2, 0, false, 768, 4, 2, 0, 2, 0, 256, true, false, false, false>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k768_nt0_ctg1_grid2d0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=768, max_k=768, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502823, (64, 128, 256, 1, 4),
+_bpreshuffle_register_ring(2823, (64, 128, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 4, 2, 0, false, 768, 4, 2, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k768_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=768, max_k=768, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502824, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2824, (96, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 128, 4, 2, 0, false, 768, 4, 2, 0, 2, 0, 128, true, false, false, false>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x128x128_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k768_nt0_ctg1_grid2d0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=768, max_k=768, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502825, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2825, (96, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 128, 4, 2, 0, false, 768, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x128x128_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k768_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=768, max_k=768, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502826, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2826, (128, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 2, 0, false, 768, 4, 2, 0, 2, 0, 128, true, false, false, false>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k768_nt0_ctg1_grid2d0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=768, max_k=768, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502827, (64, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2827, (64, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 4, 1, 0, false, 384, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x128_w1x4x1_p4_o0_ba1_sk1_wg2_cA0cB0_k384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=384, max_k=384, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502828, (128, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2828, (128, 64, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 64, 4, 1, 0, false, 384, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x64x128_w1x4x1_p4_o0_ba1_sk1_wg2_cA0cB0_k384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=384, max_k=384, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502829, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2829, (128, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 1, 0, false, 384, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba1_sk1_wg2_cA0cB0_k384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=384, max_k=384, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502830, (64, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2830, (64, 32, 256, 1, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 32, 4, 2, 0, false, 3072, 2, 2, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x32x256_w1x2x1_p4_o0_ba2_sk1_wg2_cA0cB0_k3072_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502831, (64, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2831, (64, 64, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 64, 5, 2, 0, false, 3072, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x64x128_w1x4x1_p5_o0_ba2_sk1_wg2_cA0cB0_k3072_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502832, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2832, (96, 64, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 64, 5, 2, 0, false, 3072, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x64x128_w1x4x1_p5_o0_ba2_sk1_wg2_cA0cB0_k3072_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502833, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2833, (96, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 128, 4, 2, 0, false, 3072, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x128x128_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k3072_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502834, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2834, (128, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 2, 0, false, 3072, 4, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k3072_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502835, (160, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2835, (160, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<160, 128, 3, 2, 0, false, 3072, 4, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_160x128x128_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB0_k3072_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502836, (192, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2836, (192, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<192, 128, 3, 2, 0, false, 3072, 4, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_192x128x128_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB0_k3072_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502837, (128, 256, 128, 1, 8),
+_bpreshuffle_register_ring(2837, (128, 256, 128, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 256, 3, 2, 0, false, 3072, 8, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x256x128_w1x8x1_p3_o0_ba2_sk1_wg1_cA0cB0_k3072_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502838, (48, 128, 256, 1, 4),
+_bpreshuffle_register_ring(2838, (48, 128, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<48, 128, 3, 2, 0, false, 7168, 4, 1, 0, 2, 0, 256, true, false, false, false>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_48x128x256_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0_ctg1_grid2d0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502839, (48, 128, 256, 1, 4),
+_bpreshuffle_register_ring(2839, (48, 128, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<48, 128, 3, 2, 0, false, 7168, 4, 1, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_48x128x256_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502840, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2840, (96, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 128, 4, 2, 0, false, 7168, 4, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x128x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502841, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2841, (96, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 128, 5, 2, 0, false, 7168, 4, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x128x128_w1x4x1_p5_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502842, (128, 256, 128, 1, 8),
+_bpreshuffle_register_ring(2842, (128, 256, 128, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 256, 4, 2, 0, false, 7168, 8, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x256x128_w1x8x1_p4_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502843, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2843, (16, 32, 256, 1, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<16, 32, 4, 2, 0, false, 7168, 2, 2, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_16x32x256_w1x2x1_p4_o0_ba2_sk1_wg2_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502844, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2844, (48, 64, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<48, 64, 4, 2, 0, false, 7168, 4, 2, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_48x64x256_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502845, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2845, (96, 64, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 64, 5, 2, 0, false, 7168, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x64x128_w1x4x1_p5_o0_ba2_sk1_wg2_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502846, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2846, (96, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 128, 4, 2, 0, false, 16384, 4, 1, 0, 2, 0, 128, true, false, false, true, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x128x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k16384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=16384, max_k=16384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502847, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2847, (128, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 2, 0, false, 16384, 4, 1, 0, 2, 0, 128, true, false, false, true, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k16384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=16384, max_k=16384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502848, (160, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2848, (160, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<160, 128, 3, 2, 0, false, 16384, 4, 1, 0, 2, 0, 128, true, false, false, true, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_160x128x128_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB0_k16384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=16384, max_k=16384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502849, (192, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2849, (192, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<192, 128, 3, 2, 0, false, 16384, 4, 1, 0, 2, 0, 128, true, false, false, true, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_192x128x128_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB0_k16384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=16384, max_k=16384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502850, (128, 256, 128, 1, 8),
+_bpreshuffle_register_ring(2850, (128, 256, 128, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 256, 3, 2, 0, false, 16384, 8, 1, 0, 2, 0, 128, true, false, false, true, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x256x128_w1x8x1_p3_o0_ba2_sk1_wg1_cA0cB0_k16384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=16384, max_k=16384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502851, (128, 256, 128, 1, 8),
+_bpreshuffle_register_ring(2851, (128, 256, 128, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 256, 4, 2, 0, false, 16384, 8, 1, 0, 2, 0, 128, true, false, false, true, 1>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x256x128_w1x8x1_p4_o0_ba2_sk1_wg1_cA0cB0_k16384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=16384, max_k=16384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502852, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2852, (128, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 2, 0, false, 16384, 4, 1, 0, 2, 0, 128, true, false, false, true, 2>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba2_sk2_wg1_cA0cB0_k16384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh', 'gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh'), 'host_kind': 'reduce', 'workspace_rule': ['mn', 8, 0], 'workspace_zero_init': False, 'm_align': 16, 'reduce_kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_reduce', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh', 'gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh')},
     fixed_k=16384, max_k=16384, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502853, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2853, (128, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 2, 0, false, 16384, 4, 1, 0, 2, 0, 128, true, false, false, true, 4>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba2_sk4_wg1_cA0cB0_k16384_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh', 'gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh'), 'host_kind': 'reduce', 'workspace_rule': ['mn', 16, 0], 'workspace_zero_init': False, 'm_align': 16, 'reduce_kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_lds_ring_reduce', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_lds_ring_gfx950.cuh', 'gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh')},
     fixed_k=16384, max_k=16384, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502854, (32, 64, 256, 1, 2),
+_bpreshuffle_register_ring(2854, (32, 64, 256, 1, 2),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<32, 64, 4, 2, 0, false, 1536, 2, 2, 0, 2, 0, 256, false, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_32x64x256_w1x2x1_p4_o0_ba2_sk1_wg2_cA0cB0_k1536_nt0_ctg0_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502855, (64, 128, 256, 1, 4),
+_bpreshuffle_register_ring(2855, (64, 128, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 3, 2, 0, false, 1536, 4, 1, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB0_k1536_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502856, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2856, (96, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<96, 128, 4, 2, 0, false, 1536, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_96x128x128_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k1536_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502857, (64, 128, 256, 1, 4),
+_bpreshuffle_register_ring(2857, (64, 128, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 4, 2, 0, false, 1536, 4, 1, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k1536_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502858, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2858, (128, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 2, 0, false, 1536, 4, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k1536_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502859, (128, 256, 128, 1, 8),
+_bpreshuffle_register_ring(2859, (128, 256, 128, 1, 8),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 256, 4, 2, 0, false, 1536, 8, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x256x128_w1x8x1_p4_o0_ba2_sk1_wg1_cA0cB0_k1536_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502861, (16, 32, 256, 1, 1),
+_bpreshuffle_register_ring(2861, (16, 32, 256, 1, 1),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<16, 32, 4, 2, 0, false, 7168, 1, 2, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_16x32x256_w1x1x1_p4_o0_ba2_sk1_wg2_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502862, (32, 32, 256, 1, 1),
+_bpreshuffle_register_ring(2862, (32, 32, 256, 1, 1),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<32, 32, 4, 2, 0, false, 7168, 1, 2, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_32x32x256_w1x1x1_p4_o0_ba2_sk1_wg2_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502863, (64, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2863, (64, 64, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 64, 5, 2, 0, false, 7168, 4, 2, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x64x128_w1x4x1_p5_o0_ba2_sk1_wg2_cA0cB0_k7168_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502864, (64, 128, 256, 1, 4),
+_bpreshuffle_register_ring(2864, (64, 128, 256, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 3, 2, 0, false, 1024, 4, 1, 0, 2, 0, 256, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB0_k1024_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1024, max_k=1024, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502865, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2865, (128, 128, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 2, 0, false, 1024, 4, 1, 0, 2, 0, 128, true, false, false, true>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k1024_nt0_ctg1_grid2d1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1024, max_k=1024, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502866, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2866, (16, 32, 256, 1, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<16, 32, 2, 256, 6, 7168, 4>',
     {'pipeline': 'xcd_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_xcd_ring_kernel', 'config_name': 'xcd_ring_16x32x256_w1x2x1_p6_o0_ba0_sk4_wg1_cA0cB0_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 16, 32, 4], 'workspace_zero_init': True, 'm_align': 1, 'grid_kind': 'xcd_split', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502867, (32, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2867, (32, 32, 256, 1, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<32, 32, 2, 256, 6, 7168, 4>',
     {'pipeline': 'xcd_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_xcd_ring_kernel', 'config_name': 'xcd_ring_32x32x256_w1x2x1_p6_o0_ba0_sk4_wg1_cA0cB0_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 32, 32, 4], 'workspace_zero_init': True, 'm_align': 1, 'grid_kind': 'xcd_split', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502868, (32, 32, 256, 2, 2),
+_bpreshuffle_register_ring(2868, (32, 32, 256, 2, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<32, 32, 2, 256, 4, 7168, 4, 2, false, 0>',
     {'pipeline': 'xcd_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_xcd_ring_kernel', 'config_name': 'xcd_ring_32x32x256_w2x2x1_p4_o0_ba0_sk4_wg1_cA0cB0_k7168_nt0_compact0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 32, 32, 4], 'workspace_zero_init': True, 'm_align': 1, 'grid_kind': 'xcd_split', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502869, (16, 16, 256, 1, 1),
+_bpreshuffle_register_ring(2869, (16, 16, 256, 1, 1),
     'opus_gemm_bpreshuffle_xcd_ring_traits<16, 16, 1, 256, 6, 7168, 4, 1, false, 2>',
     {'pipeline': 'xcd_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_xcd_ring_kernel', 'config_name': 'xcd_ring_16x16x256_w1x1x1_p6_o0_ba0_sk4_wg1_cA0cB2_k7168_nt0_compact0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 16, 16, 4], 'workspace_zero_init': True, 'm_align': 1, 'grid_kind': 'xcd_split', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502870, (16, 16, 256, 1, 1),
+_bpreshuffle_register_ring(2870, (16, 16, 256, 1, 1),
     'opus_gemm_bpreshuffle_xcd_ring_traits<16, 16, 1, 256, 6, 7168, 4, 1, true, 2>',
     {'pipeline': 'xcd_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_xcd_ring_kernel', 'config_name': 'xcd_ring_16x16x256_w1x1x1_p6_o0_ba0_sk4_wg1_cA0cB2_k7168_nt0_compact1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 16, 16, 4], 'workspace_zero_init': True, 'm_align': 4, 'grid_kind': 'xcd_split', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502871, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2871, (16, 32, 128, 1, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<16, 32, 2, 128, 12, 3072, 1, 1, false, 2>',
     {'pipeline': 'stream_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_stream_ring_kernel', 'config_name': 'stream_ring_16x32x128_w1x2x1_p12_o0_ba0_sk1_wg1_cA0cB2_k3072_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_stream_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502872, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2872, (16, 32, 128, 1, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<16, 32, 2, 128, 10, 7168, 1, 1, false, 2>',
     {'pipeline': 'stream_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_stream_ring_kernel', 'config_name': 'stream_ring_16x32x128_w1x2x1_p10_o0_ba0_sk1_wg1_cA0cB2_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_stream_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502873, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2873, (16, 32, 256, 1, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<16, 32, 2, 256, 7, 7168, 1, 1, false, 2>',
     {'pipeline': 'stream_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_stream_ring_kernel', 'config_name': 'stream_ring_16x32x256_w1x2x1_p7_o0_ba0_sk1_wg1_cA0cB2_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_stream_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502874, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2874, (16, 32, 256, 1, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<16, 32, 2, 256, 6, 16384, 1, 1, false, 2>',
     {'pipeline': 'stream_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_stream_ring_kernel', 'config_name': 'stream_ring_16x32x256_w1x2x1_p6_o0_ba0_sk1_wg1_cA0cB2_k16384_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_stream_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=16384, max_k=16384, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502875, (32, 32, 256, 2, 2),
+_bpreshuffle_register_ring(2875, (32, 32, 256, 2, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<32, 32, 2, 256, 5, 7168, 1, 2, false, 2>',
     {'pipeline': 'stream_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_stream_ring_kernel', 'config_name': 'stream_ring_32x32x256_w2x2x1_p5_o0_ba0_sk1_wg1_cA0cB2_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_stream_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502876, (64, 32, 256, 2, 2),
+_bpreshuffle_register_ring(2876, (64, 32, 256, 2, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<64, 32, 2, 256, 4, 7168, 1, 2, false, 2>',
     {'pipeline': 'stream_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_stream_ring_kernel', 'config_name': 'stream_ring_64x32x256_w2x2x1_p4_o0_ba0_sk1_wg1_cA0cB2_k7168_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_stream_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502877, (32, 32, 256, 2, 2),
+_bpreshuffle_register_ring(2877, (32, 32, 256, 2, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<32, 32, 2, 256, 5, 16384, 1, 2, false, 2>',
     {'pipeline': 'stream_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_stream_ring_kernel', 'config_name': 'stream_ring_32x32x256_w2x2x1_p5_o0_ba0_sk1_wg1_cA0cB2_k16384_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_stream_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=16384, max_k=16384, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502878, (32, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2878, (32, 32, 128, 1, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<32, 32, 2, 128, 7, 768, 1, 1, false, 2>',
     {'pipeline': 'resident_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_resident_ring_kernel', 'config_name': 'resident_ring_32x32x128_w1x2x1_p7_o0_ba0_sk1_wg1_cA0cB2_k768_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_resident_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502879, (48, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2879, (48, 32, 128, 1, 2),
     'opus_gemm_bpreshuffle_xcd_ring_traits<48, 32, 2, 128, 4, 384, 1, 1, false, 2>',
     {'pipeline': 'resident_ring', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_resident_ring_kernel', 'config_name': 'resident_ring_48x32x128_w1x2x1_p4_o0_ba0_sk1_wg1_cA0cB2_k384_nt0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_resident_ring_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_xcd_ring_gfx950.cuh',)},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502880, (128, 256, 128, 1, 4),
+_bpreshuffle_register_ring(2880, (128, 256, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 256, 4, 2, 2, false, 1536, 4, 1, 0, 2, 0, 128, true, false, false, true, 1, false>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x256x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB2_k1536_nt0_ctg1_grid2d1_bs0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502881, (192, 256, 128, 1, 4),
+_bpreshuffle_register_ring(2881, (192, 256, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<192, 256, 3, 2, 2, false, 1536, 4, 1, 0, 2, 0, 128, true, false, false, true, 1, false>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_192x256x128_w1x4x1_p3_o0_ba2_sk1_wg1_cA0cB2_k1536_nt0_ctg1_grid2d1_bs0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502882, (224, 256, 128, 1, 4),
+_bpreshuffle_register_ring(2882, (224, 256, 128, 1, 4),
     'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<224, 256, 2, 1, 2, false, 1536, 4, 1, 0, 2, 0, 128, true, false, false, true, 1, false>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_224x256x128_w1x4x1_p2_o0_ba1_sk1_wg1_cA0cB2_k1536_nt0_ctg1_grid2d1_bs0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502885, (16, 16, 256, 1, 1),
+_bpreshuffle_register_ring(2885, (16, 16, 256, 1, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 16, 1, 1, 256, 6, 7168, 4>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, true, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_16x16x256_w1x1x1_p6_o0_ba0_sk4_wg1_cA0cB2_k7168_nt0_cp0_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 16, 16, 4], 'workspace_zero_init': True, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502886, (16, 16, 256, 1, 1),
+_bpreshuffle_register_ring(2886, (16, 16, 256, 1, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 16, 1, 1, 256, 6, 7168, 4>, opus_gemm_composable_policy<true, false, false, 1, 2, true, true, false, true, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_16x16x256_w1x1x1_p6_o0_ba0_sk4_wg1_cA0cB2_k7168_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 16, 16, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502887, (32, 32, 256, 2, 2),
+_bpreshuffle_register_ring(2887, (32, 32, 256, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<32, 32, 2, 2, 256, 4, 7168, 4>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, true, true, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_32x32x256_w2x2x1_p4_o0_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 32, 32, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502888, (48, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2888, (48, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 32, 1, 2, 256, 4, 7168, 4>, opus_gemm_composable_policy<true, true, false, 1, 0, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_48x32x256_w1x2x1_p4_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps1_bd0_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 48, 32, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502889, (64, 32, 256, 2, 2),
+_bpreshuffle_register_ring(2889, (64, 32, 256, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 32, 2, 2, 256, 4, 7168, 4>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x32x256_w2x2x1_p4_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 64, 32, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502890, (64, 32, 256, 2, 2),
+_bpreshuffle_register_ring(2890, (64, 32, 256, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 32, 2, 2, 256, 4, 7168, 4>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x32x256_w2x2x1_p4_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 64, 32, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502891, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2891, (48, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 64, 1, 4, 256, 5, 7168, 4>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_48x64x256_w1x4x1_p5_o3_ba2_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 48, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502892, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2892, (96, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 128, 5, 7168, 4>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, true, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_96x64x128_w1x4x1_p5_o3_ba2_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal1_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 96, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502893, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2893, (96, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 128, 5, 7168, 4>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_96x64x128_w1x4x1_p5_o3_ba2_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 96, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502894, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2894, (48, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 64, 1, 4, 256, 5, 7168, 4>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_48x64x256_w1x4x1_p5_o3_ba2_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 48, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502895, (96, 64, 128, 2, 2),
+_bpreshuffle_register_ring(2895, (96, 64, 128, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 2, 2, 128, 5, 7168, 4>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, true, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_96x64x128_w2x2x1_p5_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal1_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 96, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502896, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2896, (96, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 128, 5, 7168, 4>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_96x64x128_w1x4x1_p5_o3_ba2_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 96, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502897, (64, 64, 128, 4, 1),
+_bpreshuffle_register_ring(2897, (64, 64, 128, 4, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 4, 1, 128, 5, 7168, 4>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x128_w4x1x1_p5_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502898, (64, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2898, (64, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 1, 4, 256, 5, 7168, 4>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x256_w1x4x1_p5_o3_ba2_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502899, (64, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2899, (64, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 1, 4, 256, 5, 7168, 4>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x256_w1x4x1_p5_o3_ba2_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502900, (128, 64, 128, 4, 2),
+_bpreshuffle_register_ring(2900, (128, 64, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 4, 2, 128, 5, 7168, 4>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x64x128_w4x2x1_p5_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 128, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502901, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2901, (48, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 64, 1, 4, 256, 5, 7168, 2>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_48x64x256_w1x4x1_p5_o3_ba2_sk2_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 48, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502902, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2902, (48, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 64, 1, 4, 256, 5, 7168, 2>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_48x64x256_w1x4x1_p5_o3_ba2_sk2_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 48, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502903, (64, 64, 256, 4, 2),
+_bpreshuffle_register_ring(2903, (64, 64, 256, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 4, 2, 256, 4, 7168, 2>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x256_w4x2x1_p4_o3_ba0_sk2_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502904, (64, 64, 128, 4, 2),
+_bpreshuffle_register_ring(2904, (64, 64, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 4, 2, 128, 5, 7168, 2>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x128_w4x2x1_p5_o3_ba0_sk2_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502905, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2905, (48, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 64, 1, 4, 256, 5, 7168, 1>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_48x64x256_w1x4x1_p5_o3_ba2_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502906, (48, 64, 256, 1, 2),
+_bpreshuffle_register_ring(2906, (48, 64, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 64, 1, 2, 256, 5, 7168, 1>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_48x64x256_w1x2x1_p5_o3_ba2_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502907, (16, 32, 128, 1, 1),
+_bpreshuffle_register_ring(2907, (16, 32, 128, 1, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 1, 128, 4, 384, 1>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x1x1_p4_o3_ba0_sk1_wg1_cA0cB2_k384_nt0_cp0_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502908, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2908, (16, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 256, 4, 768, 1>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x256_w1x2x1_p4_o3_ba0_sk1_wg1_cA0cB2_k768_nt0_cp0_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502909, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2909, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 9, 1024, 1>, opus_gemm_composable_policy<false, false, false, 1, 2, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p9_o3_ba0_sk1_wg1_cA0cB2_k1024_nt0_cp0_ps0_bd0_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1024, max_k=1024, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502910, (16, 32, 128, 1, 1),
+_bpreshuffle_register_ring(2910, (16, 32, 128, 1, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 1, 128, 5, 1536, 1>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x1x1_p5_o3_ba0_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502911, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2911, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 6, 1536, 1>, opus_gemm_composable_policy<false, false, true, 3, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p6_o3_ba3_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502912, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2912, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 11, 1536, 1>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p11_o3_ba0_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502913, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2913, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 5, 1536, 1>, opus_gemm_composable_policy<false, false, true, 2, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p5_o3_ba2_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502914, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2914, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 4, 384, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p4_o3_ba0_sk1_wg1_cA0cB2_k384_nt0_cp1_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502915, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2915, (16, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 256, 4, 768, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x256_w1x2x1_p4_o3_ba0_sk1_wg1_cA0cB2_k768_nt0_cp1_ps1_bd0_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502916, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2916, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 9, 1024, 1>, opus_gemm_composable_policy<true, false, false, 1, 2, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p9_o3_ba0_sk1_wg1_cA0cB2_k1024_nt0_cp1_ps0_bd0_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1024, max_k=1024, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502917, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2917, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 10, 7168, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p10_o3_ba0_sk1_wg1_cA0cB2_k7168_nt0_cp1_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502918, (32, 64, 128, 2, 2),
+_bpreshuffle_register_ring(2918, (32, 64, 128, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<32, 64, 2, 2, 128, 6, 1536, 1>, opus_gemm_composable_policy<true, false, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_32x64x128_w2x2x1_p6_o3_ba0_sk1_wg1_cA0cB2_k1536_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502919, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2919, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 8, 1024, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p8_o3_ba0_sk1_wg1_cA0cB2_k1024_nt0_cp1_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1024, max_k=1024, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502920, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2920, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 6, 1536, 1>, opus_gemm_composable_policy<true, false, true, 3, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p6_o3_ba3_sk1_wg1_cA0cB2_k1536_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502921, (16, 32, 512, 1, 2),
+_bpreshuffle_register_ring(2921, (16, 32, 512, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 512, 6, 3072, 1>, opus_gemm_composable_policy<true, true, true, 3, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x512_w1x2x1_p6_o3_ba3_sk1_wg1_cA0cB2_k3072_nt0_cp1_ps1_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502922, (16, 32, 128, 1, 1),
+_bpreshuffle_register_ring(2922, (16, 32, 128, 1, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 1, 128, 5, 1536, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x1x1_p5_o3_ba0_sk1_wg1_cA0cB2_k1536_nt0_cp1_ps1_bd0_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502923, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2923, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 5, 1536, 1>, opus_gemm_composable_policy<true, false, true, 3, 2, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p5_o3_ba3_sk1_wg1_cA0cB2_k1536_nt0_cp1_ps0_bd1_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502924, (32, 32, 128, 1, 1),
+_bpreshuffle_register_ring(2924, (32, 32, 128, 1, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<32, 32, 1, 1, 128, 4, 384, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_32x32x128_w1x1x1_p4_o3_ba0_sk1_wg1_cA0cB2_k384_nt0_cp1_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502925, (32, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2925, (32, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<32, 32, 1, 2, 256, 4, 1024, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_32x32x256_w1x2x1_p4_o3_ba0_sk1_wg1_cA0cB2_k1024_nt0_cp1_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1024, max_k=1024, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502926, (48, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2926, (48, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 32, 1, 2, 128, 4, 384, 1>, opus_gemm_composable_policy<true, false, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_48x32x128_w1x2x1_p4_o3_ba0_sk1_wg1_cA0cB2_k384_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502927, (48, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2927, (48, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 32, 1, 2, 256, 4, 768, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_48x32x256_w1x2x1_p4_o3_ba0_sk1_wg1_cA0cB2_k768_nt0_cp1_ps1_bd0_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502928, (64, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2928, (64, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 1, 4, 128, 8, 16384, 2>, opus_gemm_composable_policy<true, false, true, 4, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x128_w1x4x1_p8_o3_ba4_sk2_wg1_cA0cB2_k16384_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=2, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502929, (64, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2929, (64, 128, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 128, 1, 4, 128, 4, 1536, 1>, opus_gemm_composable_policy<true, false, true, 2, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x128x128_w1x4x1_p4_o3_ba2_sk1_wg1_cA0cB2_k1536_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502930, (64, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2930, (64, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 32, 1, 2, 128, 4, 384, 1>, opus_gemm_composable_policy<true, false, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x32x128_w1x2x1_p4_o3_ba0_sk1_wg1_cA0cB2_k384_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502931, (64, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2931, (64, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 32, 1, 2, 256, 4, 768, 1>, opus_gemm_composable_policy<true, true, true, 2, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x32x256_w1x2x1_p4_o3_ba2_sk1_wg1_cA0cB2_k768_nt0_cp1_ps1_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502932, (64, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2932, (64, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 32, 1, 2, 256, 4, 1024, 1>, opus_gemm_composable_policy<true, true, true, 2, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x32x256_w1x2x1_p4_o3_ba2_sk1_wg1_cA0cB2_k1024_nt0_cp1_ps1_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1024, max_k=1024, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502933, (64, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2933, (64, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 1, 4, 128, 8, 16384, 2>, opus_gemm_composable_policy<true, false, true, 3, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x128_w1x4x1_p8_o3_ba3_sk2_wg1_cA0cB2_k16384_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=2, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502934, (96, 64, 128, 2, 2),
+_bpreshuffle_register_ring(2934, (96, 64, 128, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 2, 2, 128, 5, 16384, 2>, opus_gemm_composable_policy<true, false, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_96x64x128_w2x2x1_p5_o3_ba0_sk2_wg1_cA0cB2_k16384_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 96, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=2, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502935, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2935, (96, 128, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 128, 1, 4, 128, 4, 1536, 1>, opus_gemm_composable_policy<true, false, true, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_96x128x128_w1x4x1_p4_o3_ba1_sk1_wg1_cA0cB2_k1536_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502936, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2936, (48, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 64, 1, 4, 256, 5, 3072, 1>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_48x64x256_w1x4x1_p5_o3_ba2_sk1_wg1_cA0cB0_k3072_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502937, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2937, (96, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 128, 8, 16384, 2>, opus_gemm_composable_policy<true, false, true, 3, 2, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_96x64x128_w1x4x1_p8_o3_ba3_sk2_wg1_cA0cB2_k16384_nt0_cp1_ps0_bd1_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 96, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=2, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502938, (128, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2938, (128, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 1, 4, 128, 6, 7168, 2>, opus_gemm_composable_policy<true, false, true, 3, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x64x128_w1x4x1_p6_o3_ba3_sk2_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 128, 64, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502939, (128, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2939, (128, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 4, 2, 128, 4, 16384, 4>, opus_gemm_composable_policy<true, false, false, 1, 2, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x128x128_w4x2x1_p4_o3_ba0_sk4_wg1_cA0cB2_k16384_nt0_cp1_ps0_bd0_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 128, 128, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=4, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502940, (64, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2940, (64, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 1, 4, 256, 4, 1024, 1>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x64x256_w1x4x1_p4_o3_ba2_sk1_wg1_cA0cB0_k1024_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1024, max_k=1024, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502941, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2941, (96, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 128, 6, 768, 1>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_96x64x128_w1x4x1_p6_o3_ba2_sk1_wg1_cA0cB0_k768_nt0_cp1_ps0_bd1_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502942, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2942, (96, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 128, 4, 384, 1>, opus_gemm_composable_policy<true, false, true, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_96x64x128_w1x4x1_p4_o3_ba1_sk1_wg1_cA0cB0_k384_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502943, (128, 64, 128, 4, 2),
+_bpreshuffle_register_ring(2943, (128, 64, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 4, 2, 128, 5, 3072, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x64x128_w4x2x1_p5_o3_ba0_sk1_wg1_cA0cB0_k3072_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502944, (128, 64, 128, 4, 2),
+_bpreshuffle_register_ring(2944, (128, 64, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 4, 2, 128, 5, 768, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x64x128_w4x2x1_p5_o3_ba0_sk1_wg1_cA0cB0_k768_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502945, (128, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2945, (128, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 4, 2, 128, 4, 16384, 2>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x128x128_w4x2x1_p4_o3_ba0_sk2_wg1_cA0cB0_k16384_nt0_cp1_ps0_bd0_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 128, 128, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502946, (128, 64, 128, 2, 2),
+_bpreshuffle_register_ring(2946, (128, 64, 128, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 2, 2, 128, 4, 3072, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x64x128_w2x2x1_p4_o3_ba0_sk1_wg1_cA0cB0_k3072_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502947, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2947, (192, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<192, 128, 4, 2, 128, 3, 16384, 2>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_192x128x128_w4x2x1_p3_o3_ba0_sk2_wg1_cA0cB0_k16384_nt0_cp1_ps0_bd0_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 192, 128, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502948, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2948, (192, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<192, 128, 4, 2, 128, 3, 1536, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_192x128x128_w4x2x1_p3_o3_ba0_sk1_wg1_cA0cB0_k1536_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502949, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2949, (192, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<192, 128, 4, 2, 128, 3, 16384, 2>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, true, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_192x128x128_w4x2x1_p3_o3_ba0_sk2_wg1_cA0cB0_k16384_nt0_cp1_ps0_bd0_normal1_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 8, 192, 128, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=2, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502950, (128, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2950, (128, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 4, 2, 128, 4, 7168, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, true>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x128x128_w4x2x1_p4_o3_ba0_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd1', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502951, (128, 128, 128, 2, 4),
+_bpreshuffle_register_ring(2951, (128, 128, 128, 2, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 2, 4, 128, 4, 7168, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x128x128_w2x4x1_p4_o3_ba0_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502952, (128, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2952, (128, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 4, 2, 128, 4, 7168, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x128x128_w4x2x1_p4_o3_ba0_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502953, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2953, (128, 128, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 1, 4, 128, 4, 7168, 1>, opus_gemm_composable_policy<true, false, true, 3, 0, true, true, true, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x128x128_w1x4x1_p4_o3_ba3_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal1_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502954, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2954, (192, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<192, 128, 4, 2, 128, 3, 3072, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_192x128x128_w4x2x1_p3_o3_ba0_sk1_wg1_cA0cB0_k3072_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=3072, max_k=3072, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502955, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2955, (192, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<192, 128, 4, 2, 128, 3, 7168, 1>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_192x128x128_w4x2x1_p3_o3_ba0_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502956, (64, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2956, (64, 64, 128, 1, 4),
     'opus_gemm_composable_mfirst_traits<opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 1, 4, 128, 4, 384, 1>, opus_gemm_composable_policy<true, true, false, 1, 0, true, true, false, true, 3, 1, true>>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x64x128_w1x4x1_p4_o3_ba0_sk1_wg1_cA0cB0_k384_nt0_cp1_ps1_bd0_normal0_mfirst', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'mn'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502957, (64, 64, 128, 4, 1),
+_bpreshuffle_register_ring(2957, (64, 64, 128, 4, 1),
     'opus_gemm_composable_mfirst_traits<opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 4, 1, 128, 4, 384, 1>, opus_gemm_composable_policy<true, true, false, 1, 0, true, true, false, true, 3, 1, true>>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x64x128_w4x1x1_p4_o3_ba0_sk1_wg1_cA0cB0_k384_nt0_cp1_ps1_bd0_normal0_mfirst', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'mn'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502958, (64, 64, 128, 2, 2),
+_bpreshuffle_register_ring(2958, (64, 64, 128, 2, 2),
     'opus_gemm_composable_mfirst_traits<opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 2, 2, 128, 5, 768, 1>, opus_gemm_composable_policy<true, true, false, 1, 0, true, true, false, true, 3, 1, true>>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x64x128_w2x2x1_p5_o3_ba0_sk1_wg1_cA0cB0_k768_nt0_cp1_ps1_bd0_normal0_mfirst', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'mn'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502959, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2959, (96, 64, 128, 1, 4),
     'opus_gemm_composable_mfirst_traits<opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 128, 4, 384, 1>, opus_gemm_composable_policy<true, true, false, 1, 0, true, true, false, true, 3, 1, true>>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_96x64x128_w1x4x1_p4_o3_ba0_sk1_wg1_cA0cB0_k384_nt0_cp1_ps1_bd0_normal0_mfirst', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'mn'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502960, (96, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2960, (96, 64, 128, 1, 4),
     'opus_gemm_composable_mfirst_traits<opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 128, 6, 768, 1>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, false>>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_96x64x128_w1x4x1_p6_o3_ba2_sk1_wg1_cA0cB0_k768_nt0_cp1_ps0_bd1_normal0_mfirst', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'mn'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502961, (128, 64, 128, 1, 4),
+_bpreshuffle_register_ring(2961, (128, 64, 128, 1, 4),
     'opus_gemm_composable_mfirst_traits<opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 1, 4, 128, 4, 384, 1>, opus_gemm_composable_policy<true, true, true, 1, 0, true, true, false, true, 3, 1, true>>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x64x128_w1x4x1_p4_o3_ba1_sk1_wg1_cA0cB0_k384_nt0_cp1_ps1_bd1_normal0_mfirst', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'mn'},
     fixed_k=384, max_k=384, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502962, (128, 64, 128, 2, 2),
+_bpreshuffle_register_ring(2962, (128, 64, 128, 2, 2),
     'opus_gemm_composable_mfirst_traits<opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 2, 2, 128, 5, 768, 1>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, true>>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x64x128_w2x2x1_p5_o3_ba2_sk1_wg1_cA0cB0_k768_nt0_cp1_ps0_bd1_normal0_mfirst', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'mn'},
     fixed_k=768, max_k=768, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502963, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2963, (48, 64, 256, 1, 4),
     'opus_gemm_composable_mfirst_traits<opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 64, 1, 4, 256, 5, 7168, 1>, opus_gemm_composable_policy<true, false, true, 2, 0, true, true, false, true, 3, 1, false>>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_48x64x256_w1x4x1_p5_o3_ba2_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_mfirst', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'mn'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502964, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2964, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 8, 7168, 4>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, true, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p8_o0_ba0_sk4_wg1_cA0cB2_k7168_nt0_cp0_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 16, 32, 4], 'workspace_zero_init': True, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502965, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2965, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 8, 7168, 4>, opus_gemm_composable_policy<true, true, false, 1, 0, true, true, false, true, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p8_o0_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp1_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 16, 32, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=7168, max_k=7168, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502966, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(2966, (16, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 256, 7, 7168, 1>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x256_w1x2x1_p7_o3_ba0_sk1_wg1_cA0cB2_k7168_nt0_cp0_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502967, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(2967, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 11, 1536, 1>, opus_gemm_composable_policy<true, true, false, 1, 2, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p11_o3_ba0_sk1_wg1_cA0cB2_k1536_nt0_cp1_ps1_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502968, (32, 32, 512, 1, 2),
+_bpreshuffle_register_ring(2968, (32, 32, 512, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<32, 32, 1, 2, 512, 6, 7168, 1>, opus_gemm_composable_policy<true, false, true, 3, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_32x32x512_w1x2x1_p6_o3_ba3_sk1_wg1_cA0cB0_k7168_nt0_cp1_ps0_bd1_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'nm'},
     fixed_k=7168, max_k=7168, split_k=1, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502969, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(2969, (192, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<192, 128, 4, 2, 128, 3, 16384, 4>, opus_gemm_composable_policy<true, false, false, 1, 0, true, true, false, true, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_192x128x128_w4x2x1_p3_o3_ba0_sk4_wg1_cA0cB0_k16384_nt0_cp1_ps0_bd0_normal0_xcd0', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'workspace_rule': ['tiles', 16, 192, 128, 4], 'workspace_zero_init': True, 'm_align': 4, 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'grid_kind': 'xcd_split'},
     fixed_k=16384, max_k=16384, split_k=4, wg=1, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502970, (128, 256, 128, 1, 4),
+_bpreshuffle_register_ring(2970, (128, 256, 128, 1, 4),
     'opus_gemm_bpreshuffle_bounded_thread_traits<opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 256, 4, 2, 2, false, 1536, 4, 1, 0, 2, 0, 128, true, false, false, true, 1, false>>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x256x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB2_k1536_nt0_ctg1_grid2d1_bs0_bounded_threads', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=1536, max_k=1536, split_k=1, wg=1, ca=0, cb=2)
 
-_bpreshuffle_register_ring(9502971, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(2971, (128, 128, 128, 1, 4),
     'opus_gemm_bpreshuffle_bounded_thread_traits<opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<128, 128, 4, 2, 0, false, 768, 4, 2, 0, 2, 0, 128, true, false, false, true>>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_128x128x128_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k768_nt0_ctg1_grid2d1_bounded_threads', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=768, max_k=768, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502972, (64, 128, 256, 1, 8),
+_bpreshuffle_register_ring(2972, (64, 128, 256, 1, 8),
     'opus_gemm_bpreshuffle_bounded_thread_traits<opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<64, 128, 3, 1, 0, true, 7168, 8, 2, 0>>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_64x128x256_w1x8x1_p3_o0_ba1_sk1_wg2_cA0cB0_k7168_nt0_bounded_threads', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'xcd', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502973, (48, 64, 256, 1, 4),
+_bpreshuffle_register_ring(2973, (48, 64, 256, 1, 4),
     'opus_gemm_bpreshuffle_simple_tail_traits<opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<48, 64, 4, 2, 0, false, 7168, 4, 2, 0, 2, 0, 256, true, false, false, true>>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_48x64x256_w1x4x1_p4_o0_ba2_sk1_wg2_cA0cB0_k7168_nt0_ctg1_grid2d1_simple_tail', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
-_bpreshuffle_register_ring(9502974, (32, 32, 256, 1, 1),
+_bpreshuffle_register_ring(2974, (32, 32, 256, 1, 1),
     'opus_gemm_bpreshuffle_simple_tail_traits<opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_traits<32, 32, 4, 2, 0, false, 7168, 1, 2, 0, 2, 0, 256, true, false, false, true>>',
     {'pipeline': 'b_direct', 'kernel': 'opus_gemm_blockscale_mxscale_bpreshuffle_b_direct_bulk_panel_kernel', 'config_name': 'b_direct_32x32x256_w1x1x1_p4_o0_ba2_sk1_wg2_cA0cB0_k7168_nt0_ctg1_grid2d1_simple_tail', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',), 'host_kind': 'tile', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 16, 'grid_kind': 'nm', 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_direct_gfx950.cuh',)},
     fixed_k=7168, max_k=7168, split_k=1, wg=2, ca=0, cb=0)
 
 
 # Native candidates derived from freshly measured BMM tile and transport choices.
-_bpreshuffle_register_ring(9503902, (128, 64, 128, 1, 4),
+_bpreshuffle_register_ring(3902, (128, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 1, 4, 128, 6, 7168, 2>, opus_gemm_composable_policy<false, false, true, 3, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x64x128_w1x4x1_p6_o3_ba3_sk2_wg1_cA0cB2_k7168_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 128, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=2)
 
-_bpreshuffle_register_ring(9503903, (128, 128, 128, 4, 2),
+_bpreshuffle_register_ring(3903, (128, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 4, 2, 128, 4, 16384, 4>, opus_gemm_composable_policy<false, false, false, 1, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x128x128_w4x2x1_p4_o3_ba0_sk4_wg1_cA0cB2_k16384_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 128, 128, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=16384, max_k=16384, split_k=4, cb=2)
 
-_bpreshuffle_register_ring(9503904, (64, 32, 256, 2, 2),
+_bpreshuffle_register_ring(3904, (64, 32, 256, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 32, 2, 2, 256, 4, 7168, 4>, opus_gemm_composable_policy<false, false, false, 1, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x32x256_w2x2x1_p4_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 64, 32, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=4, cb=0)
 
-_bpreshuffle_register_ring(9503905, (128, 64, 128, 4, 1),
+_bpreshuffle_register_ring(3905, (128, 64, 128, 4, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 4, 1, 128, 4, 7168, 2>, opus_gemm_composable_policy<false, false, false, 1, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x64x128_w4x1x1_p4_o3_ba0_sk2_wg1_cA0cB2_k7168_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 128, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=2)
 
-_bpreshuffle_register_ring(9503908, (16, 32, 128, 1, 1),
+_bpreshuffle_register_ring(3908, (16, 32, 128, 1, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 1, 128, 5, 1536, 1>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, false, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x1x1_p5_o0_ba0_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps1_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=1536, max_k=1536, split_k=1, cb=2)
 
-_bpreshuffle_register_ring(9503911, (192, 128, 128, 4, 2),
+_bpreshuffle_register_ring(3911, (192, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<192, 128, 4, 2, 128, 3, 16384, 4>, opus_gemm_composable_policy<false, false, false, 1, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_192x128x128_w4x2x1_p3_o3_ba0_sk4_wg1_cA0cB0_k16384_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 192, 128, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=16384, max_k=16384, split_k=4, cb=0)
 
-_bpreshuffle_register_ring(9503912, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(3912, (16, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 256, 4, 7168, 4>, opus_gemm_composable_policy<false, true, false, 1, 0, true, true, false, false, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_16x32x256_w1x2x1_p4_o0_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp0_ps1_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 16, 32, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=4, cb=0)
 
-_bpreshuffle_register_ring(9503916, (128, 64, 128, 4, 1),
+_bpreshuffle_register_ring(3916, (128, 64, 128, 4, 1),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 4, 1, 128, 4, 7168, 4>, opus_gemm_composable_policy<false, false, false, 1, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x64x128_w4x1x1_p4_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 128, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=4, cb=0)
 
-_bpreshuffle_register_ring(9503919, (128, 128, 128, 1, 4),
+_bpreshuffle_register_ring(3919, (128, 128, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 1, 4, 128, 4, 7168, 2>, opus_gemm_composable_policy<false, false, true, 3, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x128x128_w1x4x1_p4_o3_ba3_sk2_wg1_cA0cB0_k7168_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 128, 128, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=0)
 
-_bpreshuffle_register_ring(9503921, (128, 128, 128, 4, 2),
+_bpreshuffle_register_ring(3921, (128, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 4, 2, 128, 4, 7168, 2>, opus_gemm_composable_policy<false, false, false, 1, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_128x128x128_w4x2x1_p4_o3_ba0_sk2_wg1_cA0cB0_k7168_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 128, 128, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=0)
 
-_bpreshuffle_register_ring(9503922, (64, 64, 256, 4, 2),
+_bpreshuffle_register_ring(3922, (64, 64, 256, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 4, 2, 256, 4, 7168, 2>, opus_gemm_composable_policy<false, false, false, 1, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x256_w4x2x1_p4_o3_ba0_sk2_wg1_cA0cB0_k7168_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=0)
 
-_bpreshuffle_register_ring(9503924, (128, 64, 128, 1, 4),
+_bpreshuffle_register_ring(3924, (128, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 64, 1, 4, 128, 6, 768, 1>, opus_gemm_composable_policy<false, false, true, 3, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x64x128_w1x4x1_p6_o3_ba3_sk1_wg1_cA0cB0_k768_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=768, max_k=768, split_k=1, cb=0)
 
-_bpreshuffle_register_ring(9503929, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(3929, (16, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 256, 6, 3072, 1>, opus_gemm_composable_policy<false, true, false, 1, 2, true, true, false, false, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x256_w1x2x1_p6_o0_ba0_sk1_wg1_cA0cB2_k3072_nt0_cp0_ps1_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=3072, max_k=3072, split_k=1, cb=2)
 
-_bpreshuffle_register_ring(9503932, (32, 64, 128, 2, 2),
+_bpreshuffle_register_ring(3932, (32, 64, 128, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<32, 64, 2, 2, 128, 6, 7168, 2>, opus_gemm_composable_policy<false, false, false, 1, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_32x64x128_w2x2x1_p6_o3_ba0_sk2_wg1_cA0cB2_k7168_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 32, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=2)
 
-_bpreshuffle_register_ring(9503933, (32, 64, 128, 2, 2),
+_bpreshuffle_register_ring(3933, (32, 64, 128, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<32, 64, 2, 2, 128, 4, 16384, 2>, opus_gemm_composable_policy<false, false, false, 1, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_32x64x128_w2x2x1_p4_o3_ba0_sk2_wg1_cA0cB2_k16384_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 32, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=16384, max_k=16384, split_k=2, cb=2)
 
-_bpreshuffle_register_ring(9503934, (32, 32, 512, 1, 2),
+_bpreshuffle_register_ring(3934, (32, 32, 512, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<32, 32, 1, 2, 512, 6, 3072, 1>, opus_gemm_composable_policy<false, false, true, 3, 0, true, true, false, false, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_32x32x512_w1x2x1_p6_o0_ba3_sk1_wg1_cA0cB0_k3072_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=3072, max_k=3072, split_k=1, cb=0)
 
-_bpreshuffle_register_ring(9503935, (16, 32, 256, 1, 2),
+_bpreshuffle_register_ring(3935, (16, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 256, 5, 7168, 4>, opus_gemm_composable_policy<false, true, false, 1, 0, true, true, false, false, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_16x32x256_w1x2x1_p5_o0_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp0_ps1_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 16, 32, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=4, cb=0)
 
-_bpreshuffle_register_ring(9503939, (64, 64, 128, 1, 4),
+_bpreshuffle_register_ring(3939, (64, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 1, 4, 128, 8, 1536, 1>, opus_gemm_composable_policy<false, false, true, 4, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x64x128_w1x4x1_p8_o3_ba4_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=1536, max_k=1536, split_k=1, cb=2)
 
-_bpreshuffle_register_ring(9503940, (48, 32, 256, 1, 2),
+_bpreshuffle_register_ring(3940, (48, 32, 256, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<48, 32, 1, 2, 256, 4, 7168, 4>, opus_gemm_composable_policy<false, true, false, 1, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_48x32x256_w1x2x1_p4_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp0_ps1_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 48, 32, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=4, cb=0)
 
-_bpreshuffle_register_ring(9503941, (64, 64, 128, 2, 2),
+_bpreshuffle_register_ring(3941, (64, 64, 128, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 2, 2, 128, 6, 7168, 2>, opus_gemm_composable_policy<false, false, false, 1, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x128_w2x2x1_p6_o3_ba0_sk2_wg1_cA0cB2_k7168_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=2)
 
-_bpreshuffle_register_ring(9503944, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(3944, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 8, 7168, 4>, opus_gemm_composable_policy<false, true, false, 1, 0, true, true, false, false, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p8_o0_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp0_ps1_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 16, 32, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=4, cb=0)
 
-_bpreshuffle_register_ring(9503945, (16, 32, 128, 1, 2),
+_bpreshuffle_register_ring(3945, (16, 32, 128, 1, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<16, 32, 1, 2, 128, 6, 1536, 1>, opus_gemm_composable_policy<false, false, true, 4, 2, true, true, false, false, 0, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_16x32x128_w1x2x1_p6_o0_ba4_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=1536, max_k=1536, split_k=1, cb=2)
 
-_bpreshuffle_register_ring(9503948, (128, 128, 128, 4, 2),
+_bpreshuffle_register_ring(3948, (128, 128, 128, 4, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<128, 128, 4, 2, 128, 4, 7168, 1>, opus_gemm_composable_policy<false, false, false, 1, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_128x128x128_w4x2x1_p4_o3_ba0_sk1_wg1_cA0cB0_k7168_nt0_cp0_ps0_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=1, cb=0)
 
-_bpreshuffle_register_ring(9503952, (64, 128, 128, 1, 4),
+_bpreshuffle_register_ring(3952, (64, 128, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 128, 1, 4, 128, 4, 1536, 1>, opus_gemm_composable_policy<false, false, true, 2, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_64x128x128_w1x4x1_p4_o3_ba2_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=1536, max_k=1536, split_k=1, cb=2)
 
-_bpreshuffle_register_ring(9503953, (64, 64, 128, 1, 4),
+_bpreshuffle_register_ring(3953, (64, 64, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<64, 64, 1, 4, 128, 8, 7168, 2>, opus_gemm_composable_policy<false, false, true, 4, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_64x64x128_w1x4x1_p8_o3_ba4_sk2_wg1_cA0cB2_k7168_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 64, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=2)
 
-_bpreshuffle_register_ring(9503954, (96, 32, 256, 2, 2),
+_bpreshuffle_register_ring(3954, (96, 32, 256, 2, 2),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 32, 2, 2, 256, 4, 7168, 4>, opus_gemm_composable_policy<false, true, false, 1, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_96x32x256_w2x2x1_p4_o3_ba0_sk4_wg1_cA0cB0_k7168_nt0_cp0_ps1_bd0_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 16, 96, 32, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=4, cb=0)
 
-_bpreshuffle_register_ring(9503957, (96, 64, 256, 1, 4),
+_bpreshuffle_register_ring(3957, (96, 64, 256, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 64, 1, 4, 256, 4, 7168, 2>, opus_gemm_composable_policy<false, false, true, 2, 0, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_split_kernel', 'config_name': 'composable_96x64x256_w1x4x1_p4_o3_ba2_sk2_wg1_cA0cB0_k7168_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'xcd_ring', 'grid_kind': 'xcd_split', 'workspace_rule': ['tiles', 8, 96, 64, 4], 'workspace_zero_init': True, 'm_align': 1}, fixed_k=7168, max_k=7168, split_k=2, cb=0)
 
-_bpreshuffle_register_ring(9503958, (96, 128, 128, 1, 4),
+_bpreshuffle_register_ring(3958, (96, 128, 128, 1, 4),
     'opus_gemm_composable_traits<opus_gemm_composable_geometry<96, 128, 1, 4, 128, 3, 1536, 1>, opus_gemm_composable_policy<false, false, true, 1, 2, true, true, false, false, 3, 1, false>>',
     {'pipeline': 'composable', 'kernel': 'opus_gemm_composable_direct_kernel', 'config_name': 'composable_96x128x128_w1x4x1_p3_o3_ba1_sk1_wg1_cA0cB2_k1536_nt0_cp0_ps0_bd1_normal0_xcd0_derived', 'headers': ('gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_traits_headers': ('gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_composable_gfx950.cuh',), 'host_kind': 'tile', 'grid_kind': 'nm', 'workspace_rule': ['none'], 'workspace_zero_init': False, 'm_align': 1}, fixed_k=1536, max_k=1536, split_k=1, cb=2)
 
@@ -4093,7 +4050,7 @@ _fragment_geometries = (
 )
 for _i, (_bm, _bn, _wm, _wn) in enumerate(_fragment_geometries):
     for _packed in (False, True):
-        _kid = 9503001 + _i * 2 + int(_packed)
+        _kid = 3001 + _i * 2 + int(_packed)
         _traits = (f"opus_gemm_fragment_traits<{_bm}, {_bn}, {_wm}, {_wn}, 2, "
                    f"{str(_packed).lower()}>")
         _bpreshuffle_register_ring(_kid, (_bm, _bn, 128, _wm, _wn), _traits,
@@ -4114,7 +4071,7 @@ _shared_fragment_geometries = (
 )
 for _i, (_bm, _bn, _wm, _wn, _bk) in enumerate(_shared_fragment_geometries):
     for _packed in (False, True):
-        _kid = 9503025 + _i * 2 + int(_packed)
+        _kid = 3025 + _i * 2 + int(_packed)
         _traits = (f"opus_gemm_shared_fragment_traits<{_bm}, {_bn}, {_wm}, {_wn}, {_bk}, "
                    f"{str(_packed).lower()}>")
         _bpreshuffle_register_ring(_kid, (_bm, _bn, 128, _wm, _wn), _traits,
@@ -4129,55 +4086,55 @@ for _i, (_bm, _bn, _wm, _wn, _bk) in enumerate(_shared_fragment_geometries):
 # Optional K specialization of the same transport and contraction. Runtime-K
 # configurations remain available; M/N are never shape-whitelisted.
 _fragment_fixed_k_pairs = (
-    (9503001, 384),
-    (9503001, 768),
-    (9503001, 1024),
-    (9503001, 1536),
-    (9503003, 384),
-    (9503003, 1024),
-    (9503003, 1536),
-    (9503005, 384),
-    (9503005, 768),
-    (9503005, 1536),
-    (9503025, 768),
-    (9503025, 1024),
-    (9503025, 3072),
-    (9503025, 7168),
-    (9503025, 16384),
-    (9503027, 768),
-    (9503027, 1024),
-    (9503027, 1536),
-    (9503027, 3072),
-    (9503027, 7168),
-    (9503027, 16384),
-    (9503029, 7168),
-    (9503029, 16384),
-    (9503031, 768),
-    (9503031, 1024),
-    (9503031, 1536),
-    (9503031, 3072),
-    (9503033, 768),
-    (9503033, 1024),
-    (9503033, 3072),
-    (9503033, 16384),
-    (9503035, 768),
-    (9503035, 16384),
-    (9503037, 384),
-    (9503037, 1024),
-    (9503037, 1536),
-    (9503037, 3072),
-    (9503041, 384),
-    (9503041, 1024),
-    (9503041, 1536),
-    (9503041, 3072),
-    (9503043, 384),
-    (9503043, 1536),
-    (9503043, 7168),
-    (9503043, 16384),
+    (3001, 384),
+    (3001, 768),
+    (3001, 1024),
+    (3001, 1536),
+    (3003, 384),
+    (3003, 1024),
+    (3003, 1536),
+    (3005, 384),
+    (3005, 768),
+    (3005, 1536),
+    (3025, 768),
+    (3025, 1024),
+    (3025, 3072),
+    (3025, 7168),
+    (3025, 16384),
+    (3027, 768),
+    (3027, 1024),
+    (3027, 1536),
+    (3027, 3072),
+    (3027, 7168),
+    (3027, 16384),
+    (3029, 7168),
+    (3029, 16384),
+    (3031, 768),
+    (3031, 1024),
+    (3031, 1536),
+    (3031, 3072),
+    (3033, 768),
+    (3033, 1024),
+    (3033, 3072),
+    (3033, 16384),
+    (3035, 768),
+    (3035, 16384),
+    (3037, 384),
+    (3037, 1024),
+    (3037, 1536),
+    (3037, 3072),
+    (3041, 384),
+    (3041, 1024),
+    (3041, 1536),
+    (3041, 3072),
+    (3043, 384),
+    (3043, 1536),
+    (3043, 7168),
+    (3043, 16384),
 )
 for _i, (_base_kid, _k) in enumerate(_fragment_fixed_k_pairs):
     for _packed in (False, True):
-        _kid = 9503101 + _i * 2 + int(_packed)
+        _kid = 3101 + _i * 2 + int(_packed)
         _base = a8w8_mxscale_gemm_bpreshuffle_kernels_list[_base_kid + int(_packed)]
         _entry = dict(_base.bpreshuffle_entry)
         _entry.pop("kid")
@@ -4198,7 +4155,7 @@ _fragment_hybrid_geometries = (
 for _i, (_bm, _bn, _wm, _wn, _bk) in enumerate(_fragment_hybrid_geometries):
     for _j, _k in enumerate((384, 768, 1024, 1536, 3072, 7168, 16384)):
         for _packed in (False, True):
-            _kid = 9503301 + (_i * 7 + _j) * 2 + int(_packed)
+            _kid = 3301 + (_i * 7 + _j) * 2 + int(_packed)
             _traits = (f"opus_gemm_fixed_k_fragment_traits<opus_gemm_shared_fragment_traits<"
                        f"{_bm}, {_bn}, {_wm}, {_wn}, {_bk}, {str(_packed).lower()}, true>, {_k}>")
             _bpreshuffle_register_ring(_kid, (_bm, _bn, 128, _wm, _wn), _traits,
@@ -4213,9 +4170,9 @@ for _i, (_bm, _bn, _wm, _wn, _bk) in enumerate(_fragment_hybrid_geometries):
 # Short-K register queues with a static schedule. M/N remain runtime;
 # scale preloading is an independent policy for the same contraction engine.
 _fragment_scheduled_configs = (
-    (9503524, 16, 32, 1, 2, 384, 3, False),
-    (9503619, 16, 32, 1, 1, 384, 3, True),
-    (9503624, 16, 32, 1, 2, 384, 3, True),
+    (3524, 16, 32, 1, 2, 384, 3, False),
+    (3619, 16, 32, 1, 1, 384, 3, True),
+    (3624, 16, 32, 1, 2, 384, 3, True),
 )
 for _kid, _bm, _bn, _wm, _wn, _k, _depth, _preload in _fragment_scheduled_configs:
     _traits = (f"opus_gemm_scheduled_fragment_traits<{_bm}, {_bn}, {_wm}, {_wn}, "
@@ -4255,7 +4212,7 @@ def _m_repeat_generic_signature(instance):
 
 
 # Fixed-K variants with measured benefit.
-GFX950_FIXED_K_TUNE_KIDS = frozenset((950123, 950125))
+GFX950_FIXED_K_TUNE_KIDS = frozenset((123, 125))
 
 
 def a8w8_mxscale_bpreshuffle_tune_candidates(candidates, seed_kids=()):
@@ -4310,10 +4267,7 @@ def bpreshuffle_workspace_bytes(instance, m, n, k):
     return factor * m * n + extra
 
 # combined list (used by production gen_instances / dispatch)
-kernels_list = {
-    **a8w8_scale_kernels_list,
-    **a8w8_kernels_list,
-    **a8w8_mxscale_bmm_kernels_list,
+gfx950_a16w16_kernels_list = {
     **a16w16_kernels_list,
     **a16w16_kernels_list_nooob,
     **a16w16_kernels_list_cpol,
@@ -4331,12 +4285,28 @@ kernels_list = {
     **a16w16_persistent_kernels_list_4g_safe,
     **a16w16_persistent_kernels_list_4g_safe_nooob,
     **a16w16_mono_tile_kernels_list_4g_safe,
-    **gfx942_kernels_list,
+}
+
+gfx1250_a16w16_kernels_list = {
     **gfx1250_kernels_list,
     **gfx1250_clusterlaunch_kernels_list,
     **gfx1250_splitk_fuse_kernels_list,
-    **gfx1250_4wave_co_kernels_list,
-    **a8w8_mxscale_gemm_bpreshuffle_kernels_list,
+    **gfx1250_4wave_co_kernels_declared,
+}
+
+KERNEL_REGISTRY = {
+    "a16w16": {
+        "gfx950": {cu: dict(sorted(gfx950_a16w16_kernels_list.items())) for cu in (128, 256)},
+        "gfx942": {cu: dict(sorted(gfx942_kernels_list.items())) for cu in (80, 228, 304)},
+        "gfx1250": {256: dict(sorted(gfx1250_a16w16_kernels_list.items()))},
+    },
+    "a8w8": {"gfx950": {cu: dict(a8w8_kernels_list) for cu in (128, 256)}},
+    "a8w8_blockscale": {"gfx950": {cu: dict(a8w8_scale_kernels_list) for cu in (128, 256)}},
+    "a8w8_mxscale_bmm": {"gfx950": {cu: dict(sorted(a8w8_mxscale_bmm_kernels_list.items())) for cu in (128, 256)}},
+    "a8w8_blockscale_bpreshuffle": {
+        "gfx942": {cu: dict(gfx942_a8w8_kernels_list) for cu in (80, 228, 304)},
+        "gfx950": {cu: dict(sorted(a8w8_mxscale_gemm_bpreshuffle_kernels_list.items())) for cu in (128, 256)},
+    },
 }
 
 
@@ -4347,7 +4317,13 @@ kernels_list = {
 # the same configuration, but distinct traits must not share a name.
 _name_owner = {}
 _name_clashes = []
-for _cat in (*a8w8_mxscale_bmm_kernel_lists, kernels_list):
+for _cat in (
+    *a8w8_mxscale_bmm_kernel_lists,
+    gfx950_a16w16_kernels_list,
+    gfx942_kernels_list,
+    gfx1250_a16w16_kernels_list,
+    a8w8_mxscale_gemm_bpreshuffle_kernels_list,
+):
     for _kid, _inst in _cat.items():
         _config = asdict(_inst)
         if _inst.bpreshuffle_co is not None:
@@ -4364,18 +4340,112 @@ assert not _name_clashes, (
 )
 
 
-# Subset-compile kid taxonomy (consumed by gen_instances.py for the `HEURISTIC_DEFAULT_KIDS ?
-# Subset-compile kid taxonomy consumed by gen_instances.py.
+@dataclass(frozen=True, order=True)
+class KernelKey:
+    family: str
+    gfx: str
+    cu_num: int
+    kid: int
 
-# Splitk kids: a16w16_flatmm_splitk pipeline (kid 200..223 + nooob mirror).
-SPLITK_KIDS = (
-    frozenset(a16w16_flatmm_splitk_kernels_list.keys())
-    | frozenset(a16w16_flatmm_splitk_kernels_list_nooob.keys())
-    | frozenset(gfx942_splitk_kernels_list.keys())
-    | frozenset(gfx1250_kernels_list.keys())
-    | frozenset(gfx1250_clusterlaunch_kernels_list.keys())
-    | frozenset(gfx1250_splitk_fuse_kernels_list.keys())
-)
+    def __post_init__(self):
+        object.__setattr__(self, "family", self.family.strip().lower())
+        object.__setattr__(self, "gfx", self.gfx.split(":", 1)[0].strip().lower())
+        if type(self.cu_num) is not int or self.cu_num <= 0:
+            raise ValueError("kernel identity requires a positive integer cu_num")
+        if type(self.kid) is not int or self.kid < 0:
+            raise ValueError("kernel identity requires a non-negative integer kid")
+
+    def encode(self) -> str:
+        return f"{self.family}/{self.gfx}/{self.cu_num}/{self.kid}"
+
+    @classmethod
+    def decode(cls, value: str) -> "KernelKey":
+        family, gfx, cu_num, kid = value.split("/")
+        return cls(family, gfx, int(cu_num), int(kid))
+
+
+def get_registry(family: str, gfx: str, cu_num: int) -> dict[int, object]:
+    """Select available kernels from the family/gfx/CU table."""
+    family = family.strip().lower()
+    gfx = gfx.split(":", 1)[0].strip().lower()
+    tables = KERNEL_REGISTRY.get(family, {}).get(gfx, {})
+    if not tables:
+        return {}
+    if type(cu_num) is not int or cu_num not in tables:
+        raise ValueError(f"unregistered OPUS namespace {family}/{gfx}/{cu_num}")
+    records = tables[cu_num]
+    if family == "a16w16" and gfx == "gfx1250":
+        return {
+            kid: instance
+            for kid, instance in records.items()
+            if instance.kernel_tag not in _A16W16_CO_TAGS
+            or os.path.isfile(co_image_path(CO_KERNELS_JSON, instance))
+        }
+    return records
+
+
+def parse_integer(value, *, name, minimum=0):
+    try:
+        number = Decimal(str(value))
+        integer = int(number)
+        if number != integer or integer < minimum:
+            raise ValueError
+        return integer
+    except (InvalidOperation, ValueError, TypeError, OverflowError) as exc:
+        raise ValueError(
+            f"invalid {name} {value!r}; expected an integer >= {minimum}"
+        ) from exc
+
+
+def kid_for_name(family: str, gfx: str, cu_num: int, name: str) -> int:
+    kid = min(
+        (
+            kid
+            for kid, instance in get_registry(family, gfx, cu_num).items()
+            if instance.name == name
+        ),
+        default=None,
+    )
+    if kid is None:
+        raise ValueError(
+            f"kernel symbol {name!r} is absent from {family}/{gfx}/{cu_num}"
+        )
+    return kid
+
+
+def default_compiled_keys(gfx: str, cu_num: int) -> set[KernelKey]:
+    """Select the default compile set from the current CU table."""
+    defaults = DEFAULT_COMPILED_KIDS_BY_NAMESPACE.get((gfx, cu_num), ())
+    return {
+        KernelKey("a16w16", gfx, cu_num, kid)
+        for kid in get_registry("a16w16", gfx, cu_num)
+        if kid in defaults
+    }
+
+
+def _in_group(name, family, instance):
+    if family == "a16w16":
+        workspace = instance.splitk_workspace_dtype is not None
+        return {
+            "SPLITK_KIDS": workspace,
+            "NON_SPLITK_KIDS": not workspace,
+            "BIAS_AWARE_KIDS": workspace or instance.kernel_tag == "a16w16",
+            "GFX1250_4WAVE_CO_KIDS": instance.kernel_tag in _A16W16_CO_TAGS,
+            "SPLITK_4G_SAFE_KIDS": workspace and instance.is_4g_safe,
+            "NON_SPLITK_4G_SAFE_KIDS": not workspace and instance.is_4g_safe,
+            "FOUR_G_SAFE_KIDS": instance.is_4g_safe,
+        }.get(name, False)
+    return family == "a8w8_mxscale_bmm" and name == "BMM_MXSCALE_KIDS"
+
+
+def group_kids(name, gfx, family="a16w16", *, cu_num):
+    """Derive capability groups from the selected namespace's instances."""
+    return frozenset(
+        kid
+        for kid, instance in get_registry(family, gfx, cu_num).items()
+        if _in_group(name, family, instance)
+    )
+
 
 BMM_MXSCALE_WORKSPACE_TAGS = frozenset(
     {
@@ -4384,69 +4454,23 @@ BMM_MXSCALE_WORKSPACE_TAGS = frozenset(
     }
 )
 BMM_MXSCALE_WORKSPACE_KIDS = frozenset(
-    kid
+    ("a8w8_mxscale_bmm", "gfx950", kid)
     for kid, instance in a8w8_mxscale_bmm_kernels_list.items()
     if instance.kernel_tag in BMM_MXSCALE_WORKSPACE_TAGS and not instance.direct_only
 )
 
 _SUPPORTED_SPLITK_WORKSPACE_DTYPES = frozenset({"bf16_t", "fp32_t"})
-for _workspace_kid in SPLITK_KIDS:
-    _workspace_dtype = kernels_list[_workspace_kid].splitk_workspace_dtype
-    if _workspace_dtype not in _SUPPORTED_SPLITK_WORKSPACE_DTYPES:
-        raise ValueError(
-            f"workspace kid {_workspace_kid} must explicitly declare "
-            f"splitk_workspace_dtype, got {_workspace_dtype!r}"
-        )
-
-# Non-splitk a16w16-family kids: split-barrier 4..9 + cpol/nooob mirrors, persistent 300..315 +
-# cpol/nooob mirrors.
-NON_SPLITK_KIDS = (
-    frozenset(a16w16_kernels_list.keys())
-    | frozenset(a16w16_kernels_list_nooob.keys())
-    | frozenset(a16w16_kernels_list_cpol.keys())
-    | frozenset(a16w16_kernels_list_cpol_nooob.keys())
-    | frozenset(a16w16_persistent_kernels_list.keys())
-    | frozenset(a16w16_persistent_kernels_list_cpol.keys())
-    | frozenset(a16w16_persistent_kernels_list_nooob.keys())
-    | frozenset(a16w16_persistent_kernels_list_cpol_nooob.keys())
-    | frozenset(a16w16_mono_tile_kernels_list.keys())
-    | frozenset(gfx942_nosplit_kernels_list.keys())
-    | GFX1250_4WAVE_CO_KIDS
-)
-
-# 4g_safe kid families. Per-WG-tight BR sizing -- selectable for any shape
-# (M/N/K tail safe by BR num_records). All current 4g_safe kids are non-splitk
-# (split-barrier / persistent / mono_tile variants). flatmm_splitk_4g_safe
-# can be added later if needed.
-SPLITK_4G_SAFE_KIDS = frozenset()
-NON_SPLITK_4G_SAFE_KIDS = (
-    frozenset(a16w16_kernels_list_4g_safe.keys())
-    | frozenset(a16w16_kernels_list_4g_safe_nooob.keys())
-    | frozenset(a16w16_persistent_kernels_list_4g_safe.keys())
-    | frozenset(a16w16_persistent_kernels_list_4g_safe_nooob.keys())
-    | frozenset(a16w16_mono_tile_kernels_list_4g_safe.keys())
-)
-# Per the opus kid pruning policy (project memory), 4g_safe kids are added
-# additively -- they do NOT shadow or replace any existing kid.
-NON_SPLITK_KIDS = NON_SPLITK_KIDS | NON_SPLITK_4G_SAFE_KIDS
-
-# All-4g_safe-kids superset, consumed by the per-kid 4 GiB filter in
-# opus_gemm_tune.py (legacy kids are dropped from the candidate pool when
-# A/B/C bytes exceed UINT32_MAX; 4g_safe kids stay).
-FOUR_G_SAFE_KIDS = SPLITK_4G_SAFE_KIDS | NON_SPLITK_4G_SAFE_KIDS
-
-# Bias-aware kids: gfx950 split-barrier (4..9 + cpol/nooob mirrors), 4g_safe
-# mirrors, and the entire splitk family (gfx950 a16w16_flatmm_splitk + gfx942
-# splitk). Persistent excluded (launcher rejects bias).
-BIAS_AWARE_KIDS = (
-    frozenset(a16w16_kernels_list.keys())
-    | frozenset(a16w16_kernels_list_nooob.keys())
-    | frozenset(a16w16_kernels_list_cpol.keys())
-    | frozenset(a16w16_kernels_list_cpol_nooob.keys())
-    | frozenset(a16w16_kernels_list_4g_safe.keys())
-    | frozenset(a16w16_kernels_list_4g_safe_nooob.keys())
-    | SPLITK_KIDS
-)
+for _tables in KERNEL_REGISTRY["a16w16"].values():
+    for _workspace_kid, _workspace_instance in next(iter(_tables.values())).items():
+        _workspace_dtype = _workspace_instance.splitk_workspace_dtype
+        if (
+            _workspace_dtype is not None
+            and _workspace_dtype not in _SUPPORTED_SPLITK_WORKSPACE_DTYPES
+        ):
+            raise ValueError(
+                f"workspace kid {_workspace_kid} must explicitly declare "
+                f"splitk_workspace_dtype, got {_workspace_dtype!r}"
+            )
 
 # Exact-id kernels kept in every default build.  The high-level A16 caller-side
 # heuristics below the tuned lookup are constrained to these ids; the unified
@@ -4454,36 +4478,36 @@ BIAS_AWARE_KIDS = (
 DEFAULT_COMPILED_KIDS_GFX950 = frozenset(
     {
         # splitk fallback (small M / non-aligned big M)
-        200,
-        1200,  # cc tile 0: (64, 64, 64) WG=2
-        206,
-        1206,  # cc tile 6: (64, 32, 128) WG=2
-        208,
-        1208,  # cc tile 8: (64, 64, 128) WG=1
+        6,
+        52,  # cc tile 0: (64, 64, 64) WG=2
+        12,
+        58,  # cc tile 6: (64, 32, 128) WG=2
+        14,
+        60,  # cc tile 8: (64, 64, 128) WG=1
         # persistent fallback (large M, tile-aligned)
-        300,
-        1300,  # persistent (256, 256, 64)
+        30,
+        76,  # persistent (256, 256, 64)
     }
 )
 
 DEFAULT_COMPILED_KIDS_GFX942 = frozenset(
     {
         # Representative exact-id launchers kept in default gfx942 builds.
-        10000,  # gfx942 split-barrier    512x128x128x64 16x16x16 (large problem)
-        10001,  # gfx942 p1               256x64x64x64
-        10003,  # gfx942 p1_bk128         256x64x64x128
-        10200,  # gfx942 splitk          512x128x128x64 16x16x16 (N > 128)
-        10201,  # gfx942 splitk_p1        256x64x64x64  (depth=2 + workspace + reduce)
-        10203,  # gfx942 splitk_p1_bk128  256x64x64x128 (B_K=128 Option B; dev/bench)
-        10204,  # gfx942 splitk_em3en4_lds1_pgr2 256x128x96x128 hipb-orientation
-        10205,  # gfx942 splitk_legacy    512x64x128x64 16x16x16
-        10210,  # gfx942 splitk_legacy_bf16ws 512x128x128x64
-        10213,  # gfx942 splitk_p1_bk128_bf16ws 256x64x64x128
-        10300,  # gfx942 wave_k_coop     512x16x16x64 T_K=8
-        10301,  # gfx942 wave_k_coop     512x16x32x32 T_K=8
-        10302,  # gfx942 wave_k_coop     512x32x16x64 T_K=8
-        10303,  # gfx942 wave_k_coop     256x32x32x64 T_K=4
-        10305,  # gfx942 wave_k_coop     512x16x32x64 T_K=8
+        0,  # gfx942 split-barrier    512x128x128x64 16x16x16 (large problem)
+        1,  # gfx942 p1               256x64x64x64
+        2,  # gfx942 p1_bk128         256x64x64x128
+        4,  # gfx942 splitk          512x128x128x64 16x16x16 (N > 128)
+        5,  # gfx942 splitk_p1        256x64x64x64  (depth=2 + workspace + reduce)
+        6,  # gfx942 splitk_p1_bk128  256x64x64x128 (B_K=128 Option B; dev/bench)
+        7,  # gfx942 splitk_em3en4_lds1_pgr2 256x128x96x128 hipb-orientation
+        8,  # gfx942 splitk_legacy    512x64x128x64 16x16x16
+        9,  # gfx942 splitk_legacy_bf16ws 512x128x128x64
+        10,  # gfx942 splitk_p1_bk128_bf16ws 256x64x64x128
+        12,  # gfx942 wave_k_coop     512x16x16x64 T_K=8
+        13,  # gfx942 wave_k_coop     512x16x32x32 T_K=8
+        14,  # gfx942 wave_k_coop     512x32x16x64 T_K=8
+        15,  # gfx942 wave_k_coop     256x32x32x64 T_K=4
+        16,  # gfx942 wave_k_coop     512x16x32x64 T_K=8
     }
 )
 
@@ -4502,14 +4526,9 @@ DEFAULT_COMPILED_KIDS_GFX1250 = (
         )
     )
     | frozenset({GFX1250_CLUSTERLAUNCH_KID_OF[(16, 32, 128, 2, 1)]})
-    | GFX1250_4WAVE_CO_KIDS
+    | frozenset(gfx1250_4wave_co_kernels_declared)
 )
 
-DEFAULT_COMPILED_KIDS = (
-    DEFAULT_COMPILED_KIDS_GFX950
-    | DEFAULT_COMPILED_KIDS_GFX942
-    | DEFAULT_COMPILED_KIDS_GFX1250
-)
 
 DEFAULT_COMPILED_KIDS_BY_ARCH = {
     "gfx950": DEFAULT_COMPILED_KIDS_GFX950,
@@ -4518,15 +4537,32 @@ DEFAULT_COMPILED_KIDS_BY_ARCH = {
 }
 
 
-def default_compiled_kids_for_arch(arches):
-    """Return the default exact-id compile floor for requested arches."""
-    if arches is None:
-        return DEFAULT_COMPILED_KIDS
-    arches = {a.lower() for a in arches}
-    out = frozenset()
-    for arch in arches:
-        out = out | DEFAULT_COMPILED_KIDS_BY_ARCH.get(arch, frozenset())
-    return out
+DEFAULT_COMPILED_KIDS = frozenset(
+    ("a16w16", gfx, kid)
+    for gfx, kids in DEFAULT_COMPILED_KIDS_BY_ARCH.items()
+    for kid in kids
+)
+
+DEFAULT_COMPILED_KIDS_BY_NAMESPACE = {
+    (gfx, cu): DEFAULT_COMPILED_KIDS_BY_ARCH[gfx] & table.keys()
+    for gfx, tables in KERNEL_REGISTRY["a16w16"].items()
+    for cu, table in tables.items()
+}
+
+
+def default_compiled_kids_for_arch(arches, *, cu_num=None):
+    arches = set(arches or OPUS_KERNEL_TAGS_BY_ARCH_FAMILY)
+    if cu_num is not None:
+        return frozenset(
+            (key.family, key.gfx, key.kid)
+            for gfx in arches
+            for key in default_compiled_keys(gfx, cu_num)
+        )
+    return frozenset(
+        ("a16w16", gfx, kid)
+        for gfx in arches
+        for kid in DEFAULT_COMPILED_KIDS_BY_ARCH.get(gfx, ())
+    )
 
 
 # Map each architecture and interface to its registered kernel tags.
@@ -4609,13 +4645,6 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
     },
 }
 
-# Always include these A8W8 kernels in matching-architecture subset builds.
-OPUS_MANDATORY_A8_KIDS = {
-    "gfx950": frozenset({1, 2}),
-    "gfx942": frozenset({11000}),
-    "gfx1250": frozenset(),
-}
-
 
 def canonical_output_dtype(output_dtype) -> str | None:
     """Normalize supported output dtype names for registry lookup."""
@@ -4641,9 +4670,11 @@ def get_kernel_instance(
     family: str,
     kid: int,
     output_dtype=None,
+    *,
+    cu_num: int,
 ) -> OpusGemmInstance | None:
     """Return a kernel registered for ``(arch, interface, kid, Y.dtype)``."""
-    arch = str(arch).lower()
+    arch = str(arch).lower().split(":", 1)[0]
     family = str(family).lower()
     family_tags = OPUS_KERNEL_TAGS_BY_ARCH_FAMILY.get(arch, {}).get(family)
     if family_tags is None:
@@ -4654,7 +4685,7 @@ def get_kernel_instance(
     except (TypeError, ValueError):
         return None
 
-    instance = kernels_list.get(kid)
+    instance = get_registry(family, arch, cu_num).get(kid)
     if instance is None or instance.kernel_tag not in family_tags:
         return None
     instance_arch = (instance.arch_prefix or "gfx950").lower()
@@ -4665,7 +4696,7 @@ def get_kernel_instance(
     if dtype is not None:
         # Workspace reducers own the final cast, so their host dispatch
         # specialization in ``output_dtypes`` is not the Y dtype contract.
-        if family == "a16w16" and kid in SPLITK_KIDS:
+        if family == "a16w16" and instance.splitk_workspace_dtype is not None:
             # The current gfx942 BF16-workspace reducer is exact-N and writes
             # BF16 only.  Other A16 workspace reducers support BF16/FP32 Y.
             allowed = (
@@ -4683,25 +4714,28 @@ def get_kernel_instance(
     return instance
 
 
-def kernel_needs_external_workspace(arch: str, family: str, kid: int) -> bool:
+def kernel_needs_external_workspace(
+    arch: str, family: str, kid: int, *, cu_num: int
+) -> bool:
     """Return whether a registered kernel requires caller-owned workspace.
 
     Unknown logical keys are errors rather than ``False``: treating an unknown
     kid as a non-workspace kernel would let a caller launch it without the
     allocation required for memory safety.  Capability comes from the existing
-    ``SPLITK_KIDS`` registry or bpreshuffle workspace metadata, never from a
-    numeric kid range or tag substring.
+    selected kernel instance, never from a numeric kid range or tag substring.
     The registry includes all enabled two-stage reducers. If the experimental
     gfx1250 fused family is re-enabled, its first SplitK-1 WGs also publish
     external partial tiles and therefore enter this same capability set.
     """
-    instance = get_kernel_instance(arch, family, kid)
+    instance = get_kernel_instance(arch, family, kid, cu_num=cu_num)
     if instance is None:
         raise KeyError(
             f"unknown OPUS kernel (arch={arch!r}, family={family!r}, kid={kid!r})"
         )
     rule = (instance.bpreshuffle_entry or {}).get("workspace_rule", ("none",))
-    return int(kid) in SPLITK_KIDS or rule[0] != "none"
+    return (
+        instance.splitk_workspace_dtype is not None and not instance.direct_only
+    ) or rule[0] != "none"
 
 
 def _opus_sidecar_path():
@@ -4711,7 +4745,7 @@ def _opus_sidecar_path():
     it survives ``aiter.jit.core.clear_build("module_deepgemm_opus")`` --
     which ``build_module()`` calls when ``AITER_REBUILD == 1`` -- and
     seeds the last successfully compiled set into the next codegen.
-    The tuner passes new candidates through ``--extra_kids``; it does not
+    The tuner passes new candidates through ``--extra_kernel_keys``; it does not
     advance this file before compiling. JIT atomically copies the generated
     sidecar back here after installing the .so, independently of source-cache
     publication. Its adjacent ``.receipt`` binds the contents to that binary;

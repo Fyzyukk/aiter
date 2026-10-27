@@ -224,7 +224,7 @@ def ensure_opus_kids_compiled(kids):
 
         if compiler:
             os.environ["HIP_CLANG_PATH"] = compiler
-        return _ensure_kids_compiled(kids)
+        return _ensure_kids_compiled(kids, family="a8w8_blockscale_bpreshuffle")
     finally:
         if compiler:
             if previous_compiler is None:
@@ -243,6 +243,7 @@ def run_gemm_opus(x, weight_shuffle, x_scale, w_scale, out, kid):
         weight_shuffle,
         out,
         kid=kid,
+        family="a8w8_blockscale_bpreshuffle",
         layout="bpreshuffle",
         x_scale=x_scale,
         w_scale=w_scale,
