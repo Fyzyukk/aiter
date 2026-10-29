@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
+import json
 import math
 import multiprocessing as mp
 import os
@@ -258,6 +259,36 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
     data_key = None
     cached_ref = ref
     cached_ref_key = None
+    candidate_progress = None
+    candidate_progress_path = None
+
+    def publish_candidate_progress(phase="running"):
+        nonlocal candidate_progress
+        if candidate_progress is None:
+            return
+        event = {
+            **candidate_progress,
+            "phase": phase,
+            "shape_complete": phase == "completed",
+            "shape_success": (
+                candidate_progress["valid_total"] > 0
+                if phase == "completed"
+                else False if phase == "failed" else None
+            ),
+            "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "updated_monotonic": time.monotonic(),
+        }
+        temporary_path = candidate_progress_path + ".tmp"
+        try:
+            os.makedirs(os.path.dirname(candidate_progress_path), exist_ok=True)
+            with open(temporary_path, "w") as stream:
+                json.dump(event, stream, allow_nan=False)
+                stream.write("\n")
+                stream.flush()
+            os.replace(temporary_path, candidate_progress_path)
+        except (OSError, TypeError, ValueError) as e:
+            logger.warning(f"Candidate progress reporting disabled: {e}")
+            candidate_progress = None
 
     def make_data_key(cur_gen_data, cur_gen_args):
         def normalize(arg):
@@ -308,6 +339,27 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
         rets = []
         shape_grouped = isinstance(tasks, list)
         solutions = 1 if not shape_grouped else kernels_num
+        progress_dir = os.environ.get("OPUS_TUNE_CANDIDATE_PROGRESS_DIR")
+        if progress_dir and shape_grouped:
+            candidate_progress_path = os.path.join(progress_dir, f"{pid}.json")
+            candidate_progress = {
+                "worker_pid": pid,
+                "gpu_id": gpu_id,
+                "info_keys": group_task[0][0][0],
+                "current_libtype": group_task[0][0][-1],
+                "total_tasks": solutions,
+                "total_opus": sum(task[0][-1] == "opus" for task in group_task),
+                "total_flydsl": sum(
+                    task[0][-1] == "flydsl" for task in group_task
+                ),
+                "processed_total": 0,
+                "processed_opus": 0,
+                "processed_flydsl": 0,
+                "valid_total": 0,
+                "valid_opus": 0,
+                "valid_flydsl": 0,
+            }
+            publish_candidate_progress()
         for i in range(solutions):
             (
                 info,
@@ -322,6 +374,10 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
                 ref_noused,
                 *rest,
             ) = group_task[i]
+            if candidate_progress is not None:
+                if info[-1] != candidate_progress["current_libtype"]:
+                    candidate_progress["current_libtype"] = info[-1]
+                    publish_candidate_progress()
             # either gen_data func or inpur data
             data = ensure_data(gen_data, gen_args)
 
@@ -383,6 +439,23 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
             # Run worker with explicit GPU ID
             ret = worker(*work_args)
             rets.append(ret)
+            if candidate_progress is not None:
+                libtype = info[-1]
+                candidate_progress["processed_total"] += 1
+                if libtype in ("opus", "flydsl"):
+                    candidate_progress[f"processed_{libtype}"] += 1
+                if (
+                    math.isfinite(ret[1])
+                    and ret[1] > 0
+                    and math.isfinite(ret[2])
+                    and ret[2] <= err_ratio
+                ):
+                    candidate_progress["valid_total"] += 1
+                    if libtype in ("opus", "flydsl"):
+                        candidate_progress[f"valid_{libtype}"] += 1
+                if candidate_progress["processed_total"] % 128 == 0:
+                    publish_candidate_progress()
+        publish_candidate_progress("completed")
         return rets
 
     except Exception as e:  # noqa: BLE001
@@ -390,6 +463,7 @@ def work_group(GPUIDMap, fast_mode, err_ratio, in_data, tasks, verbose=False):
 
         print(f"Critical error in work_group: {e!r}")
         traceback.print_exc()
+        publish_candidate_progress("failed")
         # Return dummy failed results for all tasks in the group
         if isinstance(tasks, list):
             return [
@@ -414,6 +488,7 @@ def mp_tuner(
     err_ratio=0.05,
     timeout=None,
     verbose=False,  # print verbose log
+    progress_callback=None,
 ):
     """Multi-process tuner with GPU fault isolation.
 
@@ -429,6 +504,8 @@ def mp_tuner(
         shape_grouped: Group tasks by shape
         err_ratio: Error tolerance ratio
         timeout: Timeout in seconds for each task group (None = no timeout)
+        progress_callback: Optional parent-process callback for each completed
+            group's results
 
     Returns:
         List of (info, latency, error_ratio) tuples
@@ -677,6 +754,11 @@ def mp_tuner(
         # Remove completed tasks from remaining list
         for item in completed_this_round:
             remaining_tasks.remove(item)
+            if progress_callback is not None:
+                try:
+                    progress_callback(result_dict[item[0]])
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Tuning progress callback failed: {e}")
 
         # If pool restart needed due to crash, restart pool and resubmit remaining tasks
         if pool_restart_needed and remaining_tasks:

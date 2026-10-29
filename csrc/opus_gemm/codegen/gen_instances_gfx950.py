@@ -184,7 +184,21 @@ KARGS_NAME_MAP = {
 
 
 def co_traits_args(k):
-    return ",".join(k["traits"]["args"])
+    args = list(k["traits"]["args"])
+    if (k["traits"]["name"] ==
+            "opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits"):
+        booleans = ("false", "true")
+        if len(args) in (4, 5) and str(args[2]).lower() in booleans:
+            # Older manifests included Reset before Unroll, with optional PadM.
+            if str(args[2]).lower() != "false":
+                raise ValueError("4wave Reset=true is no longer supported")
+            del args[2]
+        if len(args) == 4 or (len(args) == 3 and str(args[2]).lower() not in booleans):
+            # Remove the legacy FixedK=0 slot; this pipeline always uses runtime K.
+            if int(args[1]) != 0:
+                raise ValueError("4wave COs require runtime K; legacy FixedK must be 0")
+            del args[1]
+    return ",".join(args)
 
 
 def splitk_reduce_extra_device_instantiations():
@@ -3323,6 +3337,9 @@ void {k.name}(aiter_tensor_t& XQ, aiter_tensor_t& WQ,
         entry = k.bpreshuffle_entry
         kernel, alias = entry["kernel"], f"{k.name}_Traits"
         header = entry["headers"][0]
+        traits_header = entry.get("traits_header", header.replace("_pipeline_", "_traits_", 1))
+        grid = ("dim3(tiles_n, tiles_m)" if entry.get("grid_layout") == "n_m"
+                else "dim3(Traits::XCD_ORDER ? (tiles + 7) / 8 * 8 : tiles)")
         abi = "opus_gemm_blockscale_mxscale_bpreshuffle_kargs_gfx950"
         checks = [
             f"m % {k.m_align} == 0",
@@ -3353,7 +3370,7 @@ void {k.name}(aiter_tensor_t& XQ, aiter_tensor_t& WQ,
             '\n#include <climits>\n#include <type_traits>\n#include "opus_gemm_common.cuh"'
         )
         source = f"""{preamble}
-#include "{header.replace("_pipeline_", "_traits_", 1)}"
+#include "{traits_header}"
 #ifdef OPUS_FUSED_HOST_TU
 template<class Traits> __global__ void {kernel}({abi});
 #else
@@ -3370,7 +3387,7 @@ void {k.name}(aiter_tensor_t& XQ, aiter_tensor_t& WQ,
     using Traits = {alias};
     const unsigned tiles_m = (m + Traits::B_M - 1) / Traits::B_M;
     const unsigned tiles_n = n / Traits::B_N, tiles = tiles_m * tiles_n;
-    {kernel}<{alias}><<<dim3(Traits::XCD_ORDER ? (tiles + 7) / 8 * 8 : tiles), dim3(Traits::BLOCK_SIZE), 0, aiter::getCurrentHIPStream()>>>(args);
+    {kernel}<{alias}><<<{grid}, dim3(Traits::BLOCK_SIZE), 0, aiter::getCurrentHIPStream()>>>(args);
 }}
 #endif
 """

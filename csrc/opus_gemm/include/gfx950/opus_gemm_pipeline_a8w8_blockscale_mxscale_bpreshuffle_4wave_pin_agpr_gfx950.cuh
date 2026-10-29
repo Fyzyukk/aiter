@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <cstdint>
 #include <type_traits>
 #include <opus/hip_minimal.hpp>
 #include <opus/opus.hpp>
@@ -365,35 +366,12 @@ __device__ inline constexpr auto make_layout_rsfb_scale() {
         opus::unfold_p_coord(block_dim, opus::tuple{}));
 }
 
-// Fixed-shape entries use contiguous matrix and scale strides.
-#if defined(OPUS_BP_FIXED_M) && defined(OPUS_BP_FIXED_N) && defined(OPUS_BP_FIXED_K)
-__device__ __forceinline__ void apply_fixed_args(opus_gemm_blockscale_mxscale_bpreshuffle_kargs_gfx950& a) {
-    a.m = OPUS_BP_FIXED_M;
-    a.n = OPUS_BP_FIXED_N;
-    a.k = OPUS_BP_FIXED_K;
-    a.batch = 1;
-    a.stride_a = OPUS_BP_FIXED_K;
-    a.stride_b = OPUS_BP_FIXED_K;
-    a.stride_c = OPUS_BP_FIXED_N;
-    a.stride_a_batch = static_cast<int>(int64_t(OPUS_BP_FIXED_M) * OPUS_BP_FIXED_K);
-    a.stride_b_batch = static_cast<int>(int64_t(OPUS_BP_FIXED_N) * OPUS_BP_FIXED_K);
-    a.stride_c_batch = static_cast<int>(int64_t(OPUS_BP_FIXED_M) * OPUS_BP_FIXED_N);
-    a.stride_sfa = OPUS_BP_FIXED_M;
-    a.stride_sfb = OPUS_BP_FIXED_K / 128;
-    a.stride_sfa_batch = OPUS_BP_FIXED_M * (OPUS_BP_FIXED_K / 128);
-    a.stride_sfb_batch = (OPUS_BP_FIXED_N / 128) * (OPUS_BP_FIXED_K / 128);
-}
-#endif
-
 } // namespace opus_gemm_blockscale_mxscale_bpreshuffle_pin_detail
 
 template<class Traits>
 __device__ __forceinline__ void opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr(
     opus_gemm_blockscale_mxscale_bpreshuffle_kargs_gfx950 kargs) {
     using namespace opus_gemm_blockscale_mxscale_bpreshuffle_pin_detail;
-#if defined(OPUS_BP_FIXED_M) && defined(OPUS_BP_FIXED_N) && defined(OPUS_BP_FIXED_K)
-    opus_gemm_blockscale_mxscale_bpreshuffle_pin_detail::apply_fixed_args(kargs);
-#endif
     using namespace opus;
 
     using T = opus::remove_cvref_t<Traits>;
@@ -402,12 +380,12 @@ __device__ __forceinline__ void opus_gemm_blockscale_mxscale_bpreshuffle_4wave_p
     using Index = std::conditional_t<T::UNSIGNED_THREAD_INDEX, unsigned, int>;
     const int m = T::STATIC_M ? T::STATIC_M : kargs.m;
     const int n = T::STATIC_N ? T::STATIC_N : kargs.n;
-    const int k = T::STATIC_K ? T::STATIC_K : kargs.k;
-    const int stride_a = T::STATIC_K ? T::STATIC_K : kargs.stride_a;
-    const int stride_b = T::STATIC_K ? T::STATIC_K : kargs.stride_b;
+    const int k = kargs.k;
+    const int stride_a = kargs.stride_a;
+    const int stride_b = kargs.stride_b;
     const int stride_c = T::STATIC_N ? T::STATIC_N : kargs.stride_c;
     const int stride_sfa = T::STATIC_M ? T::STATIC_M : kargs.stride_sfa;
-    const int stride_sfb = T::STATIC_K ? T::STATIC_K / 128 : kargs.stride_sfb;
+    const int stride_sfb = kargs.stride_sfb;
     const int stride_a_batch = T::STATIC_BATCH_STRIDES ? m * k : kargs.stride_a_batch;
     const int stride_b_batch = T::STATIC_BATCH_STRIDES ? n * k : kargs.stride_b_batch;
     const int stride_c_batch = T::STATIC_BATCH_STRIDES ? m * n : kargs.stride_c_batch;
@@ -651,7 +629,7 @@ __device__ __forceinline__ void opus_gemm_blockscale_mxscale_bpreshuffle_4wave_p
     };
 
     // Load Scale_A
-    const int scale_k_groups = static_cast<unsigned int>(T::FIXED_K ? T::FIXED_K : k) / T::GROUP_K;
+    const int scale_k_groups = static_cast<unsigned int>(k) / T::GROUP_K;
     constexpr int sfa_lds_word_stride = T::VEC_SF * (T::B_M / T::HALF_B_M) * T::E_M; // 4 * （256 / 128）* 4 = 32
     const auto sfa_gmem_offsets = opus::layout_to_offsets<T::VEC_SCALE_A>(u_gsfa);
     opus::vector_t<D_SF, T::VEC_SCALE_A> sfa_panel_raw[T::SFA_PASSES_PER_CACHE_PANEL];
@@ -663,7 +641,7 @@ __device__ __forceinline__ void opus_gemm_blockscale_mxscale_bpreshuffle_4wave_p
             const int first_k_group = panel_k_begin + pass * T::SFA_K_COLUMNS_PER_PASS + wave_id * T::SFA_K_COLUMNS_PER_WAVE;
             // 0 + 0/1/2/3 * 16 + 0/1/2/3 * 4
             // 8192/128 = 64 K groups, divided into 4 passes, with 16 K groups per pass. Each pass has 4 waves, and each wave consecutively loads 4 groups.
-            if constexpr (T::PAD_M || T::RESET_SFA_BEFORE_LOAD) sfa_panel_raw[pass] = {};
+            if constexpr (T::PAD_M) sfa_panel_raw[pass] = {};
             if (first_k_group < scale_k_groups) {
                 if constexpr (T::PAD_M) {
                     const int scale_row = ((lane_id & 8) | ((lane_id & 3) << 1) | ((lane_id & 4) >> 2)) * T::VEC_SCALE_A;
@@ -746,7 +724,7 @@ __device__ __forceinline__ void opus_gemm_blockscale_mxscale_bpreshuffle_4wave_p
 
     int stage = 0;
     int tile = 0;
-    const int loops = static_cast<unsigned int>(T::FIXED_K ? T::FIXED_K : k) / T::B_K;
+    const int loops = static_cast<unsigned int>(k) / T::B_K;
 
     // ===== Prologue =====
     if constexpr (T::PAD_M) {
