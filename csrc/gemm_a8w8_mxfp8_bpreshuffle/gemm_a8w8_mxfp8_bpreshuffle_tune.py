@@ -46,6 +46,12 @@ from aiter.ops.gemm_op_common import with_mxscale_w_scale_block
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.base_tuner import GemmCommonTuner
 from aiter.utility.mp_tuner import mp_tuner
+from csrc.opus_gemm.opus_gemm_search import (
+    PIPELINES,
+    ROUTES,
+    nonnegative_int,
+    opus_candidates,
+)
 
 TUNED_FILE = "aiter/configs/model_configs/dsv4_a8w8_mxfp8_bpreshuffle_tuned_gemm.csv"
 # The block of a shape list without a w_scale_block column, and of a tuned
@@ -101,66 +107,6 @@ def opus_kernel_name(kid, *, cu_num):
 
     instance = get_registry("a8w8_blockscale_bpreshuffle", "gfx950", cu_num)[int(kid)]
     return instance.name
-
-
-def opus_candidates(m, n, k, seeds=(), *, cu_num, top_geometries=4):
-    from csrc.opus_gemm.opus_gemm_common import (
-        a8w8_mxscale_bpreshuffle_tune_candidates,
-        candidate_kids_for_shape,
-        get_registry,
-    )
-
-    registry = get_registry("a8w8_blockscale_bpreshuffle", "gfx950", cu_num)
-    candidates = [
-        (kid, registry[kid])
-        for kid in candidate_kids_for_shape("gfx950", m, n, k, cu_num=cu_num)
-    ]
-    if not candidates:
-        return []
-    seed_kids = set(seeds) & {kid for kid, _ in candidates}
-    candidate_count = len(candidates)
-    candidates = a8w8_mxscale_bpreshuffle_tune_candidates(candidates, seed_kids)
-    groups = defaultdict(list)
-    for kid, instance in candidates:
-        entry = instance.bpreshuffle_co or instance.bpreshuffle_entry
-        geometry = (
-            entry["pipeline"],
-            instance.B_M,
-            instance.B_N,
-            instance.B_K,
-            instance.T_M,
-            instance.T_N,
-        )
-        groups[geometry].append(kid)
-    by_pipeline = defaultdict(list)
-    for geometry in groups:
-        pipeline, bm, bn, _, _, _ = geometry
-        tiles = math.ceil(m / bm) * math.ceil(n / bn)
-        padding = math.ceil(m / bm) * bm / m * math.ceil(n / bn) * bn / n
-        occupancy = tiles / max(cu_num, 1)
-        cost = (
-            padding
-            - 1
-            + 2 * max(0, 1 - occupancy)
-            + 0.1 * (math.ceil(occupancy) / occupancy - 1)
-            + 8 / bm
-            + 8 / bn
-        )
-        by_pipeline[pipeline].append((cost, geometry))
-    retained = {
-        geometry
-        for geometries in by_pipeline.values()
-        for _, geometry in sorted(geometries)[:top_geometries]
-    }
-    legal = {kid for kid, _ in candidates}
-    selected = {kid for geometry in retained for kid in groups[geometry]}
-    selected.update(seed_kids & legal)
-    print(
-        f"[OPUS search] shape={(m, n, k)} legal={candidate_count} "
-        f"geometries={len(retained)} candidates={len(selected)} seeds={len(seed_kids)}",
-        flush=True,
-    )
-    return [(kid, registry[kid]) for kid in sorted(selected)]
 
 
 def ensure_opus_kids_compiled(kids, *, cu_num):
@@ -328,6 +274,25 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
             "and requires --mxscale_table and 128x128. "
             "Prebuild COs with csrc/opus_gemm/gen_co/build_co.py --arch gfx950.",
         )
+        self.parser.add_argument(
+            "--opus_top_geometries",
+            type=nonnegative_int,
+            default=8,
+            help="Retain the top N geometries per OPUS pipeline (default 8); "
+            "0 searches all legal geometries. Historical seeds are retained.",
+        )
+        self.parser.add_argument(
+            "--opus_pipelines",
+            choices=PIPELINES,
+            nargs="+",
+            help="Limit OPUS search to these pipelines; pingpong_lds is m_repeat.",
+        )
+        self.parser.add_argument(
+            "--opus_routes",
+            choices=ROUTES,
+            nargs="+",
+            help="Limit OPUS candidates to JIT and/or CO configurations.",
+        )
 
     def pre_process(self, args):
         self._mxscale_table = bool(args.mxscale_table)
@@ -468,6 +433,10 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
             opus_seeds = defaultdict(set)
             if "128x128" in set(untunedf.w_scale_block):
                 from aiter.jit.core import AITER_CONFIGS
+                from csrc.opus_gemm.opus_gemm_common import get_registry
+
+                registry = get_registry("a8w8_blockscale_bpreshuffle", "gfx950", cu_num)
+                seed_names = {instance.name: kid for kid, instance in registry.items()}
 
                 paths = {
                     args.tune_file,
@@ -489,14 +458,23 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
                             and math.isfinite(float(row.us))
                             and float(row.errRatio) <= args.errRatio
                         ):
-                            opus_seeds[(int(row.M), int(row.N), int(row.K))].add(
-                                int(row.kernelId)
+                            seed_kid = seed_names.get(
+                                str(getattr(row, "kernelName", ""))
                             )
+                            if seed_kid is not None:
+                                opus_seeds[(int(row.M), int(row.N), int(row.K))].add(
+                                    seed_kid
+                                )
             for row in untunedf.itertuples():
                 if row.w_scale_block == "128x128":
                     shape = (int(row.M), int(row.N), int(row.K))
                     opus_by_shape[shape] = opus_candidates(
-                        *shape, opus_seeds[shape], cu_num=cu_num
+                        *shape,
+                        opus_seeds[shape],
+                        cu_num=cu_num,
+                        top_geometries=args.opus_top_geometries,
+                        pipelines=args.opus_pipelines,
+                        routes=args.opus_routes,
                     )
                     if args.libtype == "opus" and not opus_by_shape[shape]:
                         raise ValueError(f"No OPUS candidate supports {shape}")

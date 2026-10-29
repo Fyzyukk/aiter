@@ -2,7 +2,7 @@
 
 数据来自 2026-10-28 16:24–21:34 UTC 的 8 卡 tune；本分析于 2026-10-29 根据保存结果、CO 恢复前的 registry、构建报告和 tuner 源码生成。未进行新的 GPU 复测。
 
-**当前更新：** build-co 已恢复 11 个因资源策略被拒绝的候选，可用 CO 为 262 个，补 PAD 的六种组合均可用。下面的耗时和覆盖数据仍是恢复前的快照；Top4 尚未修改。恢复详情见 [build-co 分析](build_co_analysis_zh.md)，继续工作见 [后续步骤](next_steps_zh.md)。
+**当前更新：** build-co 已恢复 11 个因资源策略被拒绝的候选，可用 CO 为 262 个，补 PAD 的六种组合均可用。下面的耗时和覆盖数据仍是恢复前的快照；筛选现已支持默认 Top8 和全量模式，见 [CPU 优化记录](cpu_search_optimization_zh.md)。恢复详情见 [build-co 分析](build_co_analysis_zh.md)，继续工作见 [后续步骤](next_steps_zh.md)。
 
 **先明确比较口径。** 原始完整结果没有“201 个胜出”这个统计：OPUS 胜过保存的 FlyDSL 基线 192 个，胜过本轮 FlyDSL 最快候选 207 个；旧 CSV 选择 OPUS 的 243 个中，本次比旧 OPUS 耗时更低的是 200 个。
 
@@ -67,7 +67,7 @@
 
 **建议的优化顺序。**
 
-1. 修改 tuner：增加 `--opus_top_geometries`，`0` 表示不截断，正整数保留 TopN；优先对 22 个漏测旧几何的落后项补测，再覆盖其余落后项。保留 shape 合法性检查。该参数目前还未实现。完整 OPUS 候选测量数约为本次的 6.62 倍，建议分阶段补齐，已有 192 个胜出优先留作回归集。
+1. 修改 tuner：增加 `--opus_top_geometries`，`0` 表示不截断，正整数保留 TopN；优先对 22 个漏测旧几何的落后项补测，再覆盖其余落后项。保留 shape 合法性检查。该参数已在 CPU 阶段实现，默认 Top8，0 保留全部；见 [CPU 优化记录](cpu_search_optimization_zh.md)。完整 OPUS 候选测量数约为本次的 6.62 倍，建议分阶段补齐，已有 192 个胜出优先留作回归集。
 
 2. 补测应同时保留保存基线的确切 FlyDSL kernel、本轮 FlyDSL 最快候选和旧 OPUS 的等价配置。每个 shape 的前 3～5 个候选做至少 5 轮交替测量，以中位数和离散度确认最终排序；101 次迭代得到的单轮平均值不能代替跨轮稳定性。
 
@@ -77,7 +77,7 @@
 
 5. 优先研究大 M 的 `(N,K)=(7168,16384)、(7168,7168)、(6144,7168)、(7168,4096)`。例如 `(65536,7168,16384)` 的 OPUS 为 5589.2283 μs，基线为 5355.0470 μs，虽只慢 4.3731%，绝对多了 234.1813 μs。最终排序应用实际调用频率乘以单次 gap；这里没有调用频率，不能据此宣称模型端到端收益。
 
-**本次输出。** [全部 421 个 shape](all_shapes_421.csv)、[229 个落后项及证据/建议](baseline_losses_229_with_evidence.csv)、[候选覆盖](candidate_coverage_421.csv)、[各 pipeline 实测最佳结果](best_measured_by_pipeline.csv)、[按 N/K 分组](summary_by_nk.csv)、[汇总 JSON](summary.json)。本次完成分析和数据导出，Top4 与 pipeline 优化建议尚未实施；build-co 资源策略已按独立分析完成恢复，未新增 GPU 复测。
+**本次输出。** [全部 421 个 shape](all_shapes_421.csv)、[229 个落后项及证据/建议](baseline_losses_229_with_evidence.csv)、[候选覆盖](candidate_coverage_421.csv)、[各 pipeline 实测最佳结果](best_measured_by_pipeline.csv)、[按 N/K 分组](summary_by_nk.csv)、[汇总 JSON](summary.json)。本次完成分析和数据导出，build-co 资源策略和可配置几何筛选已实现，m_repeat JIT 已追加分组及大 panel 候选；性能统计保持原测量快照，未新增 GPU 复测。
 
 **192 个保存基线胜出项逐条明细（按领先幅度排序）。**
 

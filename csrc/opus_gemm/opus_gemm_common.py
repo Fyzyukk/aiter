@@ -3060,6 +3060,27 @@ for _bm, _wn in product((128, 192, 256), (2, 4)):
             "opus_gemm_bpreshuffle_wave_interleave_kernel", _bm, 256, 256, 2, _wn,
             cache_a=_ca, cache_b=_cb)
 
+# Append variants after the existing JIT tables so saved kid/name pairs remain stable.
+# These geometries supplied many of the measured m_repeat JIT winners. Grouped M
+# and wider N panels exercise the existing launch-order code without adding pins.
+for _bm, _bn, _wm in ((128, 128, 2), (256, 256, 4)):
+    for _panel, (_ca, _cb), _arrays in product(
+        (64, 128, 256), _BP_CACHE_POLICIES, (False, True),
+    ):
+        if not _bpreshuffle_m_repeat_legal(_bm, _bn, _wm, _panel):
+            continue
+        _schedules = ((4, 8), (8, 8), (0, 16), (0, 32))
+        if _panel == 256:
+            # A legal larger scale cache also supplies runtime K > 16384.
+            _schedules = ((0, 8), *_schedules)
+        for _group_m, _group_n in _schedules:
+            _bpreshuffle_register_jit(
+                "pingpong_lds", "opus_gemm_bpreshuffle_pingpong_lds_traits",
+                (_bm, _bn, _panel, 0, _wm, _group_m, _ca, _cb, _arrays,
+                 False, False, False, False, False, 0, _group_n),
+                "opus_gemm_bpreshuffle_pingpong_lds_kernel", _bm, _bn, 128, _wm, 2,
+                max_k=_panel * 128, cache_a=_ca, cache_b=_cb)
+
 # Preserve route annotations for the builder; verified runtime image aliases
 # share canonical instance metadata for the complete name/config equality check.
 _bpreshuffle_co_entries_by_image = {}
