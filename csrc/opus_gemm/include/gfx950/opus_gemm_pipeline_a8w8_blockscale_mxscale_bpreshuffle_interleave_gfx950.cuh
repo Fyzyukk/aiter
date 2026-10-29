@@ -638,3 +638,12 @@ __device__ __forceinline__ void opus_gemm_bpreshuffle_wave_interleave_body(
     });
 }
 #endif // gfx950
+
+template<class Traits>
+__global__ __launch_bounds__(Traits::BLOCK_SIZE, 1)
+void opus_gemm_bpreshuffle_wave_interleave_kernel(
+    opus_gemm_blockscale_mxscale_bpreshuffle_kargs_gfx950 args) {
+#if defined(__HIP_DEVICE_COMPILE__) && defined(__gfx950__)
+    opus_gemm_bpreshuffle_wave_interleave_body<Traits>(args);
+#endif
+}

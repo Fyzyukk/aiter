@@ -7,6 +7,7 @@ import os
 import sys
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal, InvalidOperation
+from itertools import product
 
 _A16W16_CO_TAGS = frozenset(
     {"a16w16_4wave_co", "a16w16_4wave_wl_co", "a16w16_4wave_wlr_co"}
@@ -468,7 +469,7 @@ class OpusGemmInstance:
     def m_align(self) -> int:
         """M multiple enforced by the generated launcher (1 means tail-safe)."""
         if self.kernel_tag == "a8w8_blockscale_mxscale_gemm_bpreshuffle" and self.pad_m:
-            return (self.bpreshuffle_entry or {}).get("m_align", 64)
+            return (self.bpreshuffle_entry or self.bpreshuffle_co or {}).get("m_align", 64)
         mult = _BMM_M_ALIGN_TILES.get(self.kernel_tag)
         if mult is not None:
             return self.B_M * mult if mult else 1
@@ -2932,43 +2933,132 @@ _BP_ROOT = "opus_gemm_blockscale_mxscale_bpreshuffle_"
 a8w8_blockscale_mxscale_gemm_bpreshuffle_kernels_list = {}
 
 
-# Stable declarations: kid, BM, BN, WN, stages, ahead, WG/CU, A cache, B cache, output.
-# Future configurations append IDs starting at 56 without renumbering these entries.
-_BPRESHUFFLE_JIT_CONFIGS = (
-    (35, 48, 128, 4, 3, 2, 1, 0, 0, 0),
-    (36, 64, 64, 4, 4, 2, 1, 1, 17, 0),
-    (37, 64, 128, 2, 3, 1, 1, 17, 1, 0),
-    (38, 64, 128, 2, 4, 2, 2, 0, 0, 0),
-    (39, 64, 64, 2, 4, 2, 1, 17, 1, 2),
-    (40, 64, 128, 4, 3, 1, 1, 1, 17, 2),
-)
-for _kid, _bm, _bn, _wn, _stages, _ahead, _wg, _ca, _cb, _output in _BPRESHUFFLE_JIT_CONFIGS:
-    if _kid in gfx950_co_kernels_declared or _kid in a8w8_blockscale_mxscale_gemm_bpreshuffle_kernels_list:
-        raise ValueError(f"duplicate gfx950 bpreshuffle kernel ID {_kid}")
-    _args = (_bm, _bn, _stages, _ahead, _cb, True, 7168, _wn, _wg, _ca)
-    if _output:
-        _args += (2, _output)
-    _traits = _BP_ROOT + "prefetch_b_vgpr_traits<" + ", ".join(
-        str(value).lower() if isinstance(value, bool) else str(value) for value in _args
-    ) + ">"
-    _entry = {
-        "kid": _kid, "pipeline": "prefetch_b_vgpr",
-        "kernel": _BP_ROOT + "prefetch_b_vgpr_bulk_panel_kernel", "traits": _traits,
-        "config_name": (f"prefetch_b_vgpr_{_bm}x{_bn}x256_w1x{_wn}x1_p{_stages}"
-                        f"_o{_output}_ba{_ahead}_sk1_wg{_wg}"
-                        f"_cA{_ca}cB{_cb}_k7168_nt0"),
-        "headers": ("gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh",),
-        "m_align": 16,
+# Local JIT IDs follow every declared CO, including rejected CO candidates.
+_BPRESHUFFLE_NEXT_JIT_KID = max(gfx950_co_kernels_declared, default=-1) + 1
+_BP_CACHE_POLICIES = ((0, 0), (1, 17), (17, 1))
+
+
+def _bpreshuffle_register_jit(pipeline, traits_name, traits_args, kernel,
+                             bm, bn, bk, wm, wn, *, depth=2, fixed_k=0,
+                             max_k=16384, grid="n_m", wg_per_cu=1,
+                             cache_a=0, cache_b=0):
+    global _BPRESHUFFLE_NEXT_JIT_KID
+    kid = _BPRESHUFFLE_NEXT_JIT_KID
+    _BPRESHUFFLE_NEXT_JIT_KID += 1
+    args = tuple(str(value).lower() if isinstance(value, bool) else str(value)
+                 for value in traits_args)
+    header_family = {
+        "prefetch_b_vgpr": "b_vgpr", "prefetch_b_vgpr_overlap": "b_vgpr",
+        "pingpong_lds": "m_repeat", "wave_interleave": "interleave",
+    }[pipeline]
+    header_root = "gfx950/opus_gemm_"
+    header_tail = "_a8w8_blockscale_mxscale_bpreshuffle_"
+    pipeline_header = header_root + "pipeline" + header_tail + header_family + "_gfx950.cuh"
+    traits_family = "b_vgpr_overlap" if pipeline.endswith("overlap") else header_family
+    entry = {
+        "kid": kid, "pipeline": pipeline, "kernel": kernel,
+        "traits": traits_name + "<" + ", ".join(args) + ">",
+        "traits_args": args,
+        "config_name": f"{pipeline}_{bm}x{bn}x{bk}_w{wm}x{wn}_" + "_".join(args),
+        "headers": (pipeline_header,),
+        "traits_header": header_root + "traits" + header_tail + traits_family + "_gfx950.cuh",
+        "grid_layout": grid, "pin_mask": 0, "m_align": 16,
     }
-    a8w8_blockscale_mxscale_gemm_bpreshuffle_kernels_list[_kid] = OpusGemmInstance(
-        BLOCK_SIZE=64 * _wn, B_M=_bm, B_N=_bn, B_K=256,
-        T_M=1, T_N=_wn, W_M=16, W_N=16, W_K=128,
+    a8w8_blockscale_mxscale_gemm_bpreshuffle_kernels_list[kid] = OpusGemmInstance(
+        BLOCK_SIZE=64 * wm * wn, B_M=bm, B_N=bn, B_K=bk,
+        T_M=wm, T_N=wn, W_M=16, W_N=16, W_K=128,
         VEC_A=16, VEC_B=16, VEC_C=4, GROUP_M=1, GROUP_N=128, GROUP_K=128,
-        WG_PER_CU=_wg, cachectl_a=_ca, cachectl_b=_cb,
-        kernel_tag=_TAG, output_dtypes=["bf16_t"], arch_prefix="gfx950",
-        direct_only=True, pad_m=True, max_k=7168,
-        max_tensor_bytes=2**63 - 1, bpreshuffle_fixed_k=7168,
-        bpreshuffle_entry=_entry)
+        WG_PER_CU=wg_per_cu, cachectl_a=cache_a, cachectl_b=cache_b,
+        num_slots=depth, kernel_tag=_TAG, output_dtypes=["bf16_t"], arch_prefix="gfx950",
+        direct_only=True, pad_m=True, max_k=max_k,
+        max_tensor_bytes=2**63 - 1, bpreshuffle_fixed_k=fixed_k,
+        bpreshuffle_entry=entry)
+
+
+def _bpreshuffle_b_vgpr_legal(bm, bn, wn, fixed_k, stages, wg_per_cu):
+    bk, threads, scale_cols = 256, wn * 64, fixed_k // 128
+    if bn % (wn * 16) or bm * bk % (threads * 16):
+        return False
+    mr, nr = bm // 16, bn // (wn * 16)
+    if fixed_k % bk or fixed_k // bk < stages - 1 or mr * nr * 4 > 256:
+        return False
+    scale_bytes = (bm * scale_cols + threads * 16 - 1) // (threads * 16) * threads * 16
+    if ((mr + 3) // 4) * 64 * scale_cols > scale_bytes:
+        return False
+    b_scale_slots = scale_cols if scale_cols % 4 else scale_cols // 4
+    if ((bn + 127) // 128) * b_scale_slots > threads:
+        return False
+    lds = stages * bm * bk + scale_bytes + threads * 4
+    return ((lds + 1279) // 1280 * 1280) * wg_per_cu <= 160 * 1024
+
+
+# Restore the historical tile/stage/cache search for both B-VGPR schedules.
+# Both supported output modes are enumerated; all operand/accumulator pins are off.
+for _pipeline in ("prefetch_b_vgpr", "prefetch_b_vgpr_overlap"):
+    for _k, _bm, _bn, _wn, (_stages, _ahead), _wg in product(
+        (1024, 1536, 3072, 7168, 16384), (32, 48, 64, 96, 128),
+        (64, 128), (2, 4, 8), ((2, 1), (3, 1), (3, 2), (4, 2)), (1, 2),
+    ):
+        if not _bpreshuffle_b_vgpr_legal(_bm, _bn, _wn, _k, _stages, _wg):
+            continue
+        for (_ca, _cb), _output in product(_BP_CACHE_POLICIES, (0, 2)):
+            _args = (_bm, _bn, _stages, _ahead, _cb, True, _k, _wn, _wg, _ca,
+                     2, _output, 256, False, False, False, 0)
+            if _pipeline.endswith("overlap"):
+                _args += (0,)
+            _bpreshuffle_register_jit(
+                _pipeline, _BP_ROOT + _pipeline + "_traits", _args,
+                _BP_ROOT + _pipeline + "_bulk_panel_kernel",
+                _bm, _bn, 256, 1, _wn, depth=_stages, fixed_k=_k, max_k=_k,
+                grid="linear", wg_per_cu=_wg, cache_a=_ca, cache_b=_cb)
+
+
+def _bpreshuffle_m_repeat_legal(bm, bn, wm, panel):
+    threads = wm * 2 * 64
+    if bm % (wm * 16) or bn % 32:
+        return False
+    em = bm // (wm * 16)
+    if em < 2 or bn < wm * 2 * 16:
+        return False
+    scale_vectors = ((em + 3) // 4) * wm * 4
+    if threads % panel or 64 % scale_vectors:
+        return False
+    matrix = 2 * (bm * 128 // 1024 + bn * 128 // 1024) * 1056
+    lds = matrix + scale_vectors * 16 * panel + panel * 4
+    return (lds <= 160 * 1024 and bm * (bn + 8) * 2 <= lds
+            and bm * bn % (threads * 8) == 0)
+
+
+# Runtime K, two LDS stages, and both unpinned fragment storage implementations.
+for _bm, _bn, _wm, _panel in product((64, 96, 128, 192, 256), (64, 128, 256),
+                                   (2, 4), (64, 128)):
+    if not _bpreshuffle_m_repeat_legal(_bm, _bn, _wm, _panel):
+        continue
+    for (_ca, _cb), _arrays in product(_BP_CACHE_POLICIES, (False, True)):
+        _bpreshuffle_register_jit(
+            "pingpong_lds", "opus_gemm_bpreshuffle_pingpong_lds_traits",
+            (_bm, _bn, _panel, 0, _wm, 0, _ca, _cb, _arrays,
+             False, False, False, False, False, 0, 8),
+            "opus_gemm_bpreshuffle_pingpong_lds_kernel", _bm, _bn, 128, _wm, 2,
+            max_k=_panel * 128, cache_a=_ca, cache_b=_cb)
+
+
+# Interleave uses no explicit pinning. Its K scale cache supports K <= 16384.
+for _bm, _wn in product((128, 192, 256), (2, 4)):
+    _threads, _half_m = 128 * _wn, _bm // 2
+    _a_rows = _threads // 8
+    _a_slot = (_half_m + _a_rows - 1) // _a_rows * _a_rows * 128
+    _lds = 2 * (2 * _a_slot + 2 * 128 * 128) + 127 * 256 + 128 * 2
+    if _lds > 160 * 1024 or _bm * 264 * 2 > _lds:
+        continue
+    for _group_m, _xcd, (_ca, _cb) in product((0, 4, 8), (False, True), _BP_CACHE_POLICIES):
+        if _xcd and not _group_m:
+            continue
+        _bpreshuffle_register_jit(
+            "wave_interleave", "opus_gemm_bpreshuffle_wave_interleave_traits",
+            (_bm, 0, _group_m, _xcd, _ca, _cb, _wn),
+            "opus_gemm_bpreshuffle_wave_interleave_kernel", _bm, 256, 256, 2, _wn,
+            cache_a=_ca, cache_b=_cb)
 
 # Preserve route annotations for the builder; verified runtime image aliases
 # share canonical instance metadata for the complete name/config equality check.

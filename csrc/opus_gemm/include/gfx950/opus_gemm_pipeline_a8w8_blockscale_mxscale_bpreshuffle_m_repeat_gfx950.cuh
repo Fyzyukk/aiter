@@ -814,3 +814,12 @@ __device__ __forceinline__ void opus_gemm_bpreshuffle_pingpong_lds_body(
     static_for<T::OUTPUT_PASSES>([&](auto copy_i) { copy_output_bf16(decltype(copy_i)::value); });
 }
 #endif // gfx950
+
+template<class Traits>
+__global__ __launch_bounds__(Traits::BLOCK_SIZE, Traits::MIN_WGS_PER_CU)
+void opus_gemm_bpreshuffle_pingpong_lds_kernel(
+    opus_gemm_blockscale_mxscale_bpreshuffle_kargs_gfx950 args) {
+#if defined(__HIP_DEVICE_COMPILE__) && defined(__gfx950__)
+    opus_gemm_bpreshuffle_pingpong_lds_body<Traits>(args);
+#endif
+}

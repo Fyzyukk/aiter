@@ -127,10 +127,10 @@ struct opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_scale_panel_trait
     static constexpr int LDS_BYTES = Base::SMEM_A_ELEMS + Base::SMEM_B_ELEMS + SFA_PANEL_BYTES + SFB_PANEL_BYTES;
 };
 
-template<int Panel, int FixedK, bool Reset, int Unroll>
+template<int Panel, int FixedK, bool Reset, int Unroll, bool PadM = true>
 struct opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits
     : opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_scale_panel_traits<
-        opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_base_traits<true>, Panel> {
+        opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_base_traits<PadM>, Panel> {
     static constexpr int FIXED_K = FixedK;
     static constexpr int LOOP_UNROLL = Unroll;
     static constexpr bool GUARD_SFB_LANE = true;

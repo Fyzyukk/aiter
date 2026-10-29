@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <cstdint>
 #include <type_traits>
 #include <opus/hip_minimal.hpp>
 #include <opus/opus.hpp>
