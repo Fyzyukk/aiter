@@ -1,0 +1,3 @@
+set -euo pipefail
+source /root/workspace/aiter-fyz-10-29-aiter/docs/gfx950_mxscale_20261029/local_20261029/stage18_remote_final84_20261030/co_experiment/experiment_env.sh
+"$OPUS_RUN_PYTHON" csrc/opus_gemm/gen_co/build_co.py --arch gfx950 --llvm-bin "$HIP_CLANG_PATH" --kids 101300 101301 101302 101303 101304 101305 101306 101307 101308 101309 101310 101311 101312 101313 101314 101315 101316 101317 101318 101319 101320 101321 --jobs 8 --out-dir "$OPUS_RUN_REPO/csrc/opus_gemm/gen_co/gfx950" --report /root/workspace/aiter-fyz-10-29-aiter/docs/gfx950_mxscale_20261029/local_20261029/stage18_remote_final84_20261030/co_experiment/build_info.json

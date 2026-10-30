@@ -1,0 +1,2095 @@
+{
+  "schema_version": 1,
+  "plan_type": "CPU static optimization plan for narrow-N persistent losers",
+  "population": {
+    "scope": {
+      "gfx": "gfx950",
+      "cu_num": 256,
+      "w_scale_block": "128x128"
+    },
+    "persistent_losers": 171,
+    "narrow_N_768_1536_2048_count": 32,
+    "definition": "historical best Opus and current best Opus both us>=same saved baseline CSV us"
+  },
+  "constraints": {
+    "CPU_only": true,
+    "Torch_import": false,
+    "GPU_access": false,
+    "kernel_execution": false,
+    "new_JIT_compilation": false,
+    "source_modified": false,
+    "CO_modified": false,
+    "frozen14_modified": false,
+    "FlyDSL_retimed": false
+  },
+  "representatives": [
+    {
+      "shape": {
+        "M": 1152,
+        "N": 768,
+        "K": 7168
+      },
+      "persistent_loser": true,
+      "baseline": {
+        "gfx": "gfx950",
+        "cu_num": 256,
+        "w_scale_block": "128x128",
+        "kernelId": "bmm",
+        "splitK": 1,
+        "kernelName": "flydsl_bmm_mxfp8_mfma_t48x64x256_w1x2_nb5_sk1_bd2_xcd",
+        "us": 16.562
+      },
+      "historical_best": {
+        "kernelId_in_historical_namespace": "8146",
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_overlap_64x64x256_w1x2_64_64_4_2_0_true_7168_2_1_0_2_0_256_false_false_false_0_0",
+        "us": 18.3744,
+        "pipeline": "prefetch_b_vgpr_overlap",
+        "tile": "64x64x256",
+        "waves": "1x2",
+        "gap_pct": 10.94312281125469
+      },
+      "current_best": {
+        "kernelId": 7260,
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x64x256_w1x2x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0",
+        "us": 18.1938,
+        "gap_pct": 9.852674797729733,
+        "geometry": [
+          "prefetch_b_vgpr",
+          64,
+          64,
+          256,
+          1,
+          2
+        ],
+        "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<64, 64, 3, 2, 0, true, 7168, 2, 1, 0>",
+        "parameters": {
+          "BM": 64,
+          "BN": 64,
+          "NB": 3,
+          "BD": 2,
+          "BC": 0,
+          "XCD": true,
+          "FixedK": 7168,
+          "WN": 2,
+          "WGPerCU": 1,
+          "ACache": 0,
+          "StoreCache": 2,
+          "Output": 0,
+          "BlockK": 256,
+          "Contiguous": false,
+          "PinA": false,
+          "PinC": false,
+          "GroupM": 0,
+          "PublishM": -1
+        },
+        "effective": {
+          "MR": 4,
+          "NR": 2,
+          "KS": 2,
+          "B_FRAGMENTS": 4,
+          "B_REGISTER_ROOM": 368,
+          "B_MAX_AHEAD": 45,
+          "ROTATE_B": false,
+          "B_SCHEDULE_AHEAD": 45,
+          "requested_B_fragments_ahead": 8,
+          "B_AHEAD": 8,
+          "B_SETS": 9,
+          "B_ring_dwords_per_lane": 72
+        }
+      },
+      "measurement_round": "Top8_101_5_retained",
+      "coverage": {
+        "legal_configurations": 5414,
+        "selected_top8_with_saved_seeds": 1983,
+        "selected_top4_with_saved_seeds": 991,
+        "saved_seed_kids": [
+          41658,
+          41816
+        ],
+        "anchor_geometry_legal": 48,
+        "anchor_geometry_selected_top8": 48,
+        "anchor_geometry_selected_top4": 48
+      },
+      "matrix_bytes": {
+        "A_fp8": 8257536,
+        "B_fp8": 5505024,
+        "C_bf16": 1769472
+      },
+      "natural_grid": {
+        "M_tiles": 18,
+        "N_tiles": 12,
+        "workgroups": 216
+      },
+      "m_repeat_groupN_inert_for_all_legal_BN": true
+    },
+    {
+      "shape": {
+        "M": 16384,
+        "N": 768,
+        "K": 7168
+      },
+      "persistent_loser": true,
+      "baseline": {
+        "gfx": "gfx950",
+        "cu_num": 256,
+        "w_scale_block": "128x128",
+        "kernelId": "mxfp8",
+        "splitK": 1,
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_3x4",
+        "us": 86.6241
+      },
+      "historical_best": {
+        "kernelId_in_historical_namespace": "2",
+        "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_u2",
+        "us": 101.5232,
+        "pipeline": "pin_agpr",
+        "tile": "256x256x128",
+        "waves": "2x2",
+        "gap_pct": 17.199716937896035
+      },
+      "current_best": {
+        "kernelId": 20569,
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_256x256x128_w4x2_sp64_k0_gm8_cA0cB0_frag1_nt0",
+        "us": 96.2508,
+        "gap_pct": 11.11318905477805,
+        "geometry": [
+          "pingpong_lds",
+          256,
+          256,
+          128,
+          4,
+          2
+        ],
+        "traits": "opus_gemm_bpreshuffle_pingpong_lds_traits<256, 256, 64, 0, 4, 8, 0, 0, true, false, true, 0, 8>",
+        "parameters": {
+          "BlockM": 256,
+          "BlockN": 256,
+          "ScalePanel": 64,
+          "FixedK": 0,
+          "WaveM": 4,
+          "GroupM": 8,
+          "CacheA": 0,
+          "CacheB": 0,
+          "FragmentArrays": true,
+          "XcdOrder": false,
+          "BoundedOutput": true,
+          "PublishM": 0,
+          "GroupN": 8
+        },
+        "effective": {
+          "E_M": 4,
+          "E_N": 8,
+          "A_RING": 3,
+          "A_ring_dwords_per_lane": 24,
+          "B_fragment_dwords_per_lane": 64,
+          "C_fragment_dwords_per_lane": 128,
+          "release_before_m_repeat": 1,
+          "remaining_mfma_after_release_per_wave": 24,
+          "PUBLISH_M_used_by_current_body": false
+        }
+      },
+      "measurement_round": "Top8_101_5_retained",
+      "coverage": {
+        "legal_configurations": 5420,
+        "selected_top8_with_saved_seeds": 1822,
+        "selected_top4_with_saved_seeds": 1234,
+        "saved_seed_kids": [
+          391,
+          20569
+        ],
+        "anchor_geometry_legal": 63,
+        "anchor_geometry_selected_top8": 1,
+        "anchor_geometry_selected_top4": 1
+      },
+      "matrix_bytes": {
+        "A_fp8": 117440512,
+        "B_fp8": 5505024,
+        "C_bf16": 25165824
+      },
+      "natural_grid": {
+        "M_tiles": 64,
+        "N_tiles": 3,
+        "workgroups": 192
+      },
+      "m_repeat_groupN_inert_for_all_legal_BN": true
+    },
+    {
+      "shape": {
+        "M": 16384,
+        "N": 1536,
+        "K": 7168
+      },
+      "persistent_loser": true,
+      "baseline": {
+        "gfx": "gfx950",
+        "cu_num": 256,
+        "w_scale_block": "128x128",
+        "kernelId": "mxfp8",
+        "splitK": 1,
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_2x4",
+        "us": 159.6125
+      },
+      "historical_best": {
+        "kernelId_in_historical_namespace": "296",
+        "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_bd1_k7168_pinA1B0C0",
+        "us": 172.1219,
+        "pipeline": "prefetch_b_vgpr_overlap",
+        "tile": "128x256x128",
+        "waves": "1x4",
+        "gap_pct": 7.837356096796921
+      },
+      "current_best": {
+        "kernelId": 379,
+        "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_a2_k7168_c0x0_gm0_o0_contig_pinA1B0C0_pub0_nt0",
+        "us": 161.878,
+        "gap_pct": 1.4193750489466472,
+        "geometry": [
+          "prefetch_b_vgpr_overlap",
+          128,
+          256,
+          128,
+          1,
+          4
+        ],
+        "traits": {
+          "name": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits",
+          "args": [
+            "128",
+            "256",
+            "4",
+            "2",
+            "0",
+            "true",
+            "7168",
+            "4",
+            "1",
+            "0",
+            "2",
+            "0",
+            "128",
+            "true",
+            "true",
+            "false",
+            "0",
+            "0"
+          ]
+        },
+        "parameters": {
+          "BM": 128,
+          "BN": 256,
+          "NB": 4,
+          "BD": 2,
+          "BC": 0,
+          "XCD": true,
+          "FixedK": 7168,
+          "WN": 4,
+          "WGPerCU": 1,
+          "ACache": 0,
+          "StoreCache": 2,
+          "Output": 0,
+          "BlockK": 128,
+          "Contiguous": true,
+          "PinA": true,
+          "PinC": false,
+          "GroupM": 0,
+          "PublishM": 0
+        },
+        "effective": {
+          "MR": 8,
+          "NR": 4,
+          "KS": 1,
+          "B_FRAGMENTS": 4,
+          "B_REGISTER_ROOM": 272,
+          "B_MAX_AHEAD": 33,
+          "ROTATE_B": false,
+          "B_SCHEDULE_AHEAD": 3,
+          "requested_B_fragments_ahead": 8,
+          "B_AHEAD": 3,
+          "B_SETS": 4,
+          "B_ring_dwords_per_lane": 32
+        }
+      },
+      "measurement_round": "Top8_101_5_retained",
+      "coverage": {
+        "legal_configurations": 5420,
+        "selected_top8_with_saved_seeds": 1776,
+        "selected_top4_with_saved_seeds": 948,
+        "saved_seed_kids": [
+          688,
+          48086
+        ],
+        "anchor_geometry_legal": 6,
+        "anchor_geometry_selected_top8": 6,
+        "anchor_geometry_selected_top4": 6
+      },
+      "matrix_bytes": {
+        "A_fp8": 117440512,
+        "B_fp8": 11010048,
+        "C_bf16": 50331648
+      },
+      "natural_grid": {
+        "M_tiles": 128,
+        "N_tiles": 6,
+        "workgroups": 768
+      },
+      "m_repeat_groupN_inert_for_all_legal_BN": true
+    },
+    {
+      "shape": {
+        "M": 10240,
+        "N": 2048,
+        "K": 7168
+      },
+      "persistent_loser": true,
+      "baseline": {
+        "gfx": "gfx950",
+        "cu_num": 256,
+        "w_scale_block": "128x128",
+        "kernelId": "mxfp8",
+        "splitK": 1,
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_3x4",
+        "us": 151.2044
+      },
+      "historical_best": {
+        "kernelId_in_historical_namespace": "295",
+        "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_bd1_k7168_pinA0B0C1",
+        "us": 160.5505,
+        "pipeline": "prefetch_b_vgpr_overlap",
+        "tile": "128x256x128",
+        "waves": "1x4",
+        "gap_pct": 6.181103195409654
+      },
+      "current_best": {
+        "kernelId": 48094,
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_128x256x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA17cB1_k7168_nt0",
+        "us": 154.4224,
+        "gap_pct": 2.1282449452529217,
+        "geometry": [
+          "prefetch_b_vgpr",
+          128,
+          256,
+          128,
+          1,
+          4
+        ],
+        "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<128, 256, 4, 2, 1, true, 7168, 4, 1, 17, 2, 0, 128, false, false, false, 0>",
+        "parameters": {
+          "BM": 128,
+          "BN": 256,
+          "NB": 4,
+          "BD": 2,
+          "BC": 1,
+          "XCD": true,
+          "FixedK": 7168,
+          "WN": 4,
+          "WGPerCU": 1,
+          "ACache": 17,
+          "StoreCache": 2,
+          "Output": 0,
+          "BlockK": 128,
+          "Contiguous": false,
+          "PinA": false,
+          "PinC": false,
+          "GroupM": 0,
+          "PublishM": -1
+        },
+        "effective": {
+          "MR": 8,
+          "NR": 4,
+          "KS": 1,
+          "B_FRAGMENTS": 4,
+          "B_REGISTER_ROOM": 272,
+          "B_MAX_AHEAD": 33,
+          "ROTATE_B": false,
+          "B_SCHEDULE_AHEAD": 33,
+          "requested_B_fragments_ahead": 8,
+          "B_AHEAD": 8,
+          "B_SETS": 9,
+          "B_ring_dwords_per_lane": 72
+        }
+      },
+      "measurement_round": "Top8_101_5_retained",
+      "coverage": {
+        "legal_configurations": 5420,
+        "selected_top8_with_saved_seeds": 1703,
+        "selected_top4_with_saved_seeds": 956,
+        "saved_seed_kids": [
+          687,
+          48088
+        ],
+        "anchor_geometry_legal": 30,
+        "anchor_geometry_selected_top8": 30,
+        "anchor_geometry_selected_top4": 30
+      },
+      "matrix_bytes": {
+        "A_fp8": 73400320,
+        "B_fp8": 14680064,
+        "C_bf16": 41943040
+      },
+      "natural_grid": {
+        "M_tiles": 80,
+        "N_tiles": 8,
+        "workgroups": 640
+      },
+      "m_repeat_groupN_inert_for_all_legal_BN": true
+    }
+  ],
+  "variants": [
+    {
+      "variant_id": "narrow1152_768_7260",
+      "shape": {
+        "M": 1152,
+        "N": 768,
+        "K": 7168
+      },
+      "kernelId": 7260,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x64x256_w1x2x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr",
+      "route": "jit",
+      "geometry": [
+        "prefetch_b_vgpr",
+        64,
+        64,
+        256,
+        1,
+        2
+      ],
+      "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<64, 64, 3, 2, 0, true, 7168, 2, 1, 0>",
+      "parameters": {
+        "BM": 64,
+        "BN": 64,
+        "NB": 3,
+        "BD": 2,
+        "BC": 0,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 2,
+        "WGPerCU": 1,
+        "ACache": 0,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 256,
+        "Contiguous": false,
+        "PinA": false,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": -1
+      },
+      "effective": {
+        "MR": 4,
+        "NR": 2,
+        "KS": 2,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 368,
+        "B_MAX_AHEAD": 45,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 45,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 8,
+        "B_SETS": 9,
+        "B_ring_dwords_per_lane": 72
+      },
+      "purpose": "anchor",
+      "compare_to_kernelId": null,
+      "changed_parameters": [],
+      "rationale": "",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 48,
+      "geometry_selected_top8_count": 48,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": 18.1938,
+      "exact_candidate_measurement_status": "current best recorded",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow1152_768_7356",
+      "shape": {
+        "M": 1152,
+        "N": 768,
+        "K": 7168
+      },
+      "kernelId": 7356,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x128x256_w1x2x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr",
+      "route": "jit",
+      "geometry": [
+        "prefetch_b_vgpr",
+        64,
+        128,
+        256,
+        1,
+        2
+      ],
+      "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<64, 128, 3, 2, 0, true, 7168, 2, 1, 0>",
+      "parameters": {
+        "BM": 64,
+        "BN": 128,
+        "NB": 3,
+        "BD": 2,
+        "BC": 0,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 2,
+        "WGPerCU": 1,
+        "ACache": 0,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 256,
+        "Contiguous": false,
+        "PinA": false,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": -1
+      },
+      "effective": {
+        "MR": 4,
+        "NR": 4,
+        "KS": 2,
+        "B_FRAGMENTS": 8,
+        "B_REGISTER_ROOM": 336,
+        "B_MAX_AHEAD": 41,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 41,
+        "requested_B_fragments_ahead": 16,
+        "B_AHEAD": 16,
+        "B_SETS": 17,
+        "B_ring_dwords_per_lane": 136
+      },
+      "purpose": "coverage_add",
+      "compare_to_kernelId": 7260,
+      "changed_parameters": [
+        {
+          "parameter": "BN",
+          "before": 64,
+          "after": 128
+        }
+      ],
+      "rationale": "BN 64→128；增加每波 N repeats 和 B 队列需求，workgroups 216→108，需测量权衡",
+      "selected_top8_with_saved_seeds": false,
+      "selected_top4_with_saved_seeds": false,
+      "geometry_legal_count": 48,
+      "geometry_selected_top8_count": 0,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "omitted from reconstructed Top8; no exact retained timing found",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow1152_768_7344",
+      "shape": {
+        "M": 1152,
+        "N": 768,
+        "K": 7168
+      },
+      "kernelId": 7344,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x128x256_w1x2x1_p3_o0_ba1_sk1_wg1_cA0cB0_k7168_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr",
+      "route": "jit",
+      "geometry": [
+        "prefetch_b_vgpr",
+        64,
+        128,
+        256,
+        1,
+        2
+      ],
+      "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<64, 128, 3, 1, 0, true, 7168, 2, 1, 0>",
+      "parameters": {
+        "BM": 64,
+        "BN": 128,
+        "NB": 3,
+        "BD": 1,
+        "BC": 0,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 2,
+        "WGPerCU": 1,
+        "ACache": 0,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 256,
+        "Contiguous": false,
+        "PinA": false,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": -1
+      },
+      "effective": {
+        "MR": 4,
+        "NR": 4,
+        "KS": 2,
+        "B_FRAGMENTS": 8,
+        "B_REGISTER_ROOM": 336,
+        "B_MAX_AHEAD": 41,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 41,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 8,
+        "B_SETS": 9,
+        "B_ring_dwords_per_lane": 72
+      },
+      "purpose": "coverage_add",
+      "compare_to_kernelId": 7356,
+      "changed_parameters": [
+        {
+          "parameter": "BD",
+          "before": 2,
+          "after": 1
+        }
+      ],
+      "rationale": "BD 2→1；同一 BN128 几何把有效 B_AHEAD 16→8",
+      "selected_top8_with_saved_seeds": false,
+      "selected_top4_with_saved_seeds": false,
+      "geometry_legal_count": 48,
+      "geometry_selected_top8_count": 0,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "omitted from reconstructed Top8; no exact retained timing found",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow1152_768_41624",
+      "shape": {
+        "M": 1152,
+        "N": 768,
+        "K": 7168
+      },
+      "kernelId": 41624,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_overlap_64x64x256_w1x2x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_pub2_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr_overlap",
+      "route": "jit",
+      "geometry": [
+        "prefetch_b_vgpr_overlap",
+        64,
+        64,
+        256,
+        1,
+        2
+      ],
+      "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits<64, 64, 3, 2, 0, true, 7168, 2, 1, 0, 2, 0, 256, false, false, false, 0, 2>",
+      "parameters": {
+        "BM": 64,
+        "BN": 64,
+        "NB": 3,
+        "BD": 2,
+        "BC": 0,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 2,
+        "WGPerCU": 1,
+        "ACache": 0,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 256,
+        "Contiguous": false,
+        "PinA": false,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": 2
+      },
+      "effective": {
+        "MR": 4,
+        "NR": 2,
+        "KS": 2,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 368,
+        "B_MAX_AHEAD": 45,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 45,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 8,
+        "B_SETS": 9,
+        "B_ring_dwords_per_lane": 72
+      },
+      "purpose": "controlled_recheck",
+      "compare_to_kernelId": 7260,
+      "changed_parameters": [
+        {
+          "parameter": "PublishM",
+          "before": -1,
+          "after": 2
+        }
+      ],
+      "rationale": "PublishM -1→2；同一原几何仅改变首 B fragment 内 A 发布时点",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 144,
+      "geometry_selected_top8_count": 144,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "selected by reconstructed Top8; per-candidate result not retained here",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow16384_768_20569",
+      "shape": {
+        "M": 16384,
+        "N": 768,
+        "K": 7168
+      },
+      "kernelId": 20569,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_256x256x128_w4x2_sp64_k0_gm8_cA0cB0_frag1_nt0",
+      "splitK": 1,
+      "pipeline": "pingpong_lds",
+      "route": "jit",
+      "geometry": [
+        "pingpong_lds",
+        256,
+        256,
+        128,
+        4,
+        2
+      ],
+      "traits": "opus_gemm_bpreshuffle_pingpong_lds_traits<256, 256, 64, 0, 4, 8, 0, 0, true, false, true, 0, 8>",
+      "parameters": {
+        "BlockM": 256,
+        "BlockN": 256,
+        "ScalePanel": 64,
+        "FixedK": 0,
+        "WaveM": 4,
+        "GroupM": 8,
+        "CacheA": 0,
+        "CacheB": 0,
+        "FragmentArrays": true,
+        "XcdOrder": false,
+        "BoundedOutput": true,
+        "PublishM": 0,
+        "GroupN": 8
+      },
+      "effective": {
+        "E_M": 4,
+        "E_N": 8,
+        "A_RING": 3,
+        "A_ring_dwords_per_lane": 24,
+        "B_fragment_dwords_per_lane": 64,
+        "C_fragment_dwords_per_lane": 128,
+        "release_before_m_repeat": 1,
+        "remaining_mfma_after_release_per_wave": 24,
+        "PUBLISH_M_used_by_current_body": false
+      },
+      "purpose": "anchor",
+      "compare_to_kernelId": null,
+      "changed_parameters": [],
+      "rationale": "",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 63,
+      "geometry_selected_top8_count": 1,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": 96.2508,
+      "exact_candidate_measurement_status": "current best recorded",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow16384_768_20568",
+      "shape": {
+        "M": 16384,
+        "N": 768,
+        "K": 7168
+      },
+      "kernelId": 20568,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_256x256x128_w4x2_sp64_k0_gm8_cA0cB0_frag0_nt0",
+      "splitK": 1,
+      "pipeline": "pingpong_lds",
+      "route": "jit",
+      "geometry": [
+        "pingpong_lds",
+        256,
+        256,
+        128,
+        4,
+        2
+      ],
+      "traits": "opus_gemm_bpreshuffle_pingpong_lds_traits<256, 256, 64, 0, 4, 8, 0, 0, false, false, true, 0, 8>",
+      "parameters": {
+        "BlockM": 256,
+        "BlockN": 256,
+        "ScalePanel": 64,
+        "FixedK": 0,
+        "WaveM": 4,
+        "GroupM": 8,
+        "CacheA": 0,
+        "CacheB": 0,
+        "FragmentArrays": false,
+        "XcdOrder": false,
+        "BoundedOutput": true,
+        "PublishM": 0,
+        "GroupN": 8
+      },
+      "effective": {
+        "E_M": 4,
+        "E_N": 8,
+        "A_RING": 3,
+        "A_ring_dwords_per_lane": 24,
+        "B_fragment_dwords_per_lane": 64,
+        "C_fragment_dwords_per_lane": 128,
+        "release_before_m_repeat": 1,
+        "remaining_mfma_after_release_per_wave": 24,
+        "PUBLISH_M_used_by_current_body": false
+      },
+      "purpose": "coverage_add",
+      "compare_to_kernelId": 20569,
+      "changed_parameters": [
+        {
+          "parameter": "FragmentArrays",
+          "before": true,
+          "after": false
+        }
+      ],
+      "rationale": "FragmentArrays true→false；不改变 A_RING=3 或 B 复用顺序",
+      "selected_top8_with_saved_seeds": false,
+      "selected_top4_with_saved_seeds": false,
+      "geometry_legal_count": 63,
+      "geometry_selected_top8_count": 1,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "omitted from reconstructed Top8; no exact retained timing found",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow16384_768_20563",
+      "shape": {
+        "M": 16384,
+        "N": 768,
+        "K": 7168
+      },
+      "kernelId": 20563,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_256x256x128_w4x2_sp64_k0_gm4_cA0cB0_frag1_nt0",
+      "splitK": 1,
+      "pipeline": "pingpong_lds",
+      "route": "jit",
+      "geometry": [
+        "pingpong_lds",
+        256,
+        256,
+        128,
+        4,
+        2
+      ],
+      "traits": "opus_gemm_bpreshuffle_pingpong_lds_traits<256, 256, 64, 0, 4, 4, 0, 0, true, false, true, 0, 8>",
+      "parameters": {
+        "BlockM": 256,
+        "BlockN": 256,
+        "ScalePanel": 64,
+        "FixedK": 0,
+        "WaveM": 4,
+        "GroupM": 4,
+        "CacheA": 0,
+        "CacheB": 0,
+        "FragmentArrays": true,
+        "XcdOrder": false,
+        "BoundedOutput": true,
+        "PublishM": 0,
+        "GroupN": 8
+      },
+      "effective": {
+        "E_M": 4,
+        "E_N": 8,
+        "A_RING": 3,
+        "A_ring_dwords_per_lane": 24,
+        "B_fragment_dwords_per_lane": 64,
+        "C_fragment_dwords_per_lane": 128,
+        "release_before_m_repeat": 1,
+        "remaining_mfma_after_release_per_wave": 24,
+        "PUBLISH_M_used_by_current_body": false
+      },
+      "purpose": "coverage_add",
+      "compare_to_kernelId": 20569,
+      "changed_parameters": [
+        {
+          "parameter": "GroupM",
+          "before": 8,
+          "after": 4
+        }
+      ],
+      "rationale": "GroupM 8→4；改变真实 M tile 顺序，不追加无效 GroupN 别名",
+      "selected_top8_with_saved_seeds": false,
+      "selected_top4_with_saved_seeds": false,
+      "geometry_legal_count": 63,
+      "geometry_selected_top8_count": 1,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "omitted from reconstructed Top8; no exact retained timing found",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow16384_768_48179",
+      "shape": {
+        "M": 16384,
+        "N": 768,
+        "K": 7168
+      },
+      "kernelId": 48179,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_256x256x128_w4x2_sp64_k0_gm8_gn8_bound0_cA0cB0_frag1_nt0",
+      "splitK": 1,
+      "pipeline": "pingpong_lds",
+      "route": "jit",
+      "geometry": [
+        "pingpong_lds",
+        256,
+        256,
+        128,
+        4,
+        2
+      ],
+      "traits": "opus_gemm_bpreshuffle_pingpong_lds_traits<256, 256, 64, 0, 4, 8, 0, 0, true, false, false, 0, 8>",
+      "parameters": {
+        "BlockM": 256,
+        "BlockN": 256,
+        "ScalePanel": 64,
+        "FixedK": 0,
+        "WaveM": 4,
+        "GroupM": 8,
+        "CacheA": 0,
+        "CacheB": 0,
+        "FragmentArrays": true,
+        "XcdOrder": false,
+        "BoundedOutput": false,
+        "PublishM": 0,
+        "GroupN": 8
+      },
+      "effective": {
+        "E_M": 4,
+        "E_N": 8,
+        "A_RING": 3,
+        "A_ring_dwords_per_lane": 24,
+        "B_fragment_dwords_per_lane": 64,
+        "C_fragment_dwords_per_lane": 128,
+        "release_before_m_repeat": 1,
+        "remaining_mfma_after_release_per_wave": 24,
+        "PUBLISH_M_used_by_current_body": false
+      },
+      "purpose": "coverage_add",
+      "compare_to_kernelId": 20569,
+      "changed_parameters": [
+        {
+          "parameter": "BoundedOutput",
+          "before": true,
+          "after": false
+        }
+      ],
+      "rationale": "BoundedOutput true→false；恢复已有显式行 guard，仅一个 traits 参数变化",
+      "selected_top8_with_saved_seeds": false,
+      "selected_top4_with_saved_seeds": false,
+      "geometry_legal_count": 63,
+      "geometry_selected_top8_count": 1,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "omitted from reconstructed Top8; no exact retained timing found",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow16384_1536_379",
+      "shape": {
+        "M": 16384,
+        "N": 1536,
+        "K": 7168
+      },
+      "kernelId": 379,
+      "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_a2_k7168_c0x0_gm0_o0_contig_pinA1B0C0_pub0_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr_overlap",
+      "route": "co",
+      "geometry": [
+        "prefetch_b_vgpr_overlap",
+        128,
+        256,
+        128,
+        1,
+        4
+      ],
+      "traits": {
+        "name": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits",
+        "args": [
+          "128",
+          "256",
+          "4",
+          "2",
+          "0",
+          "true",
+          "7168",
+          "4",
+          "1",
+          "0",
+          "2",
+          "0",
+          "128",
+          "true",
+          "true",
+          "false",
+          "0",
+          "0"
+        ]
+      },
+      "parameters": {
+        "BM": 128,
+        "BN": 256,
+        "NB": 4,
+        "BD": 2,
+        "BC": 0,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 4,
+        "WGPerCU": 1,
+        "ACache": 0,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 128,
+        "Contiguous": true,
+        "PinA": true,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": 0
+      },
+      "effective": {
+        "MR": 8,
+        "NR": 4,
+        "KS": 1,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 272,
+        "B_MAX_AHEAD": 33,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 3,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 3,
+        "B_SETS": 4,
+        "B_ring_dwords_per_lane": 32
+      },
+      "purpose": "anchor",
+      "compare_to_kernelId": null,
+      "changed_parameters": [],
+      "rationale": "",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 6,
+      "geometry_selected_top8_count": 6,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": 161.878,
+      "exact_candidate_measurement_status": "current best recorded",
+      "compilation_status": "existing ready CO",
+      "saved_co_resources": {
+        "status": "ready",
+        "vgpr_count": 348,
+        "sgpr_count": 44,
+        "agpr_count": 96,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 74752
+      }
+    },
+    {
+      "variant_id": "narrow16384_1536_187",
+      "shape": {
+        "M": 16384,
+        "N": 1536,
+        "K": 7168
+      },
+      "kernelId": 187,
+      "kernelName": "opus_gemm_gfx950_b_vgpr_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_a2_k7168_c0x0_gm0_o0_contig_pinA1B0C0_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr",
+      "route": "co",
+      "geometry": [
+        "prefetch_b_vgpr",
+        128,
+        256,
+        128,
+        1,
+        4
+      ],
+      "traits": {
+        "name": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits",
+        "args": [
+          "128",
+          "256",
+          "4",
+          "2",
+          "0",
+          "true",
+          "7168",
+          "4",
+          "1",
+          "0",
+          "2",
+          "0",
+          "128",
+          "true",
+          "true",
+          "false",
+          "0"
+        ]
+      },
+      "parameters": {
+        "BM": 128,
+        "BN": 256,
+        "NB": 4,
+        "BD": 2,
+        "BC": 0,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 4,
+        "WGPerCU": 1,
+        "ACache": 0,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 128,
+        "Contiguous": true,
+        "PinA": true,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": -1
+      },
+      "effective": {
+        "MR": 8,
+        "NR": 4,
+        "KS": 1,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 272,
+        "B_MAX_AHEAD": 33,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 3,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 3,
+        "B_SETS": 4,
+        "B_ring_dwords_per_lane": 32
+      },
+      "purpose": "controlled_recheck",
+      "compare_to_kernelId": 379,
+      "changed_parameters": [
+        {
+          "parameter": "PublishM",
+          "before": 0,
+          "after": -1
+        }
+      ],
+      "rationale": "PublishM 0→-1；相同 pinA、XCD、contiguous 和有效 B_AHEAD=3，比较现有 plain 与 overlap",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 30,
+      "geometry_selected_top8_count": 30,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "selected by reconstructed Top8; per-candidate result not retained here",
+      "compilation_status": "existing ready CO",
+      "saved_co_resources": {
+        "status": "ready",
+        "vgpr_count": 348,
+        "sgpr_count": 44,
+        "agpr_count": 96,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 74752
+      }
+    },
+    {
+      "variant_id": "narrow16384_1536_380",
+      "shape": {
+        "M": 16384,
+        "N": 1536,
+        "K": 7168
+      },
+      "kernelId": 380,
+      "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_a2_k7168_c0x0_gm0_o0_contig_pinA1B0C1_pub0_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr_overlap",
+      "route": "co",
+      "geometry": [
+        "prefetch_b_vgpr_overlap",
+        128,
+        256,
+        128,
+        1,
+        4
+      ],
+      "traits": {
+        "name": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits",
+        "args": [
+          "128",
+          "256",
+          "4",
+          "2",
+          "0",
+          "true",
+          "7168",
+          "4",
+          "1",
+          "0",
+          "2",
+          "0",
+          "128",
+          "true",
+          "true",
+          "true",
+          "0",
+          "0"
+        ]
+      },
+      "parameters": {
+        "BM": 128,
+        "BN": 256,
+        "NB": 4,
+        "BD": 2,
+        "BC": 0,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 4,
+        "WGPerCU": 1,
+        "ACache": 0,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 128,
+        "Contiguous": true,
+        "PinA": true,
+        "PinC": true,
+        "GroupM": 0,
+        "PublishM": 0
+      },
+      "effective": {
+        "MR": 8,
+        "NR": 4,
+        "KS": 1,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 272,
+        "B_MAX_AHEAD": 33,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 3,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 3,
+        "B_SETS": 4,
+        "B_ring_dwords_per_lane": 32
+      },
+      "purpose": "controlled_recheck",
+      "compare_to_kernelId": 379,
+      "changed_parameters": [
+        {
+          "parameter": "PinC",
+          "before": false,
+          "after": true
+        }
+      ],
+      "rationale": "PinC false→true；PinA 保持 true，有效 B_AHEAD 保持3",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 6,
+      "geometry_selected_top8_count": 6,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "selected by reconstructed Top8; per-candidate result not retained here",
+      "compilation_status": "existing ready CO",
+      "saved_co_resources": {
+        "status": "ready",
+        "vgpr_count": 372,
+        "sgpr_count": 46,
+        "agpr_count": 256,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 74752
+      }
+    },
+    {
+      "variant_id": "narrow16384_1536_378",
+      "shape": {
+        "M": 16384,
+        "N": 1536,
+        "K": 7168
+      },
+      "kernelId": 378,
+      "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_a2_k7168_c0x0_gm0_o0_contig_pinA0B0C1_pub0_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr_overlap",
+      "route": "co",
+      "geometry": [
+        "prefetch_b_vgpr_overlap",
+        128,
+        256,
+        128,
+        1,
+        4
+      ],
+      "traits": {
+        "name": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits",
+        "args": [
+          "128",
+          "256",
+          "4",
+          "2",
+          "0",
+          "true",
+          "7168",
+          "4",
+          "1",
+          "0",
+          "2",
+          "0",
+          "128",
+          "true",
+          "false",
+          "true",
+          "0",
+          "0"
+        ]
+      },
+      "parameters": {
+        "BM": 128,
+        "BN": 256,
+        "NB": 4,
+        "BD": 2,
+        "BC": 0,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 4,
+        "WGPerCU": 1,
+        "ACache": 0,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 128,
+        "Contiguous": true,
+        "PinA": false,
+        "PinC": true,
+        "GroupM": 0,
+        "PublishM": 0
+      },
+      "effective": {
+        "MR": 8,
+        "NR": 4,
+        "KS": 1,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 272,
+        "B_MAX_AHEAD": 33,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 33,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 8,
+        "B_SETS": 9,
+        "B_ring_dwords_per_lane": 72
+      },
+      "purpose": "controlled_recheck",
+      "compare_to_kernelId": 380,
+      "changed_parameters": [
+        {
+          "parameter": "PinA",
+          "before": true,
+          "after": false
+        }
+      ],
+      "rationale": "PinA true→false；PinC 保持 true，但有效 B_AHEAD 随既有公式3→8，结果不能只归因于 A pinning",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 6,
+      "geometry_selected_top8_count": 6,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "selected by reconstructed Top8; per-candidate result not retained here",
+      "compilation_status": "existing ready CO",
+      "saved_co_resources": {
+        "status": "ready",
+        "vgpr_count": 492,
+        "sgpr_count": 62,
+        "agpr_count": 256,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 74752
+      }
+    },
+    {
+      "variant_id": "narrow10240_2048_48094",
+      "shape": {
+        "M": 10240,
+        "N": 2048,
+        "K": 7168
+      },
+      "kernelId": 48094,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_128x256x128_w1x4x1_p4_o0_ba2_sk1_wg1_cA17cB1_k7168_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr",
+      "route": "jit",
+      "geometry": [
+        "prefetch_b_vgpr",
+        128,
+        256,
+        128,
+        1,
+        4
+      ],
+      "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<128, 256, 4, 2, 1, true, 7168, 4, 1, 17, 2, 0, 128, false, false, false, 0>",
+      "parameters": {
+        "BM": 128,
+        "BN": 256,
+        "NB": 4,
+        "BD": 2,
+        "BC": 1,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 4,
+        "WGPerCU": 1,
+        "ACache": 17,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 128,
+        "Contiguous": false,
+        "PinA": false,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": -1
+      },
+      "effective": {
+        "MR": 8,
+        "NR": 4,
+        "KS": 1,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 272,
+        "B_MAX_AHEAD": 33,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 33,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 8,
+        "B_SETS": 9,
+        "B_ring_dwords_per_lane": 72
+      },
+      "purpose": "anchor",
+      "compare_to_kernelId": null,
+      "changed_parameters": [],
+      "rationale": "",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 30,
+      "geometry_selected_top8_count": 30,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": 154.4224,
+      "exact_candidate_measurement_status": "current best recorded",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow10240_2048_48095",
+      "shape": {
+        "M": 10240,
+        "N": 2048,
+        "K": 7168
+      },
+      "kernelId": 48095,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_128x256x128_w1x4x1_p4_o2_ba2_sk1_wg1_cA17cB1_k7168_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr",
+      "route": "jit",
+      "geometry": [
+        "prefetch_b_vgpr",
+        128,
+        256,
+        128,
+        1,
+        4
+      ],
+      "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<128, 256, 4, 2, 1, true, 7168, 4, 1, 17, 2, 2, 128, false, false, false, 0>",
+      "parameters": {
+        "BM": 128,
+        "BN": 256,
+        "NB": 4,
+        "BD": 2,
+        "BC": 1,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 4,
+        "WGPerCU": 1,
+        "ACache": 17,
+        "StoreCache": 2,
+        "Output": 2,
+        "BlockK": 128,
+        "Contiguous": false,
+        "PinA": false,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": -1
+      },
+      "effective": {
+        "MR": 8,
+        "NR": 4,
+        "KS": 1,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 272,
+        "B_MAX_AHEAD": 33,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 33,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 8,
+        "B_SETS": 9,
+        "B_ring_dwords_per_lane": 72
+      },
+      "purpose": "controlled_recheck",
+      "compare_to_kernelId": 48094,
+      "changed_parameters": [
+        {
+          "parameter": "Output",
+          "before": 0,
+          "after": 2
+        }
+      ],
+      "rationale": "Output 0→2；比较现有 LDS stripe 与 packed stores，保留缓存/队列",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 30,
+      "geometry_selected_top8_count": 30,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "selected by reconstructed Top8; per-candidate result not retained here",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow10240_2048_48088",
+      "shape": {
+        "M": 10240,
+        "N": 2048,
+        "K": 7168
+      },
+      "kernelId": 48088,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_128x256x128_w1x4x1_p3_o0_ba2_sk1_wg1_cA17cB1_k7168_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr",
+      "route": "jit",
+      "geometry": [
+        "prefetch_b_vgpr",
+        128,
+        256,
+        128,
+        1,
+        4
+      ],
+      "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<128, 256, 3, 2, 1, true, 7168, 4, 1, 17, 2, 0, 128, false, false, false, 0>",
+      "parameters": {
+        "BM": 128,
+        "BN": 256,
+        "NB": 3,
+        "BD": 2,
+        "BC": 1,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 4,
+        "WGPerCU": 1,
+        "ACache": 17,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 128,
+        "Contiguous": false,
+        "PinA": false,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": -1
+      },
+      "effective": {
+        "MR": 8,
+        "NR": 4,
+        "KS": 1,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 272,
+        "B_MAX_AHEAD": 33,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 33,
+        "requested_B_fragments_ahead": 8,
+        "B_AHEAD": 8,
+        "B_SETS": 9,
+        "B_ring_dwords_per_lane": 72
+      },
+      "purpose": "controlled_recheck",
+      "compare_to_kernelId": 48094,
+      "changed_parameters": [
+        {
+          "parameter": "NB",
+          "before": 4,
+          "after": 3
+        }
+      ],
+      "rationale": "NB 4→3；BD=2、B_AHEAD=8不变，仅 A 阶段数变化",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 30,
+      "geometry_selected_top8_count": 30,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "selected by reconstructed Top8; per-candidate result not retained here",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    },
+    {
+      "variant_id": "narrow10240_2048_48082",
+      "shape": {
+        "M": 10240,
+        "N": 2048,
+        "K": 7168
+      },
+      "kernelId": 48082,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_128x256x128_w1x4x1_p3_o0_ba1_sk1_wg1_cA17cB1_k7168_nt0",
+      "splitK": 1,
+      "pipeline": "prefetch_b_vgpr",
+      "route": "jit",
+      "geometry": [
+        "prefetch_b_vgpr",
+        128,
+        256,
+        128,
+        1,
+        4
+      ],
+      "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<128, 256, 3, 1, 1, true, 7168, 4, 1, 17, 2, 0, 128, false, false, false, 0>",
+      "parameters": {
+        "BM": 128,
+        "BN": 256,
+        "NB": 3,
+        "BD": 1,
+        "BC": 1,
+        "XCD": true,
+        "FixedK": 7168,
+        "WN": 4,
+        "WGPerCU": 1,
+        "ACache": 17,
+        "StoreCache": 2,
+        "Output": 0,
+        "BlockK": 128,
+        "Contiguous": false,
+        "PinA": false,
+        "PinC": false,
+        "GroupM": 0,
+        "PublishM": -1
+      },
+      "effective": {
+        "MR": 8,
+        "NR": 4,
+        "KS": 1,
+        "B_FRAGMENTS": 4,
+        "B_REGISTER_ROOM": 272,
+        "B_MAX_AHEAD": 33,
+        "ROTATE_B": false,
+        "B_SCHEDULE_AHEAD": 33,
+        "requested_B_fragments_ahead": 4,
+        "B_AHEAD": 4,
+        "B_SETS": 5,
+        "B_ring_dwords_per_lane": 40
+      },
+      "purpose": "controlled_recheck",
+      "compare_to_kernelId": 48088,
+      "changed_parameters": [
+        {
+          "parameter": "BD",
+          "before": 2,
+          "after": 1
+        }
+      ],
+      "rationale": "BD 2→1；NB=3，B_AHEAD8→4",
+      "selected_top8_with_saved_seeds": true,
+      "selected_top4_with_saved_seeds": true,
+      "geometry_legal_count": 30,
+      "geometry_selected_top8_count": 30,
+      "new_registry_configuration": false,
+      "new_source_change": false,
+      "new_measurement_launched": false,
+      "exact_current_measurement_us": null,
+      "exact_candidate_measurement_status": "selected by reconstructed Top8; per-candidate result not retained here",
+      "compilation_status": "existing JIT registry entry; no compile performed"
+    }
+  ],
+  "source_refs": [
+    {
+      "id": "b_queue",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh",
+      "line_start": 71,
+      "line_end": 86,
+      "finding": "B_AHEAD=min(BD*KS*NR,B_SCHEDULE_AHEAD), ROTATE_B and pinA saturation."
+    },
+    {
+      "id": "b_reuse",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh",
+      "line_start": 664,
+      "line_end": 710,
+      "finding": "A loaded for all MR; each B fragment reused over all MR. Publication hooks restricted to fragment==0; bounded ring copy is source-visible."
+    },
+    {
+      "id": "overlap_publication",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_overlap_gfx950.cuh",
+      "line_start": 14,
+      "line_end": 18,
+      "finding": "PublishM chooses A prefetch point before final M repeat."
+    },
+    {
+      "id": "m_ring_traits",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_m_repeat_gfx950.cuh",
+      "line_start": 41,
+      "line_end": 66,
+      "finding": "A_RING=min(E_M,3); PUBLISH_M stored in traits but no current-body reference."
+    },
+    {
+      "id": "m_swizzle",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_m_repeat_gfx950.cuh",
+      "line_start": 373,
+      "line_end": 405,
+      "finding": "GroupN used only for grid_n>=256 and M>BM; narrow-N fixed GroupM4 branch; explicit GroupM override."
+    },
+    {
+      "id": "m_reuse_publish",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_m_repeat_gfx950.cuh",
+      "line_start": 583,
+      "line_end": 680,
+      "finding": "A ring slots, B per-N fragment reuse, K+2 release at E_M-A_RING. Deferred wait only FixedK16384 arrays E_M4/E_N8."
+    },
+    {
+      "id": "existing_registry",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/opus_gemm_common.py",
+      "line_start": 2943,
+      "line_end": 3222,
+      "finding": "Existing geometry, publication, m-repeat/cache/fragment/GroupN configs are stable appended IDs."
+    },
+    {
+      "id": "top_selection",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/opus_gemm_search.py",
+      "line_start": 325,
+      "line_end": 358,
+      "finding": "TopN selects complete geometries per pipeline; seed adds only exact kid."
+    },
+    {
+      "id": "address_guard",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/opus_gemm_common.py",
+      "line_start": 3253,
+      "line_end": 3270,
+      "finding": "A/B int32 byte limit, bounded per-tile C span, JIT wide total C allowance."
+    },
+    {
+      "id": "m_c_address",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_m_repeat_gfx950.cuh",
+      "line_start": 418,
+      "line_end": 422,
+      "finding": "C tile base uses int64 row*stride; SRD span bounded to valid rows."
+    }
+  ],
+  "effective_parameter_dedup": {
+    "formula": "B_AHEAD=min(BD * (BK/128) * (BN/(WN*16)), B_SCHEDULE_AHEAD); B_SETS=B_AHEAD+1",
+    "cases": [
+      {
+        "geometry": [
+          64,
+          64,
+          256,
+          1,
+          2
+        ],
+        "WGPerCU": 1,
+        "PinA": false,
+        "NB_BD_to_effective": [
+          [
+            2,
+            1,
+            4
+          ],
+          [
+            3,
+            1,
+            4
+          ],
+          [
+            3,
+            2,
+            8
+          ],
+          [
+            4,
+            2,
+            8
+          ]
+        ],
+        "note": "NB differs across several equal B_AHEAD rows, so retain different A stage schedules."
+      },
+      {
+        "geometry": [
+          64,
+          64,
+          256,
+          1,
+          2
+        ],
+        "WGPerCU": 2,
+        "PinA": false,
+        "NB_BD_to_effective": [
+          [
+            2,
+            1,
+            1
+          ],
+          [
+            3,
+            1,
+            4
+          ],
+          [
+            3,
+            2,
+            4
+          ],
+          [
+            4,
+            2,
+            4
+          ]
+        ],
+        "note": "At NB3, BD1/BD2 have equal effective queue and all other traits equal. Six duplicate entries per plain geometry (3 cache pairs x 2 outputs); 48→42 effective schedules. This is schedule-semantic equivalence, not a promise of identical symbol/code-layout latency."
+      },
+      {
+        "geometry": [
+          128,
+          256,
+          128,
+          1,
+          4
+        ],
+        "WGPerCU": 1,
+        "PinA": false,
+        "NB_BD_to_effective": [
+          [
+            2,
+            1,
+            4
+          ],
+          [
+            3,
+            1,
+            4
+          ],
+          [
+            3,
+            2,
+            8
+          ],
+          [
+            4,
+            2,
+            8
+          ]
+        ],
+        "note": "Current48094 has B_AHEAD8/B_SETS9/72 B dwords per lane."
+      },
+      {
+        "geometry": [
+          128,
+          256,
+          128,
+          1,
+          4
+        ],
+        "WGPerCU": 1,
+        "PinA": true,
+        "NB_BD_to_effective": [
+          [
+            4,
+            1,
+            3
+          ],
+          [
+            4,
+            2,
+            3
+          ]
+        ],
+        "note": "NR4, BK128, FixedK>=1536 clamp to3. CO379 ba2 and CO688 bd1 both effective3, but differ in XCD/contiguous and must not be deduplicated as a complete experiment."
+      }
+    ],
+    "GroupN_condition": "With all other parameters unchanged, GroupN has no tile-mapping effect when grid_n<256 or M<=BM; a positive explicit GroupM also overwrites the GroupN branch mapping.",
+    "narrow_N_bound": "N<=2048 and legal BN in64/128/256 implies grid_n<=32<256. GroupN4/8/16/32/64 does not affect the executed tile mapping. Compiler symbol/code placement can still differ."
+  },
+  "future_source_changes": [
+    {
+      "proposal_id": "fragment_publication_point",
+      "priority": 2,
+      "status": "future source proposal only",
+      "existing_configuration": false,
+      "source_ref_ids": [
+        "b_reuse",
+        "overlap_publication",
+        "b_queue"
+      ],
+      "change": "Append an opt-in PublishFragment=0 trait/name field to B-VGPR overlap. Current hook only fragment==0; add one experiment PublishFragment=1 with unchanged PublishM, geometry, queue, pinning and output. Keep every existing ID/default unchanged.",
+      "initial_geometry": [
+        "prefetch_b_vgpr_overlap",
+        64,
+        64,
+        256,
+        1,
+        2
+      ],
+      "hypothesis": "Shift A publication relative to B fragment requests; source proves a missing schedule degree of freedom, not a measured bottleneck.",
+      "required_dependency_work": [
+        "Recompute issue-event counts used by wa/newer_b/pending_a waits, not just the issue_a condition.",
+        "Statically simulate prologue/steady/tail pending VMEM and A LDS slot ownership for all phases.",
+        "Preserve B consumption before slot reuse and every fragment reuse over MR.",
+        "Only after existing-config results, validate correctness and saved winner protection before performance interpretation."
+      ]
+    },
+    {
+      "proposal_id": "m_repeat_ring_depth",
+      "priority": 3,
+      "status": "future source proposal only",
+      "existing_configuration": false,
+      "source_ref_ids": [
+        "m_ring_traits",
+        "m_reuse_publish"
+      ],
+      "change": "Append an opt-in AFragmentRing parameter with default current min(E_M,3); initially compare ring2 versus ring3 for 256x256x128 WM4 E_M4/E_N8. Derive release event from E_M-A_RING rather than moving publication to unused PUBLISH_M=0.",
+      "initial_geometry": [
+        "pingpong_lds",
+        256,
+        256,
+        128,
+        4,
+        2
+      ],
+      "hypothesis": "Ring2 reduces declared A fragments 24→16 dwords/lane and moves safe K+2 publication m1→m2; remaining current MFMAs24→16. The lost overlap can outweigh the smaller A live set.",
+      "required_dependency_work": [
+        "Keep B resident E_N fragments once per K tile and reuse each over every M repeat.",
+        "Require 1<=A_RING<=E_M and maintain m+A_RING load/overwrite-after-last-consumer invariant.",
+        "Retain full workgroup barrier before overwriting current LDS stage.",
+        "Do not extend FixedK16384 defer-next-stage-wait to K7168 without a separately proven VMEM event count.",
+        "Treat existing traits PublishM as inactive in the current m-repeat body; changing it alone has no current source-defined publication effect."
+      ]
+    }
+  ],
+  "protection_shapes": [
+    {
+      "shape": {
+        "M": 1216,
+        "N": 768,
+        "K": 7168
+      },
+      "purpose": "source-change winner protection only; excluded from the initial sixteen GPU pairs",
+      "kernelId": 41804,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_overlap_64x64x256_w1x4x1_p4_o0_ba2_sk1_wg1_cA0cB0_k7168_pub2_nt0",
+      "baseline_us": 18.5621,
+      "current_us": 17.8714,
+      "gap_pct": -3.7210229446021703
+    }
+  ],
+  "CPU_address_guards": [
+    {
+      "shape": {
+        "M": 40960,
+        "N": 65536,
+        "K": 1536
+      },
+      "kernelId": 48197,
+      "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_256x256x128_w4x2_sp64_k0_gm0_gn32_bound0_cA17cB1_frag1_nt0",
+      "C_bytes": 5368709120,
+      "A_bytes": 62914560,
+      "B_bytes": 100663296,
+      "C_tile_span_bytes": 33554432,
+      "registry_supports_shape": true,
+      "purpose": "CPU address guard only; excluded from initial GPU pairs",
+      "source_ref_ids": [
+        "address_guard",
+        "m_c_address"
+      ]
+    }
+  ],
+  "existing_round": {
+    "pair_count": 16,
+    "shape_count": 4,
+    "new_top8_coverage_pairs": 5,
+    "anchors": 4,
+    "controlled_recheck_pairs": 7,
+    "routes": {
+      "jit_registry_entries": 12,
+      "ready_CO": 4
+    },
+    "new_measurements_launched": false,
+    "decision_order": [
+      "Measure only these existing exact entries with the four current anchors and fixed saved CSV comparisons.",
+      "Interpret missing coverage separately from controlled rechecks; do not label every unmeasured legal entry a bottleneck.",
+      "Promote a source proposal only if existing-parameter comparisons support its mechanism; source changes remain outside first round.",
+      "Keep winner protection and >4GiB CPU address guard outside the sixteen initial pairs."
+    ]
+  },
+  "measurement_evidence_limits": [
+    "Current best exact names/IDs/us are retained; reconstructed Top8 proves selection membership, not individual candidate latency or correctness.",
+    "Three retained all-candidate artifacts scanned contained no exact proposed pair result.",
+    "An older all_candidates record with numeric kid187 used a different full name; reject that numeric-ID collision as timing evidence."
+  ],
+  "CPU_checks": {
+    "all_four_in_171": true,
+    "all_16_registry_ID_and_full_names_legal": true,
+    "all_12_non_anchor_rows_single_input_parameter": true,
+    "all_5_coverage_add_rows_omitted_from_Top8": true,
+    "all_4_CO_ready_and_resources_saved": true,
+    "all_forbidden_modules_unloaded": true,
+    "protected_hashes_unchanged": true,
+    "protected_file_count": 29
+  },
+  "protected_input_sha256": {
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/compare_longk_artifacts.py": "ecb6964bb811862570a9568721daea46a84b7004c3a39f503259454a707fe349",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/longk_artifact_comparison.json": "7b0d851a89dd3a95c02ccd83d1e2d6d798b207fed3ef0f13683cc775fc48499c",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/analyze_recheck_results.py": "31ce7193fb028b4f1c35acadeb83017ffb7221b2979dd1a2d5c037abb61ab698",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/cpu_analyzer_checks.json": "24fd201cc0e58fda3ad45e4d4f9de5754e48db9317b684a052a87a4d6735dd99",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/cpu_preflight.py": "4a5d1a4dbe16b0773356fb5a8ca357b5fff07a1d09af73690380d0d761e7f5f5",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/frozen_inputs.json": "07ff842abc77da5996eab83e72799628d8801fb75643fe51609a755aa5ec4ff9",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/plan_all.json": "99cd276a62e949c9cd41cadafc74de9f94841d2c8805b77ed11ba1362f1e700e",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/plan_priority.json": "18e1d12fac667701c2b639098f87e248afc81eff5cb42ebc045592e6086e2cb6",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/run_recheck.py": "5e4de1575379d9bfbb5c9ebba92ba6035ce35473e029ba4e4b8fa3a0658fa643",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/plan_remaining.json": "89cdc03a729fd4f345f914f688bf36858082da5fd9723f1585cdca36fedee7e2",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/analysis_zh.md": "40269ff675886041dea72b1460f1c9f954a4ae8e6e0e37545fb708019837d84a",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/README.md": "ba69b2c81f19527568a747fd55038e55b39c5676899edca0efb787c66f632375",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/cpu_runner_checks.json": "11201d58677d70d663427b7807808e09312c1393bcf349d03705a2852bbe1e85",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/check_cpu_preparation.py": "eca04ebdbfaf1ed9001c1797a3b23ae502b661c718752d1958edb86b697c54e6",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/cpu_preparation_checks.json": "ac0655359c135bdfc4dc935546572d7f6dd052a4419bb8ea2a2d78468375aebd",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/loss_decomposition.csv": "0f9e13c38e1992adf45a5f39c8b499050f7f11b16f9b659bbd7af8a00f36c0c5",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/cpu_completion.json": "0f3cd09f39f7989fb8bec26483a5d25b3af2ea8f1e5ef57ad2b6b045d7d56df9",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/__pycache__/compare_longk_artifacts.cpython-312.pyc": "4bf54bd07e086b3d887eb219a93c3679bda25d42241e642605868ba37d29f4ed",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/__pycache__/cpu_preflight.cpython-312.pyc": "5e9e605bcbc10cc413bec2149d957deb59d74123ebe370b6ba7de109aabfca7e",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_regressions14_preparation/__pycache__/run_recheck.cpython-312.pyc": "bc2dbc299f3d544e642ed8265406c50c596b1a7dda96968ea321d1cc1245696a",
+    "/home/fyz/aiter/csrc/opus_gemm/opus_gemm_common.py": "07e4a3a4ce55310be5d9e674709299a1f87ad4885bcab6848207d6c96fd0f869",
+    "/home/fyz/aiter/csrc/opus_gemm/opus_gemm_search.py": "bbb4fac3da74fa15acf6cf56ed5c14ab745b93d1a7fea6f19935ac3032fb6518",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/co_kernels_gfx950.json": "5a43ad9435e08b6062fe121222d82713e81d130421021daaebb46e487db588df",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/build_info.json": "dc1c1db54d296d7e2300a9b4549bfee24ea2f187319aef258345f99b507b943c",
+    "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh": "b541e940fcae66b0d5c5426bb5fe531b638d7b835e84b03bb573f5a5d5b01821",
+    "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh": "3da7b0f9dbf5ff526a60d31c066788bb82aa03c0dc5156fe40546fc1c5153c37",
+    "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_overlap_gfx950.cuh": "3833c058517267a9108e7939d617accfd784209542af25820c79448156707443",
+    "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_m_repeat_gfx950.cuh": "3a21a6de5b0eaa10ced4e2fec3161067cd3f22921074c0a194816f9fd6117e03",
+    "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_m_repeat_gfx950.cuh": "9bb54a1a981044b17eededb22466d35681e930c73f64bcaca0b78c1efcec2fdf"
+  },
+  "input_files": {
+    "saved_baseline": "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/csv_baseline.csv",
+    "current": "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/merged_tuned.csv",
+    "historical_best": "/home/fyz/aiter/docs/gfx950_mxscale_20261029/all_shapes_421.csv",
+    "seeds": "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_preparation/search_seeds.csv",
+    "coverage": "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_preparation/candidate_coverage.csv",
+    "CO_build_info": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/build_info.json"
+  }
+}

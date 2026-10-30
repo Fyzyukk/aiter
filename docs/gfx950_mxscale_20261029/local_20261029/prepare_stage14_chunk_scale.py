@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Move scale refills outside the unrolled MFMA loop, at cache boundaries."""
+import copy
+import dataclasses
+import hashlib
+import json
+import re
+import shlex
+import shutil
+from pathlib import Path
+
+from prepare_co_experiment import load_common, registry, fingerprint
+from prepare_opus_repeat import csv_rows, key
+from prepare_stage12_scale import verify_scale_cache
+from prepare_stage13_local_scale import local_scale_body
+
+LOCAL = Path(__file__).resolve().parent
+ROOT = LOCAL.parents[2]
+OUT = LOCAL / "stage14_chunk_scale_20261030"
+REL = Path("csrc/opus_gemm/gen_co/co_kernels_gfx950.json")
+INCLUDE = Path("csrc/opus_gemm/include/gfx950")
+TRAITS = "opus_gemm_traits_stage14_chunk_scale_gfx950.cuh"
+HEADER = "opus_gemm_pipeline_stage14_chunk_scale_gfx950.cuh"
+
+
+def dump(path, value):
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+def replace_once(source, before, after):
+    assert source.count(before) == 1, before
+    return source.replace(before, after)
+
+
+def verify_chunk_order(panel, groups):
+    stop = max(groups - 2, 0)
+    tile = 0
+    emitted, refills = [], []
+    while tile < stop:
+        if (tile + 1) % panel == 0:
+            refills.append(tile + 1)
+        end = min(stop, ((tile + 1) // panel + 1) * panel - 1)
+        assert end > tile
+        while tile < end:
+            emitted.append((tile, tile % 2, tile + 2))
+            tile += 1
+    assert emitted == [(t, t % 2, t + 2) for t in range(stop)]
+    assert refills == [t + 1 for t in range(stop) if (t + 1) % panel == 0]
+    assert tile == stop
+    return {"panel": panel, "K128_groups": groups, "main_tiles": len(emitted),
+            "refills": refills, "tile_stage_future_requests_and_drain_start_verified": True}
+
+
+def chunk_scale_body():
+    original = local_scale_body()
+    source = original.replace("opus_stage13_pin_detail", "opus_stage14_pin_detail")
+    source = source.replace("opus_stage13_pin_body", "opus_stage14_pin_body")
+    old = """#pragma clang loop unroll_count(T::LOOP_UNROLL)
+    for (; tile + 2 < loops; ++tile) {"""
+    new = """    // Refill before the first consumer of a new cache. Current scales
+    // already live in registers, and matrix stages continue across chunks.
+    for (; tile + 2 < loops;) {
+        refill_scale_panel(tile + 1);
+        const int panel_end = ((tile + 1) & ~scale_panel_mask)
+            + T::SCALE_PANEL_K_CAPACITY - 1;
+        const int chunk_end = panel_end < loops - 2 ? panel_end : loops - 2;
+#pragma clang loop unroll_count(T::LOOP_UNROLL)
+        for (; tile < chunk_end; ++tile) {"""
+    source = replace_once(source, old, new)
+    source = replace_once(source, "        refill_scale_panel(k_tile + 1);\n", "")
+    source = replace_once(source, "        stage = next_stage;\n    }\n    // ===== Epilogue =====",
+        "        stage = next_stage;\n        }\n    }\n    // ===== Epilogue =====")
+    waits = r"s_waitcnt_\w+\([^;]*?\)|opus::sync_threads\(\)|__builtin_amdgcn_sched_barrier\([^;]*?\)"
+    assert re.findall(waits, original) == re.findall(waits, source)
+    return source
+
+
+def main():
+    reference = LOCAL / "stage13_local_scale69_20261030/result/public_best_opus421.csv"
+    assert (reference.parents[1] / "completion_receipt.json").exists()
+    rows = [r for r in csv_rows(reference) if r["status"] == "slower_than_csv" and int(r["N"]) >= 6144]
+    assert rows
+    before = registry(load_common(ROOT, label="stage14_before"))
+    assert len(before) >= 48254
+    document = json.loads((ROOT / REL).read_text())
+    original = copy.deepcopy(document)
+    entries = {e["kid"]: e for e in document["gfx950"]}
+    points, matches = [], []
+    for parent in (100602, 100606, 100610, 395):
+        references = {}
+        for panel, local in ((64, False), (64, True), (32, False), (32, True), (16, True)):
+            entry = copy.deepcopy(entries[parent])
+            for field in ("kid", "configKey", "supported_shapes"):
+                entry.pop(field, None)
+            kid = 100900 + len(points)
+            entry.update(kid=kid, traits_header=TRAITS,
+                pipeline_header=HEADER if local else "opus_gemm_pipeline_stage13_local_scale_gfx950.cuh",
+                body_func="opus_stage14_pin_body" if local else "opus_stage13_pin_body",
+                body_args=[f"opus_stage14_scale_traits<{entry['body_args'][0]}, {panel}>"])
+            document["gfx950"].append(entry)
+            digest = hashlib.sha256(json.dumps(entry, sort_keys=True).encode()).hexdigest()[:16]
+            document["image_suffixes"][str(kid)] = f"pm{int(entry['pad_m'])}_stage14_chunk{int(local)}_p{panel}_seed{parent}_{digest}"
+            points.append({"new_kid": kid, "seed_kid": parent, "pipeline": "pin_agpr",
+                "axis": {"ScalePanelK128": panel, "LoopUnroll": 8, "SchedulePolicy": 0,
+                         "LocalSFATemporary": True, "ChunkedScaleRefill": local, "GUARD_SFB_LANE": True},
+                "comparison_only": not local,
+                "match_definition": "Chunked refill only" if panel != 16 else "Chunked refill plus panel16, versus local-scale panel64"})
+            if not local:
+                references[panel] = kid
+            else:
+                matches.append([references[64 if panel == 16 else panel], kid])
+    OUT.mkdir()
+    experiment = OUT / "co_experiment"
+    experiment.mkdir()
+    dump(experiment / "proposed_manifest.json", document)
+    module = load_common(ROOT, manifest=experiment / "proposed_manifest.json", label="stage14_extended")
+    after = registry(module)
+    assert set(after) == set(before) | {p["new_kid"] for p in points}
+    digest = hashlib.sha256()
+    for kid, instance in before.items():
+        assert dataclasses.asdict(instance) == dataclasses.asdict(after[kid]), kid
+        digest.update(f"{kid}:{fingerprint(instance)}\n".encode())
+    covered = set()
+    for point in points:
+        instance = after[point["new_kid"]]
+        shapes = [list(key(row)[2:5]) for row in rows
+                  if module.a8w8_mxscale_bpreshuffle_supports_shape(instance, *key(row)[2:5])]
+        assert shapes, point
+        point["shapes"], point["kernelName"] = shapes, instance.name
+        covered.update(tuple(s) for s in shapes)
+        next(e for e in document["gfx950"] if e["kid"] == point["new_kid"])["supported_shapes"] = shapes
+    assert len(covered) == len(rows)
+    assert document["gfx950"][:len(original["gfx950"])] == original["gfx950"]
+    dump(experiment / "proposed_manifest.json", document)
+    repo = experiment / ".cache/experiment_repo"
+    shutil.copytree(ROOT, repo, symlinks=True, ignore=shutil.ignore_patterns(
+        ".git", "__pycache__", ".cache", "reports", "local_20261029", "build", "*.egg-info", "*.so", "*.o"))
+    shutil.copy2(experiment / "proposed_manifest.json", repo / REL)
+    traits = '''// SPDX-License-Identifier: Apache-2.0
+#pragma once
+#include "opus_gemm_traits_stage11_unroll_gfx950.cuh"
+
+template<class Base, int Panel>
+struct opus_stage14_scale_traits
+    : opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_scale_panel_traits<Base, Panel> {
+    static_assert(Panel == 16 || Panel == 32 || Panel == 64);
+    static constexpr bool GUARD_SFB_LANE = true;
+    static constexpr int LOOP_UNROLL = 8;
+    static constexpr int SCHEDULE_POLICY = 0;
+};
+'''
+    headers = {TRAITS: traits, HEADER: chunk_scale_body(),
+               "opus_gemm_pipeline_stage13_local_scale_gfx950.cuh": local_scale_body()}
+    for name, body in headers.items():
+        (repo / INCLUDE / name).write_text(body)
+    helpers = repo / "docs/gfx950_mxscale_20261029/local_20261029"
+    helpers.mkdir()
+    for path in LOCAL.glob("*.py"):
+        shutil.copy2(path, helpers / path.name)
+    dump(experiment / "scale_cache_invariants.json", {"checks": [verify_scale_cache(panel, k)
+        for panel in (16, 32, 64) for k in sorted({int(r['K']) // 128 for r in rows})],
+        "chunk_checks": [verify_chunk_order(panel, k) for panel in (16, 32, 64)
+            for k in sorted({3, 15, 16, 17, 31, 32, 33, 63, 64, 65, 128, 168}
+                | {int(r['K']) // 128 for r in rows})],
+        "all_hardware_wait_and_thread_barrier_calls_in_source_preserved": True,
+        "invalid_scale_passes_have_fresh_zero_values_and_are_never_consumed": True})
+    dump(experiment / "identity_and_points.json", {"previous_ids_verified": len(before),
+        "previous_config_digest": digest.hexdigest(), "jit_kid_base": 780, "repo": str(repo),
+        "points": points, "reference": str(reference), "target_only_shapes": len(rows),
+        "matched_controls": matches, "require_matched_control": True,
+        "new_source_changes": [str(INCLUDE / name) for name in headers],
+        "new_source_sha256": {name: hashlib.sha256(body.encode()).hexdigest() for name, body in headers.items()},
+        "hardware_waits_barriers_descriptors_and_address_widths_preserved": True})
+    (experiment / "experiment_env.sh").write_text("source " + shlex.quote(str(LOCAL / "env.sh"))
+        + "\nexport OPUS_RUN_REPO=" + shlex.quote(str(repo)) + '\nexport PYTHONPATH="$OPUS_RUN_REPO"'
+        + "\nexport AITER_JIT_DIR=" + shlex.quote(str(experiment / ".cache/aiter_jit"))
+        + '\nexport ROCR_VISIBLE_DEVICES=1,0,6,7 HIP_VISIBLE_DEVICES=0,1,2,3 AITER_REBUILD=0 OPUS_TARGET_NEW_ONLY=1\ncd "$OPUS_RUN_REPO"\n')
+    (experiment / "build_new_co.sh").write_text("set -euo pipefail\nsource " + shlex.quote(str(experiment / "experiment_env.sh"))
+        + '\n"$OPUS_RUN_PYTHON" csrc/opus_gemm/gen_co/build_co.py --arch gfx950 --llvm-bin "$HIP_CLANG_PATH" --kids '
+        + " ".join(str(p["new_kid"]) for p in points)
+        + ' --jobs 8 --out-dir "$OPUS_RUN_REPO/csrc/opus_gemm/gen_co/gfx950" --report '
+        + shlex.quote(str(experiment / "build_info.json")) + "\n")
+    print(json.dumps({"candidate_points": len(points), "chunked_scale_kernels": 12,
+        "comparison_only_points": 8, "previous_ids_verified": len(before), "target_shapes": len(covered)}))
+
+
+if __name__ == "__main__":
+    main()

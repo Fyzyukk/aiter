@@ -1,0 +1,609 @@
+{
+  "version": 2,
+  "family": "a8w8_blockscale_bpreshuffle",
+  "metadata_module": "prepare_opus_repeat",
+  "correctness_limit": 0.05,
+  "selection": "Same final-confirmation candidates for six shapes with >1.5 max/min timing spread in public winner/control; replace entire shape six-round batch on other physical GPUs0/3/6, no candidate expansion",
+  "reference": "/root/workspace/aiter-fyz-10-29-aiter/docs/gfx950_mxscale_20261029/local_20261029/stage17_pin_invariants54_20261030/result/public_best_opus421.csv",
+  "target_new_only": false,
+  "matched_controls": [
+    [
+      101300,
+      101301
+    ],
+    [
+      101302,
+      101303
+    ],
+    [
+      101304,
+      101305
+    ],
+    [
+      101306,
+      101307
+    ],
+    [
+      101308,
+      101309
+    ],
+    [
+      101308,
+      101310
+    ],
+    [
+      101311,
+      101312
+    ],
+    [
+      101311,
+      101313
+    ],
+    [
+      101314,
+      101315
+    ],
+    [
+      101316,
+      101317
+    ],
+    [
+      101318,
+      101319
+    ],
+    [
+      101320,
+      101321
+    ]
+  ],
+  "shapes": [
+    {
+      "shape": {
+        "gfx": "gfx950",
+        "cu_num": 256,
+        "M": 1472,
+        "N": 7168,
+        "K": 16384,
+        "w_scale_block": "128x128"
+      },
+      "csv_baseline_us": 162.4056,
+      "remote_winner": null,
+      "candidates": [
+        {
+          "kid": 18094,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_192x256x128_w4x2_sp128_k16384_gm0_cA17cB1_frag0_nt0",
+          "traits": "opus_gemm_bpreshuffle_pingpong_lds_traits<192, 256, 128, 16384, 4, 0, 17, 1, false, false, true, 0, 8>",
+          "geometry": [
+            "pingpong_lds",
+            192,
+            256,
+            128,
+            4,
+            2
+          ],
+          "bounded": true,
+          "kind": "JIT",
+          "is_co": false,
+          "bpreshuffle_co": null,
+          "full_name_aliases": [
+            "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_192x256x128_w4x2_192_256_128_16384_4_0_17_1_false_false_true_0_8"
+          ],
+          "roles": [
+            "exact_experiment_parent"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 18100,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_192x256x128_w4x2_sp128_k16384_gm4_cA17cB1_frag0_nt0",
+          "traits": "opus_gemm_bpreshuffle_pingpong_lds_traits<192, 256, 128, 16384, 4, 4, 17, 1, false, false, true, 0, 8>",
+          "geometry": [
+            "pingpong_lds",
+            192,
+            256,
+            128,
+            4,
+            2
+          ],
+          "bounded": true,
+          "kind": "JIT",
+          "is_co": false,
+          "bpreshuffle_co": null,
+          "full_name_aliases": [
+            "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_192x256x128_w4x2_192_256_128_16384_4_4_17_1_false_false_true_0_8"
+          ],
+          "roles": [
+            "current_step4_best_control"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101302,
+          "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_stage18_remote_seed101020_712a44e8d8d160d5",
+          "traits": "{\"body_args\":[\"opus_stage18_scale_traits<opus_stage15_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits>, 64, 2>, 64, false>\"],\"body_func\":\"opus_stage14_pin_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[256,1],\"pad_m\":true,\"traits\":{\"args\":[\"64\",\"2\",\"true\"],\"name\":\"opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits\"},\"wide_output\":false}",
+          "geometry": [
+            "pin_agpr",
+            256,
+            256,
+            128,
+            2,
+            2
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_stage18_remote_seed101020_712a44e8d8d160d5",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101303,
+          "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_stage18_remote_seed101020_2b3b96d60053d802",
+          "traits": "{\"body_args\":[\"opus_stage18_scale_traits<opus_stage15_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits>, 64, 2>, 64, true>\"],\"body_func\":\"opus_stage18_pin_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[256,1],\"pad_m\":true,\"traits\":{\"args\":[\"64\",\"2\",\"true\"],\"name\":\"opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits\"},\"wide_output\":false}",
+          "geometry": [
+            "pin_agpr",
+            256,
+            256,
+            128,
+            2,
+            2
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_stage18_remote_seed101020_2b3b96d60053d802",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101311,
+          "kernelName": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_e9d6d72bb5bcd0aa",
+          "traits": "{\"body_args\":[\"CoTraits\"],\"body_func\":\"opus_gemm_bpreshuffle_wave_interleave_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[512,1],\"pad_m\":true,\"traits\":{\"args\":[\"192\",\"0\",\"8\",\"true\",\"1\",\"17\",\"4\"],\"name\":\"opus_gemm_bpreshuffle_wave_interleave_traits\"},\"wide_output\":true}",
+          "geometry": [
+            "wave_interleave",
+            192,
+            256,
+            256,
+            2,
+            4
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_e9d6d72bb5bcd0aa",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101312,
+          "kernelName": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_82f0d5eb1d22ee90",
+          "traits": "{\"body_args\":[\"opus_stage18_interleave_traits<CoTraits, true, false>\"],\"body_func\":\"opus_stage18_interleave_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[512,1],\"pad_m\":true,\"traits\":{\"args\":[\"192\",\"0\",\"8\",\"true\",\"1\",\"17\",\"4\"],\"name\":\"opus_gemm_bpreshuffle_wave_interleave_traits\"},\"wide_output\":true}",
+          "geometry": [
+            "wave_interleave",
+            192,
+            256,
+            256,
+            2,
+            4
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_82f0d5eb1d22ee90",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101313,
+          "kernelName": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_59b624baee5dc54a",
+          "traits": "{\"body_args\":[\"opus_stage18_interleave_traits<CoTraits, false, true>\"],\"body_func\":\"opus_stage18_interleave_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[512,1],\"pad_m\":true,\"traits\":{\"args\":[\"192\",\"0\",\"8\",\"true\",\"1\",\"17\",\"4\"],\"name\":\"opus_gemm_bpreshuffle_wave_interleave_traits\"},\"wide_output\":true}",
+          "geometry": [
+            "wave_interleave",
+            192,
+            256,
+            256,
+            2,
+            4
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_59b624baee5dc54a",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101314,
+          "kernelName": "opus_gemm_gfx950_m_repeat_co_512x192x256x128_4x2_16x16x128_1x128x128_stage18_remote_seed18094_ed4296662b8baa96",
+          "traits": "{\"body_args\":[\"CoTraits\"],\"body_func\":\"opus_gemm_bpreshuffle_pingpong_lds_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":16384,\"grid_layout\":\"n_m\",\"launch_bounds\":[512,1],\"pad_m\":true,\"traits\":{\"args\":[\"192\",\"256\",\"128\",\"16384\",\"4\",\"0\",\"17\",\"1\",\"false\",\"false\",\"true\",\"0\",\"8\"],\"name\":\"opus_gemm_bpreshuffle_pingpong_lds_traits\"},\"wide_output\":true}",
+          "geometry": [
+            "pingpong_lds",
+            192,
+            256,
+            128,
+            4,
+            2
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_m_repeat_co_512x192x256x128_4x2_16x16x128_1x128x128_stage18_remote_seed18094_ed4296662b8baa96",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101315,
+          "kernelName": "opus_gemm_gfx950_m_repeat_co_512x192x256x128_4x2_16x16x128_1x128x128_stage18_remote_seed18094_22819f04a3a97ce5",
+          "traits": "{\"body_args\":[\"opus_stage18_m_repeat_traits<CoTraits, 2>\"],\"body_func\":\"opus_gemm_bpreshuffle_pingpong_lds_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":16384,\"grid_layout\":\"n_m\",\"launch_bounds\":[512,1],\"pad_m\":true,\"traits\":{\"args\":[\"192\",\"256\",\"128\",\"16384\",\"4\",\"0\",\"17\",\"1\",\"false\",\"false\",\"true\",\"0\",\"8\"],\"name\":\"opus_gemm_bpreshuffle_pingpong_lds_traits\"},\"wide_output\":true}",
+          "geometry": [
+            "pingpong_lds",
+            192,
+            256,
+            128,
+            4,
+            2
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_m_repeat_co_512x192x256x128_4x2_16x16x128_1x128x128_stage18_remote_seed18094_22819f04a3a97ce5",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        }
+      ]
+    },
+    {
+      "shape": {
+        "gfx": "gfx950",
+        "cu_num": 256,
+        "M": 1152,
+        "N": 768,
+        "K": 7168,
+        "w_scale_block": "128x128"
+      },
+      "csv_baseline_us": 16.562,
+      "remote_winner": null,
+      "candidates": [
+        {
+          "kid": 7260,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x64x256_w1x2x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0",
+          "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<64, 64, 3, 2, 0, true, 7168, 2, 1, 0>",
+          "geometry": [
+            "prefetch_b_vgpr",
+            64,
+            64,
+            256,
+            1,
+            2
+          ],
+          "bounded": null,
+          "kind": "JIT",
+          "is_co": false,
+          "bpreshuffle_co": null,
+          "full_name_aliases": [
+            "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x64x256_w1x2_64_64_3_2_0_true_7168_2_1_0_2_0_256_false_false_false_0"
+          ],
+          "roles": [
+            "remote_54bef351_best",
+            "remote_cpu_narrow_exact"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 7344,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x128x256_w1x2x1_p3_o0_ba1_sk1_wg1_cA0cB0_k7168_nt0",
+          "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<64, 128, 3, 1, 0, true, 7168, 2, 1, 0>",
+          "geometry": [
+            "prefetch_b_vgpr",
+            64,
+            128,
+            256,
+            1,
+            2
+          ],
+          "bounded": null,
+          "kind": "JIT",
+          "is_co": false,
+          "bpreshuffle_co": null,
+          "full_name_aliases": [
+            "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x128x256_w1x2_64_128_3_1_0_true_7168_2_1_0_2_0_256_false_false_false_0"
+          ],
+          "roles": [
+            "remote_cpu_narrow_exact"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 7356,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x128x256_w1x2x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_nt0",
+          "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits<64, 128, 3, 2, 0, true, 7168, 2, 1, 0>",
+          "geometry": [
+            "prefetch_b_vgpr",
+            64,
+            128,
+            256,
+            1,
+            2
+          ],
+          "bounded": null,
+          "kind": "JIT",
+          "is_co": false,
+          "bpreshuffle_co": null,
+          "full_name_aliases": [
+            "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_64x128x256_w1x2_64_128_3_2_0_true_7168_2_1_0_2_0_256_false_false_false_0"
+          ],
+          "roles": [
+            "remote_cpu_narrow_exact"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 17914,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_192x256x128_w4x2_sp64_k7168_gm0_cA17cB1_frag0_nt0",
+          "traits": "opus_gemm_bpreshuffle_pingpong_lds_traits<192, 256, 64, 7168, 4, 0, 17, 1, false, false, true, 0, 8>",
+          "geometry": [
+            "pingpong_lds",
+            192,
+            256,
+            128,
+            4,
+            2
+          ],
+          "bounded": true,
+          "kind": "JIT",
+          "is_co": false,
+          "bpreshuffle_co": null,
+          "full_name_aliases": [
+            "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_pingpong_lds_192x256x128_w4x2_192_256_64_7168_4_0_17_1_false_false_true_0_8"
+          ],
+          "roles": [
+            "exact_experiment_parent"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 41624,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_overlap_64x64x256_w1x2x1_p3_o0_ba2_sk1_wg1_cA0cB0_k7168_pub2_nt0",
+          "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits<64, 64, 3, 2, 0, true, 7168, 2, 1, 0, 2, 0, 256, false, false, false, 0, 2>",
+          "geometry": [
+            "prefetch_b_vgpr_overlap",
+            64,
+            64,
+            256,
+            1,
+            2
+          ],
+          "bounded": null,
+          "kind": "JIT",
+          "is_co": false,
+          "bpreshuffle_co": null,
+          "full_name_aliases": [
+            "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_overlap_64x64x256_w1x2_64_64_3_2_0_true_7168_2_1_0_2_0_256_false_false_false_0_2"
+          ],
+          "roles": [
+            "remote_cpu_narrow_exact"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 41816,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_overlap_64x64x256_w1x4x1_p4_o0_ba2_sk1_wg1_cA17cB1_k7168_pub2_nt0",
+          "traits": "opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits<64, 64, 4, 2, 1, true, 7168, 4, 1, 17, 2, 0, 256, false, false, false, 0, 2>",
+          "geometry": [
+            "prefetch_b_vgpr_overlap",
+            64,
+            64,
+            256,
+            1,
+            4
+          ],
+          "bounded": null,
+          "kind": "JIT",
+          "is_co": false,
+          "bpreshuffle_co": null,
+          "full_name_aliases": [
+            "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_prefetch_b_vgpr_overlap_64x64x256_w1x4_64_64_4_2_1_true_7168_4_1_17_2_0_256_false_false_false_0_2"
+          ],
+          "roles": [
+            "current_step4_best_control"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101302,
+          "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_stage18_remote_seed101020_712a44e8d8d160d5",
+          "traits": "{\"body_args\":[\"opus_stage18_scale_traits<opus_stage15_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits>, 64, 2>, 64, false>\"],\"body_func\":\"opus_stage14_pin_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[256,1],\"pad_m\":true,\"traits\":{\"args\":[\"64\",\"2\",\"true\"],\"name\":\"opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits\"},\"wide_output\":false}",
+          "geometry": [
+            "pin_agpr",
+            256,
+            256,
+            128,
+            2,
+            2
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_stage18_remote_seed101020_712a44e8d8d160d5",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101303,
+          "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_stage18_remote_seed101020_2b3b96d60053d802",
+          "traits": "{\"body_args\":[\"opus_stage18_scale_traits<opus_stage15_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits>, 64, 2>, 64, true>\"],\"body_func\":\"opus_stage18_pin_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[256,1],\"pad_m\":true,\"traits\":{\"args\":[\"64\",\"2\",\"true\"],\"name\":\"opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits\"},\"wide_output\":false}",
+          "geometry": [
+            "pin_agpr",
+            256,
+            256,
+            128,
+            2,
+            2
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_stage18_remote_seed101020_2b3b96d60053d802",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101311,
+          "kernelName": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_e9d6d72bb5bcd0aa",
+          "traits": "{\"body_args\":[\"CoTraits\"],\"body_func\":\"opus_gemm_bpreshuffle_wave_interleave_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[512,1],\"pad_m\":true,\"traits\":{\"args\":[\"192\",\"0\",\"8\",\"true\",\"1\",\"17\",\"4\"],\"name\":\"opus_gemm_bpreshuffle_wave_interleave_traits\"},\"wide_output\":true}",
+          "geometry": [
+            "wave_interleave",
+            192,
+            256,
+            256,
+            2,
+            4
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_e9d6d72bb5bcd0aa",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101312,
+          "kernelName": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_82f0d5eb1d22ee90",
+          "traits": "{\"body_args\":[\"opus_stage18_interleave_traits<CoTraits, true, false>\"],\"body_func\":\"opus_stage18_interleave_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[512,1],\"pad_m\":true,\"traits\":{\"args\":[\"192\",\"0\",\"8\",\"true\",\"1\",\"17\",\"4\"],\"name\":\"opus_gemm_bpreshuffle_wave_interleave_traits\"},\"wide_output\":true}",
+          "geometry": [
+            "wave_interleave",
+            192,
+            256,
+            256,
+            2,
+            4
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_82f0d5eb1d22ee90",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        },
+        {
+          "kid": 101313,
+          "kernelName": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_59b624baee5dc54a",
+          "traits": "{\"body_args\":[\"opus_stage18_interleave_traits<CoTraits, false, true>\"],\"body_func\":\"opus_stage18_interleave_body\",\"device_flags\":[\"-fgpu-flush-denormals-to-zero\",\"-fno-offload-uniform-block\",\"-fno-gpu-rdc\",\"-fvisibility=hidden\",\"-fvisibility-inlines-hidden\",\"-mllvm\",\"--amdgpu-kernarg-preload-count=32\",\"-mllvm\",\"--amdgpu-mfma-vgpr-form\",\"-mllvm\",\"--lsr-drop-solution=1\",\"-mllvm\",\"-amdgpu-early-inline-all=true\",\"-mllvm\",\"-amdgpu-function-calls=false\",\"-mllvm\",\"-enable-post-misched=0\"],\"fixed_k\":0,\"grid_layout\":\"n_m\",\"launch_bounds\":[512,1],\"pad_m\":true,\"traits\":{\"args\":[\"192\",\"0\",\"8\",\"true\",\"1\",\"17\",\"4\"],\"name\":\"opus_gemm_bpreshuffle_wave_interleave_traits\"},\"wide_output\":true}",
+          "geometry": [
+            "wave_interleave",
+            192,
+            256,
+            256,
+            2,
+            4
+          ],
+          "bounded": null,
+          "kind": "CO",
+          "is_co": true,
+          "bpreshuffle_co": "opus_gemm_gfx950_interleave_co_512x192x256x256_2x4_16x16x128_1x128x128_stage18_remote_seed47680_59b624baee5dc54a",
+          "full_name_aliases": [],
+          "roles": [
+            "new_kernel_body"
+          ],
+          "exact_opposite_kids": [],
+          "us": null,
+          "errRatio": null,
+          "correct": false
+        }
+      ]
+    }
+  ],
+  "screen_source": "/root/workspace/aiter-fyz-10-29-aiter/docs/gfx950_mxscale_20261029/local_20261029/stage18_remote_final84_20261030/final/screen",
+  "gpu_physical_id": 0,
+  "gpu_pci_bus": "0000:05:00.0"
+}

@@ -5,9 +5,11 @@
 
 The local sweep precedes missing original remote configurations. Candidates
 are deduplicated and numbered contiguously; pruning options preserves symbols.
+The CLI preserves existing sparse extensions after verifying the base identity.
 """
 
 import argparse
+import copy
 import csv
 import itertools
 import json
@@ -347,6 +349,62 @@ def validate_document(document, shapes):
     return dict(Counter(candidate["pipeline"] for candidate in records))
 
 
+def preserve_existing_extensions(document, existing):
+    """CLI-only merge after proving the generated base has identical identity.
+
+    Sparse COs are independently built configurations. Regenerating the base
+    must retain their complete entries, image names, host scopes and provenance,
+    without shifting the original JIT IDs or reusing them for new COs.
+    """
+    base = document["gfx950"]
+    base_ids = {entry["kid"] for entry in base}
+    records = existing["gfx950"]
+    ids = [entry["kid"] for entry in records]
+    if any(type(kid) is not int or kid < 0 for kid in ids) or len(ids) != len(set(ids)):
+        raise ValueError("Existing manifest contains invalid or duplicate CO IDs")
+    old_base = [entry for entry in records if entry["kid"] < 100000]
+    extensions = [entry for entry in records if entry["kid"] >= 100000]
+    if {entry["kid"] for entry in old_base} != base_ids or old_base != base:
+        raise ValueError(
+            "Generated base CO entries differ from the existing complete IDs/"
+            "traits/body/host configuration; use a fresh output for a different base"
+        )
+    if existing.get("defaults") != document["defaults"]:
+        raise ValueError("Existing defaults change the generated base CO identity")
+    old_flags = existing["device_flag_sets"]
+    if any(old_flags.get(name) != flags for name, flags in document["device_flag_sets"].items()):
+        raise ValueError("Existing device flags change the generated base CO identity")
+    suffixes = existing["image_suffixes"]
+    if set(suffixes) != {str(kid) for kid in ids}:
+        raise ValueError("Existing image suffixes do not exactly match declared CO IDs")
+    if any(suffixes[str(kid)] != document["image_suffixes"][str(kid)] for kid in base_ids):
+        raise ValueError("Existing image names differ from the generated base CO identity")
+    if (extensions or "jit_kid_base" in existing) and existing.get("jit_kid_base") != len(base):
+        raise ValueError("Sparse extensions require the preserved original JIT kid base")
+    symbols = set()
+    for entry in records:
+        suffix = suffixes[str(entry["kid"])]
+        if not isinstance(suffix, str) or entry["device_flags"] not in old_flags:
+            raise ValueError("Existing CO has an invalid image suffix or device flag set")
+        # Mirrors the complete gfx950 symbol's family, block/tile and waves;
+        # WMMA/scale dimensions are constant for this manifest family.
+        identity = (entry["pipeline"], entry["block_size"], tuple(entry["tile"]),
+                    tuple(entry["wave_layout"]), suffix)
+        if identity in symbols:
+            raise ValueError("Existing sparse COs duplicate a complete image/symbol")
+        symbols.add(identity)
+    merged = copy.deepcopy(document)
+    merged["gfx950"].extend(copy.deepcopy(extensions))
+    merged["image_suffixes"] = copy.deepcopy(suffixes)
+    merged["device_flag_sets"] = copy.deepcopy(old_flags)
+    # Preserve all provenance and dispatch metadata, including the frozen JIT
+    # base, integrated/experimental points, and any prior round snapshots.
+    for name, value in existing.items():
+        if name not in ("gfx950", "defaults", "device_flag_sets", "image_suffixes"):
+            merged[name] = copy.deepcopy(value)
+    return merged
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -372,6 +430,14 @@ def main():
         raise ValueError("Input K values must be positive multiples of 128")
     document = generate_document(k_values)
     counts = validate_document(document, shapes)
+    generated_count = len(document["gfx950"])
+    if not args.count_only and args.output.exists():
+        try:
+            existing = json.loads(args.output.read_text())
+            document = preserve_existing_extensions(document, existing)
+        except (ValueError, KeyError, TypeError) as error:
+            parser.error(f"Cannot preserve existing manifest: {error}")
+        counts = dict(Counter(candidate["pipeline"] for candidate in document["gfx950"]))
     print(
         json.dumps(
             {
@@ -379,6 +445,8 @@ def main():
                 "fixed_k_values": k_values,
                 "co_counts": counts,
                 "total_co": sum(counts.values()),
+                "generated_base_co": generated_count,
+                "preserved_sparse_co": len(document["gfx950"]) - generated_count,
                 "candidate_sources": document["_generation"]["candidate_sources"],
                 "local_co_range": [
                     min(candidate["kid"] for candidate in document["gfx950"]),

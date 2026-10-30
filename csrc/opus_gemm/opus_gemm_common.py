@@ -2899,6 +2899,7 @@ def _load_gfx950_co_kernels(path, require_image=True):
             "prefetch_b_vgpr": "b_vgpr_co",
             "prefetch_b_vgpr_overlap": "b_vgpr_overlap_co",
             "wave_interleave": "interleave_co",
+            "pingpong_lds": "m_repeat_co",
         }[entry["pipeline"]]
         name = "_".join(
             ("opus_gemm", "gfx950", family)
@@ -2935,7 +2936,7 @@ a8w8_blockscale_mxscale_gemm_bpreshuffle_kernels_list = {}
 
 # JIT IDs start after all declared CO candidates, including rejected COs.
 # Shape filtering and available images never change candidate IDs.
-_bpreshuffle_jit_kid_base = len(gfx950_co_kernels_declared)
+_bpreshuffle_jit_kid_base = 780  # Frozen original IDs; experimental CO IDs are sparse.
 _BPRESHUFFLE_JIT_FIXED_K = (768, 1024, 1536, 2048, 3072, 4096, 7168, 16384, 21504)
 _BPRESHUFFLE_JIT_CACHES = ((0, 0), (1, 17), (17, 1))
 
@@ -3422,6 +3423,14 @@ def kid_for_name(family: str, gfx: str, cu_num: int, name: str) -> int:
     return kid
 
 
+def compile_family_scope() -> str | None:
+    """Optional family filter for an isolated tuning build."""
+    family = os.environ.get("OPUS_COMPILE_FAMILY_ONLY", "").strip().lower()
+    if family and family not in KERNEL_REGISTRY:
+        raise ValueError(f"unregistered OPUS compile family {family!r}")
+    return family or None
+
+
 def default_compiled_keys(gfx: str, cu_num: int) -> set[KernelKey]:
     """Select the default compile set from the current CU table."""
     defaults = DEFAULT_COMPILED_KIDS_BY_NAMESPACE.get((gfx, cu_num), ())
@@ -3436,7 +3445,8 @@ def default_compiled_keys(gfx: str, cu_num: int) -> set[KernelKey]:
             for kid in get_registry("a8w8_blockscale_bpreshuffle", gfx, cu_num)
             if kid == 0
         )
-    return keys
+    scope = compile_family_scope()
+    return {key for key in keys if scope is None or key.family == scope}
 
 
 def _in_group(name, family, instance):

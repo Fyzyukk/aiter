@@ -35,6 +35,7 @@ from opus_gemm_common import (
     a16w16_flatmm_splitk_kernels_list,
     a16w16_kernels_list,
     a16w16_mono_tile_kernels_list,
+    compile_family_scope,
     default_compiled_keys,
     get_registry,
     gfx942_a8w8_kernels_list,
@@ -1382,10 +1383,12 @@ if __name__ == "__main__":
                 out.append(path)
         return out
 
+    family_scope = compile_family_scope()
     available = {
         KernelKey(family, gfx, cu, kid): instance
         for gfx, cu in targets
         for family, arches in KERNEL_REGISTRY.items()
+        if family_scope is None or family == family_scope
         if gfx in arches
         for kid, instance in get_registry(family, gfx, cu).items()
     }

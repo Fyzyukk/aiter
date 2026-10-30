@@ -913,7 +913,9 @@ def _ensure_kids_compiled(candidate_kids, *, family="a16w16", gfx=None, cu_num=N
         True if a rebuild was triggered, False if every
         required kid was already compiled.
     """
-    from opus_gemm_common import KERNEL_REGISTRY, KernelKey, default_compiled_keys
+    from opus_gemm_common import (
+        KERNEL_REGISTRY, KernelKey, compile_family_scope, default_compiled_keys,
+    )
 
     from aiter.jit import core as _jit_core
     from aiter.jit.utils.chip_info import get_build_targets
@@ -921,6 +923,9 @@ def _ensure_kids_compiled(candidate_kids, *, family="a16w16", gfx=None, cu_num=N
     from aiter.jit.utils.jit_cache import compiled_kids_are_current
 
     candidate_kids = frozenset(int(k) for k in candidate_kids)
+    family_scope = compile_family_scope()
+    if family_scope is not None and family != family_scope:
+        raise ValueError(f"requested family {family!r} is outside build scope {family_scope!r}")
     if gfx is None or cu_num is None:
         device_gfx, device_cu = _device_arch_and_cu(torch.cuda.current_device())
         gfx = device_gfx if gfx is None else gfx

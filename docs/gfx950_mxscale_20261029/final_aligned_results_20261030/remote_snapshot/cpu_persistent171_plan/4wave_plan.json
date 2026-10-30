@@ -1,0 +1,1493 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-10-30T09:08:01Z",
+  "CPU_only": true,
+  "GPU_executed": false,
+  "torch_imported": false,
+  "new_GPU_JIT_or_CO_compiled": false,
+  "scope": {
+    "persistent_shapes": 171,
+    "baseline": "Matching fixed gfx950/256/128x128 CSV only",
+    "main_groups_shapes": 108,
+    "main_groups_current_4wave_shapes": 72
+  },
+  "group_counts": [
+    {
+      "N": 7168,
+      "K": 16384,
+      "persistent_shapes": 28,
+      "current_4wave_shapes": 19
+    },
+    {
+      "N": 7168,
+      "K": 7168,
+      "persistent_shapes": 28,
+      "current_4wave_shapes": 19
+    },
+    {
+      "N": 7168,
+      "K": 4096,
+      "persistent_shapes": 26,
+      "current_4wave_shapes": 20
+    },
+    {
+      "N": 6144,
+      "K": 7168,
+      "persistent_shapes": 26,
+      "current_4wave_shapes": 14
+    }
+  ],
+  "representatives": [
+    {
+      "representative_id": "R1",
+      "shape": [
+        1792,
+        7168,
+        16384
+      ],
+      "gfx": "gfx950",
+      "cu_num": 256,
+      "w_scale_block": "128x128",
+      "kernelId": 389,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_reset0_u2_gm0_wide_nt0",
+      "current_us": 206.8056,
+      "historical_opus_us": 202.8869,
+      "gap_pct": 15.515204528430893,
+      "measurement_round": "Top4_11_2_fast",
+      "fixed_csv_baseline": {
+        "libtype": "flydsl",
+        "kernelId": "mxfp8",
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_4x4",
+        "us": 179.0289
+      },
+      "first_round": true,
+      "geometry": {
+        "BM": 256,
+        "BN": 256,
+        "BK": 128,
+        "wave_layout": [
+          2,
+          2
+        ],
+        "waves": 4,
+        "grid_m": 7,
+        "grid_n": 28,
+        "workgroups": 196,
+        "workgroups_per_cu": 0.765625,
+        "padded_M_rows": 0,
+        "scale_groups": 128,
+        "current_scale_panel": 64,
+        "current_refill_boundaries": [
+          64
+        ]
+      },
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      },
+      "purpose": "K16384/P64: one refill; 196 workgroups below 256 CUs; separate schedule effects from launch geometry"
+    },
+    {
+      "representative_id": "R2",
+      "shape": [
+        6144,
+        7168,
+        16384
+      ],
+      "gfx": "gfx950",
+      "cu_num": 256,
+      "w_scale_block": "128x128",
+      "kernelId": 388,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_k0_reset0_u2_gm0_wide_nt0",
+      "current_us": 606.7227,
+      "historical_opus_us": 569.7295,
+      "gap_pct": 13.445765155297273,
+      "measurement_round": "Top4_11_2_fast",
+      "fixed_csv_baseline": {
+        "libtype": "flydsl",
+        "kernelId": "mxfp8",
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_2x8",
+        "us": 534.813
+      },
+      "first_round": true,
+      "geometry": {
+        "BM": 256,
+        "BN": 256,
+        "BK": 128,
+        "wave_layout": [
+          2,
+          2
+        ],
+        "waves": 4,
+        "grid_m": 24,
+        "grid_n": 28,
+        "workgroups": 672,
+        "workgroups_per_cu": 2.625,
+        "padded_M_rows": 0,
+        "scale_groups": 128,
+        "current_scale_panel": 32,
+        "current_refill_boundaries": [
+          32,
+          64,
+          96
+        ]
+      },
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      },
+      "purpose": "K16384/P32: three refill handoffs; 672 workgroups; same pad_m=false/wide path as proposed P32 instance"
+    },
+    {
+      "representative_id": "R3",
+      "shape": [
+        32768,
+        7168,
+        7168
+      ],
+      "gfx": "gfx950",
+      "cu_num": 256,
+      "w_scale_block": "128x128",
+      "kernelId": 390,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp16_u2",
+      "current_us": 1305.3985,
+      "historical_opus_us": 1273.2465,
+      "gap_pct": 8.13369428745454,
+      "measurement_round": "Top8_101_5_retained",
+      "fixed_csv_baseline": {
+        "libtype": "flydsl",
+        "kernelId": "mxfp8",
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_3x4",
+        "us": 1207.2079
+      },
+      "first_round": true,
+      "geometry": {
+        "BM": 256,
+        "BN": 256,
+        "BK": 128,
+        "wave_layout": [
+          2,
+          2
+        ],
+        "waves": 4,
+        "grid_m": 128,
+        "grid_n": 28,
+        "workgroups": 3584,
+        "workgroups_per_cu": 14.0,
+        "padded_M_rows": 0,
+        "scale_groups": 56,
+        "current_scale_panel": 16,
+        "current_refill_boundaries": [
+          16,
+          32,
+          48
+        ]
+      },
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      },
+      "purpose": "K7168: current P16 does three refills; test P32 base/new pair with one refill, keeping current winner as reference"
+    },
+    {
+      "representative_id": "R4",
+      "shape": [
+        20480,
+        7168,
+        4096
+      ],
+      "gfx": "gfx950",
+      "cu_num": 256,
+      "w_scale_block": "128x128",
+      "kernelId": 394,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp32_u2",
+      "current_us": 499.165,
+      "historical_opus_us": 496.8726,
+      "gap_pct": 8.203375046144657,
+      "measurement_round": "Top8_101_5_retained",
+      "fixed_csv_baseline": {
+        "libtype": "flydsl",
+        "kernelId": "mxfp8",
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_4x8",
+        "us": 461.3211
+      },
+      "first_round": true,
+      "geometry": {
+        "BM": 256,
+        "BN": 256,
+        "BK": 128,
+        "wave_layout": [
+          2,
+          2
+        ],
+        "waves": 4,
+        "grid_m": 80,
+        "grid_n": 28,
+        "workgroups": 2240,
+        "workgroups_per_cu": 8.75,
+        "padded_M_rows": 0,
+        "scale_groups": 32,
+        "current_scale_panel": 32,
+        "current_refill_boundaries": []
+      },
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      },
+      "purpose": "K4096/P32 has no refill; a negative control for added prefetch bookkeeping and branch overhead"
+    },
+    {
+      "representative_id": "R5",
+      "shape": [
+        1856,
+        7168,
+        7168
+      ],
+      "gfx": "gfx950",
+      "cu_num": 256,
+      "w_scale_block": "128x128",
+      "kernelId": 1,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp32_k0_reset0_u2_gm0_wide_nt0",
+      "current_us": 96.0749,
+      "historical_opus_us": 96.447,
+      "gap_pct": 8.551726943114657,
+      "measurement_round": "Top8_101_5_retained",
+      "fixed_csv_baseline": {
+        "libtype": "flydsl",
+        "kernelId": "mxfp8",
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_4x4",
+        "us": 88.5061
+      },
+      "first_round": false,
+      "geometry": {
+        "BM": 256,
+        "BN": 256,
+        "BK": 128,
+        "wave_layout": [
+          2,
+          2
+        ],
+        "waves": 4,
+        "grid_m": 8,
+        "grid_n": 28,
+        "workgroups": 224,
+        "workgroups_per_cu": 0.875,
+        "padded_M_rows": 192,
+        "scale_groups": 56,
+        "current_scale_panel": 32,
+        "current_refill_boundaries": [
+          32
+        ]
+      },
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      },
+      "purpose": "Partial M tile (1856): keep existing padded-P32/P64 controls; new unpadded instances are illegal here"
+    },
+    {
+      "representative_id": "R6",
+      "shape": [
+        32768,
+        6144,
+        7168
+      ],
+      "gfx": "gfx950",
+      "cu_num": 256,
+      "w_scale_block": "128x128",
+      "kernelId": 389,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_reset0_u2_gm0_wide_nt0",
+      "current_us": 1125.8822,
+      "historical_opus_us": 1103.4214,
+      "gap_pct": 7.768613615605613,
+      "measurement_round": "Top8_101_5_retained",
+      "fixed_csv_baseline": {
+        "libtype": "flydsl",
+        "kernelId": "mxfp8",
+        "kernelName": "flydsl_mxfp8_8w_256x256x128_F8_F8_B16_1x4",
+        "us": 1044.7218
+      },
+      "first_round": false,
+      "geometry": {
+        "BM": 256,
+        "BN": 256,
+        "BK": 128,
+        "wave_layout": [
+          2,
+          2
+        ],
+        "waves": 4,
+        "grid_m": 128,
+        "grid_n": 24,
+        "workgroups": 3072,
+        "workgroups_per_cu": 12.0,
+        "padded_M_rows": 0,
+        "scale_groups": 56,
+        "current_scale_panel": 64,
+        "current_refill_boundaries": []
+      },
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      },
+      "purpose": "N6144/K7168 expansion case; current P64 has no refill, P32 pair would isolate one refill"
+    }
+  ],
+  "variants": [
+    {
+      "variant_id": "early_scale_global_prefetch_after_c00",
+      "status": "design_only",
+      "first_round": true,
+      "new_schedule_strategy_count": 1,
+      "new_CO_instances": [
+        {
+          "logical_name": "scale_pf1_after_c00_P32",
+          "status": "design_only",
+          "base_kernelId": 388,
+          "base_kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_k0_reset0_u2_gm0_wide_nt0",
+          "new_kernelId": null,
+          "new_kernelName": null,
+          "scale_panel": 32,
+          "pad_m": false,
+          "wide_output": true,
+          "group_m": 0,
+          "loop_unroll": 2,
+          "single_factor": "Only global SFA/SFB issue timing moves one iteration before refill; arithmetic, MFMA ordering, LDS publication and waits unchanged",
+          "requires_implementation": true,
+          "requires_future_isolated_CO_build": true,
+          "GPU_build_performed": false
+        },
+        {
+          "logical_name": "scale_pf1_after_c00_P64",
+          "status": "design_only",
+          "base_kernelId": 389,
+          "base_kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_reset0_u2_gm0_wide_nt0",
+          "new_kernelId": null,
+          "new_kernelName": null,
+          "scale_panel": 64,
+          "pad_m": false,
+          "wide_output": true,
+          "group_m": 0,
+          "loop_unroll": 2,
+          "single_factor": "Only global SFA/SFB issue timing moves one iteration before refill; arithmetic, MFMA ordering, LDS publication and waits unchanged",
+          "requires_implementation": true,
+          "requires_future_isolated_CO_build": true,
+          "GPU_build_performed": false
+        }
+      ],
+      "insert_after": {
+        "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+        "line": 829
+      },
+      "issue_condition": "R=k_tile+2; (R & (Panel-1))==0 && R<loops",
+      "issue_design": [
+        "At the end of C00 for k_tile=R-2, call the existing global load_sfa_panel(R) into the already-consumed raw array.",
+        "Load SFB into a distinct pending raw word using the existing wave/lane guards. Do not publish either panel to LDS at the early issue point.",
+        "Track pending panel begin/valid state; at refill(R), use its raw values. Keep the lgkmcnt(0)+barrier before overwrite, vmcnt(0) before publish, and lgkmcnt(0)+barrier after publication.",
+        "Retain a boundary-only fallback for an unissued panel and the same tail refill. Never issue R==loops. Do not change the matrix-prefetch sequence or wait counter thresholds."
+      ],
+      "resource_risks": [
+        "Longer raw scale liveness can raise VGPR/SGPR pressure and create spills; P32 needs 8 raw SFA dwords per lane and P64 16, plus pending SFB/state.",
+        "Early loads compete with matrix VM requests. Their earlier issue may help, have no effect, or worsen latency.",
+        "For K4096/P32 and K7168/P64 there is no refill; added runtime bookkeeping can only be a control cost, not a scale-refill benefit."
+      ],
+      "safety_invariants": [
+        "Old panel stays in LDS through all old-scale reads; first prefetch only touches raw registers.",
+        "The exact original two refill barriers and both wait families remain.",
+        "Preserve raw E8M0 byte order, K128-to-four-K32 broadcast, partial-M/lane masks, K loop count, all MFMA and FP32 accumulation ordering.",
+        "Preserve C AGPR pin ranges, BF16 output conversion, output LDS reuse and tile-bounded buffer addressing."
+      ],
+      "decision_rule": "Proceed only after CPU lifetime/edge-case model and future isolated metadata/ISA review; then compare each new instance to its exact base on a shared fixed rotation and matched measurement setting. No claimed expected speedup."
+    },
+    {
+      "variant_id": "legacy_GroupM4_or_8_control",
+      "status": "existing_image_not_registered",
+      "first_round": false,
+      "images": [
+        {
+          "group_m": 0,
+          "kernelId": null,
+          "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_u2_wide",
+          "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_u2_wide.co",
+          "sha256": "cc4fad694470b340774b33f80015d251424473c080e8931525001b2418dbb7a1",
+          "status": "existing_image_not_registered",
+          "first_round": false,
+          "metadata": {
+            "vgpr_count": 456,
+            "sgpr_count": 68,
+            "agpr_count": 212,
+            "vgpr_spill_count": 0,
+            "sgpr_spill_count": 0,
+            "private_segment_fixed_size": 0,
+            "group_segment_fixed_size": 152064
+          },
+          "static_opcode_counts": {
+            "s_waitcnt": 68,
+            "buffer_load_dwordx4": 93,
+            "buffer_load_ubyte": 4,
+            "s_barrier": 16,
+            "ds_read2_b32": 2,
+            "ds_read_b128": 192,
+            "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+            "ds_read_b64": 8
+          }
+        },
+        {
+          "group_m": 4,
+          "kernelId": null,
+          "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm4_u2_wide",
+          "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm4_u2_wide.co",
+          "sha256": "7ba8203480b11f0c829b62360975a44323cbfbd663760ba35e89497e9768c62a",
+          "status": "existing_image_not_registered",
+          "first_round": false,
+          "metadata": {
+            "vgpr_count": 456,
+            "sgpr_count": 68,
+            "agpr_count": 212,
+            "vgpr_spill_count": 0,
+            "sgpr_spill_count": 0,
+            "private_segment_fixed_size": 0,
+            "group_segment_fixed_size": 152064
+          },
+          "static_opcode_counts": {
+            "s_waitcnt": 68,
+            "buffer_load_dwordx4": 93,
+            "buffer_load_ubyte": 4,
+            "s_barrier": 16,
+            "ds_read2_b32": 2,
+            "ds_read_b128": 192,
+            "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+            "ds_read_b64": 8
+          }
+        },
+        {
+          "group_m": 8,
+          "kernelId": null,
+          "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm8_u2_wide",
+          "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm8_u2_wide.co",
+          "sha256": "486ead5dc2e0f970b3c9096274e1069db63a077430bc2104cf34e3ed33a78f6b",
+          "status": "existing_image_not_registered",
+          "first_round": false,
+          "metadata": {
+            "vgpr_count": 456,
+            "sgpr_count": 68,
+            "agpr_count": 212,
+            "vgpr_spill_count": 0,
+            "sgpr_spill_count": 0,
+            "private_segment_fixed_size": 0,
+            "group_segment_fixed_size": 152064
+          },
+          "static_opcode_counts": {
+            "s_waitcnt": 68,
+            "buffer_load_dwordx4": 93,
+            "buffer_load_ubyte": 4,
+            "s_barrier": 16,
+            "ds_read2_b32": 2,
+            "ds_read_b128": 192,
+            "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+            "ds_read_b64": 8
+          }
+        }
+      ],
+      "requires_implementation": false,
+      "requires_isolated_registry_and_launcher_integration": true,
+      "design": "Compare matched legacy gm0/gm4/gm8 images at exactly the same P64/pad=false/wide/unroll2 configuration. GroupM only changes mapping, not grid cardinality.",
+      "candidate_limit": 3,
+      "warning": "Current registry/build metadata only expose GroupM0. Archive images have SGPR68 versus current389 SGPR104. Equal MFMA/wait counts do not prove identical source generation. Do not compare old gm4 directly to current389 as a single-factor result.",
+      "prerequisites": [
+        "Prove matching 96-byte kernarg ABI, loader address and LDS/resource limits, receipt/image identity and exact launch symbols in an isolated package.",
+        "Enumerate GroupM mapping for partial final groups; no duplicate or missing logical output tile.",
+        "No new launch ID is assigned by this plan. Do not add these images to the current source/SO or the 14-case frozen bundle."
+      ]
+    },
+    {
+      "variant_id": "deferred_K128_single_slot_P32",
+      "status": "design_only",
+      "first_round": false,
+      "requires_implementation": true,
+      "design": "If the fixed-geometry prefetch experiment has no stable gain, separately redesign matrix LDS to one K128 slot. This requires a new staged publication and operand-lifetime proof; it is not a wait-counter tweak.",
+      "static_LDS_estimate_bytes": 76032,
+      "calculation": "Current matrix135168/2 + SFA256*32 + SFB2*32*4 = 76032",
+      "limitation": "76032 is below80KiB, so LDS alone would permit two allocations in160KiB. Existing register/pin limits may still prevent two resident workgroups; no occupancy improvement is promised.",
+      "alternative": "A smaller BM is a separate structural proposal. BM128 with existing two slots is approximately110080 bytes at P64, still above80KiB; its value would be smaller accumulator footprint and more grid tiles, not automatic LDS residency.",
+      "prerequisite": "Separate design and isolated compilation authorization after the first bounded experiment; do not combine this with scale prefetch in the initial variants."
+    }
+  ],
+  "source_refs": [
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 30,
+      "purpose": "4 waves, BM256/BN256/BK128, two LDS matrix stages and E_M/E_N=4"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 99,
+      "purpose": "SFA/SFB panel sizes and LDS total"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 119,
+      "purpose": "Panel16/32/64 derived LDS sizes"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 147,
+      "purpose": "GROUPED_M trait and accepted values 0/4/8/16"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 14,
+      "purpose": "Fixed operand and accumulator AGPR ranges"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 403,
+      "purpose": "GroupM workgroup remapping and legacy 2x2 swap"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 453,
+      "purpose": "64-bit C base with tile-bounded 32-bit buffer window"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 496,
+      "purpose": "Matrix LDS also reused by output epilogue"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 600,
+      "purpose": "16 producer-wave matrix requests to ping-pong LDS"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 635,
+      "purpose": "Reusable raw SFA panel array"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 638,
+      "purpose": "Global SFA panel loads and partial-M guard"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 658,
+      "purpose": "SFA 4x4 byte transpose and LDS publication"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 704,
+      "purpose": "Panel refill: two synchronized LDS handoffs, VM wait, no extra LDS panel"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 727,
+      "purpose": "K/128 loop count"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 753,
+      "purpose": "Prologue waits and initial stage"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 779,
+      "purpose": "Unroll2 main loop and refill(k_tile+1)"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 790,
+      "purpose": "Read old panel scale for k_tile+1 before proposed issue point"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 793,
+      "purpose": "Critical vmcnt0/lgkmcnt0 and barrier before old LDS slot overwrite"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 829,
+      "purpose": "Proposed early global scale issue point: after C00 and before C10"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 844,
+      "purpose": "Next SFB scale read still uses existing LDS; global raw prefetch must not overwrite it"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 879,
+      "purpose": "Next operand fragment loads are staggered with current MFMA use"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 988,
+      "purpose": "Final staged fragments pinned before stage flip"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 998,
+      "purpose": "Tail refill must consume the same pending panel"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh",
+      "line": 1147,
+      "purpose": "Final K tile: no out-of-range next panel issue"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/gen_co/build_co.py",
+      "line": 301,
+      "purpose": "160KiB LDS ceiling"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/gen_co/build_co.py",
+      "line": 313,
+      "purpose": "Pinned AGPR LDS read/MFMA verification"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/gen_co/build_co.py",
+      "line": 353,
+      "purpose": "Spill counts and scratch size are distinct metadata costs"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/gen_co/co_kernels_gfx950.json",
+      "line": 1,
+      "purpose": "Current 12 registered GroupM0 pin_agpr CO definitions"
+    }
+  ],
+  "current_registered_CO_resources": [
+    {
+      "kernelId": 0,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp16_k0_reset0_u2_gm0_wide_nt0",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp16_k0_reset0_u2_gm0_wide_nt0.co",
+      "sha256": "b2aaed53adb796e799093856dd7dddfbec2e05a7c041adc034a2074cc778e70a",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 16,
+      "pad_m": true,
+      "wide_output": true,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 468,
+        "sgpr_count": 106,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 139392,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3247,
+      "static_opcode_counts": {
+        "s_waitcnt": 62,
+        "buffer_load_dwordx4": 83,
+        "buffer_load_ubyte": 3,
+        "ds_write2_b32": 6,
+        "ds_write_b32": 3,
+        "s_barrier": 14,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 1,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp32_k0_reset0_u2_gm0_wide_nt0",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp32_k0_reset0_u2_gm0_wide_nt0.co",
+      "sha256": "0fb99db59957980c3b9468bd6b7351ce881ed980739dda39a820773bd4fba3ce",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 32,
+      "pad_m": true,
+      "wide_output": true,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 468,
+        "sgpr_count": 106,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 3,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 143616,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3494,
+      "static_opcode_counts": {
+        "s_waitcnt": 68,
+        "buffer_load_dwordx4": 87,
+        "buffer_load_ubyte": 4,
+        "ds_write_b32": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_writelane_b32": 3,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b32": 14,
+        "v_readlane_b32": 3,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 2,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp64_k0_reset0_u2_gm0_wide_nt0",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp64_k0_reset0_u2_gm0_wide_nt0.co",
+      "sha256": "03f9cad4d1235157148eb349d598a908deb23eda91594f33c500f4bbc0b54ef1",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 64,
+      "pad_m": true,
+      "wide_output": true,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 468,
+        "sgpr_count": 106,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 4,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 152064,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3772,
+      "static_opcode_counts": {
+        "s_waitcnt": 70,
+        "buffer_load_dwordx4": 93,
+        "buffer_load_ubyte": 4,
+        "ds_write2_b32": 26,
+        "ds_write_b32": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_writelane_b32": 4,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "v_readlane_b32": 4,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 387,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp16_k0_reset0_u2_gm0_wide_nt0",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp16_k0_reset0_u2_gm0_wide_nt0.co",
+      "sha256": "26c46e682e1b08708f2a4ecfd6541558daf326c2c9b9f69a4661caefc32d71d5",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 16,
+      "pad_m": false,
+      "wide_output": true,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 460,
+        "sgpr_count": 99,
+        "agpr_count": 216,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 139392,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 2911,
+      "static_opcode_counts": {
+        "s_waitcnt": 62,
+        "buffer_load_dwordx4": 83,
+        "buffer_load_ubyte": 3,
+        "ds_write2_b32": 6,
+        "ds_write_b32": 3,
+        "s_barrier": 14,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 388,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_k0_reset0_u2_gm0_wide_nt0",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_k0_reset0_u2_gm0_wide_nt0.co",
+      "sha256": "2ff9843455e2a1a707bce79cfc78f1e734c1b6fb9f439fd381fdc1fcbca727e1",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 32,
+      "pad_m": false,
+      "wide_output": true,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 456,
+        "sgpr_count": 103,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 143616,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3110,
+      "static_opcode_counts": {
+        "s_waitcnt": 66,
+        "buffer_load_dwordx4": 87,
+        "buffer_load_ubyte": 4,
+        "ds_write_b32": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b32": 14,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 389,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_reset0_u2_gm0_wide_nt0",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_reset0_u2_gm0_wide_nt0.co",
+      "sha256": "bfd6f7cd7ed440226f1fa5e8f219e796e8f05cb3b016a7a3316ba431519daecb",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 64,
+      "pad_m": false,
+      "wide_output": true,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 456,
+        "sgpr_count": 104,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 152064,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3361,
+      "static_opcode_counts": {
+        "s_waitcnt": 68,
+        "buffer_load_dwordx4": 93,
+        "buffer_load_ubyte": 4,
+        "ds_write2_b32": 26,
+        "ds_write_b32": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 390,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp16_u2",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp16_u2.co",
+      "sha256": "fde1593c6fc6de494da6246a355ef44ff4d9c868cbee5ac288f813d28ba9288d",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 16,
+      "pad_m": false,
+      "wide_output": false,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 460,
+        "sgpr_count": 98,
+        "agpr_count": 216,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 139392,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 2913,
+      "static_opcode_counts": {
+        "s_waitcnt": 62,
+        "buffer_load_dwordx4": 83,
+        "buffer_load_ubyte": 3,
+        "ds_write2_b32": 6,
+        "ds_write_b32": 3,
+        "s_barrier": 14,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 391,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_u2",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_u2.co",
+      "sha256": "135dadfbdd62e8123df1713722b1f78c483c80dee353b5a9c1d9e01469bd8919",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 32,
+      "pad_m": false,
+      "wide_output": false,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 456,
+        "sgpr_count": 102,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 143616,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3112,
+      "static_opcode_counts": {
+        "s_waitcnt": 66,
+        "buffer_load_dwordx4": 87,
+        "buffer_load_ubyte": 4,
+        "ds_write_b32": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b32": 14,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 392,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_u2",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_u2.co",
+      "sha256": "f29420c4b7590e4e47e11660e8043ef94ed1760fb5b4039a9fd610104f43b412",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 64,
+      "pad_m": false,
+      "wide_output": false,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 456,
+        "sgpr_count": 102,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 152064,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3363,
+      "static_opcode_counts": {
+        "s_waitcnt": 68,
+        "buffer_load_dwordx4": 93,
+        "buffer_load_ubyte": 4,
+        "ds_write2_b32": 26,
+        "ds_write_b32": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 393,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp16_u2",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp16_u2.co",
+      "sha256": "5f5ee4b1c091dcc47b58e4d43cdceb1ab7859f9e712004699dd1c83b965eca9f",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 16,
+      "pad_m": true,
+      "wide_output": false,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 468,
+        "sgpr_count": 106,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 139392,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3249,
+      "static_opcode_counts": {
+        "s_waitcnt": 62,
+        "buffer_load_dwordx4": 83,
+        "buffer_load_ubyte": 3,
+        "ds_write2_b32": 6,
+        "ds_write_b32": 3,
+        "s_barrier": 14,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 394,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp32_u2",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp32_u2.co",
+      "sha256": "7404d752294341375af7062a175c84f291de9e1c2f8fe886ce7dd49320235112",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 32,
+      "pad_m": true,
+      "wide_output": false,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 468,
+        "sgpr_count": 106,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 3,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 143616,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3496,
+      "static_opcode_counts": {
+        "s_waitcnt": 68,
+        "buffer_load_dwordx4": 87,
+        "buffer_load_ubyte": 4,
+        "ds_write_b32": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_writelane_b32": 3,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "ds_write2_b32": 14,
+        "v_readlane_b32": 3,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    },
+    {
+      "kernelId": 395,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp64_u2",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp64_u2.co",
+      "sha256": "a85e562dbe3c124ac16fc5e56e5b19a05c0041e6711f0a2b5c5b66665cba27f0",
+      "registered": true,
+      "status": "ready",
+      "scale_panel": 64,
+      "pad_m": true,
+      "wide_output": false,
+      "group_m": 0,
+      "metadata": {
+        "vgpr_count": 468,
+        "sgpr_count": 106,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 4,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 152064,
+        "wavefront_size": 64,
+        "max_flat_workgroup_size": 256
+      },
+      "static_instruction_count": 3774,
+      "static_opcode_counts": {
+        "s_waitcnt": 70,
+        "buffer_load_dwordx4": 93,
+        "buffer_load_ubyte": 4,
+        "ds_write2_b32": 26,
+        "ds_write_b32": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_writelane_b32": 4,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8,
+        "v_readlane_b32": 4,
+        "ds_write2_b64": 16,
+        "buffer_store_dwordx4": 32,
+        "ds_write_b64": 32
+      }
+    }
+  ],
+  "legacy_GroupM_resources": [
+    {
+      "group_m": 0,
+      "kernelId": null,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_u2_wide",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_u2_wide.co",
+      "sha256": "cc4fad694470b340774b33f80015d251424473c080e8931525001b2418dbb7a1",
+      "status": "existing_image_not_registered",
+      "first_round": false,
+      "metadata": {
+        "vgpr_count": 456,
+        "sgpr_count": 68,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 152064
+      },
+      "static_opcode_counts": {
+        "s_waitcnt": 68,
+        "buffer_load_dwordx4": 93,
+        "buffer_load_ubyte": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8
+      }
+    },
+    {
+      "group_m": 4,
+      "kernelId": null,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm4_u2_wide",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm4_u2_wide.co",
+      "sha256": "7ba8203480b11f0c829b62360975a44323cbfbd663760ba35e89497e9768c62a",
+      "status": "existing_image_not_registered",
+      "first_round": false,
+      "metadata": {
+        "vgpr_count": 456,
+        "sgpr_count": 68,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 152064
+      },
+      "static_opcode_counts": {
+        "s_waitcnt": 68,
+        "buffer_load_dwordx4": 93,
+        "buffer_load_ubyte": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8
+      }
+    },
+    {
+      "group_m": 8,
+      "kernelId": null,
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm8_u2_wide",
+      "image": "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm8_u2_wide.co",
+      "sha256": "486ead5dc2e0f970b3c9096274e1069db63a077430bc2104cf34e3ed33a78f6b",
+      "status": "existing_image_not_registered",
+      "first_round": false,
+      "metadata": {
+        "vgpr_count": 456,
+        "sgpr_count": 68,
+        "agpr_count": 212,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "group_segment_fixed_size": 152064
+      },
+      "static_opcode_counts": {
+        "s_waitcnt": 68,
+        "buffer_load_dwordx4": 93,
+        "buffer_load_ubyte": 4,
+        "s_barrier": 16,
+        "ds_read2_b32": 2,
+        "ds_read_b128": 192,
+        "v_mfma_scale_f32_16x16x128_f8f6f4": 320,
+        "ds_read_b64": 8
+      }
+    }
+  ],
+  "isa_samples": {
+    "389_wait_near_mfma": [
+      "v_add_u32_e32 v206, s22, v224                              // 0000000029AC: 699DC016",
+      "ds_read_b64 v[206:207], v206                               // 0000000029B0: D8EC0000 CE0000CE",
+      "v_mfma_scale_f32_16x16x128_f8f6f4 v[172:175], a[64:71], a[8:15], v[172:175], v214, v212 op_sel:[0,1,0] op_sel_hi:[0,0,0]// 0000000029B8: D3AC1000 0003A9D6 D3AD08AC 1EB21140",
+      "s_waitcnt vmcnt(0) lgkmcnt(0)                              // 0000000029C8: BF8C0070",
+      "s_mov_b32 m0, s74                                          // 0000000029CC: BEFC004A",
+      "v_mfma_scale_f32_16x16x128_f8f6f4 v[168:171], a[72:79], a[8:15], v[168:171], v214, v212 op_sel:[0,1,0] op_sel_hi:[0,0,0]// 0000000029D0: D3AC1000 0003A9D6 D3AD08A8 1EA21148",
+      "v_mfma_scale_f32_16x16x128_f8f6f4 v[164:167], a[80:87], a[8:15], v[164:167], v214, v212 op_sel:[0,1,0] op_sel_hi:[0,0,0]// 0000000029E0: D3AC1000 0003A9D6 D3AD08A4 1E921150"
+    ]
+  },
+  "static_findings": [
+    "All12 basic4wave CO configurations are currently registered/ready; existing representative geometry is present.",
+    "P16/P32/P64 LDS139392/143616/152064 all exceed81920, so changing the scale panel alone cannot permit2WG/CU from LDS capacity.",
+    "Padded P32/P64 CO metadata report3/4 SGPR spills and zero private segment; ISA P32 shows3 v_writelane/3 v_readlane. This is not evidence of HBM scratch traffic or a measured stall bottleneck.",
+    "Modern389 ELF metadata and build_info agree: VGPR456, SGPR104, AGPR212, LDS152064, no spills/private segment.",
+    "Modern389 static ISA has320 scaled MFMA,68 waitcnt,16 barrier instructions; these are static text counts including prologue/tail/unrolling, not dynamic counts or stall cycles."
+  ],
+  "limits_of_evidence": [
+    "No device timings were generated. CSV uses mixed retained101/5 and quick11/2 settings and establishes gaps, not hardware causes.",
+    "Resource metadata proves declared allocations and static spills, not actual occupancy, cache hits, memory bandwidth or MFMA utilization.",
+    "More/fewer refills or waits cannot establish their performance contribution without matched measurements.",
+    "Archive symbol names and matching opcode totals do not prove equivalence to the modern CO source generation."
+  ],
+  "first_round": {
+    "status": "design_only_not_runnable",
+    "maximum_shapes": 4,
+    "new_schedule_strategies": 1,
+    "maximum_new_CO_instances": 2,
+    "candidates": [
+      {
+        "shape": [
+          1792,
+          7168,
+          16384
+        ],
+        "current_reference_kernelId": 389,
+        "existing_base_kernelIds": [
+          389
+        ],
+        "design_instance_names": [
+          "scale_pf1_after_c00_P64"
+        ]
+      },
+      {
+        "shape": [
+          6144,
+          7168,
+          16384
+        ],
+        "current_reference_kernelId": 388,
+        "existing_base_kernelIds": [
+          388
+        ],
+        "design_instance_names": [
+          "scale_pf1_after_c00_P32"
+        ]
+      },
+      {
+        "shape": [
+          32768,
+          7168,
+          7168
+        ],
+        "current_reference_kernelId": 390,
+        "existing_base_kernelIds": [
+          388
+        ],
+        "design_instance_names": [
+          "scale_pf1_after_c00_P32"
+        ]
+      },
+      {
+        "shape": [
+          20480,
+          7168,
+          4096
+        ],
+        "current_reference_kernelId": 394,
+        "existing_base_kernelIds": [
+          388
+        ],
+        "design_instance_names": [
+          "scale_pf1_after_c00_P32"
+        ]
+      }
+    ],
+    "maximum_shape_configuration_pairs": 10,
+    "batches": 1,
+    "maximum_result_rows": 10,
+    "iters": 101,
+    "warmup": 5,
+    "seed": 0,
+    "rotation": "Shared fixed count per shape and matched setting for current/reference/new candidates",
+    "base_Opus_calls_excluding_probes": 1060,
+    "FlyDSL_GPU_calls": 0,
+    "expand_to_171": false,
+    "gates": [
+      "Implement only in an isolated experimental copy after authorization. Preserve current source/CO and14-case frozen bundle.",
+      "Before any GPU run, isolated CO metadata/ISA must preserve ABI, address bounds, two refill barriers, wait dependencies and pinned ranges; record resource deltas and reject unplanned scratch/spills.",
+      "Future correctness uses complete NaN-initialized BF16 output comparison, exact candidate IDs/names and error ratio<=.05.",
+      "Require stable matched-base gain across3 batches without a no-refill negative-control regression before expanding to R5/R6 or more171 shapes."
+    ],
+    "repeat_pair_batches_after_screen": 3,
+    "full_matrix_confirmation_result_upper_bound": 30,
+    "full_matrix_confirmation_call_upper_bound": 3180,
+    "promote_only_valid_effective_variants": true
+  },
+  "CPU_checks": [
+    {
+      "shape": [
+        1792,
+        7168,
+        16384
+      ],
+      "GroupM_0_4_8_16_mapping_bijection": true,
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      }
+    },
+    {
+      "shape": [
+        6144,
+        7168,
+        16384
+      ],
+      "GroupM_0_4_8_16_mapping_bijection": true,
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      }
+    },
+    {
+      "shape": [
+        32768,
+        7168,
+        7168
+      ],
+      "GroupM_0_4_8_16_mapping_bijection": true,
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      }
+    },
+    {
+      "shape": [
+        20480,
+        7168,
+        4096
+      ],
+      "GroupM_0_4_8_16_mapping_bijection": true,
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      }
+    },
+    {
+      "shape": [
+        1856,
+        7168,
+        7168
+      ],
+      "GroupM_0_4_8_16_mapping_bijection": true,
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      }
+    },
+    {
+      "shape": [
+        32768,
+        6144,
+        7168
+      ],
+      "GroupM_0_4_8_16_mapping_bijection": true,
+      "legality": {
+        "M_alignment_valid": true,
+        "N_alignment_valid": true,
+        "K_alignment_valid": true,
+        "input_signed31_limit_valid": true,
+        "C_tile_window_signed31_valid": true,
+        "source": "Current inventory and JSON/CO metadata; no GPU correctness assertion"
+      }
+    },
+    {
+      "scale_prefetch_boundary_model": true,
+      "panels": [
+        32,
+        64
+      ],
+      "loops_checked": [
+        1,
+        200
+      ],
+      "properties": [
+        "Every refill has one earlier issue in the main loop",
+        "No R==loops or later issue",
+        "Tail refill receives an earlier valid issue"
+      ]
+    }
+  ],
+  "input_fingerprints": {
+    "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh": "df21d4769fae1234aa22bd04648d3ad2f5bfe17320654f03e759f891f436f7b3",
+    "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh": "7d463d47d630e680491363cc4107472814cc82e96a714143894fbced1f4fd2f0",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/co_kernels_gfx950.json": "5a43ad9435e08b6062fe121222d82713e81d130421021daaebb46e487db588df",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/build_info.json": "dc1c1db54d296d7e2300a9b4549bfee24ea2f187319aef258345f99b507b943c",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/persistent171_analysis.csv": "cb581c2238b9e258e33d4c7f3aca8623f9e0a11cedca38247aa8aa79af2795d3",
+    "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/cpu_persistent171_plan/current_winner_inventory.csv": "0ffb9cff216ab0ab68184c1fd8ca981bd10da772ebe904e70ade83de8999bc47",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/build_co.py": "562e22c5747be21c05fcd1502fd440da3d9f97ed4cf741de7e68356566cb78a3",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp16_k0_reset0_u2_gm0_wide_nt0.co": "b2aaed53adb796e799093856dd7dddfbec2e05a7c041adc034a2074cc778e70a",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp32_k0_reset0_u2_gm0_wide_nt0.co": "0fb99db59957980c3b9468bd6b7351ce881ed980739dda39a820773bd4fba3ce",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp64_k0_reset0_u2_gm0_wide_nt0.co": "03f9cad4d1235157148eb349d598a908deb23eda91594f33c500f4bbc0b54ef1",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp16_k0_reset0_u2_gm0_wide_nt0.co": "26c46e682e1b08708f2a4ecfd6541558daf326c2c9b9f69a4661caefc32d71d5",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_k0_reset0_u2_gm0_wide_nt0.co": "2ff9843455e2a1a707bce79cfc78f1e734c1b6fb9f439fd381fdc1fcbca727e1",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_reset0_u2_gm0_wide_nt0.co": "bfd6f7cd7ed440226f1fa5e8f219e796e8f05cb3b016a7a3316ba431519daecb",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp16_u2.co": "fde1593c6fc6de494da6246a355ef44ff4d9c868cbee5ac288f813d28ba9288d",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp32_u2.co": "135dadfbdd62e8123df1713722b1f78c483c80dee353b5a9c1d9e01469bd8919",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_u2.co": "f29420c4b7590e4e47e11660e8043ef94ed1760fb5b4039a9fd610104f43b412",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp16_u2.co": "5f5ee4b1c091dcc47b58e4d43cdceb1ab7859f9e712004699dd1c83b965eca9f",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp32_u2.co": "7404d752294341375af7062a175c84f291de9e1c2f8fe886ce7dd49320235112",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_sp64_u2.co": "a85e562dbe3c124ac16fc5e56e5b19a05c0041e6711f0a2b5c5b66665cba27f0",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_u2_wide.co": "cc4fad694470b340774b33f80015d251424473c080e8931525001b2418dbb7a1",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm4_u2_wide.co": "7ba8203480b11f0c829b62360975a44323cbfbd663760ba35e89497e9768c62a",
+    "/home/fyz/aiter/csrc/opus_gemm/gen_co/gfx950/opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_k0_gm8_u2_wide.co": "486ead5dc2e0f970b3c9096274e1069db63a077430bc2104cf34e3ed33a78f6b"
+  },
+  "preserved_current_sources_and_COs": true
+}

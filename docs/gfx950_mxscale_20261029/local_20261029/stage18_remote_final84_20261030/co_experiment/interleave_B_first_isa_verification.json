@@ -1,0 +1,139 @@
+{
+  "definition": "Kargs offset 0/8 loads A/B into s16:17/s18:19; 64-bit pointer calculations produce A s0:3, B s12:15. All 24 buffer LDS request instructions checked in linked CO, three groups of eight.",
+  "verified": [
+    {
+      "baseline": 101308,
+      "B_first_variant": 101310,
+      "passed": true,
+      "kernels": [
+        {
+          "kid": 101308,
+          "matrix_async_request_order": "AAAABBBBAAAABBBBAAAABBBB",
+          "instruction_excerpts": [
+            "\tbuffer_load_dwordx4 v98, s[0:3], 0 offen sc0 sc1 lds       // 000000001EC4: E05DD000 80000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], 0 offen sc0 sc1 lds      // 000000001EE4: E05DD000 80000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s19 offen sc0 sc1 lds     // 000000001F0C: E05DD000 13000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s19 offen sc0 sc1 lds    // 000000001F2C: E05DD000 13000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], 0 offen sc0 lds        // 000000001F4C: E05D5000 80030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], 0 offen sc0 lds        // 000000001F6C: E05D5000 8003006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s8 offen sc0 lds       // 000000001F90: E05D5000 08030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s8 offen sc0 lds       // 000000001FB0: E05D5000 0803006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 sc1 lds      // 000000002718: E05DD000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 sc1 lds     // 000000002728: E05DD000 08000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 sc1 lds      // 00000000273C: E05DD000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 sc1 lds     // 00000000274C: E05DD000 08000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s8 offen sc0 lds       // 000000002768: E05D5000 08030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s8 offen sc0 lds       // 000000002778: E05D5000 0803006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s42 offen sc0 lds      // 000000002788: E05D5000 2A030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s42 offen sc0 lds      // 000000002798: E05D5000 2A03006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 sc1 lds      // 000000002A68: E05DD000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 sc1 lds     // 000000002A78: E05DD000 08000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 sc1 lds      // 000000002A8C: E05DD000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 sc1 lds     // 000000002A9C: E05DD000 08000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s44 offen sc0 lds      // 000000002AB0: E05D5000 2C030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s44 offen sc0 lds      // 000000002AC0: E05D5000 2C03006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s8 offen sc0 lds       // 000000002AD8: E05D5000 08030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s8 offen sc0 lds       // 000000002AE8: E05D5000 0803006A"
+          ]
+        },
+        {
+          "kid": 101310,
+          "matrix_async_request_order": "BBBBAAAABBBBAAAABBBBAAAA",
+          "instruction_excerpts": [
+            "\tbuffer_load_dwordx4 v105, s[12:15], 0 offen sc0 lds        // 000000001ECC: E05D5000 80030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], 0 offen sc0 lds        // 000000001EEC: E05D5000 8003006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s9 offen sc0 lds       // 000000001F10: E05D5000 09030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s9 offen sc0 lds       // 000000001F30: E05D5000 0903006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], 0 offen sc0 sc1 lds       // 000000001F48: E05DD000 80000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], 0 offen sc0 sc1 lds      // 000000001F68: E05DD000 80000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s25 offen sc0 sc1 lds     // 000000001F90: E05DD000 19000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s25 offen sc0 sc1 lds    // 000000001FB0: E05DD000 19000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s42 offen sc0 lds      // 000000002714: E05D5000 2A030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s42 offen sc0 lds      // 000000002724: E05D5000 2A03006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s43 offen sc0 lds      // 000000002734: E05D5000 2B030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s43 offen sc0 lds      // 000000002744: E05D5000 2B03006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 sc1 lds      // 000000002760: E05DD000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 sc1 lds     // 000000002770: E05DD000 08000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 sc1 lds      // 000000002784: E05DD000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 sc1 lds     // 000000002794: E05DD000 08000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s3 offen sc0 lds       // 000000002A64: E05D5000 03030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s3 offen sc0 lds       // 000000002A74: E05D5000 0303006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s3 offen sc0 lds       // 000000002A8C: E05D5000 03030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s3 offen sc0 lds       // 000000002A9C: E05D5000 0303006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 sc1 lds      // 000000002AB8: E05DD000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 sc1 lds     // 000000002AC8: E05DD000 08000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 sc1 lds      // 000000002ADC: E05DD000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 sc1 lds     // 000000002AEC: E05DD000 08000064"
+          ]
+        }
+      ]
+    },
+    {
+      "baseline": 101311,
+      "B_first_variant": 101313,
+      "passed": true,
+      "kernels": [
+        {
+          "kid": 101311,
+          "matrix_async_request_order": "AAAABBBBAAAABBBBAAAABBBB",
+          "instruction_excerpts": [
+            "\tbuffer_load_dwordx4 v98, s[0:3], 0 offen sc0 lds           // 000000002030: E05D5000 80000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], 0 offen sc0 lds          // 000000002050: E05D5000 80000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s21 offen sc0 lds         // 000000002078: E05D5000 15000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s21 offen sc0 lds        // 000000002098: E05D5000 15000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], 0 offen sc0 sc1 lds    // 0000000020B8: E05DD000 80030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], 0 offen sc0 sc1 lds    // 0000000020D8: E05DD000 8003006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s8 offen sc0 sc1 lds   // 0000000020FC: E05DD000 08030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s8 offen sc0 sc1 lds   // 00000000211C: E05DD000 0803006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 lds          // 000000002884: E05D5000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 lds         // 000000002894: E05D5000 08000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 lds          // 0000000028A8: E05D5000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 lds         // 0000000028B8: E05D5000 08000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s8 offen sc0 sc1 lds   // 0000000028D4: E05DD000 08030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s8 offen sc0 sc1 lds   // 0000000028E4: E05DD000 0803006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s42 offen sc0 sc1 lds  // 0000000028F4: E05DD000 2A030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s42 offen sc0 sc1 lds  // 000000002904: E05DD000 2A03006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 lds          // 000000002BD4: E05D5000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 lds         // 000000002BE4: E05D5000 08000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 lds          // 000000002BF8: E05D5000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 lds         // 000000002C08: E05D5000 08000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s44 offen sc0 sc1 lds  // 000000002C1C: E05DD000 2C030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s44 offen sc0 sc1 lds  // 000000002C2C: E05DD000 2C03006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s8 offen sc0 sc1 lds   // 000000002C44: E05DD000 08030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s8 offen sc0 sc1 lds   // 000000002C54: E05DD000 0803006A"
+          ]
+        },
+        {
+          "kid": 101313,
+          "matrix_async_request_order": "BBBBAAAABBBBAAAABBBBAAAA",
+          "instruction_excerpts": [
+            "\tbuffer_load_dwordx4 v105, s[12:15], 0 offen sc0 sc1 lds    // 000000002038: E05DD000 80030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], 0 offen sc0 sc1 lds    // 000000002058: E05DD000 8003006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s9 offen sc0 sc1 lds   // 00000000207C: E05DD000 09030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s9 offen sc0 sc1 lds   // 00000000209C: E05DD000 0903006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], 0 offen sc0 lds           // 0000000020B4: E05D5000 80000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], 0 offen sc0 lds          // 0000000020D4: E05D5000 80000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s25 offen sc0 lds         // 0000000020FC: E05D5000 19000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s25 offen sc0 lds        // 00000000211C: E05D5000 19000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s42 offen sc0 sc1 lds  // 000000002880: E05DD000 2A030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s42 offen sc0 sc1 lds  // 000000002890: E05DD000 2A03006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s43 offen sc0 sc1 lds  // 0000000028A0: E05DD000 2B030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s43 offen sc0 sc1 lds  // 0000000028B0: E05DD000 2B03006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 lds          // 0000000028CC: E05D5000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 lds         // 0000000028DC: E05D5000 08000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 lds          // 0000000028F0: E05D5000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 lds         // 000000002900: E05D5000 08000064",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s3 offen sc0 sc1 lds   // 000000002BD0: E05DD000 03030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s3 offen sc0 sc1 lds   // 000000002BE0: E05DD000 0303006A",
+            "\tbuffer_load_dwordx4 v105, s[12:15], s3 offen sc0 sc1 lds   // 000000002BF8: E05DD000 03030069",
+            "\tbuffer_load_dwordx4 v106, s[12:15], s3 offen sc0 sc1 lds   // 000000002C08: E05DD000 0303006A",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 lds          // 000000002C24: E05D5000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 lds         // 000000002C34: E05D5000 08000064",
+            "\tbuffer_load_dwordx4 v98, s[0:3], s8 offen sc0 lds          // 000000002C48: E05D5000 08000062",
+            "\tbuffer_load_dwordx4 v100, s[0:3], s8 offen sc0 lds         // 000000002C58: E05D5000 08000064"
+          ]
+        }
+      ]
+    }
+  ]
+}

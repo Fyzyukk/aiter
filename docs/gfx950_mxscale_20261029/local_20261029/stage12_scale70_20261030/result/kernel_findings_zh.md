@@ -1,0 +1,5 @@
+第十二轮完整完成：333领先/88落后。70项新的六轮，351行历史数据保持。4546条性能测试全部正确、pending0、公开421项校验通过。没有新CO整合。新增M32768/N7168/K4096为原kid100083复测越线。
+
+单纯将scale panel64缩到32/16未形成最终最优：Panel32有无spill版本但未胜出；Panel16各版本有785~832个VGPR spill，初筛明显慢记录已保留。12个候选中4个panel64仅是comparison-only对照，禁止集成；新scale版本需同时比当前control和matched panel64至少4/6快且成对中位speedup至少0.5%，没有满足最终选择的候选。
+
+下一轮直接修改kernel，把SFA staging数组从整个函数共享改为每次load返回新的局部值，publish接收该值，prologue和每次refill使用独立临时。保持原硬件wait/barrier、LDS布局和地址界限，避免跨unroll mainloop携带旧scale值。
