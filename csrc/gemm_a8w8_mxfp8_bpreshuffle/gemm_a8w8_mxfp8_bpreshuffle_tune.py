@@ -290,6 +290,11 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
         self.parser.add_argument("--opus_pipelines", choices=PIPELINES, nargs="+")
         self.parser.add_argument("--opus_routes", choices=ROUTES, nargs="+")
         self.parser.add_argument(
+            "--opus_seed_file",
+            help="OPUS candidate seed CSV; may contain multiple configurations "
+            "per shape without being used as a production dispatch table.",
+        )
+        self.parser.add_argument(
             "--opus_geometry_file",
             help="CSV selecting OPUS geometries per M,N,K: pipeline,BM,BN,BK,TM,TN "
             "columns or an old_opus_geometry JSON field. Missing or illegal "
@@ -300,6 +305,10 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
         self._mxscale_table = bool(args.mxscale_table)
         if args.opus_top_geometries < 0:
             self.parser.error("--opus_top_geometries must be >= 0 (0 means full search)")
+        if args.opus_seed_file and (
+            not self._mxscale_table or args.libtype == "flydsl"
+        ):
+            self.parser.error("--opus_seed_file requires --mxscale_table and OPUS tuning")
         if args.opus_geometry_file and (
             not self._mxscale_table or args.libtype == "flydsl"
         ):
@@ -559,10 +568,15 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
                     args.tune_file,
                     AITER_CONFIGS.AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_MXSCALE_BPRESHUFFLE_FILE,
                 }
+                seed_path = getattr(args, "opus_seed_file", None)
+                if seed_path:
+                    paths.add(seed_path)
                 for path in paths:
                     try:
                         table = pd.read_csv(path)
                     except (OSError, pd.errors.EmptyDataError):
+                        if path == seed_path:
+                            raise
                         continue
                     for row in table.itertuples():
                         if (
