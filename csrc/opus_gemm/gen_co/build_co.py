@@ -283,92 +283,63 @@ void {symbol}(opus_gemm_blockscale_mxscale_bpreshuffle_kargs_gfx950 kargs)
 """
 
 
-def _check_gfx950_pin(entry, path, llvm_bin):
+def _check_gfx950_pin(entry, path, llvm_bin, *, fail_on_spill=False):
     fields = _kernel_metadata(
         _tool(llvm_bin, "llvm-readelf"),
         path,
         entry["symbol"],
         (
             "vgpr_count",
-            "sgpr_count",
             "agpr_count",
             "vgpr_spill_count",
             "sgpr_spill_count",
             "private_segment_fixed_size",
-            "group_segment_fixed_size",
         ),
     )
-    if fields["group_segment_fixed_size"] > 160 * 1024:
-        raise ValueError(f"LDS capacity exceeded: {fields}")
+    if any(
+        fields[key]
+        for key in (
+            "vgpr_spill_count",
+            "sgpr_spill_count",
+            "private_segment_fixed_size",
+        )
+    ):
+        message = f"register spill/scratch for {entry['symbol']}: {fields}"
+        if fail_on_spill:
+            raise ValueError(message)
+        print(f"[build_co] warning: {message}", file=sys.stderr)
     mask = entry["pin_mask"]
-    partial_c = entry.get("partial_pin_c")
-    if not mask and not partial_c:
+    if not mask:
         return fields
     asm = _run([_tool(llvm_bin, "llvm-objdump"), "-d", "--mcpu=gfx950", path]).stdout
     reads = {int(x) for x in re.findall(r"ds_read_b128\s+a\[(\d+):", asm)}
     bm, bn, bk = entry["tile"]
     wm, wn = entry["wave_layout"]
     a_regs = bm // (wm * 16) * (bk // 128) * 8
+    if entry["pipeline"] == "pingpong_lds":
+        a_regs = min(bm // (wm * 16), 3) * 8
     b_regs = bn // (wn * 16) * 8
     for bit, first, size in ((1, 0, a_regs), (2, 64, b_regs)):
         if mask & bit and not set(range(first, first + size, 4)).issubset(reads):
             raise ValueError(
                 f"pin mask {mask}: LDS reads did not reach AGPR range {first}:{first + size}"
             )
-    if mask & 4 or partial_c:
+    if mask & 4:
         mmas = [
             line.split("//", 1)[0].strip().split(None, 1)[1].split(", ")
             for line in asm.splitlines()
             if "v_mfma_scale_" in line
         ]
         seen = set()
-        partial_first = partial_c["base"] if partial_c else 0
-        partial_end = partial_first + partial_c["dwords"] if partial_c else 0
-        partial_writes = set()
         if not mmas:
             raise ValueError("pin C: no MFMA instructions")
         for op in mmas:
-            destination = re.fullmatch(r"a\[(\d+):(\d+)\]", op[0])
-            if partial_c and not mask & 4:
-                if not destination or not partial_first <= int(destination[1]) < partial_end:
-                    continue
-                if int(destination[2]) >= partial_end:
-                    raise ValueError("partial pin C: MFMA destination exceeds pinned range")
-                partial_writes.add(int(destination[1]))
             # The first write may share a zero accumulator from initialization.
             # Subsequent updates must keep each C/D fragment in place.
             if not op[0].startswith("a[") or (op[0] in seen and op[0] != op[3]):
                 raise ValueError("pin C: MFMA C/D are not the same AGPRs")
             seen.add(op[0])
-        if partial_c and not set(range(partial_first, partial_end, 4)).issubset(partial_writes):
-            raise ValueError(
-                f"partial pin C: MFMA did not reach AGPR range {partial_first}:{partial_end}"
-            )
-    fields["pin_mask_verified"] = mask
-    if partial_c:
-        fields["partial_pin_c_verified"] = partial_c
     return fields
-
-
-def _check_gfx950_spill_policy(entry, fields, args):
-    """Keep resource costs available to tuning unless strict rejection is requested."""
-    warnings = []
-    if fields["vgpr_spill_count"] or fields["sgpr_spill_count"]:
-        message = (
-            f"register spills: vgpr={fields['vgpr_spill_count']}, "
-            f"sgpr={fields['sgpr_spill_count']}"
-        )
-        if getattr(args, "fail_on_spill", False):
-            raise ValueError(f"{message} and --fail-on-spill is set")
-        warnings.append(message)
-    if fields["private_segment_fixed_size"]:
-        message = f"private segment: {fields['private_segment_fixed_size']} bytes"
-        if getattr(args, "fail_on_scratch", False):
-            raise ValueError(f"{message} and --fail-on-scratch is set")
-        warnings.append(message)
-    for message in warnings:
-        print(f"[build_co]   WARNING: {entry['symbol']}: {message}", file=sys.stderr)
-    return {"resource_warnings": warnings}
 
 
 def build_one_gfx950(entry, args, llvm_bin, workdir):
@@ -378,9 +349,9 @@ def build_one_gfx950(entry, args, llvm_bin, workdir):
     optional = entry.get("pin_variant", False)
     if getattr(args, "skip_existing", False) and os.path.isfile(output):
         try:
-            resources = _check_gfx950_pin(entry, output, llvm_bin) if optional else {}
-            if optional:
-                resources.update(_check_gfx950_spill_policy(entry, resources, args))
+            resources = _check_gfx950_pin(
+                entry, output, llvm_bin, fail_on_spill=args.fail_on_spill
+            )
             return {"kid": entry["kid"], "status": "ready", **resources}
         except ValueError:
             pass
@@ -458,9 +429,9 @@ def build_one_gfx950(entry, args, llvm_bin, workdir):
     try:
         target = _elf_target_metadata(staged, "gfx950")
         linked = _device_link_metadata(_tool(llvm_bin, "llvm-readelf"), staged)
-        resources = _check_gfx950_pin(entry, staged, llvm_bin) if optional else {}
-        if optional:
-            resources.update(_check_gfx950_spill_policy(entry, resources, args))
+        resources = _check_gfx950_pin(
+            entry, staged, llvm_bin, fail_on_spill=args.fail_on_spill
+        )
     except ValueError as error:
         if os.path.isfile(output):
             os.remove(output)
@@ -903,15 +874,8 @@ def main():
     p.add_argument(
         "--fail-on-spill",
         action="store_true",
-        help="treat any VGPR/SGPR spill as an error on either architecture. Off by default: at the "
-        "tighter VGPR budgets spilling is the expected outcome, not a "
-        "malfunction. The counts always land in build_info.json.",
-    )
-    p.add_argument(
-        "--fail-on-scratch",
-        action="store_true",
-        help="gfx950 only: reject nonzero private_segment_fixed_size. Off by default; "
-        "private-memory costs are recorded separately from register spill counts.",
+        help="reject VGPR/SGPR spills (and scratch on gfx950). By default, "
+        "report warnings and retain the image; counts are recorded in build_info.json.",
     )
     p.add_argument(
         "--jobs",

@@ -184,21 +184,7 @@ KARGS_NAME_MAP = {
 
 
 def co_traits_args(k):
-    args = list(k["traits"]["args"])
-    if (k["traits"]["name"] ==
-            "opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits"):
-        booleans = ("false", "true")
-        if len(args) in (4, 5) and str(args[2]).lower() in booleans:
-            # Older manifests included Reset before Unroll, with optional PadM.
-            if str(args[2]).lower() != "false":
-                raise ValueError("4wave Reset=true is no longer supported")
-            del args[2]
-        if len(args) == 4 or (len(args) == 3 and str(args[2]).lower() not in booleans):
-            # Remove the legacy FixedK=0 slot; this pipeline always uses runtime K.
-            if int(args[1]) != 0:
-                raise ValueError("4wave COs require runtime K; legacy FixedK must be 0")
-            del args[1]
-    return ",".join(args)
+    return ",".join(k["traits"]["args"])
 
 
 def splitk_reduce_extra_device_instantiations():

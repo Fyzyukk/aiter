@@ -62,6 +62,8 @@ struct opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_base_traits {
     static constexpr bool PAD_M = PadM;
     static constexpr bool GUARD_SFB_LANE = false;
     static constexpr int LOOP_UNROLL = 2;
+    static constexpr int SCHEDULE_POLICY = 0;
+    static constexpr int SCALE_LOAD_MODE = 0;
 
     static constexpr int VEC_A = 16;
     static constexpr int VEC_B = 16;
@@ -155,4 +157,32 @@ struct opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits : Base {
     static constexpr int STATIC_M = 0;
     static constexpr int STATIC_N = 0;
     static constexpr bool STATIC_BATCH_STRIDES = false;
+};
+
+// Compile-time options shared by the pin pipeline's parameter families.
+template<class Base, int Unroll, int Policy>
+struct opus_gemm_bpreshuffle_pin_schedule_traits : Base {
+    static_assert(Unroll == 1 || Unroll == 2 || Unroll == 4 || Unroll == 8);
+    static_assert(Policy >= 0 && Policy <= 2);
+    static constexpr int LOOP_UNROLL = Unroll;
+    static constexpr int SCHEDULE_POLICY = Policy;
+};
+
+template<class Base, int Panel, int LoadMode, int Unroll = 8>
+struct opus_gemm_bpreshuffle_pin_scale_traits
+    : opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_scale_panel_traits<Base, Panel> {
+    static_assert(Panel == 16 || Panel == 32 || Panel == 64);
+    static_assert(LoadMode == 1 || LoadMode == 2);
+    static_assert(Unroll == 2 || Unroll == 4 || Unroll == 8);
+    static constexpr bool GUARD_SFB_LANE = true;
+    static constexpr int LOOP_UNROLL = Unroll;
+    static constexpr int SCHEDULE_POLICY = 0;
+    static constexpr int SCALE_LOAD_MODE = LoadMode;
+};
+
+template<class Base, int StaticM, int StaticN>
+struct opus_gemm_bpreshuffle_static_shape_traits : Base {
+    static_assert(StaticM >= 0 && StaticN > 0);
+    static constexpr int STATIC_M = StaticM;
+    static constexpr int STATIC_N = StaticN;
 };

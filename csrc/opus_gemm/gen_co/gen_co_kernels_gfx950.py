@@ -1,46 +1,25 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Generate one unified gfx950 MXFP8 CO manifest from pipeline parameters.
+"""Generate the compact unified gfx950 MXFP8 CO parameter set.
 
-Regular parameter candidates and the final used configurations are generated
-from source, without inheriting experimental variants from an existing JSON.
-IDs and image suffixes remain compatible with the verified 421-shape result.
-The manifest includes all candidates; build_co.py keeps its normal build logic.
+PIN_PARAMETER_GROUPS crosses pad/no-pad, scale panel, unroll, grouped M,
+wide output and the required static/scale/compiler options within small
+implementation groups. It yields 40 pin COs. B_PARAMETER_GROUPS crosses
+fixed K and pin-A/pin-C per tile/addressing group; the four implementation
+groups bring B-VGPR to 35 and overlap to 29. Interleave contributes one.
 
-Pipeline parameter catalog (tile dimensions are M x N x K):
-
-* pin_agpr: 12 regular + 22 final configurations. Regular candidates use
-  tile 256x256x128, waves 2x2, two stages, scale panel 16/32/64,
-  unroll 2, PAD_M true/false, and the two output/layout bundles below.
-  Final configurations also specify group-M 4/16, unroll 4/8,
-  static N 1536/2048/7168, scale chunks 32/64, or pin panel 32/64.
-  These are explicit supported configurations, not a Cartesian product.
-* prefetch_b_vgpr: 384 regular + 1 final configuration. The seven
-  (M, N, wave-N) geometries are the union of B_GEOMETRIES and
-  TILED_B_GEOMETRIES. Regular candidates use K-tile 128, four stages,
-  FIXED_K_VALUES, and pin-A/pin-C (false,true)/(true,false)/(true,true).
-  The BD=2/XCD/contiguous and BD=1/linear/strided bundles each yield
-  192 configurations after b_vgpr_lds() checks. The final configuration
-  uses tile 96x128x256, waves 1x4, two stages, BD=1, fixed K=7168.
-* prefetch_b_vgpr_overlap: the same 384 regular parameters, with
-  publication point 0, plus three final configurations:
-  (tile, wave-N, stages, BD, publication) =
-  (128x128x128, 4, 3, 2, 0), (64x128x256, 2, 4, 2, 1),
-  (64x64x256, 2, 4, 2, 2); all three have fixed K=7168.
-* wave_interleave: one final configuration, tile 192x256x256, waves 2x4,
-  512 threads, traits (192,0,8,true,1,17,4), body options (true,false).
-
-The complete manifest has 807 configurations. Regular B candidates must pass
-tile/vector divisibility, K-depth, register-pinning, scale-load, and rounded
-LDS <= 160 KiB checks before configuration deduplication. FINAL_CONFIGURATIONS
-spells out the additional implementations and their supported shape scopes.
-Image cleanup is a separate operation after the complete CO build.
+All 105 candidates are generated from parameters and numbered 0..104.
+CO image names describe the generated parameters, independently of IDs.
+The 69 result CO configurations retain flags and shape scopes.
+JSON contains every generated candidate. build_co.py retains its normal
+complete-build logic; image cleanup is a separate step after compilation.
+JIT IDs remain based at 200 independently of the CO count.
 """
 
 import argparse
-import copy
 import csv
+import hashlib
 import itertools
 import json
 from collections import Counter
@@ -51,10 +30,6 @@ WARP_SIZE = 64
 MFMA_M = MFMA_N = 16
 MFMA_K = 128
 VECTOR_SIZE = 16
-B_GEOMETRIES = ((64, 128, 2), (96, 128, 4), (96, 256, 4), (128, 128, 4))
-# Additional tiled layouts use the same pipeline parameter generation.
-# Their complete identities remain compatible with existing result CSVs.
-TILED_B_GEOMETRIES = ((48, 128, 2), (64, 128, 4), (96, 256, 4), (128, 256, 4))
 PIPELINE_PREFIX = "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_"
 TRAITS_PREFIX = "opus_gemm_blockscale_mxscale_bpreshuffle_"
 DEVICE_FLAGS = [
@@ -78,11 +53,7 @@ DEVICE_FLAGS = [
 ]
 
 
-# Frozen parameter universe keeps the original CO IDs and JIT base stable.
-FIXED_K_VALUES = (384, 768, 1024, 1536, 2048, 3072, 4096, 7168, 16384, 21504)
-# The additional definitions are final configurations, grouped by pipeline.
-# Tuple: kid, regular parameter base, overrides, removed fields, scope, image suffix.
-# Image suffixes are compatibility names, not references to an old implementation.
+# Existing result scopes remain fixed independently of parameter generation.
 FINAL_SHAPE_SCOPES = (((1088, 7168, 4096), (1152, 7168, 4096), (1216, 7168, 4096), (1280, 7168, 4096), (1344, 7168, 4096),
   (1408, 7168, 4096), (1472, 7168, 4096), (1536, 7168, 4096), (1600, 7168, 4096), (1664, 7168, 4096),
   (1728, 7168, 4096), (1792, 7168, 4096), (1856, 7168, 4096), (1920, 7168, 4096), (1984, 7168, 4096),
@@ -132,376 +103,39 @@ FINAL_SHAPE_SCOPES = (((1088, 7168, 4096), (1152, 7168, 4096), (1216, 7168, 4096
  ((10240, 7168, 4096), (40960, 6144, 7168), (57344, 6144, 7168)), ((12288, 7168, 4096),),
  ((1920, 7168, 3072),), ((1280, 7168, 16384), (1344, 7168, 16384)))
 
-FINAL_CONFIGURATIONS = ((100006,
-  394,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, false, 4>']},
-  (),
-  0,
-  'exp_nt_seed394_sp32_u2_pm1_wide0_gm4_h65ba257a3de3'),
- (100019,
-  295,
-  {'stages': 3,
-   'traits': {'args': ['128',
-                       '128',
-                       '3',
-                       '2',
-                       '0',
-                       'true',
-                       '7168',
-                       '4',
-                       '1',
-                       '0',
-                       '2',
-                       '0',
-                       '128',
-                       'true',
-                       'true',
-                       'false',
-                       '0',
-                       '0'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits'}},
-  (),
-  1,
-  'exp_nt_seed295_p3_bd2_ba4_xcd1_contig1_k7168_gm0_ca0_cb0_pinA1C0_pub0_hd852f71a6088'),
- (100024,
-  392,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, false, 16>']},
-  (),
-  2,
-  'exp2_nt_seed100001_sp64_u2_pm0_wide0_gm16_hc7f7619cdfda'),
- (100025,
-  389,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>']},
-  (),
-  2,
-  'exp2_nt_seed100003_sp64_u2_pm0_wide1_gm16_h73b09ed56a4b'),
- (100045,
-  390,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, false, 4>'],
-   'traits': {'args': ['64', '4', 'false'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits'}},
-  (),
-  3,
-  'pm0_stage5_seed100000_2e0280e5b12a2933'),
- (100047,
-  387,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 4>'],
-   'traits': {'args': ['64', '4', 'false'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits'}},
-  (),
-  4,
-  'pm0_stage5_seed100002_5b6a89dcecce3d7e'),
- (100049,
-  393,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, false, 4>'],
-   'traits': {'args': ['64', '4', 'true'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits'}},
-  (),
-  5,
-  'pm1_stage5_seed100004_2aa4459884833cbd'),
- (100051,
-  390,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, false, 16>'],
-   'traits': {'args': ['64', '4', 'false'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits'}},
-  (),
-  6,
-  'pm0_stage5_seed100024_34caecd2f810a565'),
- (100052,
-  387,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>'],
-   'traits': {'args': ['64', '4', 'false'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits'}},
-  (),
-  7,
-  'pm0_stage5_seed100025_79cd545bf3bb77dc'),
- (100071,
-  390,
-  {'body_args': ['opus_stage6_static_shape_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, false, 4>, 0, 1536>'],
-   'static_m': 0,
-   'static_n': 1536,
-   'traits': {'args': ['64', '4', 'false'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits'},
-   'traits_header': 'opus_gemm_traits_stage6_gfx950.cuh'},
-  (),
-  8,
-  'pm0_stage6_seed100045_a3088298e8ab0aaf'),
- (100072,
-  387,
-  {'body_args': ['opus_stage6_static_shape_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 4>, 0, 1536>'],
-   'static_m': 0,
-   'static_n': 1536,
-   'traits': {'args': ['64', '4', 'false'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits'},
-   'traits_header': 'opus_gemm_traits_stage6_gfx950.cuh'},
-  (),
-  9,
-  'pm0_stage6_seed100047_f7e380d72556369e'),
- (100073,
-  387,
-  {'body_args': ['opus_stage6_static_shape_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 4>, 0, 2048>'],
-   'static_m': 0,
-   'static_n': 2048,
-   'traits': {'args': ['64', '4', 'false'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_panel_traits'},
-   'traits_header': 'opus_gemm_traits_stage6_gfx950.cuh'},
-  (),
-  10,
-  'pm0_stage6_seed100047_c85d29a604ade2fa'),
- (100076,
-  392,
-  {'body_args': ['opus_stage6_static_shape_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits>, '
-                 '0, 7168>'],
-   'static_m': 0,
-   'static_n': 7168,
-   'traits_header': 'opus_gemm_traits_stage6_gfx950.cuh'},
-  (),
-  11,
-  'pm0_stage6_seed392_c6c24a8c47259c42'),
- (100083,
-  389,
-  {'body_args': ['opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>'],
-   'device_flags': 'flags_stage6_agpr_form'},
-  (),
-  12,
-  'pm0_stage6_seed100025_24e1ffa76fc2973f'),
- (100205,
-  395,
-  {'body_args': ['opus_stage7_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits>, '
-                 '2>'],
-   'body_func': 'opus_stage7_pin_body',
-   'pin_mask': 0,
-   'pipeline_header': 'opus_gemm_pipeline_stage7_pin_agpr_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage7_gfx950.cuh'},
-  (),
-  13,
-  'pm1_stage7_seed395_18d013e086edc68a'),
- (100224,
-  54,
-  {'body_args': ['opus_stage7_b_traits<CoTraits, true, false, -1>'],
-   'body_func': 'opus_stage7_b_detail::bulk_panel_body',
-   'pin_mask': 0,
-   'pipeline_header': 'opus_gemm_pipeline_stage7_b_vgpr_gfx950.cuh',
-   'stages': 2,
-   'tile': [96, 128, 256],
-   'traits': {'args': ['96',
-                       '128',
-                       '2',
-                       '1',
-                       '1',
-                       'true',
-                       '7168',
-                       '4',
-                       '1',
-                       '17',
-                       '2',
-                       '0',
-                       '256',
-                       'false',
-                       'false',
-                       'false',
-                       '0'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_traits'},
-   'traits_header': 'opus_gemm_traits_stage7_gfx950.cuh'},
-  (),
-  14,
-  'pm1_stage7_seed7510_02ad82dd1814986b'),
- (100231,
-  216,
-  {'body_args': ['opus_stage7_b_traits<CoTraits, false, true, -1>'],
-   'body_func': 'opus_stage7_b_detail::bulk_panel_overlap_body',
-   'launch_bounds': [128, 2],
-   'pin_mask': 0,
-   'pipeline_header': 'opus_gemm_pipeline_stage7_b_vgpr_gfx950.cuh',
-   'tile': [64, 128, 256],
-   'traits': {'args': ['64',
-                       '128',
-                       '4',
-                       '2',
-                       '17',
-                       'true',
-                       '7168',
-                       '2',
-                       '2',
-                       '1',
-                       '2',
-                       '0',
-                       '256',
-                       'false',
-                       'false',
-                       'false',
-                       '0',
-                       '1'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits'},
-   'traits_header': 'opus_gemm_traits_stage7_gfx950.cuh'},
-  (),
-  15,
-  'pm1_stage7_seed41971_f877f9673a05ccda'),
- (100413,
-  216,
-  {'body_args': ['opus_stage7_b_traits<opus_stage6_b_queue_traits<CoTraits, 7>, true, true, 0>'],
-   'body_func': 'opus_stage9_b_detail::bulk_panel_overlap_body',
-   'pin_mask': 0,
-   'pipeline_header': 'opus_gemm_pipeline_stage9_compact_b_gfx950.cuh',
-   'tile': [64, 64, 256],
-   'traits': {'args': ['64',
-                       '64',
-                       '4',
-                       '2',
-                       '1',
-                       'true',
-                       '7168',
-                       '2',
-                       '1',
-                       '17',
-                       '2',
-                       '0',
-                       '256',
-                       'false',
-                       'false',
-                       'false',
-                       '0',
-                       '2'],
-              'name': 'opus_gemm_blockscale_mxscale_bpreshuffle_prefetch_b_vgpr_overlap_traits'},
-   'traits_header': 'opus_gemm_traits_stage7_gfx950.cuh'},
-  (),
-  16,
-  'pm1_stage9_compact_seed41672_356eabf81d59cc3b'),
- (100606,
-  389,
-  {'body_args': ['opus_stage11_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>, 8, 0>'],
-   'body_func': 'opus_stage7_pin_body',
-   'device_flags': 'flags_stage6_agpr_form',
-   'pipeline_header': 'opus_gemm_pipeline_stage7_pin_agpr_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage11_unroll_gfx950.cuh'},
-  (),
-  17,
-  'pm0_stage11_u8_seed100083_7f69bf8f7b7dd23c'),
- (100610,
-  389,
-  {'body_args': ['opus_stage11_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>, 8, 0>'],
-   'body_func': 'opus_stage7_pin_body',
-   'pipeline_header': 'opus_gemm_pipeline_stage7_pin_agpr_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage11_unroll_gfx950.cuh'},
-  (),
-  18,
-  'pm0_stage11_u8_seed100025_6069937f4a5c4b85'),
- (100808,
-  389,
-  {'body_args': ['opus_stage13_scale_traits<opus_stage11_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>, 8, 0>, 32>'],
-   'body_func': 'opus_stage13_pin_body',
-   'device_flags': 'flags_stage6_agpr_form',
-   'pipeline_header': 'opus_gemm_pipeline_stage13_local_scale_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage13_scale_gfx950.cuh'},
-  (),
-  19,
-  'pm0_stage13_local1_p32_seed100606_dbf9728098bf318d'),
- (100906,
-  389,
-  {'body_args': ['opus_stage14_scale_traits<opus_stage11_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>, 8, 0>, 64>'],
-   'body_func': 'opus_stage14_pin_body',
-   'device_flags': 'flags_stage6_agpr_form',
-   'pipeline_header': 'opus_gemm_pipeline_stage14_chunk_scale_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage14_chunk_scale_gfx950.cuh'},
-  (),
-  20,
-  'pm0_stage14_chunk1_p64_seed100606_ed127bd70f72026f'),
- (100908,
-  389,
-  {'body_args': ['opus_stage14_scale_traits<opus_stage11_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>, 8, 0>, 32>'],
-   'body_func': 'opus_stage14_pin_body',
-   'device_flags': 'flags_stage6_agpr_form',
-   'pipeline_header': 'opus_gemm_pipeline_stage14_chunk_scale_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage14_chunk_scale_gfx950.cuh'},
-  (),
-  21,
-  'pm0_stage14_chunk1_p32_seed100606_a81c8bf13113466f'),
- (100911,
-  389,
-  {'body_args': ['opus_stage14_scale_traits<opus_stage11_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>, 8, 0>, 64>'],
-   'body_func': 'opus_stage14_pin_body',
-   'pipeline_header': 'opus_gemm_pipeline_stage14_chunk_scale_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage14_chunk_scale_gfx950.cuh'},
-  (),
-  22,
-  'pm0_stage14_chunk1_p64_seed100610_59dc92ef7ba1bf2f'),
- (101011,
-  389,
-  {'body_args': ['opus_stage15_pin_traits<opus_stage14_scale_traits<opus_stage11_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, '
-                 'opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 16>, 8, 0>, 64>, '
-                 '32, 2>'],
-   'body_func': 'opus_stage14_pin_body',
-   'device_flags': 'flags_stage6_agpr_form',
-   'pipeline_header': 'opus_gemm_pipeline_stage14_chunk_scale_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage15_pin_unroll_gfx950.cuh'},
-  (),
-  23,
-  'pm0_stage15_pin_u2_p32_seed100906_3d12dd3df85711de'),
- (101020,
-  395,
-  {'body_args': ['opus_stage15_pin_traits<opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_traits<CoTraits>, '
-                 '64, 2>'],
-   'body_func': 'opus_stage14_pin_body',
-   'pipeline_header': 'opus_gemm_pipeline_stage14_chunk_scale_gfx950.cuh',
-   'traits_header': 'opus_gemm_traits_stage15_pin_unroll_gfx950.cuh'},
-  (),
-  24,
-  'pm1_stage15_pin_u2_p64_seed395_6c89e1217b6dbe16'),
- (101312,
-  0,
-  {'block_size': 512,
-   'body_args': ['opus_stage18_interleave_traits<CoTraits, true, false>'],
-   'body_func': 'opus_stage18_interleave_body',
-   'launch_bounds': [512, 1],
-   'pin_mask': 0,
-   'pin_variant': False,
-   'pipeline': 'wave_interleave',
-   'pipeline_header': 'opus_gemm_pipeline_stage18_interleave_gfx950.cuh',
-   'tile': [192, 256, 256],
-   'traits': {'args': ['192', '0', '8', 'true', '1', '17', '4'],
-              'name': 'opus_gemm_bpreshuffle_wave_interleave_traits'},
-   'traits_header': 'opus_gemm_traits_stage18_remote_final_gfx950.cuh',
-   'wave_layout': [2, 4]},
-  ('m_align', 'partial_pin_c'),
-  25,
-  'stage18_remote_seed47680_82f0d5eb1d22ee90'))
+# Shape restrictions for specialized implementations are independent of IDs.
+# The hash covers build/launch settings and selects only the applicable scope;
+# every candidate itself is produced by the parameter groups below.
+CO_SHAPE_SCOPES = {
+    '80fd0f8bc24893e62611747fd731d7d12b4fb152ffdc704b209719b031511b2c': 0,
+    'fc828f37f5ef0bbcef2c352cd3d27d560179d3fc940b649cdca3b215227970f9': 1,
+    '38836e0b20b8f23113fcf0cf387c7160a41b6f6cb31d9b17a812985b4f1edccf': 2,
+    'bbc7e60f830095935cbb7159954b07e98ec16f53ccec528912fa93b896f2f366': 2,
+    '2e0280e5b12a293370817be90fa2820f0f5f7896852fe2c266227e8cbe2a70bf': 3,
+    '5b6a89dcecce3d7ea90e84f2e09deca1a3f41a671c48633fbfc8a6d1678bbf83': 4,
+    '2aa4459884833cbd1ec88218b2a5c7b8324d309e20f306cb228cdeb30613b6fc': 5,
+    '34caecd2f810a5657db89640e674d288541edfccd26570336d5bd8dfac259620': 6,
+    '79cd545bf3bb77dcb7e25f05f4568c8d4135133d3e324957ef5710986149715d': 7,
+    'aa85c2bbc9482bacb5ed0b6344306d31e221a80cc6853ea44035d8de8834102f': 8,
+    'b5388dfb6a8b8341a25ba2194f92f71c235917776288238086654e71c12d8f7c': 9,
+    '72f478386d0d62c845540592b85f637c15b9bb50f3e07aaa4bd2fc707ec3c0d1': 10,
+    '7fed626336dc05fc1cebce150754e5ae280c5b33658d4fff55bcbf8e2117530c': 11,
+    '1b9a44315f40d236ecca19083043c053f598dcad306394e68d76d4d50909703f': 12,
+    'e52163c22fa37715597f94be6dc06fe3c650feeab5f7c33d668afeb799f45153': 13,
+    '3894df8627a4000819578e7c77de82851c8787a3ba4ef2e74c64de554b604078': 14,
+    'e7bb2030ff068d78050258b13c7129ad0a0aaa709cc5f42f30e0806c51e164e2': 15,
+    '12e1e72be9ab55e1bf1c5265f29cf168b105357c739cddfe84f198f1255f6eed': 16,
+    'f4dcd3c961db07a22429a402d694ef68ba2256bbe84b0be2370906e677d15944': 17,
+    '62d16f26a0865ca15a026ac44e127d915efb96ce0baecca01a2a99adc3bddda7': 18,
+    'e9c87b5ad3f6c4682e675f3553af2b44b61bf721245635153d58cfa3d5db9c03': 19,
+    '424581897df219569c7e4022fdfbe8a56b87add4d61edc8b1b12aa32b6ad82c4': 20,
+    '85de9233e4a74cb084f32320635677e5ce2a1820cb85509d0d47b8af19b4e600': 21,
+    '96c4a1b8daae1428c732996bec1af406fe6c8af04b2b06d5b08d659c5d8e3218': 22,
+    'd3110a8f51d25d8987784681c6cc728833e492f699e51ed059538bab54ee2934': 23,
+    '1f3e14ef21ddabc20d8adfd15dd7b4e96a2494bff935cb69bfc69d840969ff65': 24,
+    '43b7ec81a8d533a00fc81a75d1cedfe423c35cc60d9eee497c6626044914d902': 25,
+}
+
 
 
 def ceil_div(value, divisor):
@@ -554,52 +188,160 @@ def record(
     }
 
 
-def pin_agpr_candidates(pad_m_values=(True, False), *, tiled_layout=False):
-    unroll = 2
-    for pad_m, panel in itertools.product(pad_m_values, (16, 32, 64)):
-        wrapper = (
-            TRAITS_PREFIX + "4wave_pin_agpr_traits<CoTraits>"
-            if tiled_layout else
-            TRAITS_PREFIX + "4wave_pin_agpr_traits<CoTraits, "
-            "opus_gemm_blockscale_mxscale_bpreshuffle_pin_matrix_view::tile, "
-            "opus_gemm_blockscale_mxscale_bpreshuffle_pin_output::lds, false, true, 0>"
-        )
-        candidate = record(
-            "pin_agpr",
-            (256, 256, 128),
-            (2, 2),
-            2,
-            TRAITS_PREFIX + "4wave_pin_agpr_panel_traits",
-            (panel, unroll, pad_m),
-            TRAITS_PREFIX + "4wave_pin_agpr",
-            "4wave_pin_agpr",
-            (wrapper,),
-            None if tiled_layout else 16384,
-            pin_mask=3,
-            pad_m=pad_m,
-            wide_output=not tiled_layout,
-        )
-        # The padded scale load guards the start of each 16-byte M vector;
-        # the unpadded path loads and stores a complete 256-row tile.
-        candidate["m_align"] = 16 if pad_m else candidate["tile"][0]
-        # C01 is tagged with C01_AGPR_BASE=148; its sixteen MFMA
-        # accumulators occupy 64 dwords. The other C halves are not all pinned.
-        candidate["partial_pin_c"] = {"base": 148, "dwords": 64}
-        # Keep existing CO image names; k0/reset0 are only legacy name tokens.
-        suffix = (
-            ("" if pad_m else "pm0_") + f"sp{panel}_u{unroll}"
-            if tiled_layout else
-            f"pm{int(pad_m)}_sp{panel}_k0_reset0_u{unroll}_gm0_wide_nt0"
-        )
-        yield candidate, suffix
+B_BLOCK_K = (128, 256)
+B_WGS_PER_CU = (1, 2)
+
+# One group crosses only the knobs needed by its tile/implementation family.
+PIN_PARAMETER_GROUPS = (
+    ('base', dict(pad_m=(True, False), panel=(16, 32, 64), wide_output=(True, False))),
+    ('grouped_no_pad', dict(pad_m=(False,), panel=(64,), unroll=(2, 4), group_m=(4, 16), wide_output=(True, False))),
+    ('grouped_pad', dict(pad_m=(True,), panel=(32, 64), unroll=(2, 4), group_m=(4,), wide_output=(False,))),
+    ('static_grouped', dict(pad_m=(False,), panel=(64,), unroll=(4,), group_m=(4,), wide_output=(True, False), static_n=(1536, 2048))),
+    ('static_7168', dict(pad_m=(False,), panel=(64,), wide_output=(False,), static_n=(7168,))),
+    ('agpr_form', dict(pad_m=(False,), panel=(64,), wide_output=(True,), group_m=(16,), flags=('flags_stage6_agpr_form',))),
+    ('scheduled', dict(pad_m=(True,), panel=(64,), wide_output=(False,), implementation=('scheduled',), policy=(2,))),
+    ('unroll8', dict(pad_m=(False,), panel=(64,), unroll=(8,), wide_output=(True,), group_m=(16,), implementation=('unroll',), flags=('flags_00', 'flags_stage6_agpr_form'))),
+    ('local_scale', dict(pad_m=(False,), panel=(32,), unroll=(8,), wide_output=(True,), group_m=(16,), implementation=('local_scale',), flags=('flags_stage6_agpr_form',))),
+    ('chunk_scale', dict(pad_m=(False,), panel=(32, 64), unroll=(8,), wide_output=(True,), group_m=(16,), implementation=('chunk_scale',), flags=('flags_00', 'flags_stage6_agpr_form'))),
+    ('pin_panel', dict(pad_m=(True,), panel=(64,), unroll=(2,), wide_output=(False,), implementation=('pin_panel',))),
+    ('chunk_pin_panel', dict(pad_m=(False,), panel=(32,), unroll=(2,), wide_output=(True,), group_m=(16,), implementation=('chunk_pin_panel',), flags=('flags_stage6_agpr_form',))),
+)
+
+# (overlap, geometry M/N/wave-N, fixed Ks, pin-A/pin-C bundles, XCD/contiguous/BD)
+B_PARAMETER_GROUPS = (
+    (False, (128, 128, 4), (384,), ((True, False),), (True, True, 2)),
+    (False, (64, 128, 4), (384,), ((True, False),), (False, False, 1)),
+    (False, (96, 256, 4), (384, 768, 1024, 1536, 7168), ((True, False), (False, True)), (False, False, 1)),
+    (False, (128, 256, 4), (768, 2048, 3072, 7168, 16384), ((True, False), (False, True), (True, True)), (False, False, 1)),
+    (False, (96, 128, 4), (1536, 4096, 7168), ((True, False), (True, True)), (False, False, 1)),
+    (False, (128, 128, 4), (7168,), ((True, False),), (False, False, 1)),
+    (True, (96, 256, 4), (7168,), ((False, True),), (True, True, 2)),
+    (True, (128, 128, 4), (384,), ((True, False),), (True, True, 2)),
+    (True, (64, 128, 4), (384,), ((True, False),), (False, False, 1)),
+    (True, (96, 256, 4), (384, 768, 1536, 2048), ((True, False), (False, True)), (False, False, 1)),
+    (True, (128, 256, 4), (2048, 3072, 4096, 7168, 16384), ((True, False), (False, True), (True, True)), (False, False, 1)),
+)
+
+B_IMPLEMENTATION_GROUPS = (
+    ('overlap_three_stage', dict(bm=(128,), bn=(128,), wn=(4,), fixed_k=(7168,), stages=(3,), bd=(2,), pin_a=(True,), pin_c=(False,), overlap=(True,))),
+    ('stream_a', dict(bm=(96,), bn=(128,), wn=(4,), fixed_k=(7168,), bk=(256,), stages=(2,), bd=(1,), pin_a=(False,), pin_c=(False,), xcd=(True,), contiguous=(False,), cache_a=(17,), cache_b=(1,), implementation=('stream_ring',), stream_a=(True,))),
+    ('static_b_ring', dict(bm=(64,), bn=(128,), wn=(2,), fixed_k=(7168,), bk=(256,), stages=(4,), bd=(2,), pin_a=(False,), pin_c=(False,), xcd=(True,), contiguous=(False,), wg=(2,), cache_a=(1,), cache_b=(17,), overlap=(True,), publication=(1,), implementation=('stream_ring',), static_ring=(True,))),
+    ('compact_queue', dict(bm=(64,), bn=(64,), wn=(2,), fixed_k=(7168,), bk=(256,), stages=(4,), bd=(2,), pin_a=(False,), pin_c=(False,), xcd=(True,), contiguous=(False,), cache_a=(17,), cache_b=(1,), overlap=(True,), publication=(2,), implementation=('compact',), stream_a=(True,), static_ring=(True,), queue_ahead=(7,))),
+)
 
 
-def b_vgpr_lds(bm, bn, wn, bk, nb, fixed_k, pin_a, pin_c):
+def cpp_template(name, *args):
+    values = (str(arg).lower() if isinstance(arg, bool) else str(arg) for arg in args)
+    return name + "<" + ", ".join(values) + ">"
+
+
+def pin_record(pad_m, panel, unroll=2, *, wide_output=False, group_m=0,
+               implementation="base", static_n=0, policy=0,
+               flags="flags_00"):
+    """Compose one pin implementation entirely from named parameters."""
+    base_panel = panel if implementation in ("base", "scheduled", "unroll") else 64
+    base_unroll = unroll if implementation in ("base", "scheduled") else 2
+    wrapper_name = TRAITS_PREFIX + "4wave_pin_agpr_traits"
+    wrapper = cpp_template(wrapper_name, "CoTraits")
+    if wide_output or group_m:
+        wrapper = cpp_template(
+            wrapper_name, "CoTraits",
+            TRAITS_PREFIX + "pin_matrix_view::tile",
+            TRAITS_PREFIX + "pin_output::lds", False, wide_output, group_m,
+        )
+    body = TRAITS_PREFIX + "4wave_pin_agpr"
+    header = PIPELINE_PREFIX + "4wave_pin_agpr_gfx950.cuh"
+    traits_header = None
+    pin_mask = 3
+    if implementation == "scheduled":
+        wrapper = cpp_template("opus_gemm_bpreshuffle_pin_schedule_traits", wrapper, base_unroll, policy)
+        body = "opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr"
+        header = "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+        traits_header = "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+        pin_mask = 0
+    elif implementation in ("unroll", "local_scale", "chunk_scale", "chunk_pin_panel"):
+        wrapper = cpp_template("opus_gemm_bpreshuffle_pin_schedule_traits", wrapper, 8, policy)
+        body = "opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr"
+        header = "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+        traits_header = "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+    if implementation == "local_scale":
+        wrapper = cpp_template("opus_gemm_bpreshuffle_pin_scale_traits", wrapper, panel, 1)
+        body = "opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr"
+        header = "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+        traits_header = "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+    elif implementation in ("chunk_scale", "chunk_pin_panel"):
+        chunk_panel = panel if implementation == "chunk_scale" else 64
+        wrapper = cpp_template("opus_gemm_bpreshuffle_pin_scale_traits", wrapper, chunk_panel, 2)
+        body = "opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr"
+        header = "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+        traits_header = "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+    if implementation in ("pin_panel", "chunk_pin_panel"):
+        wrapper = cpp_template("opus_gemm_bpreshuffle_pin_scale_traits", wrapper, panel, 2, unroll)
+        body = "opus_gemm_blockscale_mxscale_bpreshuffle_4wave_pin_agpr"
+        header = "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+        traits_header = "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+    if static_n:
+        wrapper = cpp_template("opus_gemm_bpreshuffle_static_shape_traits", wrapper, 0, static_n)
+        if traits_header is None:
+            traits_header = "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_4wave_pin_agpr_gfx950.cuh"
+    candidate = record(
+        "pin_agpr", (256, 256, 128), (2, 2), 2,
+        TRAITS_PREFIX + "4wave_pin_agpr_panel_traits",
+        (base_panel, base_unroll, pad_m), body, "4wave_pin_agpr", (wrapper,),
+        16384 if wide_output else None, pin_mask=3, pad_m=pad_m,
+        wide_output=wide_output,
+    )
+    candidate["pipeline_header"] = header
+    if traits_header is not None:
+        candidate["traits_header"] = traits_header
+    candidate["device_flags"] = flags
+    candidate["pin_mask"] = pin_mask
+    candidate["m_align"] = 16 if pad_m else 256
+    candidate["partial_pin_c"] = {"base": 148, "dwords": 64}
+    if static_n:
+        candidate.update(static_m=0, static_n=static_n)
+    return candidate
+
+
+def parameter_grid(parameters):
+    """Cross the independent knobs within one tile/implementation group."""
+    for values in itertools.product(*parameters.values()):
+        yield dict(zip(parameters, values))
+
+
+def pin_parameter_candidates():
+    for group, parameters in PIN_PARAMETER_GROUPS:
+        for args in parameter_grid(parameters):
+            yield pin_record(**args), group, pin_image_suffix(args)
+
+
+def pin_image_suffix(args):
+    """Fixed order, including defaults: pad M, panel, unroll, GroupM,
+    wide stores, static N, scale-load mode, scheduling policy, MFMA VGPR form.
+    sl=0/1/2 selects persistent/local/chunked scales; vf=0 uses AGPR form.
+    """
+    mode = args.get("implementation", "base")
+    scale_load = 1 if mode == "local_scale" else int(
+        mode in ("chunk_scale", "pin_panel", "chunk_pin_panel")) * 2
+    parts = [f"pm{int(args['pad_m'])}", f"sp{args['panel']}",
+             f"u{args.get('unroll', 2)}", f"gm{args.get('group_m', 0)}",
+             f"wide{int(args['wide_output'])}", f"sn{args.get('static_n', 0)}",
+             f"sl{scale_load}", f"sched{args.get('policy', 0)}",
+             f"vf{int(args.get('flags', 'flags_00') == 'flags_00')}"]
+    return "_".join(parts)
+
+
+def b_vgpr_lds(bm, bn, wn, bk, nb, fixed_k, pin_a, pin_c, *, wg=1, bd=1):
+    """Mirror the B traits' compile-time constraints before CO emission."""
     threads = wn * WARP_SIZE
-    mr, nr = bm // MFMA_M, bn // (wn * MFMA_N)
-    if bn % (wn * MFMA_N) or mr * nr * 4 > 256:
+    if bm <= 0 or bm % MFMA_M or wn not in (1, 2, 4, 8):
         return None
-    if bm * bk % (threads * VECTOR_SIZE) or fixed_k % bk:
+    mr, nr = bm // MFMA_M, bn // (wn * MFMA_N)
+    if bn <= 0 or bn > 256 or bn % (wn * MFMA_N) or mr * nr * 4 > 256:
+        return None
+    if bk not in B_BLOCK_K or nb < 2 or not 1 <= bd < nb or wg not in B_WGS_PER_CU:
+        return None
+    if bm * bk % (threads * VECTOR_SIZE) or fixed_k <= 0 or fixed_k % bk:
         return None
     if fixed_k // bk < nb - 1:
         return None
@@ -616,179 +358,219 @@ def b_vgpr_lds(bm, bn, wn, bk, nb, fixed_k, pin_a, pin_c):
     if b_scale_rows * b_scale_slots > threads:
         return None
     lds = nb * bm * bk + sa_bytes + threads * 4
-    if ceil_div(lds, 1280) * 1280 > LDS_LIMIT:
+    if ceil_div(lds, 1280) * 1280 * wg > LDS_LIMIT:
         return None
     return lds
 
 
-def b_vgpr_candidates(k_values, *, tiled_layout=False, geometries=None):
-    if geometries is None:
-        # Keep each original sweep first, then cover all seven geometries with
-        # that sweep's BD/XCD/Contiguous bundle.
-        original = TILED_B_GEOMETRIES if tiled_layout else B_GEOMETRIES
-        geometries = tuple(dict.fromkeys((*original, *B_GEOMETRIES, *TILED_B_GEOMETRIES)))
-    ahead = 1 if tiled_layout else 2
-    for (bm, bn, wn), fixed_k in itertools.product(geometries, k_values):
-        bk, nb = 128, 4
-        for pin_a, pin_c in itertools.product((False, True), repeat=2):
-            if not (pin_a or pin_c):
-                continue
-            if b_vgpr_lds(bm, bn, wn, bk, nb, fixed_k, pin_a, pin_c) is None:
-                continue
-            mask = int(pin_a) + 4 * int(pin_c)
-            args = (
-                bm,
-                bn,
-                nb,
-                ahead,
-                0,
-                not tiled_layout,  # XCD tile order.
-                fixed_k,
-                wn,
-                1,
-                0,
-                2,
-                0,
-                bk,
-                not tiled_layout,  # A/B strides specialized to K when true.
-                pin_a,
-                pin_c,
-                0,
-            )
-            candidate = record(
-                "prefetch_b_vgpr",
-                (bm, bn, bk),
-                (1, wn),
-                nb,
-                TRAITS_PREFIX + "prefetch_b_vgpr_traits",
-                args,
-                "opus_gemm_prefetch_b_vgpr_detail::bulk_panel_body",
-                "b_vgpr",
-                ("CoTraits",),
-                fixed_k,
-                fixed_k=fixed_k,
-                pin_mask=mask,
-                grid_layout="linear" if tiled_layout else "xcd",
-            )
-            suffix = (
-                f"p{nb}_bd{ahead}_k{fixed_k}_pinA{int(pin_a)}B0C{int(pin_c)}"
-                if tiled_layout else
-                f"p{nb}_a2_k{fixed_k}_c0x0_gm0_o0_contig_"
-                f"pinA{int(pin_a)}B0C{int(pin_c)}_nt0"
-            )
-            yield candidate, suffix
-
-
-def b_vgpr_overlap_candidates(k_values, *, tiled_layout=False):
-    for candidate, suffix in b_vgpr_candidates(k_values, tiled_layout=tiled_layout):
-        candidate["pipeline"] = "prefetch_b_vgpr_overlap"
-        candidate["traits"]["name"] = TRAITS_PREFIX + "prefetch_b_vgpr_overlap_traits"
-        candidate["traits"]["args"].append("0")
-        candidate["traits_header"] = (
-            "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_overlap_gfx950.cuh"
-        )
-        if tiled_layout:
-            candidate["body_args"] = ["CoTraits", "CoTraits::PUBLISH_M"]
+def b_record(bm, bn, wn, fixed_k, *, bk=128, stages=4, bd=2,
+             pin_a=False, pin_c=True, xcd=True, contiguous=True,
+             wg=1, cache_a=0, cache_b=0, overlap=False, publication=0,
+             implementation="base", stream_a=False, static_ring=False,
+             queue_ahead=0):
+    """Shared parameter composer for normal, overlap, and optimized B bodies."""
+    args = (bm, bn, stages, bd, cache_b, xcd, fixed_k, wn, wg, cache_a,
+            2, 0, bk, contiguous, pin_a, pin_c, 0)
+    traits_name = TRAITS_PREFIX + "prefetch_b_vgpr_traits"
+    body = "opus_gemm_prefetch_b_vgpr_detail::bulk_panel_body"
+    body_args = ("CoTraits",)
+    traits_header = None
+    header = PIPELINE_PREFIX + "b_vgpr_gfx950.cuh"
+    if overlap:
+        args += (publication,)
+        traits_name = TRAITS_PREFIX + "prefetch_b_vgpr_overlap_traits"
+        traits_header = "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_overlap_gfx950.cuh"
+        if not xcd and not contiguous and bd == 1:
+            body_args = ("CoTraits", "CoTraits::PUBLISH_M")
         else:
-            candidate["body_func"] = (
-                "opus_gemm_prefetch_b_vgpr_detail::bulk_panel_overlap_body"
-            )
-            suffix = suffix.removesuffix("_nt0") + "_pub0_nt0"
-        yield candidate, suffix
+            body = "opus_gemm_prefetch_b_vgpr_detail::bulk_panel_overlap_body"
+    if implementation != "base":
+        wrapper = "CoTraits"
+        if queue_ahead:
+            wrapper = cpp_template("opus_gemm_bpreshuffle_b_queue_traits", wrapper, queue_ahead)
+        wrapper = cpp_template("opus_gemm_bpreshuffle_b_pipeline_traits", wrapper, stream_a,
+                               static_ring, 0 if implementation == "compact" else -1,
+                               implementation == "compact")
+        body_args = (wrapper,)
+        traits_header = "opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh"
+        family = "opus_gemm_prefetch_b_vgpr_detail" if implementation == "compact" else "opus_gemm_prefetch_b_vgpr_detail"
+        body = family + ("::bulk_panel_overlap_body" if overlap else "::bulk_panel_body")
+        header = ("opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh" if implementation == "compact"
+                  else "opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_b_vgpr_gfx950.cuh")
+    mask = int(pin_a) + 4 * int(pin_c)
+    candidate = record(
+        "prefetch_b_vgpr_overlap" if overlap else "prefetch_b_vgpr",
+        (bm, bn, bk), (1, wn), stages, traits_name, args, body, "b_vgpr",
+        body_args, fixed_k, fixed_k=fixed_k, pin_mask=mask or 1,
+        grid_layout="xcd" if xcd else "linear",
+    )
+    candidate["pipeline_header"] = header
+    candidate["pin_mask"] = mask
+    candidate["pin_variant"] = bool(mask) or implementation != "base"
+    candidate["launch_bounds"] = [candidate["block_size"], wg]
+    if traits_header is not None:
+        candidate["traits_header"] = traits_header
+    return candidate
 
 
-def _generate_parameter_document(k_values):
-    k_values = sorted(set(k_values))
-    local_candidates = itertools.chain(
-        pin_agpr_candidates((True,)),
-        b_vgpr_candidates(k_values),
-        b_vgpr_overlap_candidates(k_values),
-        pin_agpr_candidates((False,)),
-    )
-    tiled_candidates = itertools.chain(
-        pin_agpr_candidates((False, True), tiled_layout=True),
-        b_vgpr_candidates(k_values, tiled_layout=True),
-        b_vgpr_overlap_candidates(k_values, tiled_layout=True),
-    )
-    records, suffixes = [], {}
-    configs = set()
-    sources = {}
-    for source, candidates in (("local", local_candidates), ("tiled_layout", tiled_candidates)):
-        first_kid, duplicates = len(records), 0
-        for candidate, suffix in candidates:
-            config = json.dumps(candidate, sort_keys=True)
-            if config in configs:
-                duplicates += 1
+def b_parameter_candidates(overlap=False):
+    for is_overlap, (bm, bn, wn), ks, pins, (xcd, contiguous, bd) in B_PARAMETER_GROUPS:
+        if is_overlap != overlap:
+            continue
+        for k, (pin_a, pin_c) in itertools.product(ks, pins):
+            if b_vgpr_lds(bm, bn, wn, 128, 4, k, pin_a, pin_c, bd=bd) is None:
                 continue
-            configs.add(config)
-            kid = len(records)
-            candidate["kid"] = kid
-            candidate["configKey"] = f"bpreshuffle_co_{candidate['pipeline']}_{kid}"
-            records.append(candidate)
-            suffixes[str(kid)] = suffix
-        sources[source] = {
-            "added": len(records) - first_kid,
-            "duplicates_skipped": duplicates,
-            "kid_range": [first_kid, len(records) - 1] if len(records) > first_kid else [],
-        }
+            args = dict(bm=bm, bn=bn, wn=wn, fixed_k=k, bd=bd,
+                        pin_a=pin_a, pin_c=pin_c, xcd=xcd,
+                        contiguous=contiguous, overlap=overlap)
+            yield b_record(**args), f"tile{bm}x{bn}_w{wn}_bd{bd}", b_image_suffix(args)
+
+
+def b_image_suffix(args):
+    """Fixed order for both B families, including disabled/default settings.
+    p=stages, bd=B prefetch distance, loops=FixedK/BK, pinA/C=AGPR pinning,
+    xcd/contig=tile addressing, ca/cb=cache controls, wg=workgroups per CU,
+    pub=M publication index, sa/sb=stream A/static B-ring traits,
+    compact=compact B ring, ahead=queue override (auto uses the base traits),
+    out=output mode (0 uses LDS stripes). Ordinary B kernels publish at 0.
+    """
+    parts = [f"p{args.get('stages', 4)}", f"bd{args.get('bd', 2)}",
+             f"loops{args['fixed_k'] // args.get('bk', 128)}",
+             f"pinA{int(args.get('pin_a', False))}C{int(args.get('pin_c', True))}",
+             f"xcd{int(args.get('xcd', True))}",
+             f"contig{int(args.get('contiguous', True))}",
+             f"ca{args.get('cache_a', 0)}cb{args.get('cache_b', 0)}",
+             f"wg{args.get('wg', 1)}", f"pub{args.get('publication', 0)}",
+             f"sa{int(args.get('stream_a', False))}",
+             f"sb{int(args.get('static_ring', False))}",
+             f"compact{int(args.get('implementation') == 'compact')}",
+             f"ahead{args.get('queue_ahead') or 'auto'}", "out0"]
+    return "_".join(parts)
+
+
+def optimized_b_candidates():
+    for group, parameters in B_IMPLEMENTATION_GROUPS:
+        for args in parameter_grid(parameters):
+            bm, bn, wn, k = (args[key] for key in ("bm", "bn", "wn", "fixed_k"))
+            bk, stages, bd, wg = (args.get(key, default) for key, default in
+                                 (("bk", 128), ("stages", 4), ("bd", 2), ("wg", 1)))
+            if b_vgpr_lds(bm, bn, wn, bk, stages, k, args["pin_a"],
+                          args["pin_c"], wg=wg, bd=bd) is None:
+                continue
+            queue = args.get("queue_ahead", 0)
+            if queue:
+                mr, nr = bm // MFMA_M, bn // (wn * MFMA_N)
+                room = (256 if wg == 2 else 512) - mr * nr * 4 - bk // MFMA_K * mr * 8 - 48
+                if queue > max(room // 8 - 1, 1) or queue >= k // bk * (bk // MFMA_K) * nr:
+                    continue
+            yield b_record(**args), group, b_image_suffix(args)
+
+
+def interleave_candidates():
+    for bm, bn, bk, waves, group_m, cache_a, cache_b, wave_n in (
+        (192, 256, 256, (2, 4), 8, 1, 17, 4),
+    ):
+        candidate = record(
+            "wave_interleave", (bm, bn, bk), waves, 2,
+            "opus_gemm_bpreshuffle_wave_interleave_traits",
+            (bm, 0, group_m, True, cache_a, cache_b, wave_n),
+            "opus_gemm_bpreshuffle_wave_interleave_body", "interleave",
+            (cpp_template("opus_gemm_bpreshuffle_interleave_load_traits", "CoTraits", True, False),),
+            16384, pin_mask=1,
+        )
+        candidate.update(pin_mask=0, pin_variant=False,
+                         pipeline_header="opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+                         traits_header="opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh")
+        # loops=FixedK/BK (auto means runtime K), gm=GroupM, xcd=tile order,
+        # ca/cb=cache, skipA=skip unused A rows, bfirst=B-before-A issue order.
+        suffix = (f"loopsauto_gm{group_m}_xcd1_ca{cache_a}cb{cache_b}"
+                  "_skipA1_bfirst0")
+        yield candidate, "interleave", suffix
+
+
+def configuration_hash(entry):
+    settings = {key: value for key, value in entry.items()
+                if key not in ("kid", "configKey", "supported_shapes")}
+    return hashlib.sha256(json.dumps(settings, sort_keys=True,
+                                    separators=(",", ":")).encode()).hexdigest()
+
+
+def generate_document(shapes=None):
+    """Emit all compact parameter groups with consecutive CO IDs from zero."""
+    if shapes is None:
+        input_path = Path(__file__).resolve().parents[3] / "docs/gfx950_mxscale_20261029/shapes_421.csv"
+        with input_path.open(newline="") as stream:
+            shapes = [tuple(int(row[key]) for key in ("M", "N", "K"))
+                      for row in csv.DictReader(stream)]
+    optimized_b = tuple(optimized_b_candidates())
+    candidates = itertools.chain(
+        pin_parameter_candidates(),
+        b_parameter_candidates(),
+        (item for item in optimized_b if item[0]["pipeline"] == "prefetch_b_vgpr"),
+        b_parameter_candidates(overlap=True),
+        (item for item in optimized_b if item[0]["pipeline"] == "prefetch_b_vgpr_overlap"),
+        interleave_candidates(),
+    )
+    records, suffixes, seen, counts = [], {}, set(), Counter()
+    for candidate, group, suffix in candidates:
+        digest = configuration_hash(candidate)
+        if digest in seen:
+            continue
+        seen.add(digest)
+        counts[(candidate["pipeline"], group)] += 1
+        kid = len(records)
+        candidate["kid"] = kid
+        candidate["configKey"] = f"bpreshuffle_co_{candidate['pipeline']}_{kid}"
+        if digest in CO_SHAPE_SCOPES:
+            candidate["supported_shapes"] = [list(shape) for shape in
+                FINAL_SHAPE_SCOPES[CO_SHAPE_SCOPES[digest]]]
+        elif candidate.get("static_n"):
+            candidate["supported_shapes"] = [list(shape) for shape in shapes
+                if shape[1] == candidate["static_n"]
+                and shape[0] % candidate["m_align"] == 0
+                and (candidate["max_k"] is None or shape[2] <= candidate["max_k"])]
+        records.append(candidate)
+        suffixes[str(kid)] = suffix
+    option = DEVICE_FLAGS.index("--amdgpu-mfma-vgpr-form")
     return {
-        "_generation": {"candidate_sources": sources},
+        "_generation": {
+            "version": 5,
+            "parameter_counts": {f"{pipeline}/{group}": count
+                                 for (pipeline, group), count in sorted(counts.items())},
+        },
         "defaults": {
             "tag": "a8w8_blockscale_mxscale_gemm_bpreshuffle",
             "dtypes": {"a": "fp8_t", "b": "fp8_t", "c": "bf16_t", "acc": "fp32_t"},
         },
-        "device_flag_sets": {"flags_00": list(DEVICE_FLAGS)},
+        "device_flag_sets": {
+            "flags_00": list(DEVICE_FLAGS),
+            "flags_stage6_agpr_form": DEVICE_FLAGS[:option - 1] + DEVICE_FLAGS[option + 1:],
+        },
+        "jit_kid_base": 200,
         "image_suffixes": suffixes,
         "gfx950": records,
     }
 
 
-def generate_document():
-    """Emit the complete parameter set even when no output JSON exists."""
-    document = _generate_parameter_document(FIXED_K_VALUES)
-    regular = {entry["kid"]: entry for entry in document["gfx950"]}
-    if set(regular) != set(range(780)):
-        raise ValueError("Regular CO parameters must preserve original IDs 0..779")
-    for kid, base_kid, overrides, removed, scope, suffix in FINAL_CONFIGURATIONS:
-        entry = copy.deepcopy(regular[base_kid])
-        entry.pop("configKey", None)
-        for field in removed:
-            entry.pop(field)
-        entry.update(copy.deepcopy(overrides))
-        entry["kid"] = kid
-        entry["supported_shapes"] = [list(shape) for shape in FINAL_SHAPE_SCOPES[scope]]
-        document["gfx950"].append(entry)
-        document["image_suffixes"][str(kid)] = suffix
-    option = DEVICE_FLAGS.index("--amdgpu-mfma-vgpr-form")
-    document["device_flag_sets"]["flags_stage6_agpr_form"] = (
-        DEVICE_FLAGS[:option - 1] + DEVICE_FLAGS[option + 1:]
-    )
-    document["jit_kid_base"] = 780
-    document["_generation"].update(
-        version=2,
-        regular_parameter_co=780,
-        final_configurations=len(FINAL_CONFIGURATIONS),
-    )
-    return document
+def write_document(document, path):
+    path.write_text(json.dumps(document, indent=2) + "\n")
 
 
 def validate_document(document, shapes):
-    records = document["gfx950"]
+    records = [{**document["defaults"], **entry} for entry in document["gfx950"]]
     kids = {record["kid"] for record in records}
     if len(kids) != len(records):
         raise ValueError("Duplicate local CO kid")
     if any(type(kid) is not int or kid < 0 for kid in kids):
         raise ValueError("Local CO kids must be nonnegative integers")
-    if {kid for kid in kids if kid < 100000} != set(range(780)):
-        raise ValueError("Regular CO IDs must remain 0..779; final additions are sparse")
-    if document.get("jit_kid_base") != 780:
-        raise ValueError("JIT IDs must remain based at 780")
+    if kids != set(range(len(records))) or len(records) > 200:
+        raise ValueError("CO IDs must be consecutive from zero and below the JIT base")
+    if document.get("jit_kid_base") != 200:
+        raise ValueError("JIT IDs must remain based at 200")
     if set(document["image_suffixes"]) != {str(kid) for kid in kids}:
         raise ValueError("Image suffixes must exactly match declared CO IDs")
     symbols = set()
     for candidate in records:
-        if candidate["kid"] < 780 and not candidate.get("pin_mask", 0):
-            raise ValueError("CO candidates must declare their register pinning")
         geometry = (tuple(candidate["tile"]), tuple(candidate["wave_layout"]))
         symbol = (
             candidate["pipeline"],
@@ -808,10 +590,6 @@ def validate_document(document, shapes):
                 raise ValueError("Pin M alignment differs from its PAD_M path")
             if candidate["traits"]["args"][-1] != str(pad_m).lower():
                 raise ValueError("Pin PAD_M differs between metadata and traits")
-            suffix = document["image_suffixes"][str(candidate["kid"])]
-            if candidate["kid"] < 780 and not (suffix.startswith(f"pm{int(pad_m)}_")
-                    or pad_m and suffix.startswith("sp")):
-                raise ValueError("Pin PAD_M differs between metadata and image name")
         if candidate["pipeline"] == "prefetch_b_vgpr_overlap":
             publish = int(candidate["traits"]["args"][-1])
             if not 0 <= publish < candidate["tile"][0] // MFMA_M - 1:
@@ -861,19 +639,18 @@ def main():
     k_values = sorted({k for _, _, k in shapes})
     if any(k <= 0 or k % MFMA_K for k in k_values):
         raise ValueError("Input K values must be positive multiples of 128")
-    document = generate_document()
+    document = generate_document(shapes)
     counts = validate_document(document, shapes)
     print(
         json.dumps(
             {
                 "input_shapes": len(shapes),
-                "fixed_k_values": list(FIXED_K_VALUES),
+                "fixed_k_values": sorted({entry["fixed_k"] for entry in document["gfx950"] if entry["fixed_k"]}),
                 "input_k_values": k_values,
                 "co_counts": counts,
                 "total_co": sum(counts.values()),
-                "regular_parameter_co": 780,
-                "final_configurations": len(FINAL_CONFIGURATIONS),
-                "candidate_sources": document["_generation"]["candidate_sources"],
+                "jit_kid_base": 200,
+                "parameter_counts": document["_generation"]["parameter_counts"],
                 "local_co_range": [
                     min(candidate["kid"] for candidate in document["gfx950"]),
                     max(candidate["kid"] for candidate in document["gfx950"]),
@@ -883,7 +660,7 @@ def main():
         )
     )
     if not args.count_only:
-        args.output.write_text(json.dumps(document, indent=2) + "\n")
+        write_document(document, args.output)
         print(f"Wrote {args.output}")
 
 
