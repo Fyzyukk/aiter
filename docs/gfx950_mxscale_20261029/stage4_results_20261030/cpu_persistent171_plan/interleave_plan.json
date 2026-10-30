@@ -1,0 +1,821 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-10-30T09:05:58.849839+00:00",
+  "status": "cpu_design_and_integer_enumeration_only",
+  "gpu_executed": false,
+  "torch_imported": false,
+  "kernel_source_modified": false,
+  "new_gpu_jit_built": false,
+  "frozen_regressions14_package_modified": false,
+  "scope": "interleave small-M long-K subset of persistent171",
+  "target_cohort": {
+    "N": 7168,
+    "K": 16384,
+    "M": [
+      1216,
+      1280,
+      1344,
+      1408,
+      1472,
+      1536,
+      1600,
+      1664
+    ],
+    "persistent_losses": 8,
+    "current_winner_pipeline": "wave_interleave",
+    "current_winner_geometry": [
+      192,
+      256,
+      256,
+      2,
+      4
+    ]
+  },
+  "representatives": [
+    {
+      "shape": {
+        "M": 1216,
+        "N": 7168,
+        "K": 16384
+      },
+      "scope": "persistent_loss",
+      "description": "final M tile has 64 valid rows",
+      "current_kernel": {
+        "kernelId": 47680,
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+        "splitK": 1
+      },
+      "current_us": 175.7013,
+      "baseline_us": 152.7889,
+      "slowdown_pct": 14.996115555514834,
+      "errRatio": 0.0008,
+      "completed_utc": "2026-10-30T06:07:27Z",
+      "measurement_provenance": "Top4 fast round: 11 measured calls, 2 historical warmups; remeasure the original with the future same-run protocol",
+      "tile_workgroups": 196,
+      "tile_workgroups_per_256_cu": 0.765625,
+      "final_valid_rows": 64
+    },
+    {
+      "shape": {
+        "M": 1536,
+        "N": 7168,
+        "K": 16384
+      },
+      "scope": "persistent_loss",
+      "description": "all M tiles are full",
+      "current_kernel": {
+        "kernelId": 47680,
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+        "splitK": 1
+      },
+      "current_us": 186.4453,
+      "baseline_us": 164.8976,
+      "slowdown_pct": 13.067321780304852,
+      "errRatio": 0.0008,
+      "completed_utc": "2026-10-30T06:08:19Z",
+      "measurement_provenance": "Top4 fast round: 11 measured calls, 2 historical warmups; remeasure the original with the future same-run protocol",
+      "tile_workgroups": 224,
+      "tile_workgroups_per_256_cu": 0.875,
+      "final_valid_rows": 192
+    },
+    {
+      "shape": {
+        "M": 1664,
+        "N": 7168,
+        "K": 16384
+      },
+      "scope": "persistent_loss",
+      "description": "final M tile has 128 valid rows",
+      "current_kernel": {
+        "kernelId": 47669,
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm0_xcd0_cA17cB1_nt0",
+        "splitK": 1
+      },
+      "current_us": 193.2055,
+      "baseline_us": 173.8363,
+      "slowdown_pct": 11.142206777295648,
+      "errRatio": 0.0008,
+      "completed_utc": "2026-10-30T06:07:27Z",
+      "measurement_provenance": "Top4 fast round: 11 measured calls, 2 historical warmups; remeasure the original with the future same-run protocol",
+      "tile_workgroups": 252,
+      "tile_workgroups_per_256_cu": 0.984375,
+      "final_valid_rows": 128
+    }
+  ],
+  "protection_shapes": [
+    {
+      "shape": {
+        "M": 1088,
+        "N": 7168,
+        "K": 16384
+      },
+      "scope": "current_csv_win_protection",
+      "current_dispatch_kernel": {
+        "kernelId": 692,
+        "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_bd1_k16384_pinA1B0C1",
+        "splitK": 1
+      },
+      "current_dispatch_us": 123.3045,
+      "baseline_us": 139.7252,
+      "beats_csv": true,
+      "interleave_anchor": {
+        "kernelId": 47680,
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+        "splitK": 1
+      },
+      "note": "The interleave anchor is a future reference candidate, not the historical/current dispatch winner for this shape."
+    },
+    {
+      "shape": {
+        "M": 1152,
+        "N": 7168,
+        "K": 16384
+      },
+      "scope": "current_csv_win_protection",
+      "current_dispatch_kernel": {
+        "kernelId": 691,
+        "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_bd1_k16384_pinA1B0C0",
+        "splitK": 1
+      },
+      "current_dispatch_us": 122.3527,
+      "baseline_us": 144.4897,
+      "beats_csv": true,
+      "interleave_anchor": {
+        "kernelId": 47680,
+        "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+        "splitK": 1
+      },
+      "note": "The interleave anchor is a future reference candidate, not the historical/current dispatch winner for this shape."
+    }
+  ],
+  "existing_coverage": {
+    "representative_top4_interleave_geometries": [
+      [
+        128,
+        256,
+        256,
+        2,
+        2
+      ],
+      [
+        128,
+        256,
+        256,
+        2,
+        4
+      ],
+      [
+        192,
+        256,
+        256,
+        2,
+        2
+      ],
+      [
+        192,
+        256,
+        256,
+        2,
+        4
+      ]
+    ],
+    "representative_top4_legal_interleave_candidates": 120,
+    "precise_historical_seed_covered": true,
+    "kernel_schedule_modes_already_registered": false,
+    "fact_vs_hypothesis": "Existing coverage and static request/storage counts are facts; the hardware bottleneck and expected performance benefit are not established."
+  },
+  "source_refs": [
+    {
+      "id": "traits_geometry",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 10,
+      "end_line": 40,
+      "purpose": "Tile/wave geometry, K_STAGE, half decomposition"
+    },
+    {
+      "id": "traits_storage",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 54,
+      "end_line": 71,
+      "purpose": "Producer padding, two stages and LDS/scale allocation"
+    },
+    {
+      "id": "a_layout",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 24,
+      "end_line": 86,
+      "purpose": "A producer and fragment consumer layouts; paired XOR adjustment at 393-410"
+    },
+    {
+      "id": "a_layout_swizzle",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 393,
+      "end_line": 410,
+      "purpose": "A producer row identity and XOR adjustments"
+    },
+    {
+      "id": "global_to_lds",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 458,
+      "end_line": 472,
+      "purpose": "Exact A/B producer async_load operations"
+    },
+    {
+      "id": "scale_publication",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 478,
+      "end_line": 542,
+      "purpose": "Scale loads/publication/selection stay unchanged"
+    },
+    {
+      "id": "issue_order",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 544,
+      "end_line": 549,
+      "purpose": "Original A0,A1,B0,B1 producer order"
+    },
+    {
+      "id": "consume_ring",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 558,
+      "end_line": 590,
+      "purpose": "wait/barrier, next-stage issue, current operand read and MFMA"
+    },
+    {
+      "id": "stage_loop",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 594,
+      "end_line": 609,
+      "purpose": "Prologue and alternating stage0/1 loop"
+    },
+    {
+      "id": "output_drain",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 612,
+      "end_line": 637,
+      "purpose": "Drain before reuse of matrix LDS for C"
+    },
+    {
+      "id": "c_window",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "start_line": 381,
+      "end_line": 384,
+      "purpose": "Preserve int64 C base and local bounded SRD"
+    },
+    {
+      "id": "top4_selection",
+      "path": "/home/fyz/aiter/csrc/opus_gemm/opus_gemm_search.py",
+      "start_line": 329,
+      "end_line": 351,
+      "purpose": "M/N-based geometry cost; precise seeds do not expand all geometry parameters"
+    }
+  ],
+  "fingerprints": [
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_pipeline_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "sha256": "b9814b56e22aa9deeeaa65568ecce22c40f41c58f83bd8dc34695bdf0be14052"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/include/gfx950/opus_gemm_traits_a8w8_blockscale_mxscale_bpreshuffle_interleave_gfx950.cuh",
+      "sha256": "9204100d8b277bc2abf9478309079816a1bd4aa7adc4171134c5fd4cdaf1e9b1"
+    },
+    {
+      "path": "/home/fyz/aiter/csrc/opus_gemm/opus_gemm_search.py",
+      "sha256": "bbb4fac3da74fa15acf6cf56ed5c14ab745b93d1a7fea6f19935ac3032fb6518"
+    },
+    {
+      "path": "/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/stage4_full421/full421_comparison.csv",
+      "sha256": "6d73688e4e7faf51ed4e032d11a2f58666236bbb66978ff7d3f8bf728a994a62"
+    },
+    {
+      "path": "/home/fyz/aiter/docs/gfx950_mxscale_20261029/all_shapes_421.csv",
+      "sha256": "4d3755e88002c992cc307ffaff4ad835d2a2a8226bb0d7d3329b456cd82941a4"
+    }
+  ],
+  "variants": [
+    {
+      "id": "I1",
+      "name": "interleave_skip_unused_A_half_padding",
+      "first_round": true,
+      "implementation_status": "design_only_requires_source_implementation",
+      "new_kernelId": null,
+      "single_factor": "A producer wave-uniform guard for unused compile-time half-padding rows only",
+      "source_refs": [
+        "a_layout",
+        "a_layout_swizzle",
+        "global_to_lds",
+        "traits_storage"
+      ],
+      "change": "In load_a guard the original async_load with wave_id*8 + step*(BLOCK_SIZE/8) < HALF_M; keep all addresses, storage and scheduling unchanged. Do not guard by actual valid_rows.",
+      "unchanged": [
+        "geometry",
+        "GroupM",
+        "XCD",
+        "cache",
+        "K_STAGE",
+        "scale operations",
+        "A_SLOT/B_SLOT",
+        "all register arrays",
+        "producer order",
+        "prefetch position",
+        "wait/barrier count",
+        "C addressing"
+      ],
+      "hypothesis": "Avoid unconsumed A padding requests; whether it improves elapsed time or external traffic is unknown.",
+      "static_nominal_BM192_WaveN4": {
+        "A_wave_requests_per_K128_original": 32,
+        "A_wave_requests_per_K128_variant": 24,
+        "A_lane_payload_bytes_original": 32768,
+        "A_lane_payload_bytes_variant": 24576,
+        "B_wave_requests_per_K128": 32,
+        "B_lane_payload_bytes": 32768,
+        "A_request_reduction_pct": 25,
+        "A_plus_B_nominal_lane_payload_reduction_pct": 12.5,
+        "LDS_bytes_unchanged": 163840,
+        "interpretation": "Source request/payload counts only; not measured HBM bytes, cache misses, resident waves or speedup."
+      },
+      "hazard_invariants": [
+        "All original consumer bytes are initialized by retained writers.",
+        "Omitted writer bytes are never read by any wave/half/fragment.",
+        "All consumed actual-M-tail zero writes remain initialized through the original SRD behavior.",
+        "SFA/SFB coverage and XOR mapping are unchanged.",
+        "Every wave executes the same original WG barriers even if its A request is skipped.",
+        "Stage reuse and epilogue drain are unchanged."
+      ]
+    },
+    {
+      "id": "I3",
+      "name": "interleave_B_first_producer_issue",
+      "first_round": true,
+      "implementation_status": "design_only_requires_source_implementation",
+      "new_kernelId": null,
+      "single_factor": "Producer operand issue order only",
+      "source_refs": [
+        "issue_order",
+        "consume_ring"
+      ],
+      "change": "issue_tile calls B0,B1,A0,A1 rather than A0,A1,B0,B1 at its original post-barrier position.",
+      "unchanged": [
+        "all addresses",
+        "all request counts",
+        "all LDS slots",
+        "all arrays",
+        "scale",
+        "cache",
+        "prefetch distance and stage",
+        "all wait/barrier",
+        "C addressing"
+      ],
+      "hypothesis": "Test whether B-first issue balances operand completion; no CPU evidence of a B latency bottleneck.",
+      "hazard_invariants": [
+        "A and B destination regions remain disjoint.",
+        "Next-stage writes remain after the original stage-reuse WG barrier.",
+        "All four request groups still finish before their original consumption publication barrier.",
+        "Final tile issues no nonexistent next tile.",
+        "Future ISA must actually show the intended order; compiler-restored ordering is not an implemented experiment."
+      ]
+    },
+    {
+      "id": "I2",
+      "name": "interleave_B_fragment_N_half_register_ring",
+      "first_round": false,
+      "implementation_status": "conditional_design_only_requires_source_implementation",
+      "new_kernelId": null,
+      "single_factor": "B register staging/liveness only",
+      "source_refs": [
+        "consume_ring"
+      ],
+      "change": "v_b[2*E_N] becomes v_b[E_N]; read/consume N half0 across both M halves, then read/consume half1 using the same array. Add only the readiness waits required by the split B staging.",
+      "unchanged": [
+        "global request counts/order",
+        "next-stage prefetch",
+        "A registers",
+        "LDS slots",
+        "scale selectors",
+        "C fragment indices",
+        "per-C-fragment cross-K MFMA order",
+        "geometry",
+        "cache"
+      ],
+      "hypothesis": "Reduce live B fragments or ease operand scheduling; actual register allocation/spills must be measured in a later authorized build.",
+      "limitations": [
+        "LDS remains 160KiB for BM192/WaveN4; do not predict increased resident workgroups solely from a smaller B array.",
+        "Never combine with I1/I3 in the initial isolated comparison."
+      ],
+      "hazard_invariants": [
+        "Both M halves reuse every B fragment before its register is overwritten.",
+        "Each half B load finishes before dependent MFMA.",
+        "N-half scale selector and C index remain exact.",
+        "A original operands remain live for both N halves.",
+        "LDS producer/consumer stage barriers remain unchanged."
+      ]
+    }
+  ],
+  "static_validation": {
+    "executed_utc": "2026-10-30T09:05:58.850259+00:00",
+    "method": "Pure Python integer/coordinate enumeration over all wave/lane/A-step/stage/half/consumer-fragment combinations, plus unchanged scale row coverage and a stage-order contract model. No Torch, GPU, kernel execution or new GPU JIT.",
+    "coverage_result": "passed",
+    "geometries": [
+      {
+        "BlockM": 128,
+        "WaveN": 2,
+        "waves": 4,
+        "half_m": 64,
+        "a_steps": 2,
+        "a_slot_bytes": 8192,
+        "producer_vectors_enumerated": 2048,
+        "consumer_vectors_enumerated_including_shared_reads": 4096,
+        "consumer_byte_addresses": 32768,
+        "omitted_byte_addresses": 0,
+        "old_and_new_consumer_values_equal": true,
+        "all_reader_bytes_initialized": true,
+        "omitted_writer_reader_intersection": 0,
+        "xor_row_mapping_is_bijective": true,
+        "predicate_wave_uniform": true,
+        "shared_reader_mapping_preserved": true,
+        "first_scale_rows": 128,
+        "later_scale_pairs": 16256,
+        "scale_coverage_unchanged": true,
+        "actual_M_tail_zero_cases_checked": [
+          16,
+          64,
+          128,
+          128,
+          256
+        ],
+        "a_wave_requests_per_K128_original": 16,
+        "a_wave_requests_per_K128_I1": 16,
+        "b_wave_requests_per_K128_unchanged": 32,
+        "nominal_A_lane_payload_bytes_original": 16384,
+        "nominal_A_lane_payload_bytes_I1": 16384,
+        "nominal_B_lane_payload_bytes_unchanged": 32768,
+        "original_LDS_bytes": 131072,
+        "I1_LDS_bytes_unchanged": 131072
+      },
+      {
+        "BlockM": 128,
+        "WaveN": 4,
+        "waves": 8,
+        "half_m": 64,
+        "a_steps": 1,
+        "a_slot_bytes": 8192,
+        "producer_vectors_enumerated": 2048,
+        "consumer_vectors_enumerated_including_shared_reads": 8192,
+        "consumer_byte_addresses": 32768,
+        "omitted_byte_addresses": 0,
+        "old_and_new_consumer_values_equal": true,
+        "all_reader_bytes_initialized": true,
+        "omitted_writer_reader_intersection": 0,
+        "xor_row_mapping_is_bijective": true,
+        "predicate_wave_uniform": true,
+        "shared_reader_mapping_preserved": true,
+        "first_scale_rows": 128,
+        "later_scale_pairs": 16256,
+        "scale_coverage_unchanged": true,
+        "actual_M_tail_zero_cases_checked": [
+          16,
+          64,
+          128,
+          128,
+          256
+        ],
+        "a_wave_requests_per_K128_original": 16,
+        "a_wave_requests_per_K128_I1": 16,
+        "b_wave_requests_per_K128_unchanged": 32,
+        "nominal_A_lane_payload_bytes_original": 16384,
+        "nominal_A_lane_payload_bytes_I1": 16384,
+        "nominal_B_lane_payload_bytes_unchanged": 32768,
+        "original_LDS_bytes": 131072,
+        "I1_LDS_bytes_unchanged": 131072
+      },
+      {
+        "BlockM": 192,
+        "WaveN": 2,
+        "waves": 4,
+        "half_m": 96,
+        "a_steps": 3,
+        "a_slot_bytes": 12288,
+        "producer_vectors_enumerated": 3072,
+        "consumer_vectors_enumerated_including_shared_reads": 6144,
+        "consumer_byte_addresses": 49152,
+        "omitted_byte_addresses": 0,
+        "old_and_new_consumer_values_equal": true,
+        "all_reader_bytes_initialized": true,
+        "omitted_writer_reader_intersection": 0,
+        "xor_row_mapping_is_bijective": true,
+        "predicate_wave_uniform": true,
+        "shared_reader_mapping_preserved": true,
+        "first_scale_rows": 192,
+        "later_scale_pairs": 24384,
+        "scale_coverage_unchanged": true,
+        "actual_M_tail_zero_cases_checked": [
+          16,
+          64,
+          128,
+          192,
+          384
+        ],
+        "a_wave_requests_per_K128_original": 24,
+        "a_wave_requests_per_K128_I1": 24,
+        "b_wave_requests_per_K128_unchanged": 32,
+        "nominal_A_lane_payload_bytes_original": 24576,
+        "nominal_A_lane_payload_bytes_I1": 24576,
+        "nominal_B_lane_payload_bytes_unchanged": 32768,
+        "original_LDS_bytes": 147456,
+        "I1_LDS_bytes_unchanged": 147456
+      },
+      {
+        "BlockM": 192,
+        "WaveN": 4,
+        "waves": 8,
+        "half_m": 96,
+        "a_steps": 2,
+        "a_slot_bytes": 16384,
+        "producer_vectors_enumerated": 4096,
+        "consumer_vectors_enumerated_including_shared_reads": 12288,
+        "consumer_byte_addresses": 49152,
+        "omitted_byte_addresses": 16384,
+        "old_and_new_consumer_values_equal": true,
+        "all_reader_bytes_initialized": true,
+        "omitted_writer_reader_intersection": 0,
+        "xor_row_mapping_is_bijective": true,
+        "predicate_wave_uniform": true,
+        "shared_reader_mapping_preserved": true,
+        "first_scale_rows": 192,
+        "later_scale_pairs": 24384,
+        "scale_coverage_unchanged": true,
+        "actual_M_tail_zero_cases_checked": [
+          16,
+          64,
+          128,
+          192,
+          384
+        ],
+        "a_wave_requests_per_K128_original": 32,
+        "a_wave_requests_per_K128_I1": 24,
+        "b_wave_requests_per_K128_unchanged": 32,
+        "nominal_A_lane_payload_bytes_original": 32768,
+        "nominal_A_lane_payload_bytes_I1": 24576,
+        "nominal_B_lane_payload_bytes_unchanged": 32768,
+        "original_LDS_bytes": 163840,
+        "I1_LDS_bytes_unchanged": 163840
+      },
+      {
+        "BlockM": 256,
+        "WaveN": 2,
+        "waves": 4,
+        "half_m": 128,
+        "a_steps": 4,
+        "a_slot_bytes": 16384,
+        "producer_vectors_enumerated": 4096,
+        "consumer_vectors_enumerated_including_shared_reads": 8192,
+        "consumer_byte_addresses": 65536,
+        "omitted_byte_addresses": 0,
+        "old_and_new_consumer_values_equal": true,
+        "all_reader_bytes_initialized": true,
+        "omitted_writer_reader_intersection": 0,
+        "xor_row_mapping_is_bijective": true,
+        "predicate_wave_uniform": true,
+        "shared_reader_mapping_preserved": true,
+        "first_scale_rows": 256,
+        "later_scale_pairs": 32512,
+        "scale_coverage_unchanged": true,
+        "actual_M_tail_zero_cases_checked": [
+          16,
+          64,
+          128,
+          256,
+          512
+        ],
+        "a_wave_requests_per_K128_original": 32,
+        "a_wave_requests_per_K128_I1": 32,
+        "b_wave_requests_per_K128_unchanged": 32,
+        "nominal_A_lane_payload_bytes_original": 32768,
+        "nominal_A_lane_payload_bytes_I1": 32768,
+        "nominal_B_lane_payload_bytes_unchanged": 32768,
+        "original_LDS_bytes": 163840,
+        "I1_LDS_bytes_unchanged": 163840
+      },
+      {
+        "BlockM": 256,
+        "WaveN": 4,
+        "waves": 8,
+        "half_m": 128,
+        "a_steps": 2,
+        "a_slot_bytes": 16384,
+        "producer_vectors_enumerated": 4096,
+        "consumer_vectors_enumerated_including_shared_reads": 16384,
+        "consumer_byte_addresses": 65536,
+        "omitted_byte_addresses": 0,
+        "old_and_new_consumer_values_equal": true,
+        "all_reader_bytes_initialized": true,
+        "omitted_writer_reader_intersection": 0,
+        "xor_row_mapping_is_bijective": true,
+        "predicate_wave_uniform": true,
+        "shared_reader_mapping_preserved": true,
+        "first_scale_rows": 256,
+        "later_scale_pairs": 32512,
+        "scale_coverage_unchanged": true,
+        "actual_M_tail_zero_cases_checked": [
+          16,
+          64,
+          128,
+          256,
+          512
+        ],
+        "a_wave_requests_per_K128_original": 32,
+        "a_wave_requests_per_K128_I1": 32,
+        "b_wave_requests_per_K128_unchanged": 32,
+        "nominal_A_lane_payload_bytes_original": 32768,
+        "nominal_A_lane_payload_bytes_I1": 32768,
+        "nominal_B_lane_payload_bytes_unchanged": 32768,
+        "original_LDS_bytes": 163840,
+        "I1_LDS_bytes_unchanged": 163840
+      }
+    ],
+    "stage_models": [
+      {
+        "K128_steps": 2,
+        "issued_tiles": 2,
+        "all_tiles_consumed_once": true,
+        "no_out_of_range_prefetch": true,
+        "only_reuses_previously_consumed_next_stage_after_WG_barrier": true,
+        "matrix_drained_before_C_LDS_reuse": true,
+        "consume_publication_barriers": 2
+      },
+      {
+        "K128_steps": 4,
+        "issued_tiles": 4,
+        "all_tiles_consumed_once": true,
+        "no_out_of_range_prefetch": true,
+        "only_reuses_previously_consumed_next_stage_after_WG_barrier": true,
+        "matrix_drained_before_C_LDS_reuse": true,
+        "consume_publication_barriers": 4
+      },
+      {
+        "K128_steps": 56,
+        "issued_tiles": 56,
+        "all_tiles_consumed_once": true,
+        "no_out_of_range_prefetch": true,
+        "only_reuses_previously_consumed_next_stage_after_WG_barrier": true,
+        "matrix_drained_before_C_LDS_reuse": true,
+        "consume_publication_barriers": 56
+      },
+      {
+        "K128_steps": 128,
+        "issued_tiles": 128,
+        "all_tiles_consumed_once": true,
+        "no_out_of_range_prefetch": true,
+        "only_reuses_previously_consumed_next_stage_after_WG_barrier": true,
+        "matrix_drained_before_C_LDS_reuse": true,
+        "consume_publication_barriers": 128
+      }
+    ],
+    "limits": "An integer model does not prove emitted GPU ISA, runtime synchronization behavior or performance; future source and ISA validation remains required."
+  },
+  "validation_matrix": {
+    "requires_future_GPU_authorization": true,
+    "new_versions_executable_now": false,
+    "first_round_pairs": 9,
+    "first_round_batches": 1,
+    "first_round_matrix": [
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1216,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47680,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+          "splitK": 1
+        },
+        "variant": "original"
+      },
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1216,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47680,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+          "splitK": 1
+        },
+        "variant": "I1"
+      },
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1216,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47680,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+          "splitK": 1
+        },
+        "variant": "I3"
+      },
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1536,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47680,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+          "splitK": 1
+        },
+        "variant": "original"
+      },
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1536,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47680,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+          "splitK": 1
+        },
+        "variant": "I1"
+      },
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1536,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47680,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm8_xcd1_cA1cB17_nt0",
+          "splitK": 1
+        },
+        "variant": "I3"
+      },
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1664,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47669,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm0_xcd0_cA17cB1_nt0",
+          "splitK": 1
+        },
+        "variant": "original"
+      },
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1664,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47669,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm0_xcd0_cA17cB1_nt0",
+          "splitK": 1
+        },
+        "variant": "I1"
+      },
+      {
+        "phase": "screen_one_batch",
+        "shape": {
+          "M": 1664,
+          "N": 7168,
+          "K": 16384
+        },
+        "interleave_anchor": {
+          "kernelId": 47669,
+          "kernelName": "opus_gemm_gfx950_a8w8_mxscale_gemm_bpreshuffle_wave_interleave_192x256x256_w2x4_k0_gm0_xcd0_cA17cB1_nt0",
+          "splitK": 1
+        },
+        "variant": "I3"
+      }
+    ],
+    "promote_only_valid_effective_variants_to_guard_shapes": true,
+    "same_run_measured_calls": 101,
+    "same_run_warmup_calls": 5,
+    "correctness_errRatio_limit": 0.05,
+    "repeat_pair_batches_after_screen": 3,
+    "full_I1_I3_design_pair_upper_bound": 17,
+    "full_I1_I3_design_repeat_measurement_group_upper_bound": 51,
+    "I2_additional_pair_upper_bound": 5,
+    "no_parameter_cartesian_product": true,
+    "fixed_CSV_only_no_FlyDSL_retune": true,
+    "performance_acceptance": "Reproducible improvement on most representative shapes beyond same-run variability, no material guard regression, correctness and static/ISA invariants pass before expansion."
+  }
+}

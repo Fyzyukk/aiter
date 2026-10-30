@@ -1,5 +1,7 @@
 # gfx950 MXFP8 优化交接：四步执行
 
+2026-10-30 本轮已完成 **421/421，236 个领先固定 CSV、185 个落后**。最终文件与记录统一归档在 [stage4_results_20261030/README.md](stage4_results_20261030/README.md)：[最终 tune CSV](stage4_results_20261030/full421_tuned.csv)、[逐项对比](stage4_results_20261030/full421_comparison.csv)、[优化记录](stage4_results_20261030/optimization_records.md)。以下步骤 1–3 保留原执行计划及候选补齐记录；最新完成状态与后续 CPU 方案见步骤 4 和本轮归档。
+
 ## 1. 定向补测 32 个 m-repeat shape
 
 当前 m-repeat、interleave 走 JIT；4wave_pin_agpr 走 CO；B-VGPR 和 overlap 同时有 JIT/CO。CO 共 780 个，编号 0–779，全部 build ready：4wave 12、B-VGPR 384、overlap 384。m-repeat 已删除 CO 和 pin 接口，使用 13 参数 traits。
@@ -45,18 +47,31 @@ m-repeat 新增 GroupM4/8 可比较 M tile 遍历；GroupN16/32 需要 `N/BN>=25
 
 ## 4. 验证完整 421 个 shape
 
-定向优化确认有效后，使用 [shapes_421.csv](shapes_421.csv) 覆盖全部 shape。首轮用 Top8：每个 shape、每个 pipeline 保留评分前 8 种几何，保留这些几何下的合法 JIT/CO 参数。当前默认是 0，启用 Top8 必须显式传 8。
+2026-10-30 更新：本轮只搜索 Opus，FlyDSL 直接使用固定 CSV 基线，不再重新调优。使用最多 4 张 GPU，保留已完成 shape 的 `best_opus` 与现有 JIT 缓存，只续跑剩余输入。恢复入口为 `/home/fyz/retune_dsv4_20261028/gpu_stage3_20261029T161551Z/resume_stage4_opus.py`，累计进度仍写入 `stage4_full421/full421_progress.jsonl`。
+
+2026-10-30 06:03 UTC，按用户“少测一下，快速完成”的要求切换快速续跑：保留已完整落盘的 **292/421** 个结果，剩余 **129** 个改为 **每 pipeline Top4 + 原有兼容历史 seed、11 次计时、2 次预热**。误差上限仍为 0.05，CO/JIT 版本和缓存保持一致，仍只使用 GPU 7/6/5/4。原 Top8 的在途 shape 无部分结果落盘，按新参数重新搜索。恢复命令为 `python3 resume_stage4_opus.py --top-geometries 4 --iters 11 --warmup 2`；新旧轮次的 manifest 分别保存参数，已完成 shape 保留原轮次耗时，短计时结果的波动可能更大。
+
+2026-10-30 **07:01:53 UTC 已完成 421/421**，相对固定对应 gfx950 CSV 为 **236 个领先、185 个落后**，所有选定结果均通过误差上限 0.05。快速续跑退出码为 0，控制器、tuner 和四个 GPU worker 均已退出，本轮后续结果整理不再需要 GPU。最终 Opus 结果位于运行根目录的 `stage4_full421/full421_tuned.csv`（与 `merged_tuned.csv` 一致），逐 shape 对比位于 `stage4_full421/full421_comparison.csv`，汇总位于同名 JSON；GPU 测量结束记录为 `stage4_full421/gpu_completion_receipt.json`。累计结果仍保留原有 292 个完整 shape 的原轮次耗时，另 129 个来自快速轮次。
+
+最终原 192 个 CSV 赢家中，178 个仍领先、14 个落后；原 229 个落后项中，58 个追回、171 个仍落后。14 个回退的 CPU 审计已整理：13 个落后不足 3%（7 个不足 1%），唯一明显项 `(3072,7168,21504)` 慢 CSV 15.116%。历史赢家均已入选；该项旧 CO693 的本轮实际耗时为 480.3212 μs，当前最佳 CO501 为 479.1171 μs，历史旧赢家为 410.7753 μs。历史构建快照与当前两 CO 的指令、元数据和 launcher 一致，但历史没有逐次加载 receipt，尚不能只凭 CSV 确认具体原因。
+
+按用户“CPU 全做好，先别用 GPU”的要求，后续只准备了 `stage4_full421/cpu_regressions14_preparation/`：14 项明细、26 个 `(shape,kid)` 精确配对行、36 个输入/二进制/源码指纹、CPU 检查、显式 GPU 执行入口和结果分析器。先复核两个重点项（4 对、三批 12 行），其余 12 项为另 22 对、三批 66 行；两段不重复，均只测 Opus、引用固定 gfx950 CSV。准备阶段未执行 GPU 测量，默认命令仅 CPU 检查，执行需另指定 `execute --execute-gpu --gpu`。完整说明在该目录 `README.md`，原因与幅度在 `analysis_zh.md`。
+
+171 个历史与当前均落后 CSV 的 shape 已另做 CPU 优化方案，位于运行根目录 `stage4_full421/cpu_persistent171_plan/README.md`。逐项核对当前赢家的 ID、完整名称、traits 和 shape 合法性；三条路线为：4wave 下一 scale panel 提前加载（保留等待与 barrier）、interleave BM192 去除永不消费的 A half 填充行，以及窄 N 四个代表 shape 的 16 对已有精确配置（4 锚点、5 补覆盖、7 受控复核）。窄 N 后置源码方案为 fragment 发布点和 m-repeat A ring2/3。新排程均是设计，尚未实现/编译/实测；未使用 GPU，未修改 kernel/CO/JIT，14 项冻结包保持原样。源码引用、静态覆盖和资源检查、CSV/JSON 候选与纯 CPU 校验入口保存在同目录；不能把静态请求减少当实测加速。
+
+定向优化确认有效后，使用 [shapes_421.csv](shapes_421.csv) 覆盖全部 shape。首轮用 Top8：每个 shape、每个 pipeline 保留评分前 8 种几何，保留这些几何下的合法 JIT/CO 参数。快速续跑改为 Top4，仍展开入选几何下的合法参数。tuner 默认是 0，几何数量须显式传入。
 
 ```bash
-AITER_REBUILD=1 python3 csrc/gemm_a8w8_mxfp8_bpreshuffle/gemm_a8w8_mxfp8_bpreshuffle_tune.py \
-  --mxscale_table --libtype both --mp 8 --shape_grouped \
-  --opus_top_geometries 8 \
+AITER_REBUILD=0 python3 csrc/gemm_a8w8_mxfp8_bpreshuffle/gemm_a8w8_mxfp8_bpreshuffle_tune.py \
+  --mxscale_table --libtype opus --mp 4 --shape_grouped \
+  --opus_top_geometries 4 --iters 11 --warmup 2 \
+  --opus_seed_file docs/gfx950_mxscale_20261029/stage4_results_20261030/search_preparation/search_seeds.csv \
   -i docs/gfx950_mxscale_20261029/shapes_421.csv \
   -o /tmp/gfx950_full421_tuned.csv
 ```
 
-421 阶段不传前两步的局部几何文件。先核对已知赢家是否进入 Top8 列表；被截掉的赢家另用指定几何和 0 定向补测，再合并结果。若要测全部合法候选，将完整命令的 8 改成 0。
+421 阶段不传前两步的局部几何文件。Top8 和快速 Top4 搜索都保留兼容的历史赢家 seed，已核对全部 421 个 shape 的已知 seed 覆盖。本轮不再自动追加 Top0 定向补测。
 
-基线固定使用 [csv_baseline.csv](handoff_data/csv_baseline.csv)，逐 shape 参考值也在 [远端完整记录](all_shapes_421.csv) 的 `baseline_flydsl_us` 中。正确性通过后，`best_opus.us < CSV基线.us` 就算胜出；同轮 FlyDSL 最佳作为补充比较，不能仅凭最终 `best_libtype` 统计 CSV 胜负。前几名交替重复测量，确认排序和耗时波动。每轮报告完成 shape 数、胜 CSV 数、剩余落后数及主要 N/K、M 类别。
+基线固定使用 [csv_baseline.csv](handoff_data/csv_baseline.csv)，逐 shape 参考值也在 [远端完整记录](all_shapes_421.csv) 的 `baseline_flydsl_us` 中。正确性通过后，`best_opus.us < CSV基线.us` 就算胜出。已有混合搜索进度只提取 `best_opus`，最终 Opus CSV 从累计进度重建，不能使用旧混合搜索输出中的 FlyDSL 赢家。每轮报告完成 shape 数、胜 CSV 数、剩余落后数及主要 N/K、M 类别。
 
 历史核对数据：[本地 full185](handoff_data/local_full185_progress.jsonl)、[本地 priority22](handoff_data/local_priority22_progress.jsonl)。远端 192 个 CSV 胜出与本地已有结果的历史胜出并集为 230 个；该数字只表示跨机器历史覆盖，当前候选的最终胜出数以本轮测量为准。

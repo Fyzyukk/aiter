@@ -1,0 +1,110 @@
+{
+  "gpu_used": false,
+  "scope": "priority",
+  "shape_order": [
+    [
+      3072,
+      7168,
+      21504
+    ],
+    [
+      14336,
+      7168,
+      16384
+    ]
+  ],
+  "plan": {
+    "scope": "priority",
+    "shapes": 2,
+    "pairs": 4,
+    "unique_kernel_ids": [
+      0,
+      392,
+      501,
+      693
+    ],
+    "iters": 101,
+    "warmup": 5,
+    "batches": 3,
+    "seed": 0,
+    "rotation_policy": "Resolve once per shape, then share across both candidates and all batches",
+    "candidate_order": "historical/current; current/historical; historical/current",
+    "expected_results": 12,
+    "gpu_count_if_executed": 1,
+    "flydsl_gpu_calls": 0,
+    "baseline": "Read-only matching fixed gfx950 CSV",
+    "gpu_executed_by_this_check": false,
+    "maximum_tensor_bytes": {
+      "A": 234881024,
+      "B": 154140672,
+      "C_bf16": 1342177280,
+      "reference_C_fp32": 2684354560
+    }
+  },
+  "selected_pairs": [
+    {
+      "gfx": "gfx950",
+      "cu_num": "256",
+      "M": "3072",
+      "N": "7168",
+      "K": "21504",
+      "w_scale_block": "128x128",
+      "libtype": "opus",
+      "kernelId": "693",
+      "splitK": "1",
+      "kernelName": "opus_gemm_gfx950_b_vgpr_overlap_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_bd1_k21504_pinA0B0C1",
+      "role": "historical_winner",
+      "fixed_gfx950_csv_us": "416.2038",
+      "historical_opus_us": "410.7753",
+      "latest_measured_candidate_us": "480.3212"
+    },
+    {
+      "gfx": "gfx950",
+      "cu_num": "256",
+      "M": "3072",
+      "N": "7168",
+      "K": "21504",
+      "w_scale_block": "128x128",
+      "libtype": "opus",
+      "kernelId": "501",
+      "splitK": "1",
+      "kernelName": "opus_gemm_gfx950_b_vgpr_co_256x128x256x128_1x4_16x16x128_1x128x128_p4_bd1_k21504_pinA0B0C1",
+      "role": "current_winner",
+      "fixed_gfx950_csv_us": "416.2038",
+      "historical_opus_us": "410.7753",
+      "latest_measured_candidate_us": "479.1171"
+    },
+    {
+      "gfx": "gfx950",
+      "cu_num": "256",
+      "M": "14336",
+      "N": "7168",
+      "K": "16384",
+      "w_scale_block": "128x128",
+      "libtype": "opus",
+      "kernelId": "392",
+      "splitK": "1",
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm0_sp64_u2",
+      "role": "historical_winner",
+      "fixed_gfx950_csv_us": "1250.0499",
+      "historical_opus_us": "1228.8975",
+      "latest_measured_candidate_us": "1417.0008"
+    },
+    {
+      "gfx": "gfx950",
+      "cu_num": "256",
+      "M": "14336",
+      "N": "7168",
+      "K": "16384",
+      "w_scale_block": "128x128",
+      "libtype": "opus",
+      "kernelId": "0",
+      "splitK": "1",
+      "kernelName": "opus_gemm_gfx950_4wave_pin_agpr_co_256x256x256x128_2x2_16x16x128_1x128x128_pm1_sp16_k0_reset0_u2_gm0_wide_nt0",
+      "role": "current_winner",
+      "fixed_gfx950_csv_us": "1250.0499",
+      "historical_opus_us": "1228.8975",
+      "latest_measured_candidate_us": "1274.275"
+    }
+  ]
+}
