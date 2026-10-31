@@ -123,8 +123,10 @@ def _opus_geometry(instance):
     )
 
 
-def opus_candidates(m, n, k, *, cu_num):
-    """Shortlist JIT geometries per wave layout; include every legal prebuilt CO."""
+def opus_candidates(m, n, k, *, cu_num, search="shortlist"):
+    """Select every legal candidate or shortlist JIT geometries per wave layout."""
+    if search not in ("shortlist", "exhaustive"):
+        raise ValueError(f"Unknown OPUS search mode {search!r}")
     from csrc.opus_gemm.opus_gemm_common import (
         candidate_kids_for_shape,
         get_registry,
@@ -138,6 +140,17 @@ def opus_candidates(m, n, k, *, cu_num):
     candidate_count = len(candidates)
     if not candidates:
         return []
+    if search == "exhaustive":
+        co_count = sum(
+            instance.bpreshuffle_co is not None for _, instance in candidates
+        )
+        print(
+            f"[OPUS search] shape={(m, n, k)} mode=exhaustive "
+            f"legal={candidate_count} jit={candidate_count - co_count} "
+            f"co={co_count} candidates={candidate_count}",
+            flush=True,
+        )
+        return candidates
     # CO images need no device-code compilation, so they do not consume the
     # JIT shortlist. Neither path consults previous tuning results.
     selected = {
@@ -368,11 +381,17 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
             "--libtype",
             choices=("both", "opus", "flydsl"),
             default="both",
-            help="Backends to search; OPUS shortlists four legal JIT geometries per "
-            "pipeline/BK/wave layout and includes every legal prebuilt CO, "
-            "using shape and kernel metadata before compiling candidates "
-            "and requires --mxscale_table and 128x128. "
+            help="Backends to search; OPUS requires --mxscale_table and 128x128. "
             "Prebuild COs with csrc/opus_gemm/gen_co/build_co.py --arch gfx950.",
+        )
+        self.parser.add_argument(
+            "--opus-search",
+            choices=("shortlist", "exhaustive"),
+            default="shortlist",
+            help="OPUS candidate selection: shortlist retains four legal JIT "
+            "geometries per pipeline/BK/wave layout and every legal prebuilt CO; "
+            "exhaustive benchmarks every registered candidate that supports the "
+            "shape. Both modes compile the selected candidate keys on demand.",
         )
 
     def pre_process(self, args):
@@ -468,6 +487,7 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
                     opus_by_shape[shape] = opus_candidates(
                         *shape,
                         cu_num=cu_num,
+                        search=args.opus_search,
                     )
                     if args.libtype == "opus" and not opus_by_shape[shape]:
                         raise ValueError(f"No OPUS candidate supports {shape}")
@@ -504,8 +524,13 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
                     splits = parse_bmm_kernel_name(name)["splits"]
                     runs.append((KERNEL_ID_BASE_BMM + j, splits, name, run_bmm_flydsl))
             runs.extend(
-                (kid, 1, opus_kernel_name(kid, cu_num=cu_num), run_gemm_opus)
-                for kid, _ in opus
+                (
+                    kid,
+                    instance.bpreshuffle_split_k,
+                    opus_kernel_name(kid, cu_num=cu_num),
+                    run_gemm_opus,
+                )
+                for kid, instance in opus
             )
             for kernel_id, split_k, name, run in runs:
                 is_opus = run is run_gemm_opus
