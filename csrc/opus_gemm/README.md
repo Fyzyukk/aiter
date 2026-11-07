@@ -136,7 +136,7 @@ tile width, scale-panel size and operand layout. Both keep K runtime. The small
 headers follow this layout/traits/body organization without including large
 execution code.
 The bpreshuffle tuner searches all legal small configurations with
-`--mxscale_table --libtype opus --small_runtime_only`. The input
+`--mxscale_table --libtype opus`. The input
 `aiter/configs/model_configs/dsv4_a8w8_blockscale_mxscale_bpreshuffle_small_untuned_gemm.csv`
 contains the 634 small shapes with columns `M,N,K,w_scale_block`, all using
 `128x128`. Use `--all --shape_grouped`; `--mp 8` assigns shape groups to eight

@@ -259,7 +259,7 @@ def _opus_select_variants(geometry, kids, kernel_profiles, footprints, m, n, mod
     return selected
 
 
-def opus_candidates(m, n, k, *, cu_num, small_runtime_only=False):
+def opus_candidates(m, n, k, *, cu_num):
     """Calculate tile ranges and variants from shape and cached kernel resources."""
     from csrc.opus_gemm.opus_gemm_common import candidate_kids_for_shape, get_registry
 
@@ -272,12 +272,6 @@ def opus_candidates(m, n, k, *, cu_num, small_runtime_only=False):
         for kid in legal
         if (registry[kid].bpreshuffle_entry or {}).get("small_runtime")
     }
-    if small_runtime_only:
-        print(
-            f"[OPUS small runtime] shape={(m, n, k)} candidates={len(small)}",
-            flush=True,
-        )
-        return [(kid, registry[kid]) for kid in sorted(small)]
     selected = {kid for kid in legal if registry[kid].bpreshuffle_co is not None}
     co_count = len(selected)
     selected.update(small)
@@ -614,23 +608,11 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
             "and requires --mxscale_table and 128x128. "
             "Prebuild COs with csrc/opus_gemm/gen_co/build_co.py --arch gfx950.",
         )
-        self.parser.add_argument(
-            "--small_runtime_only",
-            action="store_true",
-            help="Search every legal small-runtime B-vgpr/M-repeat configuration; "
-            "requires --mxscale_table --libtype opus.",
-        )
 
     def pre_process(self, args):
         self._mxscale_table = args.mxscale_table
         if args.libtype == "opus" and not self._mxscale_table:
             self.parser.error("OPUS tuning requires --mxscale_table")
-        if args.small_runtime_only and (
-            args.libtype != "opus" or not self._mxscale_table
-        ):
-            self.parser.error(
-                "--small_runtime_only requires --mxscale_table --libtype opus"
-            )
         super().pre_process(args)
 
     def _bmm_seeds_mxfp8(self):
@@ -753,11 +735,7 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
             for row in untunedf.itertuples():
                 if row.w_scale_block == "128x128":
                     shape = (int(row.M), int(row.N), int(row.K))
-                    opus_by_shape[shape] = opus_candidates(
-                        *shape,
-                        cu_num=cu_num,
-                        small_runtime_only=args.small_runtime_only,
-                    )
+                    opus_by_shape[shape] = opus_candidates(*shape, cu_num=cu_num)
                     if args.libtype == "opus" and not opus_by_shape[shape]:
                         raise ValueError(f"No OPUS candidate supports {shape}")
         for i in range(len(untunedf)):
