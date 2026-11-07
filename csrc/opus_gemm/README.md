@@ -69,7 +69,8 @@ void opus_gemm_a8w8_blockscale_bpreshuffle_launch(
     aiter_tensor_t& x_scale,
     aiter_tensor_t& w_scale,
     aiter_tensor_t& Y,
-    int kid);
+    int kid,
+    std::optional<aiter_tensor_t> workspace = std::nullopt);
 
 void opus_gemm_a8w8_mxscale_bmm_launch(
     aiter_tensor_t& XQ,
@@ -89,17 +90,59 @@ void opus_gemm_a8w8_mxscale_bmm_launch(
 | `a16w16` | direct + two-stage | direct + two-stage | two-stage + pre-built BF16 direct; fused source retained but unregistered |
 | `a8w8` | empty | kid 2, FP32 Y | empty |
 | `a8w8_blockscale` | empty | kid 1, FP32 Y | empty |
-| `a8w8_blockscale_bpreshuffle` | kid 11000, BF16 Y | empty | empty |
+| `a8w8_blockscale_bpreshuffle` | kid 11000, BF16 Y | JIT/CO, BF16 Y; runtime small-shape candidates | empty |
 | `a8w8_mxscale_bmm` | empty | registered BMM ids, including compact ids 8470--8484; BF16/FP32 Y | empty |
 
-Empty tables are explicit capability states. `kernels_list` is the source of
+Empty tables are explicit capability states. `KERNEL_REGISTRY` is the source of
 truth for registered ids. The pre-built gfx1250 A16W16 CO ids occupy the
 reserved `[21000,27000)` band.
 The MXFP8 BMM ids are
 `8000 + family_local_kid`, which places them in an unused global band while
 preserving family-local tuning/debug correlation. Historical child-dictionary
 collisions are resolved by the final merge; runtime routing always follows the
-resulting `kernels_list[kid]` instance and never a numeric interval.
+resulting registered instance and never a numeric interval.
+
+The gfx950 small-shape configurations are generated in `opus_gemm_common.py`
+by `_small_runtime_jit_configs()` and registered consecutively from ID 6300.
+The search uses bounded wave-tile groups and binds queue, scale, cache and split
+policies to their supported geometries, then applies layout, register and LDS
+constraints. K and its loop count remain runtime values; each entry declares its
+split count, workspace rule and resource limits. The current catalog contains
+3380 JIT configurations: 1635 B-vgpr and 1745 M-repeat, with consecutive IDs
+6300–9679. Internal resident and ring8 choices do not add public kernel parameters.
+
+Small-shape execution lives in two independent `*_small_runtime_gfx950.cuh`
+pipeline headers and their traits headers in `include/gfx950/`. Each pipeline
+owns its `make_layout_*` functions, prefetch, operand reads, compute and writeback.
+Neither uses the other small pipeline or a large pipeline implementation. The
+shared `opus_gemm_bpreshuffle_args_gfx950.cuh` header contains only the argument
+struct. The public kernel parameters are `<Traits, ShortK>` for normal and short
+K; scale transport, resident storage and ring rotation remain internal choices.
+Matrix and scale layouts precede transport helpers, operand reads, compute and
+writeback; all candidates remain runtime-K.
+
+B-vgpr stages A in an LDS ring and loads B directly into its VGPR queue. Its
+short-K path preloads the valid A stages. M-repeat stages A/B in LDS; its short-K
+path can keep A resident, while eligible small-M calls stream eight LDS stages
+inside the normal-K flow. N tile width and wave ownership come from traits in
+both K flows. Split1 writes BF16 output; Split2/4 write contiguous FP32 partials
+to caller-owned workspace and use the existing split-K reducer.
+
+The large-shape B-vgpr implementation shares its panel body between bulk and
+overlap kernel entries. Its traits derive queue, operand and output policies
+from tile geometry; short K selects a smaller scale panel and B queue. The
+large-shape M-repeat implementation uses one body and parameterized traits for
+tile width, scale-panel size and operand layout. Both keep K runtime. The small
+headers follow this layout/traits/body organization without including large
+execution code.
+The bpreshuffle tuner searches all legal small configurations with
+`--mxscale_table --libtype opus --small_runtime_only`. The input
+`aiter/configs/model_configs/dsv4_a8w8_blockscale_mxscale_bpreshuffle_small_untuned_gemm.csv`
+contains the 634 small shapes with columns `M,N,K,w_scale_block`, all using
+`128x128`. Use `--all --shape_grouped`; `--mp 8` assigns shape groups to eight
+devices. The small search retains every legal generated candidate without
+applying the large-shape variant pruning policy. Write new tuning results to a
+separate output CSV before updating the model's tuned table.
 
 The gfx942 BF16-workspace A16 exact kids (`10210`, `10213`, `10216`) are the
 one workspace-output exception: their current exact-N reducer requires BF16
