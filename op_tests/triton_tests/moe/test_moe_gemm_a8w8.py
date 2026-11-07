@@ -1,0 +1,401 @@
+# adapted from triton_kernels package
+# original code https://github.com/triton-lang/triton/blob/main/python/triton_kernels/tests/test_matmul.py
+
+from dataclasses import dataclass, fields
+
+import pytest
+import torch
+
+# matmul utilities
+from aiter.ops.triton.moe.moe_op_gemm_a8w8 import (
+    moe_gemm_a8w8,
+    moe_gemm_torch,
+)
+
+# routing utilities
+from aiter.ops.triton.moe.moe_routing.routing import routing
+
+# numerics utilities
+from aiter.ops.triton.moe.quant_moe import (
+    downcast_to_mxfp,
+    downcast_to_static_fp8,
+    downcast_to_static_fp8_3d,
+)
+from aiter.ops.triton.quant.quant import dynamic_mxfp8_quant
+
+# target-specific utilities
+from aiter.ops.triton.utils._triton.arch_info import get_arch
+from aiter.ops.triton.utils.shuffle import shuffle_scale_moe
+from op_tests.triton_tests.moe.moe_test_utils import assert_close
+from op_tests.triton_tests.utils.mxfp_ref import upcast_from_mxfp
+
+# ---------------
+# initialize data
+# ---------------
+
+
+def alloc_rand(shape, device, dtype):
+    if dtype.itemsize == 1:
+        tmp = 2 ** -(torch.randint(4, 8, shape, device=device, dtype=torch.bfloat16))
+        return tmp
+    return torch.randn(shape, device=device, dtype=dtype)
+
+
+def alloc_rand_like(x):
+    return alloc_rand(x.shape, x.device, x.dtype)
+
+
+def init_routing_data(
+    m, n_expts_tot, n_expts_act, do_gather, do_scatter, device="cuda"
+):
+    logits = torch.randn((m, n_expts_tot), dtype=torch.float16, device=device)
+    routing_data, gather_idx, scatter_idx = routing(logits, n_expts_act)
+    routing_data.gate_scal = None
+    gather_idx = gather_idx if do_gather else None
+    scatter_idx = scatter_idx if do_scatter else None
+    # TODO: re-enable
+    # if do_gather and do_scatter and n_expts_act == 1 and n_expt_shards == 1:
+    #     scatter_idx = mask_indx(scatter_idx, n_expts_act)
+    return m, routing_data, gather_idx, scatter_idx
+
+
+def init_compute_data(
+    m,
+    n,
+    k,
+    gindx,
+    sindx,
+    n_expts_tot,
+    n_expts_act,
+    act_dtype,
+    weight_dtype,
+    has_y_gammas,
+    device="cuda",
+):
+    torch.manual_seed(0)
+    in_m = m * (n_expts_act if gindx is None else 1)
+    shape_x = (in_m, k)
+    x = alloc_rand(shape_x, device=device, dtype=act_dtype)
+    w = alloc_rand((n_expts_tot, k, n), device=device, dtype=weight_dtype)
+    bias = alloc_rand((n_expts_tot, n), device=device, dtype=torch.float32)
+    if has_y_gammas:
+        gamma = 2 ** torch.randint(
+            -5, 0, (m * n_expts_act,), device=device, dtype=torch.float32
+        )
+    else:
+        gamma = None
+    return x, w, bias, gamma
+
+
+def dtype_str_to_torch(dtype_str: str) -> torch.dtype:
+    return torch.uint8 if dtype_str == "float4_e2m1" else getattr(torch, dtype_str)
+
+
+# ---------------
+# unit tests
+# ---------------
+
+
+@dataclass
+class Case:
+    m: int
+    n: int
+    k: int
+    act_dtype_str: str
+    weight_dtype_str: str
+    n_expts_tot: int = 1
+    n_expts_act: int = 1
+    hbm_swizzling: bool = False
+
+
+@pytest.mark.parametrize(
+    ", ".join(f.name for f in fields(Case)),
+    [
+        tuple(getattr(case, f.name) for f in fields(Case))
+        for case in [
+            # TP1
+            Case(
+                16,
+                4096,
+                7168,
+                "mxfloat8_e4m3fn",
+                "mxfloat8_e4m3fn",
+                256,
+                8,
+                hbm_swizzling=True,
+            ),
+            Case(
+                1024,
+                7168,
+                2048,
+                "mxfloat8_e4m3fn",
+                "mxfloat8_e4m3fn",
+                256,
+                8,
+                hbm_swizzling=True,
+            ),
+            Case(
+                4096,
+                4096,
+                7168,
+                "mxfloat8_e4m3fn",
+                "mxfloat8_e4m3fn",
+                256,
+                8,
+                hbm_swizzling=True,
+            ),
+            Case(
+                8192,
+                7168,
+                2048,
+                "mxfloat8_e4m3fn",
+                "mxfloat8_e4m3fn",
+                256,
+                8,
+                hbm_swizzling=True,
+            ),
+            # TP8
+            Case(
+                16,
+                512,
+                7168,
+                "mxfloat8_e4m3fn",
+                "mxfloat8_e4m3fn",
+                256,
+                8,
+                hbm_swizzling=True,
+            ),
+            Case(
+                1024,
+                7168,
+                256,
+                "mxfloat8_e4m3fn",
+                "mxfloat8_e4m3fn",
+                256,
+                8,
+                hbm_swizzling=True,
+            ),
+            Case(
+                4096,
+                512,
+                7168,
+                "mxfloat8_e4m3fn",
+                "mxfloat8_e4m3fn",
+                256,
+                8,
+                hbm_swizzling=True,
+            ),
+            Case(
+                8192,
+                7168,
+                256,
+                "mxfloat8_e4m3fn",
+                "mxfloat8_e4m3fn",
+                256,
+                8,
+                hbm_swizzling=True,
+            ),
+            # Precision combinations
+            Case(4096, 7168, 4096, "float8_e4m3fn", "float8_e4m3fn", 256, 8),
+            Case(4096, 7168, 4096, "mxfloat8_e4m3fn", "float8_e4m3fn", 256, 8),
+            Case(4096, 7168, 4096, "float8_e4m3fn", "mxfloat8_e4m3fn", 256, 8),
+            Case(4096, 7168, 4096, "mxfloat8_e4m3fn", "mxfloat8_e4m3fn", 256, 8),
+            # edges
+            Case(300, 400, 400, "float8_e4m3fn", "float8_e4m3fn", 8, 2),
+            Case(300, 400, 400, "float8_e4m3fn", "mxfloat8_e4m3fn", 8, 2),
+            Case(300, 400, 400, "mxfloat8_e4m3fn", "float8_e4m3fn", 8, 2),
+            Case(300, 400, 400, "mxfloat8_e4m3fn", "mxfloat8_e4m3fn", 8, 2),
+            Case(1000, 704, 2048, "mxfloat8_e4m3fn", "mxfloat8_e4m3fn", 8, 4),
+            Case(8192, 7168, 4096, "mxfloat8_e4m3fn", "mxfloat8_e4m3fn", 8, 4),
+            # gfx942 (fnuz)
+            Case(300, 400, 400, "float8_e4m3fnuz", "float8_e4m3fnuz", 8, 2),
+            Case(300, 400, 416, "mxfloat8_e4m3fnuz", "float8_e4m3fnuz", 8, 2),
+            Case(300, 400, 416, "float8_e4m3fnuz", "mxfloat8_e4m3fnuz", 8, 2),
+            Case(300, 400, 416, "mxfloat8_e4m3fnuz", "mxfloat8_e4m3fnuz", 8, 2),
+            # K=448 has no table entry and takes the BLOCK_K=64 (two-slice) path.
+            Case(300, 400, 448, "mxfloat8_e4m3fnuz", "mxfloat8_e4m3fnuz", 8, 2),
+            Case(1, 512, 6144, "mxfloat8_e4m3fnuz", "mxfloat8_e4m3fnuz", 256, 8),
+            Case(16, 6144, 256, "mxfloat8_e4m3fnuz", "mxfloat8_e4m3fnuz", 256, 8),
+            Case(1024, 512, 6144, "mxfloat8_e4m3fnuz", "mxfloat8_e4m3fnuz", 256, 8),
+            Case(256, 6144, 384, "mxfloat8_e4m3fnuz", "mxfloat8_e4m3fnuz", 256, 8),
+            Case(8192, 768, 6144, "mxfloat8_e4m3fnuz", "mxfloat8_e4m3fnuz", 256, 8),
+        ]
+    ],
+)
+@pytest.mark.parametrize(
+    "do_gather, do_scatter",
+    [
+        (False, False),
+        (True, False),
+        (False, True),
+        (True, True),
+    ],
+)
+@pytest.mark.parametrize("has_y_gammas", [False, True])
+@pytest.mark.parametrize("apply_swiglu", [False, True])
+@pytest.mark.parametrize("fused_quant", [False, True])
+@pytest.mark.parametrize("token_expt_scales", [False, True])
+def test_op(
+    m,
+    n,
+    k,
+    do_gather,
+    do_scatter,
+    has_y_gammas,
+    apply_swiglu,
+    fused_quant,
+    token_expt_scales,
+    n_expts_tot,
+    n_expts_act,
+    act_dtype_str,
+    weight_dtype_str,
+    hbm_swizzling,
+    device="cuda",
+):
+
+    fnuz = "fnuz" in act_dtype_str or "fnuz" in weight_dtype_str
+    if fnuz:
+        if get_arch() != "gfx942":
+            pytest.skip("float8_e4m3fnuz is the gfx942 FP8 encoding")
+        if fused_quant:
+            pytest.skip("fused FP8 output quant writes OCP e4m3fn, not fnuz")
+    elif get_arch() != "gfx950":
+        pytest.skip("float8 x mx only supported on CDNA4")
+
+    if hbm_swizzling:
+        if get_arch() != "gfx950":
+            pytest.skip(
+                "Scale preshuffling on AMD GPU has not been emulated on non-CDNA4 arch yet."
+            )
+        if n % 32 != 0 or k % (32 * 8) != 0:
+            pytest.skip(
+                f"Shape {m}x{n}x{k} is not supported for scale swizzling on AMD GPU"
+            )
+
+    torch.manual_seed(0)
+
+    weight_mxfp8 = weight_dtype_str.startswith("mx")
+    if weight_mxfp8:
+        weight_dtype_str = weight_dtype_str[2:]
+    act_mxfp8 = act_dtype_str.startswith("mx")
+    if act_mxfp8:
+        act_dtype_str = act_dtype_str[2:]
+
+    if token_expt_scales and (act_mxfp8 or weight_mxfp8):
+        pytest.skip("token/expert scales are tested on the plain-fp8 path")
+
+    weight_dtype = dtype_str_to_torch(weight_dtype_str)
+    act_dtype = dtype_str_to_torch(act_dtype_str)
+    m, rdata, gindx, sindx = init_routing_data(
+        m, n_expts_tot, n_expts_act, do_gather, do_scatter, device=device
+    )
+    x_tri, w_tri, bias_tri, gammas = init_compute_data(
+        m,
+        n,
+        k,
+        gindx,
+        sindx,
+        n_expts_tot,
+        n_expts_act,
+        torch.bfloat16 if act_mxfp8 else act_dtype,
+        torch.bfloat16 if weight_mxfp8 else weight_dtype,
+        has_y_gammas,
+        device=device,
+    )
+    x_ref, w_ref, bias_ref = x_tri.clone(), w_tri.clone(), bias_tri.clone()
+    x_token_scale = None
+    w_expt_scale = None
+    fp8_max = torch.finfo(act_dtype).max
+
+    if weight_mxfp8 and fnuz:
+        # downcast_to_mxfp only produces OCP fp8.
+        wq, ws = dynamic_mxfp8_quant(w_tri.mT.contiguous(), quant_dtype=weight_dtype)
+        ws = ws.view(*wq.shape[:-1], -1)
+        w_ref = upcast_from_mxfp(wq, ws, torch.bfloat16, axis=-1).mT
+        w_tri, w_scale_tri = wq.mT, ws.mT
+        w_static_scale = None
+        swizzle_mx_scale = None
+    elif weight_mxfp8:
+        w_tri, w_scale_tri = downcast_to_mxfp(w_tri, weight_dtype, axis=1)
+        w_ref = upcast_from_mxfp(w_tri, w_scale_tri, torch.bfloat16, axis=1)
+        w_static_scale = None
+        if hbm_swizzling:
+            w_scale_tri, swizzle_mx_scale = shuffle_scale_moe(
+                w_scale_tri,
+                arch="gfx950",
+                preshuffle_factor=32,
+                scale_kwidth=8,
+                return_layout=True,
+            )
+        else:
+            swizzle_mx_scale = None
+    else:
+        w_scale_tri = None
+        swizzle_mx_scale = None
+        if token_expt_scales:
+            w_static_scale = None
+            w_expt_scale = w_tri.abs().amax(dim=(1, 2)).float() / fp8_max
+            w_tri = (w_tri / w_expt_scale[:, None, None]).to(weight_dtype)
+            w_ref = (w_tri.float() * w_expt_scale[:, None, None]).to(torch.bfloat16)
+        else:
+            w_static_scale = w_tri.abs().max().float() / fp8_max
+            w_tri = downcast_to_static_fp8_3d(w_tri, w_static_scale)
+            w_ref = (w_tri.float() * w_static_scale).to(torch.bfloat16)
+
+    if act_mxfp8 and fnuz:
+        x_tri, x_mx_scales_tri = dynamic_mxfp8_quant(x_tri, quant_dtype=act_dtype)
+        x_ref = upcast_from_mxfp(x_tri, x_mx_scales_tri, torch.bfloat16, axis=-1)
+        x_static_scale = None
+    elif act_mxfp8:
+        x_tri, x_mx_scales_tri = downcast_to_mxfp(x_tri, act_dtype, axis=-1)
+        x_ref = upcast_from_mxfp(x_tri, x_mx_scales_tri, torch.bfloat16, axis=-1)
+        x_static_scale = None
+        out_dtype = torch.bfloat16
+    else:
+        x_mx_scales_tri = None
+        if token_expt_scales:
+            x_static_scale = None
+            x_token_scale = x_tri.abs().amax(dim=-1).float() / fp8_max
+            x_tri = (x_tri / x_token_scale[:, None]).to(act_dtype)
+            x_ref = (x_tri.float() * x_token_scale[:, None]).to(torch.bfloat16)
+        else:
+            x_static_scale = x_tri.abs().max().float() / fp8_max
+            x_tri = downcast_to_static_fp8(x_tri, x_static_scale)
+            x_ref = (x_tri.float() * x_static_scale).to(torch.bfloat16)
+        out_dtype = torch.float8_e4m3fn
+
+    ref_y = moe_gemm_torch(
+        x_ref, w_ref, bias_ref, rdata, gindx, sindx, gammas, apply_swiglu
+    )
+    if not act_mxfp8 and fused_quant:
+        quant_static_scale = ref_y.abs().max().float() / 448.0
+        out_dtype = torch.float8_e4m3fn
+        maxtol = 4e-1
+        rmstol = 4e-2
+    else:
+        quant_static_scale = None
+        out_dtype = torch.bfloat16
+        maxtol = 4e-2
+        rmstol = None
+    tri_y = moe_gemm_a8w8(
+        x_tri,
+        w_tri,
+        x_mx_scales_tri,
+        w_scale_tri,
+        x_static_scale,
+        w_static_scale,
+        quant_static_scale,
+        bias_tri,
+        rdata,
+        gindx,
+        sindx,
+        gammas,
+        swizzle_mx_scale,
+        out_dtype,
+        apply_swiglu,
+        x_token_scale=x_token_scale,
+        w_expt_scale=w_expt_scale,
+    )
+    if not act_mxfp8 and fused_quant:
+        tri_y = (tri_y.float() * quant_static_scale).to(ref_y.dtype)
+    assert_close(ref_y, tri_y, maxtol=maxtol, rmstol=rmstol)

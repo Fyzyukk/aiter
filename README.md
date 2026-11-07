@@ -1,0 +1,197 @@
+<div align="center">
+<img src="docs/assets/aiter_logo.png" alt="AITER" width="400">
+<br><br>
+
+[![CI](https://github.com/ROCm/aiter/actions/workflows/aiter-test.yaml/badge.svg)](https://github.com/ROCm/aiter/actions/workflows/aiter-test.yaml)
+[![Release](https://img.shields.io/github/v/release/ROCm/aiter)](https://github.com/ROCm/aiter/releases)
+[![Docs](https://img.shields.io/badge/Docs-rocm.github.io%2Faiter-blue)](https://rocm.github.io/aiter)
+[![Last Commit](https://img.shields.io/github/last-commit/ROCm/aiter)](https://github.com/ROCm/aiter/commits)
+
+</div>
+
+--------------------------------------------------------------------------------
+
+**AITER** (AI Tensor Engine for ROCm) is AMD's high-performance AI operator library, providing optimized GPU kernels for inference and training workloads on ROCm. It serves as a unified collection of production-ready operators that framework developers can integrate directly into their stacks.
+
+### Key Features
+
+- **C++ and Python APIs** — use operators from either level
+- **Multiple kernel backends** — Triton, Composable Kernel (CK), and hand-tuned ASM
+- **Inference and training** — not just serving kernels, but also training and GEMM+communication fused kernels
+- **Framework-agnostic** — integrate into vLLM, SGLang, or any custom framework
+
+## News
+
+- **[2026/07]** [Kimi-K3 support](https://github.com/ROCm/aiter/pull/4397) — FlyDSL SiTUv2 fused-MoE kernels, strided grouped-topk router, and tuned GEMM/fused-MoE configs (BF16, A8W4, FP4) for Kimi-K3
+- **[2026/04]** [AITER v0.1.12.post1 Released](https://github.com/ROCm/aiter/releases/tag/v0.1.12.post1) — patch on v0.1.12 with GEMM and scale masking accuracy fixes; v0.1.12 highlights include blockwise sparse Sage Attention, fused gated RMSNorm+group quantization, etc., plus MI355X tuned configs for Kimi-K2.5 and DeepSeek-V3
+- **[2026/02]** [JAX-AITER: Bringing AMD's Optimized AI Kernels to JAX on ROCm](https://rocm.blogs.amd.com/software-tools-optimization/jax-aiter/README.html)
+- **[2026/02]** [Beyond Porting: How vLLM Orchestrates High-Performance Inference on AMD ROCm](https://blog.vllm.ai/2026/02/27/rocm-attention-backend.html)
+- **[2026/01]** [Character.ai: 2x Production Inference Performance on AMD Instinct GPUs](https://blog.character.ai/technical-deep-dive-how-digitalocean-and-amd-delivered-a-2x-production-inference-performance-increase-for-character-ai/)
+- **[2026/01]** [ROCm Becomes a First-Class Platform in the vLLM Ecosystem](https://rocm.blogs.amd.com/software-tools-optimization/vllm-omni/README.html)
+- **[2025]** [Accelerated LLM Inference with vLLM 0.9.x and ROCm](https://rocm.blogs.amd.com/software-tools-optimization/vllm-0.9.x-rocm/README.html)
+- **[2025]** [Accelerate DeepSeek-R1 Inference: Integrate AITER into SGLang](https://rocm.blogs.amd.com/artificial-intelligence/aiter-intergration-s/README.html)
+- **[2025/08]** [AITER-Enabled MLA Layer Inference on AMD Instinct MI300X](https://rocm.blogs.amd.com/software-tools-optimization/aiter-mla/README.html)
+- **[2025/08]** [Tutorial: MLA Decoding Kernel of the AITER Library to Accelerate LLM Inference](https://rocm.docs.amd.com/projects/ai-developer-hub/en/latest/notebooks/gpu_dev_optimize/aiter_mla_decode_kernel.html)
+- **[2025/03]** [Accelerating DeepSeek Inference with AMD MI300 — Microsoft](https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/accelerating-deepseek-inference-with-amd-mi300-a-collaborative-breakthrough/4407673)
+- **[2025/03]** [AITER: AI Tensor Engine For ROCm — Launch Announcement](https://rocm.blogs.amd.com/software-tools-optimization/aiter-ai-tensor-engine/README.html)
+
+## Ecosystem
+
+AITER is the **default kernel backend for LLM inference on AMD GPUs**, integrated into the major serving frameworks and powering production workloads at scale.
+
+### Framework Integration
+
+| Framework | Integration | Status | Operators Used |
+|---|---|---|---|
+| [**vLLM**](https://github.com/vllm-project/vllm) | Default attention backend on ROCm | Production | MHA, MLA, Paged Attention, Fused MoE, GEMM, RMSNorm, RoPE+KVCache |
+| [**SGLang**](https://github.com/sgl-project/sglang) | Default on ROCm Docker | Production | Attention, Fused MoE, Block-scale GEMM, All-reduce, RMSNorm |
+| [**ATOM**](https://github.com/ROCm/ATOM) | Built natively on AITER | Active development | All AITER operators (attention, MoE, sampling, communication) |
+| [**JAX**](https://github.com/ROCm/jax-aiter) | XLA FFI bridge, no PyTorch dependency | Experimental | MHA/FMHA, RMSNorm, BF16 GEMM |
+| Various customer proprietary inference engines | Kernel-level integration | Production | Attention, MoE, GEMM, quantization |
+
+### Performance Highlights
+
+| Operator | Speedup |
+|---|---|
+| MLA decode kernel | up to **17x** |
+| [MHA prefill kernel](op_tests/cpp/mha/README.md) | up to **14x** |
+| Block-scaled Fused MoE | up to **3x** |
+| Block-scaled GEMM | up to **2x** |
+| DeepSeek-R1 e2e (SGLang) | 6,484 → **13,704** tok/s (2.1x) |
+| JAX-AITER attention (MI350) | **4.39x** median |
+
+> For detailed benchmarks, see the [ATOM Benchmark Dashboard](https://rocm.github.io/ATOM/benchmark-dashboard/).
+
+### Supported Hardware
+
+| GPU | Architecture | Status |
+|---|---|---|
+| AMD Instinct MI300X | gfx942 (CDNA3) | Fully supported |
+| AMD Instinct MI325X | gfx942 (CDNA3) | Fully supported |
+| AMD Instinct MI350 | gfx950 (CDNA4) | Supported |
+| AMD Instinct MI355X | gfx950 (CDNA4) | Supported |
+| AMD Pro W7900 | gfx1100 (RDNA3) | Experimental<sup>1</sup> |
+| AMD AI Max and Max Pro 400/300 Series | gfx1151 (RDNA3.5) | Experimental<sup>1</sup> |
+| AMD Radeon AI PRO R9700 | gfx1201 (RDNA4) | Experimental<sup>1</sup> |
+
+<sup>1</sup> On RDNA, Triton and most FlyDSL kernels run, as do most HIP kernels (norm, RoPE, quant, activation, plus some GEMM/attention). Most CK and ASM kernels are CDNA-only. Experimental does not mean suboptimal: AITER often ships faster kernels than the defaults in upstream frameworks such as vLLM, so installing it is **strongly recommended** on these parts. Ongoing RDNA optimization work — attention, MoE, GEMM and beyond — lands here first.
+
+## Operators
+
+AITER provides optimized kernels for attention, MoE, GEMM, normalization, quantization, communication, and more. Each operator has unit tests under [`op_tests/`](op_tests/) that you can run directly:
+
+```bash
+# Example: run a single operator test
+python3 op_tests/test_mha.py
+python3 op_tests/test_mla.py
+python3 op_tests/test_moe.py
+python3 op_tests/test_gemm_a8w8.py
+python3 op_tests/test_rmsnorm2d.py
+
+# See all available operator tests
+ls op_tests/test_*.py
+```
+
+## Release Plan
+
+AITER publishes a scheduled release every two weeks. Each scheduled release uses a release branch named after the target version, such as `release/v0.1.20`, and a matching release tag, such as `v0.1.20`. The normal version progression moves from one scheduled release tag to the next, for example `v0.1.19` to `v0.1.20`.
+
+For scheduled releases, automation creates any missing `release/vX.Y.Z` branch and matching `vX.Y.Z` tag from the configured release source ref, which defaults to `main`. The tag must point at the release branch HEAD. The GitHub Release page is created with the release branch as the target, generated notes are diffed against the previous scheduled tag, and the notes state the diff base.
+
+If a hotfix is required after a release, the fix is cherry-picked onto the corresponding release branch and published as a post-release tag. Post-releases use the `.postN` suffix, for example `v0.1.20.post1`. Post-release tags must already exist on the matching release branch; automation refuses to create a post tag from `main`.
+
+Release automation validates that the release tag points at the matching release branch HEAD, builds manylinux_2_28 wheels for ROCm 7.0, 7.1, and 7.2 with Python 3.10 and 3.12, validates that exactly six wheels were produced, and uploads the complete wheel set to the matching GitHub Release. It does not upload partial wheel sets.
+
+## Installation
+
+```bash
+git clone --recursive https://github.com/ROCm/aiter.git
+cd aiter
+./.github/scripts/install_triton.sh
+AITER_USE_SYSTEM_TRITON=1 python3 -m pip install -e .
+```
+
+If you happen to forget the `--recursive` during `clone`, you can use the following command after `cd aiter`
+```bash
+git submodule sync && git submodule update --init --recursive
+```
+
+### FlyDSL
+
+AITER uses [FlyDSL](https://github.com/ROCm/FlyDSL)-based kernels across a range of operators (e.g., GEMM and MoE). FlyDSL is a required dependency and is installed automatically when you run `python3 -m pip install -e .`.
+
+To install it manually:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Triton
+
+AITER includes Triton-based operators that require Triton from AMD PyPI, with the correct version selected based on your ROCm installation. For an editable installation, run the install script before `pip install -e .` as shown above.
+
+To keep an existing compatible Triton installation, skip the script and set:
+
+```bash
+AITER_USE_SYSTEM_TRITON=1 python3 -m pip install -e .
+```
+
+### Build parallelism
+
+AITER compiles kernels ahead of time during wheel builds and on first use through runtime JIT. Both paths size their compiler pools from one shared policy in `aiter_worker_limits.py` instead of per-entrypoint constants.
+
+**Automatic sizing.** The CPU budget is 80% of the smaller of affinity-available CPUs and the tightest readable cgroup v2 `cpu.max` or v1 `cpu.cfs_quota_us` / `cpu.cfs_period_us` quota, rounded down with a one-worker minimum (including sub-CPU quotas). For example, 192 visible CPUs with an 8-CPU quota yield six workers before memory and explicit ceilings apply. Quotas are reread on each worker-policy call. Unlimited, missing, unreadable, or malformed quota entries add no constraint; CPU shares/weights and burst allowances do not increase this sustained budget, and ancestors hidden by the container's cgroup mount cannot be inspected.
+
+The memory budget is effective available memory divided by the observed 1.5 GB (1.40 GiB) RSS estimate per worker. Effective available memory is the smaller of host `MemAvailable` and remaining cgroup v2/v1 memory when a finite container limit is present. Reclaimable page cache is counted as used, and a finite limit with an unreadable usage file fails closed to one worker.
+
+**Ceilings.** `AITER_MAX_JOBS` is AITER's optional top-level worker ceiling. CPU compilation additionally applies the live CPU and memory caps; GPU execution uses the device allowance described below. Invalid values fall back to automatic sizing, and non-positive values impose a one-worker ceiling. Automatic results are not written back into the environment. A generic `MAX_JOBS` inherited from vLLM, SGLang, PyTorch, or another parent framework is ignored by plain AITER imports and remains unchanged.
+
+For an AITER-owned compile, worker-ceiling precedence is:
+
+1. An explicitly set `AITER_MAX_JOBS` is AITER's requested ceiling.
+2. Otherwise, runtime JIT and AITER-owned standalone entrypoints use a valid positive legacy `MAX_JOBS` as a ceiling. Runtime JIT reads it without modifying either variable; standalone entrypoints copy it into `AITER_MAX_JOBS` and warn that it is deprecated.
+3. Otherwise, AITER uses automatic sizing. Plain imports do not perform any legacy lookup.
+
+The compatibility paths never change `MAX_JOBS`. Both explicit and legacy ceilings remain upper bounds on the applicable CPU-compilation or GPU-execution budget. The runtime lookup occurs only at the AITER-owned compiler boundary, not during `import aiter` or generic worker-policy calls.
+
+The OPUS `csrc/opus_gemm/gen_co/build_co.py` and `op_tests/opus/device/setup.py` entrypoints accept `--jobs N`, `--jobs=N`, `-j N`, and `-jN` as additional worker ceilings. They never override tighter CPU, memory, environment, or work-count limits. Omitting the option keeps automatic sizing; zero and negative values select one worker. The device-test builder also retains its Python `build(verbose=False, jobs=None)` interface.
+
+**Nested fan-out.** Process-pool workers set the AITER compilation budget to one; AITER's Ninja launcher enforces that budget with an explicit `-j 1` argument. Ninja does not read `NINJAFLAGS`, and arbitrary Ninja invocations are not constrained by these environment settings. Workers also set CMake/Make parallelism controls and one-thread environment hints for OpenMP, BLAS, and NumExpr; numerical runtimes must read those hints before initialization.
+
+When the wheel prebuild compiles several modules in parallel, it divides the live budget between the outer module pool, capped at 5 concurrent modules, and each module's inner Ninja invocation, handing the inner share to the nested compilers through `AITER_MAX_JOBS` for the duration of that phase.
+
+**GPU-executing pools.** Pools whose tasks execute kernels on the GPU during an AITER build, such as the PA-Gluon accuracy prebuild, use a separate device budget. The pool is capped at visible GPUs times `AITER_GPU_WORKERS_PER_DEVICE` (default 8), further limited by submitted work and `AITER_MAX_JOBS`. PA-Gluon assigns workers round-robin to devices at startup and runs each worker's tests on its assigned device, so no device receives more than its allowance. Device discovery uses `torch.cuda.device_count()`, including PyTorch's visibility-mask handling and, on ROCm, its amdsmi discovery with HIP-runtime fallback. PA-Gluon requires at least one visible GPU; CPU-only compilation continues to use the CPU/memory policy. Nested compilation inside GPU workers remains limited to one job.
+
+**Cgroup-memory diagnostics.** Diagnostics compare the memory budget with the CPU budget after applying the requested worker ceiling. A warning is emitted when memory reduces that budget to three workers or fewer, or by at least a factor of four. Repeated warnings are suppressed unless the budget halves or reaches one worker, with a 60-second minimum interval. Recovery resets the reporting baseline without bypassing that interval. These diagnostics do not change worker selection or discount reclaimable page cache.
+
+Examples:
+
+```bash
+AITER_MAX_JOBS=8 python3 -m pip install -e .
+AITER_MAX_JOBS=8 python3 -m aiter.aot.pa
+```
+
+### Opus — Lightweight C++ Template for Kernel Development
+
+[Opus](csrc/include/opus/) is a single-header C++ template library (`opus.hpp`) for writing HIP kernels on AMD GPUs — vectorized load/store, layout abstractions, and MFMA wrappers with a strong focus on **build time optimization** (up to 61x faster than standard torch extension builds). See the [Opus README](csrc/include/opus/README.md) and [`op_tests/opus/`](op_tests/opus/) for details.
+
+### Triton-based Communication (Iris)
+
+AITER supports GPU-initiated communication using the [Iris library](https://github.com/ROCm/iris). This enables high-performance Triton-based communication primitives like reduce-scatter and all-gather.
+
+```bash
+pip install -e .
+pip install -r requirements-triton-comms.txt
+```
+
+For more details, see [docs/triton_comms.md](docs/triton_comms.md).
+
+## Contributing
+
+See [CONTRIBUTE.md](CONTRIBUTE.md) for setup, code style, testing and the PR
+process. One rule up front: **a pull request changes one kernel backend**:
+Triton/Gluon (Triton and Gluon count as one), HIP, ASM, CK, OPUS or FlyDSL.
+Work that spans two backends is two PRs; when one cannot land without the
+other, open them as
+[stacked pull requests](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs)
+so each is reviewed on its own and they merge in order.

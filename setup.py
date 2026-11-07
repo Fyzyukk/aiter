@@ -1,0 +1,560 @@
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
+
+import glob
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+from setuptools import Distribution, setup
+from setuptools.command.build_ext import build_ext
+
+from aiter_worker_limits import (
+    adopt_legacy_max_jobs,
+    get_worker_count,
+    split_worker_budget,
+    worker_ceiling,
+)
+
+adopt_legacy_max_jobs()
+
+this_dir = os.path.dirname(os.path.abspath(__file__))
+OPT_COMPILER_CONFIG = os.path.join(this_dir, "aiter", "jit", "optCompilerConfig.json")
+PACKAGE_NAME = "amd-aiter"
+
+FLYDSL_VERSION = "flydsl==0.4.1"
+
+BUILD_TARGET = os.environ.get("BUILD_TARGET", "auto")
+PREBUILD_KERNELS = int(os.environ.get("PREBUILD_KERNELS", "0"))
+# Opt-in: tag a wheel without compiled modules py3-none (see
+# _python_agnostic_bdist_wheel). Unset, wheels are tagged as before.
+AITER_PY3_WHEEL = os.environ.get("AITER_PY3_WHEEL", "0") == "1"
+PRETUNE_MODULES = os.environ.get("PRETUNE_MODULES", "")
+ENABLE_CK = int(os.environ.get("ENABLE_CK", "1"))
+IS_WINDOWS = sys.platform == "win32"
+# flydsl publishes Linux-only wheels.
+FLYDSL_REQUIRES = [] if IS_WINDOWS else [FLYDSL_VERSION]
+# Single skip-C++/HIP-build gate.
+AITER_TRITON_ONLY = os.environ.get("AITER_TRITON_ONLY", "0") == "1"
+
+
+def has_rocm_toolchain():
+    """Whether a ROCm install the JIT can build against was found."""
+    sys.path.insert(0, os.path.join(this_dir, "aiter", "jit", "utils"))
+    from cpp_extension import IS_HIP_EXTENSION
+
+    return IS_HIP_EXTENSION
+
+
+# The HIP SDK is a separate, optional install on Windows, and a Triton-only
+# install is the supported fallback without it. Linux keeps failing loudly
+# instead, where ROCm is a hard prerequisite and its absence is a broken
+# install.
+if not AITER_TRITON_ONLY and IS_WINDOWS and not has_rocm_toolchain():
+    print("No ROCm install found, building the Triton ops only", file=sys.stderr)
+    AITER_TRITON_ONLY = True
+if AITER_TRITON_ONLY:
+    ENABLE_CK = False
+    PREBUILD_KERNELS = False
+
+
+def is_develop_mode():
+    for arg in sys.argv:
+        if arg == "develop" or "editable" in arg:
+            return True
+    return False
+
+
+if not AITER_TRITON_ONLY and not IS_WINDOWS and is_develop_mode():
+    try:
+        from importlib.metadata import version as pkg_version
+
+        from packaging.version import Version
+
+        if Version(pkg_version("flydsl")) != Version(FLYDSL_VERSION.split("==")[1]):
+            raise ImportError("version mismatch")
+    except Exception:  # noqa: BLE001
+        subprocess.check_call(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                FLYDSL_VERSION,
+            ]
+        )
+
+
+def _is_triton_installed():
+    from importlib.metadata import version as pkg_version
+
+    for pkg in [
+        "triton",
+        "amd-triton",
+        "pytorch-triton",
+        "pytorch-triton-rocm",
+        "triton-rocm",
+    ]:
+        try:
+            return pkg, pkg_version(pkg)
+        except Exception:  # noqa: BLE001,S110
+            pass
+    return None
+
+
+def _run_install_triton():
+    print("[aiter] Installing triton via .github/scripts/install_triton.sh")
+    install_triton = os.path.join(this_dir, ".github", "scripts", "install_triton.sh")
+    subprocess.check_call(["bash", install_triton])
+
+
+AITER_USE_SYSTEM_TRITON = int(os.environ.get("AITER_USE_SYSTEM_TRITON", "0"))
+
+
+def _torch_version_below(min_version):
+    try:
+        import torch
+        from packaging.version import Version
+
+        return Version(torch.__version__.split("+")[0].split("dev")[0]) < Version(
+            min_version
+        )
+    except Exception:  # noqa: BLE001
+        return False
+
+
+_triton_info = _is_triton_installed()
+if _torch_version_below("2.9.1"):
+    print(
+        f"[aiter] torch < 2.9.1 detected, triton reinstall skipped for compatibility"
+        f"{f' (keeping {_triton_info[0]}=={_triton_info[1]})' if _triton_info else ''}."
+    )
+    print(
+        "[aiter] To use aiter-compatible triton, please upgrade torch to 2.9.1 or later."
+    )
+elif AITER_USE_SYSTEM_TRITON and _triton_info:
+    print(
+        f"[aiter] AITER_USE_SYSTEM_TRITON=1, keeping {_triton_info[0]}=={_triton_info[1]}."
+    )
+    print(
+        "[aiter] To ensure compatibility, consider running .github/scripts/install_triton.sh."
+    )
+else:
+    if _triton_info:
+        print(
+            f"[aiter] Replacing existing {_triton_info[0]}=={_triton_info[1]}"
+            " with aiter-compatible triton"
+            " (if needed, set AITER_USE_SYSTEM_TRITON=1 to keep your triton)"
+        )
+    try:
+        _run_install_triton()
+    except Exception:  # noqa: BLE001
+        print("[aiter] Skipping triton install via .github/scripts/install_triton.sh")
+
+
+def write_install_mode():
+    """Write install_mode so core.py uses aiter_meta/ (install) vs repo root (develop).
+
+    Called here so the file exists when setuptools resolves package_data,
+    and again in build_ext.run() to ensure it's written for develop mode too.
+    """
+    mode = "develop" if is_develop_mode() else "install"
+    with open("./aiter/install_mode", "w") as f:
+        f.write(mode)
+
+
+def prepare_packaging():
+    """Copy source directories and create package metadata for non-editable installs."""
+    if os.path.exists("aiter_meta") and os.path.isdir("aiter_meta"):
+        shutil.rmtree("aiter_meta")
+    if ENABLE_CK:
+        shutil.copytree("3rdparty", "aiter_meta/3rdparty")
+    else:
+        os.makedirs("aiter_meta/3rdparty", exist_ok=True)
+    if not AITER_TRITON_ONLY:
+        shutil.copytree("hsa", "aiter_meta/hsa")
+    else:
+        os.makedirs("aiter_meta/hsa", exist_ok=True)
+    shutil.copytree("gradlib", "aiter_meta/gradlib")
+    # The .co files under csrc/opus_gemm/gen_co/<arch>/ ARE needed at runtime, so
+    # csrc is copied wholesale -- but the asm/ dumps next to them are analysis
+    # output (a couple of MB of .s/.dis per rebuild). Being .gitignored does
+    # nothing here: this is a filesystem copy, so a tree that has ever run
+    # build_co.py would otherwise ship them.
+    shutil.copytree("csrc", "aiter_meta/csrc")
+    for asm_dir in glob.glob("aiter_meta/csrc/opus_gemm/gen_co/**/asm", recursive=True):
+        shutil.rmtree(asm_dir, ignore_errors=True)
+    open("aiter_meta/__init__.py", "w").close()
+    write_install_mode()
+
+
+if is_develop_mode():
+    packages = ["aiter"]
+    write_install_mode()
+else:
+    prepare_packaging()
+    packages = ["aiter_meta", "aiter"]
+
+
+def _is_metadata_only():
+    _skip = frozenset(
+        {
+            "egg_info",
+            "dist_info",
+            "clean",
+            "--version",
+            "--name",
+            "--fullname",
+            "--author",
+            "--author-email",
+            "--url",
+            "--license",
+            "--classifiers",
+        }
+    )
+    return len(sys.argv) < 2 or sys.argv[1] in _skip
+
+
+# Defer heavy imports until build time
+if not _is_metadata_only() and not AITER_TRITON_ONLY:
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+
+    sys.path.insert(0, os.path.join(this_dir, "aiter"))
+    from jit import core
+    from jit.utils.cpp_extension import IS_HIP_EXTENSION
+
+    # Determine build target
+    if BUILD_TARGET == "auto":
+        IS_ROCM = IS_HIP_EXTENSION
+    elif BUILD_TARGET == "rocm":
+        IS_ROCM = True
+    else:
+        IS_ROCM = False
+
+    if not IS_ROCM:
+        raise NotImplementedError("Only ROCM is supported")
+
+    ck_dir = os.environ.get(
+        "CK_DIR", os.path.join(this_dir, "3rdparty", "composable_kernel")
+    )
+    if ENABLE_CK:
+        assert os.path.exists(ck_dir), (
+            "CK is needed by aiter, please make sure clone by "
+            '"git clone --recursive https://github.com/ROCm/aiter.git" or '
+            '"git submodule sync ; git submodule update --init --recursive"'
+        )
+
+
+def _load_modules_from_config():
+    cfg_path = OPT_COMPILER_CONFIG
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:  # noqa: BLE001
+        return []
+    if isinstance(data, dict):
+        return list(data.keys())
+    return []
+
+
+def get_exclude_ops():
+    all_modules = _load_modules_from_config()
+    exclude_ops = []
+
+    # When CK is disabled, exclude all CK-dependent modules
+    if not ENABLE_CK:
+        exclude_ops.extend(sorted(core._get_ck_exclude_modules()))
+        return exclude_ops
+
+    for module in all_modules:
+        if PREBUILD_KERNELS == 1:
+            # Exclude tune modules; for MHA keep only fmha_v3 fwd variants
+            if "_tune" in module:
+                exclude_ops.append(module)
+            if "mha" in module and module not in [
+                "module_fmha_v3_fwd",
+                "module_fmha_v3_varlen_fwd",
+            ]:
+                exclude_ops.append(module)
+        elif PREBUILD_KERNELS == 2:
+            # Exclude _bwd and _tune
+            if "_bwd" in module or "_tune" in module:
+                exclude_ops.append(module)
+        elif PREBUILD_KERNELS == 3:
+            # Keep only module_fmha_v3*
+            if not module.startswith("module_fmha_v3"):
+                exclude_ops.append(module)
+        else:
+            # Default behavior: exclude tunes
+            if "_tune" in module:
+                exclude_ops.append(module)
+
+    return exclude_ops
+
+
+if PREBUILD_KERNELS != 0:
+    has_torch = True
+    try:
+        import torch as _
+    except Exception:  # noqa: BLE001
+        has_torch = False
+
+    if not has_torch:
+        print(
+            "[aiter] PREBUILD_KERNELS set but torch not installed, "
+            "skip precompilation in this environment"
+        )
+    else:
+        from jit.utils.mha_recipes import (
+            get_mha_varlen_prebuild_variants_by_names,
+        )
+        from jit.utils.moe_recipes import get_moe_ck2stages_prebuild_variants
+
+        exclude_ops = get_exclude_ops()
+        all_opts_args_build, _ = core.get_args_of_build("all", exclude=exclude_ops)
+
+        moe_base_args = None
+        filtered_opts_args_build = []
+        for one_opt_args in all_opts_args_build:
+            if one_opt_args["md_name"] == "module_moe_ck2stages":
+                moe_base_args = one_opt_args
+                continue
+            filtered_opts_args_build.append(one_opt_args)
+        all_opts_args_build = filtered_opts_args_build
+
+        if ENABLE_CK and moe_base_args is not None:
+            moe_variants = get_moe_ck2stages_prebuild_variants(core.AITER_CSRC_DIR)
+            for v in moe_variants:
+                all_opts_args_build.append(
+                    {
+                        "md_name": v["md_name"],
+                        "srcs": moe_base_args["srcs"],
+                        "flags_extra_cc": moe_base_args["flags_extra_cc"],
+                        "flags_extra_hip": moe_base_args["flags_extra_hip"],
+                        "extra_include": moe_base_args["extra_include"],
+                        "blob_gen_cmd": v["blob_gen_cmd"],
+                        "third_party": moe_base_args["third_party"],
+                    }
+                )
+
+        if PREBUILD_KERNELS == 1 and ENABLE_CK:
+            extra_args_build = []
+
+            req_md_names = [
+                "mha_varlen_fwd_bf16_nlogits_nbias_mask_nlse_ndropout_nskip_nqscale",
+                "mha_varlen_fwd_bf16_nlogits_nbias_nmask_lse_ndropout_nskip_nqscale",
+                "mha_varlen_fwd_bf16_nlogits_nbias_mask_nlse_ndropout_skip_nqscale",
+                "mha_varlen_fwd_bf16_nlogits_nbias_mask_lse_ndropout_skip_nqscale",
+                "mha_varlen_fwd_bf16_nlogits_nbias_nmask_lse_ndropout_skip_nqscale",
+                "mha_varlen_fwd_bf16_nlogits_nbias_nmask_nlse_ndropout_nskip_nqscale",
+            ]
+            variants = get_mha_varlen_prebuild_variants_by_names(req_md_names, ck_dir)
+            base_args = core.get_args_of_build("module_mha_varlen_fwd")
+            for v in variants:
+                if not isinstance(base_args, dict) or not base_args.get("srcs"):
+                    continue
+                extra_args_build.append(
+                    {
+                        "md_name": v["md_name"],
+                        "srcs": base_args["srcs"],
+                        "flags_extra_cc": base_args["flags_extra_cc"],
+                        "flags_extra_hip": base_args["flags_extra_hip"],
+                        "extra_include": base_args["extra_include"],
+                        "blob_gen_cmd": v["blob_gen_cmd"],
+                        "third_party": base_args["third_party"],
+                    }
+                )
+            all_opts_args_build.extend(extra_args_build)
+
+        bd = f"{core.get_user_jit_dir()}/build"
+
+        shutil.rmtree(bd, ignore_errors=True)
+        for f in glob.glob(f"{core.get_user_jit_dir()}/*.so"):
+            try:
+                os.remove(f)
+            except Exception:  # noqa: BLE001,S110
+                pass
+
+        def build_one_module(one_opt_args):
+            flags_cc = list(one_opt_args["flags_extra_cc"]) + [
+                f"-DPREBUILD_KERNELS={PREBUILD_KERNELS}"
+            ]
+            flags_hip = list(one_opt_args["flags_extra_hip"]) + [
+                f"-DPREBUILD_KERNELS={PREBUILD_KERNELS}"
+            ]
+
+            core.build_module(
+                md_name=one_opt_args["md_name"],
+                srcs=one_opt_args["srcs"],
+                flags_extra_cc=flags_cc,
+                flags_extra_hip=flags_hip,
+                blob_gen_cmd=one_opt_args["blob_gen_cmd"],
+                extra_include=one_opt_args["extra_include"],
+                extra_ldflags=one_opt_args.get("extra_ldflags"),
+                verbose=False,
+                is_python_module=True,
+                is_standalone=False,
+                torch_exclude=one_opt_args.get("torch_exclude", False),
+                third_party=one_opt_args["third_party"],
+            )
+
+        # Split the *global* worker budget between the outer module pool and
+        # each module's inner Ninja invocation. The work-capped budget is not
+        # used here: with a short module list it would collapse the inner
+        # budget to one job and strand most of the machine. The inner budget
+        # travels through the shared worker-ceiling env var instead of a
+        # build_module() argument.
+        outer_workers, inner_workers = split_worker_budget(
+            get_worker_count(), len(all_opts_args_build)
+        )
+
+        # --- FlyDSL AOT pre-compilation (MOE + GEMM, before CK) ---
+        if not IS_WINDOWS:
+            _prev_aot_import = os.environ.get("AITER_AOT_IMPORT")
+            os.environ["AITER_AOT_IMPORT"] = "1"
+            try:
+                from aiter.aot.flydsl.common import run_aot
+
+                flydsl_cache_dir = os.path.join(
+                    this_dir, "aiter", "jit", "flydsl_cache"
+                )
+                run_aot(flydsl_cache_dir)
+            finally:
+                if _prev_aot_import is None:
+                    os.environ.pop("AITER_AOT_IMPORT", None)
+                else:
+                    os.environ["AITER_AOT_IMPORT"] = _prev_aot_import
+
+        # --- CK kernel builds ---
+        with (
+            worker_ceiling(inner_workers),
+            ThreadPoolExecutor(max_workers=outer_workers) as executor,
+        ):
+            list(executor.map(build_one_module, all_opts_args_build))
+
+        # Retune GEMM shapes on the live GPU after the main build phase.
+        if PRETUNE_MODULES:
+            from aiter.utility.pretune import run_pretune_modules
+
+            cfg_path = OPT_COMPILER_CONFIG
+            with open(cfg_path, "r", encoding="utf-8") as _f:
+                _cfg = json.load(_f)
+            run_pretune_modules(
+                PRETUNE_MODULES,
+                _cfg,
+                core,
+                build_one_module,
+                csrc_dir=f"{this_dir}/csrc",
+                repo_dir=this_dir,
+            )
+
+
+def _python_agnostic_bdist_wheel():
+    """Return a bdist_wheel that tags wheels without compiled modules py3-none.
+
+    Used only with AITER_PY3_WHEEL=1. A wheel without compiled modules carries
+    only Python, C++/CK sources and ASM code objects, and every host module is
+    JIT-built on first use against the running interpreter, so it is valid for
+    any CPython 3 on the platform. The decision is made from the files staged
+    for the wheel, not from PREBUILD_KERNELS: modules from a targeted prebuild,
+    or JIT output left in aiter/jit/ by an in-tree run, are packaged too and
+    keep the interpreter-specific tag.
+    """
+    try:
+        from setuptools.command.bdist_wheel import bdist_wheel
+    except ImportError:  # setuptools < 70.1
+        from wheel.bdist_wheel import bdist_wheel
+
+    # Compiled files: .so (also versioned, .so.N) on Linux; .pyd modules and
+    # .dll libraries on Windows.
+    compiled = re.compile(r"\.(so(\.\d+)*|pyd|dll)$")
+
+    class PythonAgnosticBdistWheel(bdist_wheel):
+        def get_tag(self):
+            impl, abi, plat = super().get_tag()
+            # bdist_wheel stages the wheel's files in bdist_dir before asking
+            # for the tag; if they are not there, keep the interpreter tag.
+            if not (self.bdist_dir and os.path.isdir(self.bdist_dir)):
+                return impl, abi, plat
+            for _, _, files in os.walk(self.bdist_dir):
+                if any(compiled.search(name) for name in files):
+                    return impl, abi, plat
+            return "py3", "none", plat
+
+    return PythonAgnosticBdistWheel
+
+
+setup_requires = [
+    "packaging",
+    "psutil",
+    "ninja",
+    "setuptools_scm",
+    "vcs_versioning",  # transitive dep of setuptools_scm>=10
+]
+if PREBUILD_KERNELS != 0:
+    setup_requires.append("pandas")
+
+
+class ForcePlatlibDistribution(Distribution):
+    def has_ext_modules(self):
+        return True
+
+
+if AITER_TRITON_ONLY:
+    install_requires = ["einops", "packaging", "psutil"]
+else:
+    install_requires = [
+        "pybind11>=3.0.1",
+        "ninja",
+        "pandas",
+        "einops",
+        "psutil",
+        "packaging",
+        *FLYDSL_REQUIRES,
+    ]
+
+setup(
+    name=PACKAGE_NAME,
+    use_scm_version=True,
+    packages=packages,
+    py_modules=["aiter_worker_limits"],
+    include_package_data=True,
+    package_data={
+        "": ["*"],
+    },
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: BSD License",
+        "Operating System :: Unix",
+        "Operating System :: Microsoft :: Windows",
+    ],
+    cmdclass={
+        "build_ext": build_ext,
+        **({"bdist_wheel": _python_agnostic_bdist_wheel()} if AITER_PY3_WHEEL else {}),
+    },
+    # 3.8/3.9 have not actually worked for a long time: 81 modules already use
+    # PEP 604 annotations (`X | None`) without `from __future__ import
+    # annotations`, so they raise TypeError at import time on <3.10. Keep in sync
+    # with `target-version` under [tool.ruff] in pyproject.toml.
+    python_requires=">=3.10",
+    install_requires=install_requires,
+    extras_require={
+        # Triton-based communication using Iris
+        # Note: Iris is not available on PyPI and must be installed separately
+        # Install with: pip install -r requirements-triton-comms.txt
+        # (See requirements-triton-comms.txt for pinned Iris version)
+        "triton_comms": [],
+        # Offline IQ2R checkpoint tools (aiter.quantization.iq2r)
+        "iq2r": ["safetensors"],
+        # Install all optional dependencies
+        "all": [],
+    },
+    setup_requires=setup_requires,
+    distclass=ForcePlatlibDistribution,
+)
+
+if os.path.exists("aiter_meta") and os.path.isdir("aiter_meta"):
+    shutil.rmtree("aiter_meta")

@@ -1,0 +1,773 @@
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
+import functools
+import logging
+import os
+import re
+import subprocess
+import sys
+
+from build_targets import (
+    GFX_MAP,
+    _parse_gpu_archs_env,
+    filter_tune_df,
+    get_build_targets_env,
+    torch_processor_count_to_cu,
+)
+from cpp_extension import executable_path
+from hip_runtime import (
+    get_current_hip_device,
+    get_hip_runtime_version,
+    load_hip_runtime,
+)
+from torch_guard import torch_compile_guard
+
+logger = logging.getLogger("aiter")
+
+IS_WINDOWS = sys.platform == "win32"
+# Windows ROCm ships `hipinfo` instead of `rocminfo`; the output formats differ,
+# so each has its own compute-unit parser below.
+_GPU_INFO_TOOL = "hipinfo" if IS_WINDOWS else "rocminfo"
+_GFX_ARCH_PATTERN = r"gfx[0-9a-z]+(?:-[0-9a-z]+)*"
+
+
+@functools.lru_cache(maxsize=1)
+def _gpu_info_output() -> str:
+    """rocminfo / hipinfo stdout, run once and shared by every parser below.
+
+    check=False on purpose: rocminfo can exit non-zero while still printing
+    usable agent blocks. Each parser decides whether what it needs is missing.
+    """
+    tool = executable_path(_GPU_INFO_TOOL)
+    result = subprocess.run([tool], capture_output=True, text=True, check=False)
+    return result.stdout
+
+
+@functools.lru_cache(maxsize=1)
+def _detect_native() -> list[str]:
+    try:
+        # rocminfo: "Name: gfx942"; hipinfo: "gcnArchName: gfx1200"
+        for line in _gpu_info_output().splitlines():
+            # Preserve the exact ROCr-reported identity, including the
+            # gfx1250-strict (MI450 A0) variant. strict is mapped to the gfx1250
+            # kernel family only at explicitly validated dispatch sites, via
+            # base_gfx_arch()/is_gfx1250_family(); build artifacts, caches, tuned
+            # configs and prebuilt binaries stay keyed by the exact target.
+            # Folding here would make _needs_arch_rebuild() treat a strict .so as
+            # not covering a strict device and rebuild in a loop once ROCr
+            # reports gfx1250-strict.
+            match = re.search(rf"\b({_GFX_ARCH_PATTERN})\b", line, re.IGNORECASE)
+            if match:
+                return [match.group(1).lower()]
+    except Exception as e:
+        raise RuntimeError(f"Get GPU arch from {_GPU_INFO_TOOL} failed: {e}") from e
+    raise RuntimeError(f"No gfx arch found in {_GPU_INFO_TOOL} output.")
+
+
+@torch_compile_guard()
+def get_gfx_custom_op() -> int:
+    return get_gfx_custom_op_core()
+
+
+@functools.lru_cache(maxsize=10)
+def get_gfx_custom_op_core() -> int:
+    gfx = os.getenv("GPU_ARCHS", "native")
+    gfx_mapping = {v: k for k, v in GFX_MAP.items()}
+    if gfx == "native":
+        gfx = _detect_native()[0]
+    elif ";" in gfx:
+        # TODO: multi-arch GPU_ARCHS (e.g. "gfx942;gfx950") -- picking the
+        # last entry is a known limitation for build-time codegen callers.
+        # For runtime dispatch, prefer get_gfx_runtime().
+        gfx = gfx.split(";")[-1]
+    try:
+        return gfx_mapping[gfx]
+    except KeyError:
+        raise KeyError(
+            f"Unknown GPU architecture: {gfx}. "
+            f"Supported architectures: {list(gfx_mapping.keys())}"
+        )
+
+
+@functools.lru_cache(maxsize=1)
+def get_gfx():
+    gfx_num = get_gfx_custom_op()
+    return GFX_MAP.get(gfx_num, "unknown")
+
+
+_LDS_CAPACITY_BYTES = {
+    "gfx90a": 64 * 1024,
+    "gfx942": 64 * 1024,
+    "gfx950": 160 * 1024,
+    "gfx1100": 64 * 1024,
+    "gfx1101": 64 * 1024,
+    "gfx1102": 64 * 1024,
+    "gfx1150": 64 * 1024,
+    "gfx1151": 64 * 1024,
+    "gfx1200": 64 * 1024,
+    "gfx1201": 64 * 1024,
+    "gfx1250": 320 * 1024,
+    "gfx1250-strict": 320 * 1024,
+}
+
+
+def get_lds_capacity_bytes(gfx: str | None = None) -> int:
+    """Return the architectural LDS capacity for one workgroup."""
+    arch = (gfx or get_gfx()).split(":", 1)[0].lower()
+    try:
+        return _LDS_CAPACITY_BYTES[arch]
+    except KeyError as exc:
+        raise ValueError(f"Unknown LDS capacity for architecture {arch!r}") from exc
+
+
+@functools.lru_cache(maxsize=1)
+def get_gfx_runtime() -> str:
+    """Return the live GPU arch, using Torch if Windows hipinfo is unavailable.
+
+    Unlike get_gfx(), ignores GPU_ARCHS -- always detects the actual running
+    GPU.  Use for runtime dispatch decisions (selecting tuned kernels, picking
+    code paths).  Use get_gfx() for build-time codegen paths (gen_instances,
+    csrc module-level arch selection) where no GPU may be available.
+
+    The exception is an AOT replay process (AITER_AOT_REPLAY=1, started by
+    aiter.aot.flydsl.common.replay_env): it runs the runtime without a GPU for
+    the one arch GPU_ARCHS names, which stands in for the live GPU there.
+    """
+    if os.getenv("AITER_AOT_REPLAY") == "1":
+        targets = _parse_gpu_archs_env(os.getenv("GPU_ARCHS", ""))
+        if len(targets) != 1:
+            raise RuntimeError(
+                "AITER_AOT_REPLAY=1 needs GPU_ARCHS to name the one arch the "
+                f"process compiles for, got {os.getenv('GPU_ARCHS')!r}"
+            )
+        gfx_arch = targets[0]
+    else:
+        try:
+            gfx_arch = _detect_native()[0]
+        except RuntimeError:
+            if not IS_WINDOWS:
+                raise
+            import torch
+
+            if torch.version.hip is None or not torch.cuda.is_available():
+                raise
+            gfx_arch = (
+                torch.cuda.get_device_properties(0).gcnArchName.split(":", 1)[0].lower()
+            )
+    supported = set(GFX_MAP.values())
+    if gfx_arch not in supported:
+        raise KeyError(
+            f"Unknown GPU architecture: {gfx_arch}. "
+            f"Supported architectures: {sorted(supported)}"
+        )
+    return gfx_arch
+
+
+def _parse_asic_revision(value: str) -> int:
+    """Parse rocminfo/hipinfo decimal or hex ASIC Revision, not chip revision."""
+    token = value.split("(", 1)[0].strip()
+    if not re.fullmatch(r"(?:0[xX][0-9a-fA-F]+|[0-9]+)", token):
+        raise ValueError(f"invalid ASIC Revision {value!r}")
+    return int(token, 16 if token.lower().startswith("0x") else 10)
+
+
+@functools.lru_cache(maxsize=1)
+def _rocminfo_gpu_agents() -> list[tuple[str, int]]:
+    """(arch, asicRevision) of every GPU agent rocminfo reports.
+
+    rocminfo's `ASIC Revision:` is HSA_AMD_AGENT_INFO_ASIC_REVISION, the same
+    value hipDeviceGetAttribute(hipDeviceAttributeAsicRevision) returns.
+    """
+    agents: list[tuple[str, int]] = []
+    name = kind = None
+    rev = None
+    for line in _gpu_info_output().splitlines():
+        if re.match(r"^\s*Agent\s+\d+\s*$", line):
+            name = kind = rev = None
+            continue
+        # 2-space indent = agent header; ISA/pool sub-blocks nest deeper.
+        m = re.match(r"^  (Name|Device Type|ASIC Revision):\s+(.*?)\s*$", line)
+        if m is None:
+            continue
+        key, value = m.group(1), m.group(2)
+        if key == "Name" and name is None:
+            # Agent names can carry target-id features ("gfx942:sramecc+").
+            m2 = re.search(rf"\b({_GFX_ARCH_PATTERN})\b", value, re.IGNORECASE)
+            name = m2.group(1) if m2 else value
+        elif key == "Device Type":
+            kind = value
+        elif key == "ASIC Revision":
+            rev = _parse_asic_revision(value)
+        if kind == "GPU" and name is not None and rev is not None:
+            agents.append((name.lower(), rev))
+            name = kind = rev = None
+    return agents
+
+
+@functools.lru_cache(maxsize=1)
+def _hipinfo_gpu_agents() -> list[tuple[str, int]]:
+    """(arch, asicRevision) of every device hipinfo reports."""
+    agents: list[tuple[str, int]] = []
+    for block in re.split(r"^device#", _gpu_info_output(), flags=re.MULTILINE)[1:]:
+        # gcnArchName can carry target-id features ("gfx942:sramecc+").
+        name = re.search(
+            rf"^gcnArchName:\s*({_GFX_ARCH_PATTERN})",
+            block,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        rev = re.search(
+            r"^asicRevision:\s*(0[xX][0-9a-fA-F]+|\d+)", block, re.MULTILINE
+        )
+        if name and rev:
+            agents.append((name.group(1).lower(), _parse_asic_revision(rev.group(1))))
+    return agents
+
+
+@functools.lru_cache(maxsize=1)
+def get_asic_revision() -> int:
+    """Silicon stepping of this node's GPUs: 0=A0, 1=B0, 2=C0, ...
+
+    Node-wide, not per-device: rocminfo enumerates HSA agents, which
+    HIP_VISIBLE_DEVICES does not filter, so agent index and HIP device index
+    can disagree. The lowest stepping is reported, so the asm gate on a
+    mixed-stepping node fails closed. Raises when nothing can be read.
+    hipinfo on Windows lists only the devices HIP_VISIBLE_DEVICES leaves.
+    """
+    agents = _hipinfo_gpu_agents() if IS_WINDOWS else _rocminfo_gpu_agents()
+    arch = get_gfx_runtime()
+    revs = [rev for name, rev in agents if name == arch]
+    if not revs:
+        raise RuntimeError(
+            f"{_GPU_INFO_TOOL} reported no ASIC Revision for a {arch} agent "
+            f"(GPU agents seen: {agents})"
+        )
+    rev = min(revs)
+    # A bogus parse must not read as A0 and disable asm on good silicon.
+    if not 0 <= rev <= 15:
+        raise RuntimeError(
+            f"implausible ASIC Revision {rev} parsed from {_GPU_INFO_TOOL}"
+        )
+    return rev
+
+
+# Backfill map for legacy tuned configs that predate the `gfx` column.
+# These cu_num values were only ever tuned on a single arch historically:
+#   256 -> gfx950, 80/228/304 -> gfx942.
+# Newer archs that happen to share a cu_num (e.g. gfx1250 also reports 256)
+# are always written with their real arch by the tuner, so they never rely on
+# this backfill.
+_LEGACY_CU_NUM_TO_GFX = {
+    256: "gfx950",
+    80: "gfx942",
+    228: "gfx942",
+    304: "gfx942",
+}
+
+
+def gfx_from_cu_num(cu_num) -> str:
+    """Infer the gfx arch for a legacy config row that has no `gfx` column.
+
+    Used to migrate old tuned CSVs (keyed on cu_num only) to the new
+    (gfx, cu_num, ...) schema. Unknown cu_num falls back to the live GPU arch.
+    """
+    try:
+        cu_num = int(cu_num)
+    except (TypeError, ValueError):
+        return get_gfx_runtime()
+    gfx = _LEGACY_CU_NUM_TO_GFX.get(cu_num)
+    if gfx is not None:
+        return gfx
+    try:
+        return get_gfx_runtime()
+    except Exception:  # noqa: BLE001
+        return "gfx942"
+
+
+@functools.lru_cache(maxsize=1)
+def get_gfx_list() -> list[str]:
+
+    gfx_env = os.getenv("GPU_ARCHS", "native")
+    if gfx_env == "native":
+        try:
+            gfxs = _detect_native()
+        except RuntimeError:
+            gfxs = ["cpu"]
+    else:
+        gfxs = _parse_gpu_archs_env(gfx_env)
+    os.environ["AITER_GPU_ARCHS"] = ";".join(gfxs)
+
+    return gfxs
+
+
+def _parse_cu_num_rocminfo(output: str) -> list[int]:
+    devices = re.split(r"Agent\s*\d+", output)
+    gpu_compute_units: list[int] = []
+    for device in devices:
+        for line in device.split("\n"):
+            if "Device Type" in line and line.find("GPU") != -1:
+                match = re.search(r"Compute Unit\s*:\s*(\d+)", device)
+                if match:
+                    gpu_compute_units.append(int(match.group(1)))
+                break
+    return gpu_compute_units
+
+
+@torch_compile_guard()
+def get_cu_num_custom_op() -> int:
+    cu_num = int(os.getenv("CU_NUM", "0"))
+    if cu_num == 0:
+        if IS_WINDOWS:
+            import torch
+
+            props = torch.cuda.get_device_properties(0)
+            gfx = props.gcnArchName.split(":", 1)[0]
+            return torch_processor_count_to_cu(gfx, props.multi_processor_count)
+        try:
+            output = _gpu_info_output()
+            gpu_compute_units = _parse_cu_num_rocminfo(output)
+        except Exception as e:  # noqa: BLE001  blanket catch is intentional here
+            raise RuntimeError(
+                f"Get GPU Compute Unit from {_GPU_INFO_TOOL} failed {e!s}"
+            )
+        if not gpu_compute_units:
+            raise RuntimeError(f"No GPU Compute Unit found in {_GPU_INFO_TOOL} output.")
+        assert len(set(gpu_compute_units)) == 1
+        cu_num = gpu_compute_units[0]
+    return cu_num
+
+
+@functools.lru_cache(maxsize=1)
+def get_cu_num():
+    cu_num = get_cu_num_custom_op()
+    return cu_num
+
+
+def get_build_targets() -> list[tuple[str, int]]:
+    """Return (gfx, cu_num) pairs to compile kernels for.
+
+    Used by gen_instances.py in all CK GEMM modules to filter the tuning CSV
+    to exactly the right set of kernels for the target GPU(s).
+
+    Priority:
+      1. GPU_ARCHS set to an explicit non-empty target list -> delegate to
+         get_build_targets_env() (no GPU needed).
+      2. GPU_ARCHS unset, empty/whitespace, or "native" -> call get_gfx()
+         (GPU_ARCHS-aware; falls back to rocminfo/hipinfo when GPU_ARCHS is
+         unset) and get_cu_num(), which correctly reflect partition mode and
+         binned variants.
+      3. Neither -> raise RuntimeError with a clear message.
+    """
+    gpu_archs = os.getenv("GPU_ARCHS")
+    gpu_archs_normalized = gpu_archs.strip() if gpu_archs is not None else ""
+    if gpu_archs_normalized and gpu_archs_normalized.lower() != "native":
+        return get_build_targets_env()
+
+    try:
+        # get_gfx() is intentional here -- this is a build-time path; get_gfx_runtime()
+        # would fail in CI environments without a live GPU.
+        return [(get_gfx(), get_cu_num())]
+    except Exception as e:
+        raise RuntimeError(
+            "No GPU detected and GPU_ARCHS is not set to an explicit target. "
+            "Set GPU_ARCHS=gfx942 (or similar) to build without a GPU."
+        ) from e
+
+
+def build_tune_dict(
+    tune_df, default_dict, kernels_list, libtype=None, kernels_by_name=None
+):
+    """Filter tune_df to rows matching the current build targets and return a
+    (gfx, cu_num, M, N, K)-keyed dispatch dict, starting from a copy of default_dict.
+
+    Replaces the duplicated get_tune_dict filtering loop in each gen_instances.py.
+    Modules keep their own default_dict and kernels_list; only the CSV filtering
+    and key construction are shared here.
+
+    Args:
+        tune_df:          pandas DataFrame already loaded from the tuning CSV.
+        default_dict:     module-level fallback dict (negative-int keys) to start from.
+        kernels_list:     module-level dict mapping kernelId -> kernelInstance.
+        libtype:          Optional string to filter the "libtype" column (e.g. "ck").
+                          Required for CSVs that mix multiple library types (e.g.
+                          a8w8_bpreshuffle_tuned_gemm.csv mixes "ck" and "cktile").
+                          If None, no libtype filtering is applied.
+        kernels_by_name:  Optional dict mapping kernelName string -> kernelInstance.
+                          When provided and the CSV has a "kernelName" column, kernel
+                          lookup uses the name instead of kernelId. Falls back to
+                          kernelId if the kernelName column is absent from the CSV.
+
+    Strict on stale tuned-CSV rows: any row whose kernelName (or kernelId, in the
+    fallback path) is not present in the registry will raise RuntimeError listing
+    every offending row. A row that codegen silently drops would otherwise compile
+    into a .so guaranteed to TORCH_CHECK(false, ...) at runtime for that shape.
+
+    Returns:
+        dict with mixed keys: negative ints (from default_dict) and
+        (gfx, cu_num, M, N, K) 5-tuples (from the filtered CSV rows).
+    """
+    tune_dict = dict(default_dict)
+    targets = get_build_targets()
+    filtered = filter_tune_df(tune_df, targets)
+    if libtype is not None and "libtype" in tune_df.columns:
+        filtered = filtered[filtered["libtype"] == libtype]
+    use_name = kernels_by_name is not None and "kernelName" in tune_df.columns
+    if kernels_by_name is not None and not use_name:
+        logger.warning(
+            "kernels_by_name provided but CSV has no kernelName column, falling back to kernelId."
+        )
+    bad_rows: list[str] = []
+    for _, row in filtered.iterrows():
+        key = (
+            str(row["gfx"]),
+            int(row["cu_num"]),
+            int(row["M"]),
+            int(row["N"]),
+            int(row["K"]),
+        )
+        if use_name:
+            kname = str(row["kernelName"])
+            kernel = kernels_by_name.get(kname)
+            if kernel is not None:
+                tune_dict[key] = kernel
+            else:
+                bad_rows.append(
+                    f"  kernelName={kname!r} not in kernels_by_name "
+                    f"(gfx={key[0]}, cu_num={key[1]}, M={key[2]}, N={key[3]}, K={key[4]})"
+                )
+        else:
+            kid = int(row["kernelId"])
+            kernel = kernels_list.get(kid)
+            if kernel is not None:
+                tune_dict[key] = kernel
+            else:
+                bad_rows.append(
+                    f"  kernelId={kid} not in kernels_list "
+                    f"(gfx={key[0]}, cu_num={key[1]}, M={key[2]}, N={key[3]}, K={key[4]}, "
+                    f"kernels_list size={len(kernels_list)})"
+                )
+    if bad_rows:
+        raise RuntimeError(
+            "build_tune_dict: tuned CSV references kernels not in the build registry. "
+            "Either re-tune the CSV against the current kernel list or restore the "
+            "missing kernel definition; the build refuses to produce a .so that would "
+            "TORCH_CHECK(false, ...) at runtime for these shapes:\n"
+            + "\n".join(bad_rows)
+        )
+    return tune_dict
+
+
+def build_tune_dict_batched(tune_df, default_dict, kernels_list, libtype=None):
+    """Like build_tune_dict, but for batched GEMM modules whose dispatch key
+    includes the batch dimension B.
+
+    Builds a (gfx, cu_num, B, M, N, K) 6-tuple keyed dict suitable for use with
+    BatchedGemmDispatchMap in the C++ dispatch layer.
+
+    Args:
+        tune_df:      pandas DataFrame loaded from the batched tuning CSV.
+        default_dict: module-level fallback dict (negative-int keys) to start from.
+        kernels_list: module-level dict mapping kernelId -> kernelInstance.
+        libtype:      Optional string to filter the "libtype" column (same semantics
+                      as build_tune_dict).
+
+    Returns:
+        dict with mixed keys: negative ints (from default_dict) and
+        (gfx, cu_num, B, M, N, K) 6-tuples (from the filtered CSV rows).
+    """
+    tune_dict = dict(default_dict)
+    targets = get_build_targets()
+    filtered = filter_tune_df(tune_df, targets)
+    if libtype is not None and "libtype" in tune_df.columns:
+        filtered = filtered[filtered["libtype"] == libtype]
+    bad_rows: list[str] = []
+    for _, row in filtered.iterrows():
+        key = (
+            str(row["gfx"]),
+            int(row["cu_num"]),
+            int(row["B"]),
+            int(row["M"]),
+            int(row["N"]),
+            int(row["K"]),
+        )
+        kid = int(row["kernelId"])
+        kernel = kernels_list.get(kid)
+        if kernel is not None:
+            tune_dict[key] = kernel
+        else:
+            bad_rows.append(
+                f"  kernelId={kid} not in kernels_list "
+                f"(gfx={key[0]}, cu_num={key[1]}, B={key[2]}, M={key[3]}, N={key[4]}, K={key[5]}, "
+                f"kernels_list size={len(kernels_list)})"
+            )
+    if bad_rows:
+        raise RuntimeError(
+            "build_tune_dict_batched: tuned CSV references kernels not in the build "
+            "registry. Either re-tune the CSV against the current kernel list or "
+            "restore the missing kernel definition; the build refuses to produce a "
+            ".so that would TORCH_CHECK(false, ...) at runtime for these shapes:\n"
+            + "\n".join(bad_rows)
+        )
+    return tune_dict
+
+
+def write_name_keyed_lookup_header(
+    output_path, kernels_dict, lookup_head, lookup_template, lookup_end
+):
+    """Write a name-keyed C++ GEMM dispatch lookup header from a kernels_dict.
+
+    Sister of write_lookup_header(), but emits {"<kernel_name>", &kernel<...>}
+    entries instead of (gfx,cu_num,M,N,K) tuple keys.  Used by the blockscale
+    GEMM modules whose runtime dispatch is now driven by Python-resolved
+    kernel name strings (read from the tuned CSV) rather than a build-time
+    tuple-keyed lookup.  The kernels_dict may contain duplicate entries for
+    the same kernel (multiple shapes mapping to the same kernel.name); we
+    dedupe by name so each kernel is registered exactly once.
+
+    Skips negative-int default_dict keys (heuristic fallbacks the dispatch
+    layer references directly by symbol).
+
+    Args:
+        output_path:     Full path of the .h file to write.
+        kernels_dict:    Dict returned by build_tune_dict.
+        lookup_head:     String written before the loop (defines the macro header).
+        lookup_template: String with {kernel_name} placeholder (used twice:
+                          once for the C++ string key, once for the symbol).
+        lookup_end:      String written after the loop (closes the macro / #endif).
+    """
+    seen = set()
+    with open(output_path, "w") as f:
+        f.write(lookup_head)
+        for key, k in kernels_dict.items():
+            if isinstance(key, int) and key < 0:
+                # default_dict heuristic-fallback entries; the dispatch layer
+                # references the heuristic kernel by symbol, not via the table.
+                continue
+            if k.name in seen:
+                continue
+            seen.add(k.name)
+            f.write(lookup_template.format(kernel_name=k.name))
+        f.write(lookup_end)
+
+
+def write_lookup_header(
+    output_path,
+    kernels_dict,
+    lookup_head,
+    lookup_template,
+    lookup_end,
+    istune=False,
+    extra_format_args=None,
+):
+    """Write a C++ GEMM dispatch lookup header from a kernels_dict.
+
+    Replaces the duplicated gen_lookup_dict loop in each gen_instances.py codegen
+    class.  Each module still defines its own lookup_head / lookup_template /
+    lookup_end strings (they embed the module-specific GENERATE_LOOKUP_TABLE macro
+    type parameters), but the iteration and key-formatting logic is shared here.
+
+    Key layout in kernels_dict:
+      - Negative ints          (default_dict entries) -> skipped in non-tune mode.
+      - (gfx,cu_num,M,N,K) 5-tuples (tuned entries)  -> written as {"gfx",cu_num,M,N,K} C++ key.
+      - (gfx,cu_num,B,M,N,K) 6-tuples (batched)      -> written as {"gfx",cu_num,B,M,N,K} C++ key.
+      - Non-negative ints (tune mode only)            -> written as plain integer kernel ID.
+
+    Args:
+        output_path:     Full path of the .h file to write.
+        kernels_dict:    Dict returned by build_tune_dict (or get_tune_dict).
+        lookup_head:     String written before the loop (defines the macro header).
+        lookup_template: String with {MNK} and {kernel_name} placeholders.
+        lookup_end:      String written after the loop (closes the macro / #endif).
+        istune:          True when generating the tune-mode lookup (int kernelId keys).
+        extra_format_args: Optional callable returning additional format arguments
+                           for a kernel instance.
+    """
+
+    def format_entry(key_value, kernel):
+        format_args = {"MNK": key_value, "kernel_name": kernel.name}
+        if extra_format_args is not None:
+            format_args.update(extra_format_args(kernel))
+        return lookup_template.format(**format_args)
+
+    with open(output_path, "w") as f:
+        f.write(lookup_head)
+        for key, k in kernels_dict.items():
+            if not istune and (isinstance(key, tuple) and isinstance(key[0], str)):
+                # 5-tuple key: (gfx, cu_num, M, N, K)
+                # 6-tuple key: (gfx, cu_num, B, M, N, K)
+                # key[0] is the gfx arch string; the remaining elements are ints.
+                cpp_key = (
+                    '{"' + key[0] + '", ' + ", ".join(str(x) for x in key[1:]) + "}"
+                )
+                f.write(format_entry(cpp_key, k))
+            elif istune and isinstance(key, int) and key >= 0:
+                f.write(format_entry(key, k))
+        f.write(lookup_end)
+
+
+def _get_pci_chip_id(device_id=None):
+    import ctypes
+
+    if device_id is None:
+        device_id = get_current_hip_device()
+        if device_id is None:
+            raise RuntimeError(
+                "hipGetDevice failed, so there is no current device to read "
+                "PciChipId from."
+            )
+
+    # ROCm 7.1 inserted MaxAvailableVgprsPerThread ahead of PciChipId, shifting it.
+    version = get_hip_runtime_version()
+    if version is None:
+        raise RuntimeError(
+            "Could not read the HIP runtime version, so the PciChipId attribute "
+            f"of device {device_id} cannot be located."
+        )
+    if version[:2] < (7, 1):
+        hipDeviceAttributePciChipId = 10019
+    else:
+        hipDeviceAttributePciChipId = 10020
+
+    libhip = load_hip_runtime()
+    chip_id = ctypes.c_int(0)
+    err = libhip.hipDeviceGetAttribute(
+        ctypes.byref(chip_id),
+        hipDeviceAttributePciChipId,
+        device_id,
+    )
+    if err != 0:
+        raise RuntimeError(f"hipDeviceGetAttribute(PciChipId) failed with error {err}")
+    return chip_id.value
+
+
+MI308_CHIP_IDS = {0x74A2, 0x74A8, 0x74B6, 0x74BC}
+
+
+def get_device_name():
+    """Name of the device this thread is bound to.
+
+    Needs a live GPU: the arch, PCI id and XCD count all come from that device.
+    """
+    device_id = get_current_hip_device()
+    if device_id is None:
+        raise RuntimeError(
+            "hipGetDevice failed, so there is no current device to name."
+        )
+    return _get_device_name(device_id)
+
+
+def _get_device_name(device_id: int) -> str:
+    import torch
+
+    gfx = torch.cuda.get_device_properties(device_id).gcnArchName
+    gfx = gfx.split(":", 1)[0].lower()
+
+    if gfx == "gfx942":
+        chip_id = _get_pci_chip_id(device_id)
+        if chip_id in MI308_CHIP_IDS:
+            return "MI308"
+        return "MI300"
+    elif gfx == "gfx950":
+        num_xcds = _num_xcds_for_device(device_id)
+        if num_xcds is None:
+            raise RuntimeError(
+                "HIP runtime predates hipDeviceAttributeNumberOfXccs, so the XCD "
+                f"count of device {device_id} cannot be determined."
+            )
+        # MI350P is a half-size gfx950: 4 XCDs against 8 on MI350X and MI355X.
+        if num_xcds == 4:
+            return "MI350P"
+        return "MI350"
+    elif gfx in ("gfx1250", "gfx1250-strict"):
+        return "MI400"
+    else:
+        raise RuntimeError("Unsupported gfx")
+
+
+def _query_num_xccs(device_id: int) -> int:
+    """Ask HIP how many XCCs the given device has."""
+    import ctypes
+
+    hipDeviceAttributeNumberOfXccs = 10018
+
+    libhip = load_hip_runtime()
+    val = ctypes.c_int(0)
+    err = libhip.hipDeviceGetAttribute(
+        ctypes.byref(val),
+        hipDeviceAttributeNumberOfXccs,
+        device_id,
+    )
+    if err != 0:
+        raise RuntimeError(
+            f"hipDeviceGetAttribute(NumberOfXccs) failed with error {err} "
+            f"for device {device_id}"
+        )
+
+    # A shifted ordinal resolves to an unrelated attribute, whose value lands well
+    # outside this range. Loose because MI300A has 6 dies and partitions vary.
+    n = val.value
+    if not 1 <= n <= 64:
+        raise RuntimeError(
+            f"hipDeviceGetAttribute(NumberOfXccs) returned {n} for device "
+            f"{device_id}, which is not a usable XCD count"
+        )
+    return n
+
+
+@functools.cache
+def _num_xcds_for_device(device_id: int) -> int | None:
+    """XCD count of a device, or None for a HIP runtime that lacks the attribute."""
+    version = get_hip_runtime_version()
+    if version is None:
+        raise RuntimeError(
+            f"Could not read the HIP runtime version for device {device_id}, "
+            "so the XCD count cannot be determined."
+        )
+
+    # Below ROCm 7.0 the ordinal names a different attribute and returns a
+    # plausible integer, so this gate has to precede the query.
+    if version[:2] < (7, 0):
+        logger.warning(
+            "HIP %d.%d predates hipDeviceAttributeNumberOfXccs.", *version[:2]
+        )
+        return None
+
+    return _query_num_xccs(device_id)
+
+
+@functools.cache
+def _warn_xcd_fallback(reason: str, default: int) -> None:
+    logger.warning(
+        "%s; assuming %d XCDs until a later query succeeds.", reason, default
+    )
+
+
+def get_num_xcds(default: int | None = 8) -> int:
+    """XCD (accelerator die) count of the device this thread is bound to.
+
+    Only the first successful lookup per device id is cached; a failed one is
+    retried on the next call. On failure, the default is returned and the
+    failure logged once; pass default=None to raise instead, as any caller whose
+    correctness or identity depends on the count must. A HIP runtime that lacks
+    the attribute (before 7.0) also returns the default, or raises without one.
+    """
+    try:
+        device_id = get_current_hip_device()
+        if device_id is None:
+            raise RuntimeError(
+                "hipGetDevice failed, so there is no current device to read the "
+                "XCD count from."
+            )
+        xcds = _num_xcds_for_device(device_id)
+    except (RuntimeError, OSError) as e:
+        if default is None:
+            raise
+        _warn_xcd_fallback(str(e), default)
+        return default
+    if xcds is None:
+        if default is None:
+            raise RuntimeError(
+                "HIP runtime predates hipDeviceAttributeNumberOfXccs, so the XCD "
+                f"count of device {device_id} cannot be determined."
+            )
+        return default
+    return xcds

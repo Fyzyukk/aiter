@@ -1,0 +1,468 @@
+# adapted from triton_kernels package
+# original code https://github.com/triton-lang/triton/blob/main/python/triton_kernels/triton_kernels/matmul_ogs.py
+
+import itertools
+
+import torch
+import triton
+
+from aiter.ops.triton._triton_kernels.moe.moe_op_gemm_a8w8 import (
+    _moe_gemm_a8w8,
+)
+from aiter.ops.triton.moe.moe_routing.routing import RoutingData
+from aiter.ops.triton.moe.reduce import reduce_grouped
+from aiter.ops.triton.utils._triton.arch_info import get_arch
+from aiter.ops.triton.utils.gemm_config_utils import pick_gemm_num_stages
+from aiter.ops.triton.utils.moe_config_utils import get_moe_dispatch
+
+# -----------------------------------------------------------------------------
+#                    Matrix Multiplication + Outer Gather/Scatter
+# -----------------------------------------------------------------------------
+
+
+def can_overflow_int32(tensor: torch.Tensor):
+    max_int32 = (1 << 31) - 1
+    offset = 0
+    for i in range(tensor.ndim):
+        offset += (tensor.shape[i] - 1) * tensor.stride(i)
+    return offset > max_int32
+
+
+def should_upcast_indices(*args):
+    return any(tensor is not None and can_overflow_int32(tensor) for tensor in args)
+
+
+def allocate_output(
+    x,
+    w,
+    out_dtype,
+    reduction_n_matmul,
+    reduction_n_reduction,
+    routing_data,
+    gather_indx,
+    scatter_indx,
+    block_m,
+    split_k,
+):
+    # ---- output ------
+    N = w.shape[-1]
+    # by default - M is number of rows in the activations
+    M = x.shape[-2]
+    # if the activations are gathered, then M is number of gather indices
+    if gather_indx is not None:
+        M = gather_indx.shape[0]
+    # final output
+    if routing_data.n_expts_act == 1 or scatter_indx is None:
+        y_rows = M
+    else:
+        y_rows = (
+            scatter_indx.shape[0] // routing_data.n_expts_act
+        )  # compressed number of rows
+    matmul_shape = (split_k, M, N // reduction_n_matmul)
+    final_shape = (y_rows, N // reduction_n_matmul // reduction_n_reduction)
+    # Keep split-K partials in fp32 for the reduction.
+    matmul_dtype = torch.float32 if split_k > 1 else out_dtype
+    matmul_output = torch.empty(matmul_shape, device=x.device, dtype=matmul_dtype)
+    if scatter_indx is not None or split_k > 1:
+        final_output = torch.empty(final_shape, device=x.device, dtype=out_dtype)
+    else:
+        final_output = None
+    return matmul_output, final_output
+
+
+def get_kernel_config(m, n, k, routing_data, swizzle_mx_scale=None, fnuz_mx=False):
+    block_m = routing_data.block_m
+    group_m = 4
+    num_xcds = 8
+    xcd_swizzle = num_xcds
+    w_cache_modifier = ".cg" if block_m <= 32 else None
+    arch = get_arch()
+
+    split_k = 1
+
+    tuned = (
+        get_moe_dispatch("A8W8", arch, "triton").get(f"bm{block_m}_n{n}_k{k}")
+        if fnuz_mx
+        else None
+    )
+    if tuned is not None:
+        assert tuned["BLOCK_SIZE_K"] in (32, 64, 128), (
+            f"bm{block_m}_n{n}_k{k}: fnuz MXFP8 needs BLOCK_SIZE_K of 32/64/128, "
+            f"got {tuned['BLOCK_SIZE_K']}"
+        )
+        return {
+            "block_m": block_m,
+            "block_n": tuned["BLOCK_SIZE_N"],
+            "block_k": tuned["BLOCK_SIZE_K"],
+            "num_warps": tuned["num_warps"],
+            "num_stages": tuned["num_stages"],
+            "group_m": group_m,
+            "xcd_swizzle": xcd_swizzle,
+            "w_cache_modifier": w_cache_modifier,
+            "split_k": tuned.get("NUM_KSPLIT", 1),
+            "waves_per_eu": tuned.get("waves_per_eu", 0),
+            "matrix_instr_nonkdim": tuned.get("matrix_instr_nonkdim", 16),
+            "kpack": tuned.get("kpack", 1),
+        }
+    if block_m == 16:
+        block_n = 64
+        block_k = 256
+        num_warps = 4
+
+        grid_m = routing_data.n_blocks(m, block_m)
+        grid_n = triton.cdiv(n, block_n)
+        grid = grid_m * grid_n * split_k
+        while block_n >= 64 and grid < 256:
+            block_n = block_n // 2
+            grid_m = routing_data.n_blocks(m, block_m)
+            grid_n = triton.cdiv(n, block_n)
+            grid = grid_m * grid_n * split_k
+    else:
+        # for scale preshuffling
+        block_n = 256
+        block_k = 256
+        num_warps = 8
+        if swizzle_mx_scale is None:
+            # switch to block_k=128 as 256 exceeds LDS budget
+            block_k = 128
+            if block_m >= 128:
+                block_n = 128
+            elif block_m == 64:
+                num_warps = 4
+    if fnuz_mx:
+        # gfx942 MXFP8 runs one FP8 dot per 32-wide scale slice, for BLOCK_K up
+        # to 128. Use the widest tile that divides K. Short K stays at 32: there
+        # are too few K steps to hide the extra per-slice dots.
+        if k <= 256:
+            block_k = 32
+        else:
+            block_k = next((b for b in (128, 64, 32) if k % b == 0), 32)
+    num_stages = pick_gemm_num_stages(
+        arch, block_m, block_n, block_k, 8, 8, use_async_padding=True
+    )
+    if swizzle_mx_scale is None and block_m == 64 and block_k == 128 and block_n == 256:
+        # Override the heuristic to use num_stages=1 for preserving occupancy
+        num_stages = 1
+
+    ret = {
+        "block_m": block_m,
+        "block_n": block_n,
+        "block_k": block_k,
+        "num_warps": num_warps,
+        "num_stages": num_stages,
+        "group_m": group_m,
+        "xcd_swizzle": xcd_swizzle,
+        "w_cache_modifier": w_cache_modifier,
+        "split_k": split_k,
+        "waves_per_eu": 0,
+        "matrix_instr_nonkdim": 16,
+        "kpack": 1,
+    }
+    return ret
+
+
+# -----------------------------------------------------------------------------
+# Triton Implementation
+# -----------------------------------------------------------------------------
+
+
+def moe_gemm_a8w8(
+    x,
+    w,
+    x_scales,
+    w_scales,
+    x_static_scale=None,
+    w_static_scale=None,
+    quant_static_scale=None,
+    bias=None,
+    routing_data: RoutingData | None = None,
+    gather_indx=None,
+    scatter_indx=None,
+    gammas=None,
+    swizzle_mx_scale=None,
+    out_dtype=torch.bfloat16,
+    apply_swiglu=False,
+    alpha=1.0,
+    limit=1.0,
+    swiglu_add_residual=True,
+    unpadded_N=None,
+    unpadded_K=None,
+    x_token_scale=None,
+    w_expt_scale=None,
+):
+    """
+    Y[:, :] = 0.
+    for e in num_experts:
+        Y[idxs_y_m(e), :] += matmul(X[idxs_x_m(e), :], W[e, :, :])
+
+    x_token_scale: optional fp32 per-token activation scale, one entry per row
+        of x; applied to the accumulator before bias / activation.
+    w_expt_scale: optional fp32 per-expert weight scale [n_expts].
+    """
+    if x_token_scale is not None:
+        assert (
+            x_token_scale.dtype == torch.float32
+        ), f"Expected fp32 x_token_scale, got {x_token_scale.dtype}"
+        x_token_scale = x_token_scale.reshape(-1).contiguous()
+        assert x_token_scale.numel() == x.shape[-2], (
+            f"x_token_scale must have one entry per row of x "
+            f"({x.shape[-2]}), got {x_token_scale.numel()}"
+        )
+    if w_expt_scale is not None:
+        assert (
+            w_expt_scale.dtype == torch.float32
+        ), f"Expected fp32 w_expt_scale, got {w_expt_scale.dtype}"
+        w_expt_scale = w_expt_scale.reshape(-1).contiguous()
+        assert w_expt_scale.numel() == w.shape[0], (
+            f"w_expt_scale must have one entry per expert "
+            f"({w.shape[0]}), got {w_expt_scale.numel()}"
+        )
+    use_fnuz = x.dtype == torch.float8_e4m3fnuz
+    assert not (
+        use_fnuz and quant_static_scale is not None
+    ), "fused FP8 output quant writes OCP e4m3fn and is not supported for fnuz"
+    assert use_fnuz == (
+        w.dtype == torch.float8_e4m3fnuz
+    ), f"x and w must both be fnuz or both be OCP fp8, got {x.dtype} / {w.dtype}"
+    w_has_mx = w_scales is not None
+    if w_has_mx:
+        assert w.stride(-2) == 1, "`w` must be column-major when it has data-type mxfp"
+    if w_has_mx:
+        stride_w_mx_e = w_scales.stride(0)
+        stride_w_mx_k = w_scales.stride(1)
+        stride_w_mx_n = w_scales.stride(2)
+    else:
+        stride_w_mx_e = 0
+        stride_w_mx_k = 0
+        stride_w_mx_n = 0
+
+    x_has_mx = x_scales is not None
+    if x_has_mx:
+        assert x.stride(-1) == 1, "'x' must be row-major when it has data-type mxfp"
+    if x_has_mx:
+        stride_x_mx_m = x_scales.stride(0)
+        stride_x_mx_k = x_scales.stride(1)
+    else:
+        stride_x_mx_m = 0
+        stride_x_mx_k = 0
+    # determine shapes
+    M = x.shape[-2] if gather_indx is None else gather_indx.shape[0]
+    K, N = x.shape[-1], w.shape[-1]
+    block_m = routing_data.block_m
+    if unpadded_N and block_m == 16:
+        N = unpadded_N
+    if unpadded_K and block_m == 16:
+        K = unpadded_K
+    # compute optimization flags
+    config = get_kernel_config(
+        M,
+        N,
+        K,
+        routing_data,
+        swizzle_mx_scale,
+        fnuz_mx=use_fnuz and (x_has_mx or w_has_mx),
+    )
+    if apply_swiglu and gammas is not None and config["split_k"] > 1:
+        # Gammas are applied per partial, before the swiglu in the reduction.
+        config["split_k"] = 1
+    # Split-K slices are not tail-masked.
+    while config["split_k"] > 1 and K % (config["block_k"] * config["split_k"]):
+        config["split_k"] //= 2
+    if apply_swiglu and config["split_k"] > 1:
+        apply_swiglu_matmul = False
+        reduction_n_matmul = 1
+        apply_swiglu_reduction = True
+        reduction_n_reduction = 2
+    elif apply_swiglu:
+        apply_swiglu_matmul = True
+        reduction_n_matmul = 2
+        apply_swiglu_reduction = False
+        reduction_n_reduction = 1
+    else:
+        apply_swiglu_matmul = False
+        reduction_n_matmul = 1
+        apply_swiglu_reduction = False
+        reduction_n_reduction = 1
+    # allocate output memory
+    y, y_final = allocate_output(
+        x,
+        w,
+        out_dtype,
+        reduction_n_matmul,
+        reduction_n_reduction,
+        routing_data,
+        gather_indx,
+        scatter_indx,
+        config["block_m"],
+        config["split_k"],
+    )
+    stride_bias = None if bias is None else bias.stride(0)
+    # moe metadata
+    expt_data = routing_data.expt_data
+    expt_hist = None if expt_data is None else expt_data.hist
+    expt_hist_sum = None if expt_data is None else expt_data.token_offs_pad[-1]
+    expt_token_offs_raw = None if expt_data is None else expt_data.token_offs_raw
+    expt_block_pid_map = None if expt_data is None else expt_data.block_pid_map
+    # spmd grid
+    grid_m = routing_data.n_blocks(M, config["block_m"])
+    grid_n = triton.cdiv(N, config["block_n"])
+    grid = grid_m * grid_n * config["split_k"]
+    # launch kernel
+    _moe_gemm_a8w8[(grid,)](
+        y,
+        y.stride(0),
+        y.stride(1),
+        y.stride(2),
+        x,
+        x.stride(0),
+        x.stride(1),
+        x_scales,
+        stride_x_mx_m,
+        stride_x_mx_k,
+        w,
+        w.stride(0),
+        w.stride(1),
+        w.stride(2),
+        w_scales,
+        stride_w_mx_e,
+        stride_w_mx_k,
+        stride_w_mx_n,
+        x_static_scale,
+        w_static_scale,
+        quant_static_scale,
+        x_token_scale,
+        w_expt_scale,
+        bias,
+        stride_bias,
+        gammas,
+        N,
+        K,
+        gather_indx,
+        expt_hist,
+        expt_token_offs_raw,
+        expt_hist_sum,
+        expt_block_pid_map,
+        grid_m,
+        grid_n,
+        apply_swiglu_matmul,
+        alpha,
+        limit,
+        reduction_n_matmul,
+        swiglu_add_residual,
+        routing_data.n_expts_act,
+        config["block_m"],
+        config["block_n"],
+        config["block_k"],
+        config["group_m"],
+        XCD_SWIZZLE=config["xcd_swizzle"],
+        SWIZZLE_MX_SCALE=swizzle_mx_scale,
+        SPLIT_K=config["split_k"],
+        EVEN_K=K % config["block_k"] == 0,
+        MASK_K_LIMIT=K % config["block_k"],
+        W_CACHE_MODIFIER=config["w_cache_modifier"],
+        num_warps=config["num_warps"],
+        num_stages=config["num_stages"],
+        UPCAST_INDICES=should_upcast_indices(x, w, y),
+        USE_FNUZ=use_fnuz,
+        waves_per_eu=config["waves_per_eu"],
+        matrix_instr_nonkdim=config["matrix_instr_nonkdim"],
+        kpack=config["kpack"],
+    )
+    # Build grouped reduction inputs in a uniform way
+    group_indx = (
+        None
+        if scatter_indx is None
+        else scatter_indx.view(-1, routing_data.n_expts_act)
+    )
+    y_final = reduce_grouped(
+        y,
+        group_indx,
+        y_final,
+        apply_swiglu_reduction,
+        alpha,
+        limit,
+        reduction_n_reduction,
+        out_dtype=out_dtype,
+        swiglu_add_residual=swiglu_add_residual,
+    )
+    return y_final
+
+
+# -----------------------------------------------------------------------------
+# Reference Implementation
+# -----------------------------------------------------------------------------
+
+
+def swiglu_torch(a, alpha, limit, add_residual=True):
+    a_gelu = a[..., ::2]
+    if limit is not None:
+        a_gelu = a_gelu.clamp(max=limit)
+    a_linear = a[..., 1::2]
+    if limit is not None:
+        a_linear = a_linear.clamp(min=-limit, max=limit)
+
+    out_gelu = a_gelu * torch.sigmoid(alpha * a_gelu)
+    if add_residual:
+        out = out_gelu * (a_linear + 1)
+    else:
+        out = out_gelu * a_linear
+    return out
+
+
+def moe_gemm_torch(
+    x,
+    w,
+    bias,
+    routing_data: RoutingData = None,
+    gather_indx=None,
+    scatter_indx=None,
+    gammas=None,
+    apply_swiglu=False,
+    alpha=1.0,
+    limit=1.0,
+    add_residual=True,
+):
+    assert x.dtype.itemsize > 1
+    assert w.dtype.itemsize > 1
+    if bias is not None and bias.ndim == 1:
+        bias = bias.view(1, *bias.shape)
+    if w.ndim == 2:
+        w = w.view(1, *w.shape)
+    n_expts_act = routing_data.n_expts_act
+    # memory offsets
+    if routing_data.n_expts_tot > 1:
+        sizes = routing_data.expt_hist
+        off = torch.zeros(sizes.shape[0] + 1, dtype=torch.int32, device=x.device)
+        off[1:] = torch.cumsum(sizes, 0)
+        offs = list(itertools.pairwise(off))
+    else:
+        offs = [[0, x.shape[0]] for _ in range(w.shape[0])]
+    # compute
+    n_rows = x.shape[0] if gather_indx is None else gather_indx.shape[0]
+    n_cols = w.shape[-1] // 2 if apply_swiglu else w.shape[-1]
+    y = torch.zeros((n_rows, n_cols), device=x.device, dtype=x.dtype)
+    for i, (lo, hi) in enumerate(offs):
+        if gather_indx is None:
+            idx = torch.arange(lo, hi, device=x.device)
+        else:
+            gather_indx = gather_indx.to(torch.int32)
+            idx = gather_indx[lo:hi] // n_expts_act
+        out = torch.matmul(x[idx, :].float(), w[i].float())
+        if bias is not None:
+            out += bias[i, :]
+        if apply_swiglu:
+            out = swiglu_torch(out, alpha, limit, add_residual)
+        if gammas is not None:
+            out *= gammas[lo:hi, None]
+        y[lo:hi, :] = out
+    if scatter_indx is None:
+        return y
+    # accumulate output from all experts
+    scatter_indx = scatter_indx.to(torch.int32)
+    n_rows = y.shape[0] // n_expts_act
+    out = torch.zeros((n_rows, y.shape[-1]), dtype=torch.float32, device=x.device)
+    src_idx = scatter_indx.view(-1, n_expts_act)
+    for i in range(n_rows):
+        out[i, :] = y[src_idx[i], :].float().sum(0)
+
+    return out

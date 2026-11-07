@@ -1,0 +1,408 @@
+import sys
+
+import torch
+import triton
+
+from aiter.ops.triton.attention.hstu_attention import _AttentionFunction
+from aiter.ops.triton.utils.types import str_to_torch_dtype
+from op_tests.op_benchmarks.triton.utils.argparse import (
+    get_parser,
+)
+from op_tests.op_benchmarks.triton.utils.benchmark_utils import (
+    get_caller_name_no_ext,
+    print_vgpr,
+)
+from op_tests.triton_tests.attention.test_hstu_attn import (
+    apply_SL,
+    generate_sparse_seq_len,
+    get_bytes,
+    get_flops,
+    sanity_check_attention,
+    switch_to_contiguous_if_needed,
+)
+
+
+def get_x_values():
+    x_vals = [
+        (32, 1024, 0.5, 4, 128, 128),
+        (32, 2048, 0.5, 4, 128, 128),
+        (32, 4096, 0.5, 4, 128, 128),
+        (32, 8192, 0.5, 4, 128, 128),
+        (32, 16384, 0.5, 4, 128, 128),
+        (512, 512, 0.97, 4, 128, 128),
+        (512, 3072, 0.366, 4, 128, 128),
+        (1024, 1024, 0.768, 4, 128, 128),
+    ]
+
+    return x_vals
+
+
+def run_benchmark(args):
+
+    x_names = [
+        "batch_size",
+        "max_seq_len",
+        "sparsity",
+        "heads",
+        "attn_dim",
+        "hidden_dim",
+    ]
+    if args.user_input:
+        x_val_list = [
+            (
+                args.b,
+                args.max_seq_len,
+                args.sparsity,
+                args.heads,
+                args.head_dim,
+                args.hidden_dim,
+            )
+        ]
+    else:
+        x_val_list = get_x_values()
+
+    if args.metric == "time":
+        ylabel = "Time (ms)"
+    elif args.metric == "throughput":
+        ylabel = "Throughput (TFLOPS)"
+    elif args.metric == "bandwidth":
+        ylabel = "Bandwidth (GBs)"
+    else:
+        raise NotImplementedError(f"{args.metric} is not supported")
+
+    evaluation_metric_to_unit = {
+        "throughput": "TFLOPS",
+        "time": "Time_(ms)",
+        "bandwidth": "Bandwidth_(GB/s)",  # spaces break prettytable parsing
+    }
+    modes = [args.mode]
+    if args.mode == "both":
+        modes = ["fwd", "bwd"]
+
+    configs = []
+    for mode in modes:
+        metric = args.metric
+        # backward only supports the time metric; force it (and the column
+        # label + ylabel) so the reported values are never mislabeled.
+        if mode == "bwd":
+            metric = "time"
+        if metric == "time":
+            ylabel = "Time (ms)"
+        elif metric == "throughput":
+            ylabel = "Throughput (TFLOPS)"
+        else:
+            ylabel = "Bandwidth (GBs)"
+
+        unit = evaluation_metric_to_unit[metric]
+        configs.append(
+            triton.testing.Benchmark(
+                x_names=x_names,
+                x_vals=x_val_list,
+                line_arg="unit",
+                line_vals=[unit],
+                line_names=[unit],
+                styles=[("green", "-")],
+                ylabel=ylabel,
+                plot_name=get_caller_name_no_ext(),
+                args={"metric": metric, "mode": mode},
+            )
+        )
+
+    @triton.testing.perf_report(configs)
+    def bench_hstu_attn(
+        batch_size,
+        max_seq_len,
+        sparsity,
+        heads,
+        attn_dim,
+        hidden_dim,
+        metric,
+        mode,
+        **kwargs,
+    ):
+        type_str = args.dtype
+        assert type_str in [
+            "fp16",
+            "bf16",
+        ], "only fp16 or bf16 data types are supported!"
+        dropout_pr = 0.0
+        target_size: int = 20
+        # apply_SL clamps long sequences to ~N^(sl_alpha/2). sl_alpha=2.0 is
+        # effectively no clamp; 1.7 matches the HSTU length distribution.
+        sl_alpha: float = args.sl_alpha
+        dtype = str_to_torch_dtype[type_str]
+
+        invalid_attn_mask_type = "lower_triangular"
+        causal = True
+        alpha = 1.0 / attn_dim * 10000
+
+        # generate inputs
+        torch.manual_seed(1001)  # for reproducibility
+        lengths = generate_sparse_seq_len(
+            size=batch_size,
+            max_seq_len=max_seq_len,
+            sparsity=sparsity,
+            device=torch.device("cuda"),
+        )
+        lengths = apply_SL(lengths, sl_alpha, max_seq_len=max_seq_len)
+        num_targets = torch.randint(
+            1,
+            target_size + 1,
+            (batch_size,),
+            device=lengths.device,
+            dtype=lengths.dtype,
+        )
+        num_targets = torch.where(num_targets > lengths, lengths, num_targets)
+        seq_offsets = torch.zeros(
+            (batch_size + 1,), dtype=torch.int64, device=torch.device("cuda")
+        )
+        seq_offsets[1:] = torch.cumsum(lengths, dim=0)
+        L = int(seq_offsets[-1].item())
+        x = torch.empty(
+            (L, heads, attn_dim * 2 + hidden_dim),
+            dtype=dtype,
+            device=torch.device("cuda"),
+        ).uniform_(-0.01, 0.01)
+        q, k, v = torch.split(x, [attn_dim, attn_dim, hidden_dim], dim=-1)
+
+        q = switch_to_contiguous_if_needed(q)
+        k = switch_to_contiguous_if_needed(k)
+        v = switch_to_contiguous_if_needed(v)
+
+        sanity_check_attention(
+            max_seq_len=max_seq_len,
+            q=q,
+            k=k,
+            v=v,
+            seq_offsets=seq_offsets,
+            invalid_attn_mask_type=invalid_attn_mask_type,
+            dropout_pr=dropout_pr,
+            attn_bias=None,
+            max_attn_len=None,
+            contextual_seq_len=0,
+        )
+
+        provider = args.provider
+
+        if provider == "flydsl":
+            # FlyDSL: fwd returns O; bwd is a self-contained op returning
+            # (dq, dk, dv) (recomputes S internally, launches dV/dK/dQ). No
+            # autograd wrapper needed. Same alpha / inputs / FLOPs formula as the
+            # aiter_triton path for an apples-to-apples comparison.
+            from aiter.ops.flydsl.hstu_attention import (
+                flydsl_hstu_attention_bwd,
+                flydsl_hstu_attention_fwd,
+            )
+
+            if mode == "fwd":
+
+                def run_fwd():
+                    return flydsl_hstu_attention_fwd(
+                        max_seq_len,
+                        alpha,
+                        q,
+                        k,
+                        v,
+                        seq_offsets,
+                        causal,
+                        num_targets,
+                        0,
+                        0,
+                    )
+
+                ms = triton.testing.do_bench(run_fwd, warmup=25, rep=100)
+            else:
+                do = torch.randn_like(v)
+
+                def run_bwd():
+                    return flydsl_hstu_attention_bwd(
+                        max_seq_len,
+                        alpha,
+                        q,
+                        k,
+                        v,
+                        do,
+                        seq_offsets,
+                        causal,
+                        num_targets,
+                        0,
+                        0,
+                        sort_by_length=args.sort_by_length,
+                    )
+
+                ms = triton.testing.do_bench(run_bwd, warmup=25, rep=100)
+        else:  # aiter_triton
+
+            def attn_fwd():
+                return _AttentionFunction.apply(
+                    max_seq_len,
+                    alpha,
+                    q,
+                    k,
+                    v,
+                    seq_offsets,
+                    causal,
+                    num_targets,
+                    0,  # max_attn_len,
+                    0,  # contextual_seq_len
+                    args.sort_by_length,  # sort_by_length
+                )
+
+            if mode == "fwd":
+                ms = triton.testing.do_bench(
+                    attn_fwd,
+                    warmup=25,
+                    rep=100,
+                )
+            else:
+                q.requires_grad_(True)
+                k.requires_grad_(True)
+                v.requires_grad_(True)
+
+                o = attn_fwd()
+                do = torch.randn_like(o)
+
+                def attn_bwd():
+                    return o.backward(do, retain_graph=True)
+
+                ms = triton.testing.do_bench(
+                    attn_bwd,
+                    warmup=25,
+                    rep=100,
+                )
+
+        # Return exactly one scalar depending on which metric is active
+        if metric == "time":
+            return ms
+        elif metric == "throughput":
+            flops = get_flops(seq_offsets.cpu().numpy(), heads, attn_dim, hidden_dim)
+            tflops = flops / ms * 1e-9
+            return tflops
+        elif metric == "bandwidth":
+            elem_size = q.element_size()
+            bytes = get_bytes(
+                seq_offsets.cpu().numpy(), heads, attn_dim, hidden_dim, elem_size
+            )
+            bandwidth = bytes / (ms * 1e-3) * 1e-9  # GB/s
+            return bandwidth
+        else:
+            raise ValueError("Unknown metric: " + metric)
+
+    bench_hstu_attn.run(save_path="." if args.o else None, print_data=True)
+
+
+def parse_args():
+    parser = get_parser(kernel_name="HSTU Attention")
+    parser.add_argument(
+        "--b",
+        type=int,
+        default=512,
+        help="Batch dim of input sequences",
+    )
+    parser.add_argument(
+        "--max_seq_len",
+        type=int,
+        default=1024,
+        help="max sequence length",
+    )
+    parser.add_argument(
+        "--sparsity",
+        type=float,
+        default=0.5,
+        help="sparsity of input sequence lengths",
+    )
+    parser.add_argument(
+        "--heads",
+        type=int,
+        default=4,
+        help="number of heads",
+    )
+    parser.add_argument(
+        "--head_dim",
+        type=int,
+        default=128,
+        help="head dimension",
+    )
+    parser.add_argument(
+        "--hidden_dim",
+        type=int,
+        default=128,
+        help="hidden dimension",
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="bf16",
+        help="data type, default (bfloat16)",
+    )
+
+    parser.add_argument(
+        "--provider",
+        type=str,
+        choices=["aiter_triton", "flydsl"],
+        default="aiter_triton",
+        help="kernel implementation to benchmark",
+    )
+
+    parser.add_argument(
+        "--sl_alpha",
+        type=float,
+        default=2.0,
+        help=(
+            "apply_SL clamp exponent (~N^(sl_alpha/2)). 2.0 = near-unclamped "
+            "(heavy); 1.7 = HSTU deployment distribution."
+        ),
+    )
+
+    parser.add_argument(
+        "--sort_by_length",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable sort-by-length load balancing in the bwd (FlyDSL: group-aware "
+            "batch remap; AITER-Triton: its native sort_by_length). fwd unaffected."
+        ),
+    )
+
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="fwd",
+        choices=["fwd", "bwd", "both"],
+        help="indicate run forward, backward, or both",
+    )
+    parser.add_argument(
+        "-print_vgpr",
+        action="store_true",
+        default=False,
+        help="Prints the VGPR usage of the compiled triton kernel.",
+    )
+    parser.add_argument(
+        "--user_input",
+        action="store_true",
+        default=False,
+        help="Run user input info",
+    )
+    parser.add_argument(
+        "-o", action="store_true", help="Write performance results to CSV file"
+    )
+
+    args = parser.parse_args()
+    return args
+
+
+def main():
+    args = parse_args()
+    if args.print_vgpr:
+        print("Retrieving VGPR usage for Triton kernels...")
+
+        def fun():
+            run_benchmark(args)
+
+        print_vgpr(fun, get_caller_name_no_ext())
+        return 0
+    run_benchmark(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

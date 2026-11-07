@@ -1,0 +1,414 @@
+# adapted from triton_kernels package
+# original code https://github.com/triton-lang/triton/blob/main/python/triton_kernels/tests/test_matmul.py
+
+import os
+from dataclasses import dataclass, fields
+
+import pytest
+import torch
+
+# matmul utilities
+from aiter.ops.triton.moe.moe_op_gemm_a16w4 import (
+    moe_gemm_a16w4,
+    moe_gemm_torch,
+)
+
+# routing utilities
+from aiter.ops.triton.moe.moe_routing.routing import routing
+
+# numerics utilities
+from aiter.ops.triton.moe.quant_moe import downcast_to_mxfp
+
+# target-specific utilities
+from aiter.ops.triton.utils._triton import arch_info
+from aiter.ops.triton.utils.shuffle import shuffle_scale_moe
+from aiter.ops.triton.utils.types import str_to_torch_dtype
+from op_tests.triton_tests.moe.moe_test_utils import assert_close
+from op_tests.triton_tests.utils.mxfp_ref import upcast_from_mxfp
+
+# ---------------
+# initialize data
+# ---------------
+
+
+def alloc_rand(shape, device, dtype):
+    if dtype.itemsize == 1:
+        tmp = 2 ** -(torch.randint(4, 8, shape, device=device, dtype=torch.bfloat16))
+        return tmp
+    return torch.randn(shape, device=device, dtype=dtype)
+
+
+def alloc_rand_like(x):
+    return alloc_rand(x.shape, x.device, x.dtype)
+
+
+def init_routing_data(
+    m, n_expts_tot, n_expts_act, do_gather, do_scatter, device="cuda"
+):
+    logits = torch.randn((m, n_expts_tot), dtype=torch.float16, device=device)
+    routing_data, gather_idx, scatter_idx = routing(logits, n_expts_act)
+    routing_data.gate_scal = None
+    gather_idx = gather_idx if do_gather else None
+    scatter_idx = scatter_idx if do_scatter else None
+
+    return m, routing_data, gather_idx, scatter_idx
+
+
+def init_compute_data(
+    m,
+    n,
+    k,
+    gindx,
+    sindx,
+    n_expts_tot,
+    n_expts_act,
+    act_dtype,
+    weight_dtype,
+    has_y_gammas,
+    device="cuda",
+):
+    torch.manual_seed(0)
+    in_m = m * (n_expts_act if gindx is None else 1)
+    shape_x = (in_m, k)
+    x = alloc_rand(shape_x, device=device, dtype=act_dtype)  # row-major
+    w = alloc_rand((n_expts_tot, k, n), device=device, dtype=weight_dtype)  # row-major
+    bias = alloc_rand((n_expts_tot, n), device=device, dtype=torch.float32)
+    if has_y_gammas:
+        gamma = 2 ** torch.randint(
+            -5, 0, (m * n_expts_act,), device=device, dtype=torch.float32
+        )
+    else:
+        gamma = None
+    return x, w, bias, gamma
+
+
+# ---------------
+# unit tests
+# ---------------
+
+
+_TUNED_ARCH = "gfx942"
+
+
+@dataclass
+class Case:
+    m: int
+    n: int
+    k: int
+    n_expts_tot: int = 1
+    n_expts_act: int = 1
+    hbm_swizzling: bool = False
+
+
+@pytest.mark.parametrize(
+    ", ".join(f.name for f in fields(Case)),
+    [
+        tuple(getattr(case, f.name) for f in fields(Case))
+        for case in [
+            Case(4, 4, 8, 2, 1),
+            Case(4, 4, 8, 8, 2),
+            Case(4, 4, 8, 128, 4),
+            Case(4, 32, 64, 128, 4),
+            Case(4, 1024, 3072, 128, 4),
+            Case(32, 6144, 3072, 128, 4),
+            Case(16, 1024, 1024, 128, 4),
+            Case(16, 128, 128, 2, 1),
+            Case(16, 256, 256, 128, 4),
+            Case(4096, 256, 256, 128, 4),
+            Case(1024, 3072, 512, 128, 4),
+            Case(4096, 3072, 3072, 128, 4),
+            Case(8192, 3072, 3072, 128, 4),
+            Case(300, 400, 800, 8, 4),
+            Case(1000, 704, 800, 8, 2),
+            Case(4097, 1024, 1024, 128, 4),
+            # gfx942 tuned table: m=256 -> block_m=128, m=128 -> block_m=64
+            Case(256, 1536, 5120, 2, 1),
+            Case(128, 1536, 5120, 2, 1),
+            # w2 rows: m=256 reaches bm128_n5120_k768, m=128 reaches bm64_n5120_k768
+            Case(256, 5120, 768, 2, 1),
+            Case(128, 5120, 768, 2, 1),
+            # gfx942 tuned table, gpt-oss (vLLM pads 2880 -> 3072):
+            # m=1 -> block_m=16, m=256 -> block_m=32
+            Case(1, 6144, 3072, 32, 4),
+            Case(1, 3072, 3072, 32, 4),
+            Case(256, 6144, 3072, 32, 4),
+            Case(256, 3072, 3072, 32, 4),
+            Case(16, 32, 256, 2, 1, hbm_swizzling=True),
+            Case(16, 256, 256, 8, 4, hbm_swizzling=True),
+            Case(32, 6144, 3072, 128, 4, hbm_swizzling=True),
+            Case(32, 6144, 3072, 8, 4, hbm_swizzling=True),
+            Case(64, 512, 4096, 256, 6, hbm_swizzling=True),
+            Case(16, 1024, 1024, 128, 4, hbm_swizzling=True),
+            Case(16, 1024, 1024, 2, 1, hbm_swizzling=True),
+            Case(16, 256, 256, 128, 4, hbm_swizzling=True),
+            Case(1024, 3072, 512, 128, 4, hbm_swizzling=True),
+            Case(4096, 256, 256, 128, 4, hbm_swizzling=True),
+            Case(4097, 1024, 1024, 128, 4, hbm_swizzling=True),
+            Case(8192, 3072, 3072, 128, 4, hbm_swizzling=True),
+        ]
+    ],
+)
+@pytest.mark.parametrize(
+    "do_gather, do_scatter",
+    [
+        (False, False),
+        (True, False),
+        (False, True),
+        (True, True),
+    ],
+)
+@pytest.mark.parametrize("has_y_gammas", [False, True])
+@pytest.mark.parametrize("apply_swiglu", [False, True])
+@pytest.mark.parametrize("backend", [None, "gluon", "triton"])
+def test_op(
+    m,
+    n,
+    k,
+    do_gather,
+    do_scatter,
+    has_y_gammas,
+    apply_swiglu,
+    n_expts_tot,
+    n_expts_act,
+    hbm_swizzling,
+    backend,
+    device="cuda",
+):
+
+    if int(os.environ.get("AITER_IN_FFM_AM", "0")) == 1 and (
+        m > 1024
+        or n > 1024
+        or k > 1024
+        or n_expts_tot > 128
+        or (m >= 1024 or n >= 1024 or k >= 1024 and n_expts_tot >= 128)
+    ):
+        pytest.skip("Test will take too long on FFM")
+
+    if not (arch_info.is_fp4_avail() or arch_info.get_arch() == _TUNED_ARCH):
+        pytest.skip("MXFP4 not supported on this architecture")
+
+    if hbm_swizzling:
+        if not arch_info.is_mx_scale_preshuffling_avail():
+            pytest.skip(
+                "Scale preshuffling on AMD GPU has not been emulated on non-CDNA4 arch yet."
+            )
+        if n % 32 != 0 or k % (32 * 8) != 0:
+            pytest.skip(
+                f"Shape {m}x{n}x{k} is not supported for scale swizzling on AMD GPU"
+            )
+
+    torch.manual_seed(0)
+
+    weight_dtype_str = "mxfp4_e2m1"
+    weight_dtype = str_to_torch_dtype[weight_dtype_str]
+
+    m, rdata, gindx, sindx = init_routing_data(
+        m, n_expts_tot, n_expts_act, do_gather, do_scatter, device=device
+    )
+
+    # x: (m, k)
+    # w: (num_expts_tot, k, n)
+    # bias: (num_expts_tot, n)
+    # gammas: (m*num_expts_act)
+    x_tri, w_tri, bias_tri, gammas = init_compute_data(
+        m,
+        n,
+        k,
+        gindx,
+        sindx,
+        n_expts_tot,
+        n_expts_act,
+        torch.bfloat16,
+        torch.bfloat16,
+        has_y_gammas,
+        device=device,
+    )
+    x_ref, w_ref, bias_ref = x_tri.clone(), w_tri.clone(), bias_tri.clone()
+
+    # downcast to mxfp
+    w_tri, w_scale_tri = downcast_to_mxfp(w_tri, weight_dtype, axis=1)
+    w_ref = upcast_from_mxfp(w_tri, w_scale_tri, torch.bfloat16, axis=1)
+    if hbm_swizzling:
+        w_scale_tri, swizzle_mx_scale = shuffle_scale_moe(
+            w_scale_tri, preshuffle_factor=32, scale_kwidth=8, return_layout=True
+        )
+    else:
+        swizzle_mx_scale = None
+
+    x_mx_scales_tri = None
+    out_dtype = torch.bfloat16
+    x_static_scale = None
+    quant_static_scale = None
+    maxtol = 4e-1
+    rmstol = 4e-2
+
+    ref_y = moe_gemm_torch(
+        x_ref, w_ref, bias_ref, rdata, gindx, sindx, gammas, apply_swiglu
+    )
+
+    tri_y = moe_gemm_a16w4(
+        x_tri,
+        w_tri,
+        x_mx_scales_tri,
+        w_scale_tri,
+        x_static_scale,
+        quant_static_scale,
+        bias_tri,
+        rdata,
+        gindx,
+        sindx,
+        gammas,
+        swizzle_mx_scale,
+        out_dtype,
+        apply_swiglu,
+        backend=backend,
+    )
+    assert_close(ref_y, tri_y, maxtol=maxtol, rmstol=rmstol)
+
+
+def _ep_setup(
+    m, n, k, n_expts_tot, n_expts_act, ep_size, ep_rank, do_gather, do_scatter
+):
+    device = "cuda"
+    torch.manual_seed(0)
+    weight_dtype = str_to_torch_dtype["mxfp4_e2m1"]
+    m, rdata, gindx, sindx = init_routing_data(
+        m, n_expts_tot, n_expts_act, do_gather, do_scatter, device=device
+    )
+    x, w, bias, _ = init_compute_data(
+        m,
+        n,
+        k,
+        gindx,
+        sindx,
+        n_expts_tot,
+        n_expts_act,
+        torch.bfloat16,
+        torch.bfloat16,
+        False,
+        device=device,
+    )
+    w_tri, w_scale_tri = downcast_to_mxfp(w, weight_dtype, axis=1)
+    n_local = n_expts_tot // ep_size
+    lo, hi = ep_rank * n_local, (ep_rank + 1) * n_local
+    expert_map = torch.full((n_expts_tot,), -1, dtype=torch.int32, device=device)
+    expert_map[lo:hi] = torch.arange(n_local, dtype=torch.int32, device=device)
+    gate_valid = (expert_map[rdata.topk_ids.long()] >= 0).to(torch.int32).contiguous()
+    return (
+        x,
+        w_tri,
+        w_scale_tri,
+        bias,
+        rdata,
+        gindx,
+        sindx,
+        lo,
+        hi,
+        expert_map,
+        gate_valid,
+    )
+
+
+@pytest.mark.parametrize(
+    "m, n, k, n_expts_tot, n_expts_act",
+    [
+        (16, 256, 256, 8, 2),
+        (64, 512, 512, 128, 4),
+        (300, 400, 800, 8, 4),
+        (1024, 512, 512, 128, 4),
+    ],
+)
+@pytest.mark.parametrize("ep_size, ep_rank", [(4, 0), (4, 2)])
+@pytest.mark.parametrize(
+    "do_gather, do_scatter", [(True, False), (False, True), (True, True)]
+)
+@pytest.mark.parametrize("apply_swiglu", [False, True])
+def test_op_expert_parallel(
+    m,
+    n,
+    k,
+    n_expts_tot,
+    n_expts_act,
+    ep_size,
+    ep_rank,
+    do_gather,
+    do_scatter,
+    apply_swiglu,
+):
+    """Rank-local weights + global routing reproduce the local experts' output;
+    non-local gates contribute exactly 0 to the top-k combine."""
+    if not arch_info.is_fp4_avail():
+        pytest.skip("MXFP4 not supported on this architecture")
+
+    x, w_tri, w_scale_tri, bias, rdata, gindx, sindx, lo, hi, expert_map, gate_valid = (
+        _ep_setup(
+            m, n, k, n_expts_tot, n_expts_act, ep_size, ep_rank, do_gather, do_scatter
+        )
+    )
+
+    # Reference on all global experts with non-local weights/bias zeroed.
+    w_ref = upcast_from_mxfp(w_tri, w_scale_tri, torch.bfloat16, axis=1)
+    bias_ref = bias.clone()
+    is_nonlocal = torch.ones(n_expts_tot, dtype=torch.bool, device=x.device)
+    is_nonlocal[lo:hi] = False
+    w_ref[is_nonlocal] = 0
+    bias_ref[is_nonlocal] = 0
+    ref_y = moe_gemm_torch(
+        x.clone(), w_ref, bias_ref, rdata, gindx, sindx, None, apply_swiglu
+    )
+
+    tri_y = moe_gemm_a16w4(
+        x,
+        w_tri[lo:hi],
+        None,
+        w_scale_tri[lo:hi],
+        None,
+        None,
+        bias[lo:hi],
+        rdata,
+        gindx,
+        sindx,
+        None,
+        None,
+        torch.bfloat16,
+        apply_swiglu,
+        backend="triton",
+        expert_map=expert_map,
+        gate_valid=gate_valid,
+    )
+
+    if not do_scatter:
+        # Sorted output: only local experts' rows are written.
+        offs = rdata.expt_data.token_offs_raw
+        r0, r1 = int(offs[lo]), int(offs[hi])
+        ref_y, tri_y = ref_y[r0:r1], tri_y[r0:r1]
+    assert_close(ref_y, tri_y, maxtol=4e-1, rmstol=4e-2)
+
+
+def test_op_expert_parallel_rejects_bad_inputs():
+    if not arch_info.is_fp4_avail():
+        pytest.skip("MXFP4 not supported on this architecture")
+    x, w_tri, w_scale_tri, bias, rdata, gindx, sindx, lo, hi, expert_map, gate_valid = (
+        _ep_setup(16, 256, 256, 8, 2, 4, 1, True, True)
+    )
+    args = (
+        x,
+        w_tri[lo:hi],
+        None,
+        w_scale_tri[lo:hi],
+        None,
+        None,
+        bias[lo:hi],
+        rdata,
+        gindx,
+        sindx,
+    )
+    with pytest.raises(AssertionError, match="requires gate_valid"):
+        moe_gemm_a16w4(*args, backend="triton", expert_map=expert_map)
+    with pytest.raises(AssertionError, match="n_expts_tot"):
+        moe_gemm_a16w4(
+            *args,
+            backend="triton",
+            expert_map=expert_map[:-1].contiguous(),
+            gate_valid=gate_valid,
+        )

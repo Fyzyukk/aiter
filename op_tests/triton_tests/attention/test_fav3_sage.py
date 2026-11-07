@@ -1,0 +1,1751 @@
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
+import math
+
+import numpy as np
+import pytest
+import torch
+
+from aiter import logger
+from aiter.ops.triton.attention.fav3_sage import (
+    fav3_sage_func,
+    fav3_sage_wrapper_func,
+    get_sage_fwd_configs,
+)
+from aiter.ops.triton.attention.fav3_sage_attention_mxfp4_wrapper import (
+    fav3_sage_mxfp4_wrapper,
+    get_sage_fwd_configs_mxfp4,
+)
+from aiter.ops.triton.attention.utils import block_attn_mask_to_ragged_lut
+from aiter.ops.triton.quant.sage_attention_quant_wrappers import (
+    create_hadamard_matrix,
+    rotation_smooth_qk,
+)
+from aiter.ops.triton.utils._triton import arch_info
+from aiter.test_mha_common import (
+    attention_ref,
+    attention_ref_block_sparse,
+)
+
+ATOL_fp8 = 3.0e-1
+RTOL_fp8 = 2.5e-1
+
+
+@pytest.mark.parametrize(
+    "seqlen, tail_logit, causal, later_max, sparse, v_dtype",
+    [
+        pytest.param(4096, 0, False, False, False, torch.float8_e4m3fnuz, id="uniform"),
+        pytest.param(
+            4096, -8, False, False, False, torch.float8_e4m3fnuz, id="dense-full"
+        ),
+        pytest.param(
+            4117, -8, False, False, False, torch.float8_e4m3fnuz, id="dense-tail"
+        ),
+        pytest.param(
+            4117, -7, False, False, False, torch.float8_e4m3fnuz, id="tail-minus7"
+        ),
+        pytest.param(4117, -8, True, False, False, torch.float8_e4m3fnuz, id="causal"),
+        pytest.param(
+            4117, -8, False, True, False, torch.float8_e4m3fnuz, id="later-max"
+        ),
+        pytest.param(
+            4096, -8, False, False, True, torch.float8_e4m3fnuz, id="sparse-full"
+        ),
+        pytest.param(
+            4117, -8, False, True, True, torch.float8_e4m3fnuz, id="sparse-tail"
+        ),
+        pytest.param(4117, -8, False, False, False, torch.bfloat16, id="bf16-v"),
+        pytest.param(
+            4096,
+            "spread",
+            False,
+            False,
+            False,
+            torch.float8_e4m3fnuz,
+            id="spread-full",
+        ),
+        pytest.param(
+            4117,
+            "spread",
+            False,
+            False,
+            False,
+            torch.float8_e4m3fnuz,
+            id="spread-tail",
+        ),
+        pytest.param(
+            4117,
+            "spread",
+            True,
+            False,
+            False,
+            torch.float8_e4m3fnuz,
+            id="spread-causal",
+        ),
+        pytest.param(
+            4117,
+            "spread",
+            False,
+            True,
+            False,
+            torch.float8_e4m3fnuz,
+            id="spread-later-max",
+        ),
+        pytest.param(
+            4117,
+            "spread",
+            False,
+            True,
+            True,
+            torch.float8_e4m3fnuz,
+            id="spread-sparse-tail",
+        ),
+    ],
+)
+def test_sage_small_probabilities(
+    seqlen, tail_logit, causal, later_max, sparse, v_dtype
+):
+    """Constant V must remain constant when many small probabilities contribute."""
+    if v_dtype == torch.float8_e4m3fnuz and arch_info.get_arch() != "gfx942":
+        pytest.skip("E4M3 FNUZ regression requires gfx942")
+
+    config = get_sage_fwd_configs()
+    block_m, block_n = config["BLOCK_M"], config["BLOCK_N"]
+    seqlen_q = seqlen if causal else block_m + 1
+    num_q_blocks = (seqlen_q + block_m - 1) // block_m
+    num_k_blocks = (seqlen + block_n - 1) // block_n
+    q = torch.zeros((1, seqlen_q, 1, 128), dtype=torch.int8, device="cuda")
+    k = torch.zeros((1, seqlen, 1, 128), dtype=torch.int8, device=q.device)
+    max_position = seqlen - 1 if later_max else 0
+    if tail_logit == "spread":
+        # Encode logits -7 - code/64 exactly using integer dot products.
+        q[..., :7] = torch.tensor([64, 32, 16, 8, 4, 2, 1], device=q.device)
+        codes = (
+            torch.linspace(0, 128, seqlen - 1, device=q.device, dtype=torch.float32)
+            .round()
+            .int()
+        )
+        shifts = torch.arange(5, -1, -1, device=q.device)
+        encoded_k = torch.cat(
+            (-7 - codes[:, None] // 64, -((codes[:, None] >> shifts) & 1)), dim=1
+        ).to(torch.int8)
+        tail_start = 0 if later_max else 1
+        k[:, tail_start : tail_start + seqlen - 1, 0, :7] = encoded_k
+        logit_scale = 1 / 64
+    else:
+        q[..., 0] = 1
+        k[..., 0] = tail_logit
+        k[:, max_position, :, 0] = 0
+        logit_scale = 1
+    head_dim_v = 64 if v_dtype == torch.bfloat16 else 128
+    v = torch.ones((1, seqlen, 1, head_dim_v), dtype=torch.float32, device=q.device).to(
+        v_dtype
+    )
+    # QK descaling includes the conversion from natural logits to exp2 units.
+    q_descale = torch.full(
+        (1, 1, num_q_blocks),
+        math.log2(math.e) * logit_scale,
+        device=q.device,
+        dtype=torch.float32,
+    )
+    k_descale = torch.ones((1, 1, num_k_blocks), device=q.device, dtype=torch.float32)
+    v_descale = torch.ones((1, 1, head_dim_v), device=q.device, dtype=torch.float32)
+    sparse_args = {}
+    if sparse:
+        block_mask = torch.ones(
+            (1, num_q_blocks, num_k_blocks), dtype=torch.bool, device=q.device
+        )
+        indices, starts, counts = block_attn_mask_to_ragged_lut(block_mask, num_heads=1)
+        sparse_args = {
+            "kv_block_indices": indices,
+            "lut_start": starts,
+            "lut_count": counts,
+            "use_block_sparse": True,
+        }
+
+    out, lse = fav3_sage_func(
+        q,
+        k,
+        v,
+        q_descale,
+        k_descale,
+        v_descale,
+        causal=causal,
+        return_lse=True,
+        **sparse_args,
+    )
+    atol = 0.05 if v_dtype == torch.float8_e4m3fnuz and tail_logit != 0 else 0.01
+    torch.testing.assert_close(out, torch.ones_like(out), atol=atol, rtol=0)
+    logits = (k[0, :, 0].float() @ q[0, 0, 0].float()) * logit_scale
+    if causal:
+        expected_lse = torch.logcumsumexp(logits, dim=0)
+    else:
+        expected_lse = torch.logsumexp(logits, dim=0).expand(seqlen_q)
+    torch.testing.assert_close(lse[0, 0], expected_lse, atol=2e-5, rtol=2e-5)
+
+
+def test_block_attn_mask_to_ragged_lut_metadata_dtype():
+    block_attn_mask = torch.tensor(
+        [[[[True, False, True], [False, True, True]]]],
+        dtype=torch.bool,
+        device="cuda",
+    )
+
+    _, lut_start, lut_count = block_attn_mask_to_ragged_lut(block_attn_mask)
+
+    assert lut_start.dtype == torch.int32
+    assert lut_count.dtype == torch.int32
+    torch.testing.assert_close(
+        lut_start, torch.tensor([0, 2], device="cuda", dtype=torch.int32)
+    )
+    torch.testing.assert_close(
+        lut_count, torch.tensor([2, 2], device="cuda", dtype=torch.int32)
+    )
+
+
+def test_tiebreak_keeps_its_own_reference_bound():
+    """A tie resolved differently moves a whole output row, so `tiebreak` needs a looser bound.
+
+    Reusing a neighbouring distribution's bound here would report breakage on the property the
+    generator is built to create.
+    """
+    bound = fp8_max_diff_percentage("tiebreak")
+    others = [
+        fp8_max_diff_percentage(name) for name in ("normal", "diffusion", "peaked")
+    ]
+    assert bound > max(others), f"tiebreak {bound} vs {others}"
+
+
+def compare_accuracy(current, reference):
+    """Print quick statistics comparing FP8 and SageAttn tensors."""
+    current_f = current.float()
+    reference_f = reference.float()
+    abs_diff = torch.abs(reference_f - current_f)
+
+    logger.info("Output Tensor Stats:")
+    logger.info(
+        "  Reference (%s): min=%.6f, max=%.6f, mean=%.6f, std=%.6f",
+        tuple(reference_f.shape),
+        reference_f.min().item(),
+        reference_f.max().item(),
+        reference_f.mean().item(),
+        reference_f.std().item(),
+    )
+    logger.info(
+        "  Test      (%s): min=%.6f, max=%.6f, mean=%.6f, std=%.6f",
+        tuple(current_f.shape),
+        current_f.min().item(),
+        current_f.max().item(),
+        current_f.mean().item(),
+        current_f.std().item(),
+    )
+
+    logger.info("Correctness Comparison:")
+    logger.info("  Mean Absolute Error: %.6e", abs_diff.mean().item())
+    logger.info("  Max Absolute Error: %.6e", abs_diff.max().item())
+    logger.info("  Std Absolute Error: %.6e", abs_diff.std().item())
+    ref_flat = reference_f.reshape(-1)
+    test_flat = current_f.reshape(-1)
+    cos_sim = torch.nn.functional.cosine_similarity(
+        ref_flat.unsqueeze(0), test_flat.unsqueeze(0)
+    )
+    logger.info("  Cosine Similarity: %.8f", cos_sim.item())
+    # Per-row (per-query) cosine over the head-dim D (last axis). Robust to a few outlier
+    # rows: the global flatten cosine is dominated by the largest-magnitude elements, so an
+    # aligned kernel with a handful of blown-up rows still reports a low global cosine. The
+    # median over rows is the alignment gate we trust.
+    rc = torch.nn.functional.cosine_similarity(current_f, reference_f, dim=-1).reshape(
+        -1
+    )
+    logger.info(
+        "  Per-row cosine (over D): mean=%.6f median=%.6f p10=%.6f frac>0.99=%.4f",
+        rc.mean().item(),
+        rc.median().item(),
+        rc.quantile(0.10).item(),
+        (rc > 0.99).float().mean().item(),
+    )
+
+
+def pad_rearrange_dropout_mask(
+    S_dmask,
+    cu_seqlens_q,
+    cu_seqlens_k,
+    max_seqlen_q,
+    max_seqlen_k,
+    seqlen_q,
+    seqlen_k,
+    num_q_heads,
+):
+    batch_size = cu_seqlens_q.numel() - 1
+
+    padded_dropout_mask = torch.ones(
+        (batch_size, num_q_heads, seqlen_q, seqlen_k),
+        device="cuda",
+        dtype=torch.float32,
+    )
+    for b in range(batch_size):
+        start_q = cu_seqlens_q[b].item()
+        end_q = cu_seqlens_q[b + 1].item()
+        start_k = cu_seqlens_k[b].item()
+        end_k = cu_seqlens_k[b + 1].item()
+
+        seqlen_q = end_q - start_q
+        seqlen_k = end_k - start_k
+        for h in range(S_dmask.shape[1]):
+            padded_dropout_mask[b, h, :max_seqlen_q, :max_seqlen_k] = S_dmask[
+                b, h, :, :
+            ]
+
+    return padded_dropout_mask
+
+
+def fp8_assert_close(
+    tensor_a, tensor_b, atol=ATOL_fp8, rtol=RTOL_fp8, max_diff_percentage=0.5
+):
+    """Assert tensors are close with tolerance for small percentage of elements"""
+    # standard comparison
+    abs_diff = torch.abs(tensor_a - tensor_b)
+    rel_diff = abs_diff / torch.abs(tensor_b.clamp(min=1e-6))
+
+    # calculate elements that exceed tolerance
+    abs_check = abs_diff > atol
+    rel_check = rel_diff > rtol
+    failed_check = torch.logical_and(abs_check, rel_check)
+
+    # calculate percentage of failed elements
+    failed_percentage = failed_check.sum().item() / failed_check.numel() * 100
+
+    # if percentage is small enough, test passes
+    if failed_percentage <= max_diff_percentage:
+        return True
+
+    # Otherwise, provide diagnostic information
+    max_abs_idx = torch.argmax(abs_diff).item()
+    max_rel_idx = torch.argmax(rel_diff).item()
+
+    def flat_to_idx(flat_idx, shape):
+        return np.unravel_index(flat_idx, shape)
+
+    max_abs_pos = flat_to_idx(max_abs_idx, tensor_a.shape)
+    max_rel_pos = flat_to_idx(max_rel_idx, tensor_a.shape)
+
+    max_abs_diff = abs_diff.flatten()[max_abs_idx].item()
+    max_rel_diff = rel_diff.flatten()[max_rel_idx].item()
+
+    raise AssertionError(
+        f"Tensors not close enough! {failed_percentage:.6f}% elements exceed tolerance.\n"
+        f"Greatest absolute difference: {max_abs_diff} at index {max_abs_pos} (up to {atol} allowed)\n"
+        f"Greatest relative difference: {max_rel_diff} at index {max_rel_pos} (up to {rtol} allowed)"
+    )
+
+
+def _tensor_from_result(result):
+    if isinstance(result, torch.Tensor):
+        return result
+    if isinstance(result, (list, tuple)) and result:
+        return _tensor_from_result(result[0])
+    raise TypeError(f"Unsupported result type for comparison: {type(result)}")
+
+
+def check_attention_outputs(
+    current,
+    reference,
+    fp8=False,
+    atol=None,
+    rtol=None,
+    max_diff_percentage=0.5,
+):
+    current_tensor = _tensor_from_result(current)
+    reference_tensor = _tensor_from_result(reference).to(current_tensor.dtype)
+
+    if fp8:
+        fp8_assert_close(
+            current_tensor,
+            reference_tensor,
+            atol=atol or ATOL_fp8,
+            rtol=rtol or RTOL_fp8,
+            max_diff_percentage=max_diff_percentage,
+        )
+    else:
+        torch.testing.assert_close(
+            current_tensor,
+            reference_tensor,
+            atol=atol or 1e-2,
+            rtol=rtol or 1e-2,
+        )
+
+
+def fp8_max_diff_percentage(input_distribution: str) -> float:
+    # tiebreak diverges from the BF16 reference by construction, so closeness to BF16 is not the
+    # property under test; this bound is only a backstop against gross breakage.
+    if input_distribution == "tiebreak":
+        return 25.0
+    # The coherent distributions and the LLM one are both harder on FP8 than iid inputs.
+    if input_distribution in (
+        "transformer",
+        "sink",
+        "diffusion",
+        "kcommon",
+    ) or str(
+        input_distribution
+    ).startswith("dump:"):
+        return 2.0
+    return 0.5
+
+
+def input_helper(
+    BATCH,
+    HQ,
+    HK,
+    N_CTX_Q,
+    N_CTX_K,
+    D_HEAD,
+    D_HEAD_V,
+    dtype,
+    layout,
+):
+    # Set up tensor shapes based on layout
+    if layout == "bhsd":
+        q_shape = (BATCH, HQ, N_CTX_Q, D_HEAD)
+        k_shape = (BATCH, HK, N_CTX_K, D_HEAD)
+        v_shape = (BATCH, HK, N_CTX_K, D_HEAD_V)
+    else:  # bshd
+        q_shape = (BATCH, N_CTX_Q, HQ, D_HEAD)
+        k_shape = (BATCH, N_CTX_K, HK, D_HEAD)
+        v_shape = (BATCH, N_CTX_K, HK, D_HEAD_V)
+
+    torch.manual_seed(20)
+    q = torch.randn(q_shape, device="cuda", dtype=dtype)
+    k = torch.randn(k_shape, device="cuda", dtype=dtype)
+    v = torch.randn(v_shape, device="cuda", dtype=dtype)
+    q.requires_grad = False
+    k.requires_grad = False
+    v.requires_grad = False
+
+    return q, k, v
+
+
+@pytest.mark.parametrize("BATCH", [1, 4, 57, 128])
+@pytest.mark.parametrize(
+    "SEQLEN_Q, SEQLEN_K",
+    [(1, 1), (4, 4), (128, 128), (2, 1), (1, 2), (32, 16), (64, 128)],
+)
+@pytest.mark.parametrize(
+    "NUM_Q_HEADS, NUM_K_HEADS", [(1, 1), (16, 16), (2, 1), (48, 8)]
+)
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+def test_sage(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    HEAD_SZ = 128
+
+    torch.manual_seed(20)
+    torch.cuda.empty_cache()
+
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    triton_out = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=False,
+        layout=layout,
+    )
+
+    logger.debug("triton_out.shape=%s, triton_out=%s", triton_out.shape, triton_out)
+
+    if layout == "bhsd":
+        q = q.permute(0, 2, 1, 3).contiguous()
+        k = k.permute(0, 2, 1, 3).contiguous()
+        v = v.permute(0, 2, 1, 3).contiguous()
+
+    torch_out = attention_ref(q, k, v, dropout_p=0.0, dropout_mask=None, causal=False)
+    torch_out, attention_scores, _ = torch_out
+
+    if layout == "bhsd":
+        torch_out = torch_out.permute(0, 2, 1, 3).contiguous()
+
+    assert torch_out.shape == triton_out.shape
+
+    logger.debug("torch_out.shape=%s, torch_out=%s", torch_out.shape, torch_out)
+    logger.debug(
+        "attention_scores.shape=%s, attention_scores=%s",
+        attention_scores.shape,
+        attention_scores,
+    )
+
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=0.5,
+    )
+
+
+def _non_dense_qkv(kind, layout, batch, heads, seq, head_sz, dtype):
+    """Q/K/V views that are not non-overlapping and dense."""
+    g = torch.Generator(device="cuda").manual_seed(0)
+
+    def rand(*shape):
+        return torch.randn(*shape, generator=g, device="cuda", dtype=dtype)
+
+    def to_layout(t):  # t is BSHD
+        return t if layout == "bshd" else t.transpose(1, 2)
+
+    if kind == "qkv_split":  # slices of a fused QKV projection
+        qkv = rand(batch, seq, 3 * heads * head_sz)
+        return [
+            to_layout(t.view(batch, seq, heads, head_sz))
+            for t in qkv.split(heads * head_sz, dim=-1)
+        ]
+    if kind == "d_stride":  # every other element of a wider head dim
+        return [
+            to_layout(rand(batch, seq, heads, 2 * head_sz)[..., ::2]) for _ in range(3)
+        ]
+    q = to_layout(rand(batch, seq, heads, head_sz))
+    if layout == "bshd":
+        k, v = (rand(batch, seq + 64, heads, head_sz)[:, :seq] for _ in range(2))
+    else:
+        k, v = (rand(batch, heads, seq + 64, head_sz)[:, :, :seq] for _ in range(2))
+    if kind == "v_only":  # K and V in different layouts
+        k = k.contiguous()
+    return q, k, v
+
+
+@pytest.mark.parametrize("kind", ["seq_slice", "qkv_split", "v_only", "d_stride"])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+@pytest.mark.parametrize("smooth_k", [True, False])
+@pytest.mark.parametrize("q_smooth", [False, True])
+def test_sage_non_dense_inputs(kind, layout, smooth_k, q_smooth):
+    """Non-dense Q/K/V views must give the same result as contiguous copies."""
+    q, k, v = _non_dense_qkv(kind, layout, 2, 4, 1020, 128, torch.bfloat16)
+    assert not all(t.is_contiguous() for t in (q, k, v))
+    kwargs = {"layout": layout, "smooth_k": smooth_k, "q_smooth": q_smooth}
+    out = fav3_sage_wrapper_func(q, k, v, **kwargs)
+    ref = fav3_sage_wrapper_func(
+        q.contiguous(), k.contiguous(), v.contiguous(), **kwargs
+    )
+    # Q smoothing reduces over the head dim; a strided head dim changes that order (fp32 ulps).
+    tol = 1e-2 if kind == "d_stride" and q_smooth else 0
+    torch.testing.assert_close(
+        _tensor_from_result(out), _tensor_from_result(ref), atol=tol, rtol=tol
+    )
+
+
+@pytest.mark.parametrize("kind", ["seq_slice", "qkv_split"])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+@pytest.mark.parametrize("smooth_k", [True, False])
+def test_rotation_smooth_qk_non_dense_inputs(kind, layout, smooth_k):
+    """Rotated/smoothed Q, K and delta_s of non-dense views must match contiguous copies."""
+    q, k, _ = _non_dense_qkv(kind, layout, 2, 4, 1020, 128, torch.bfloat16)
+    kwargs = {
+        "BLOCK_R": 32,
+        "q_smoothing": True,
+        "layout": layout,
+        "sm_scale": 0.1,
+        "smooth_k": smooth_k,
+    }
+    out = rotation_smooth_qk(q, k, 64, **kwargs)
+    ref = rotation_smooth_qk(q.contiguous(), k.contiguous(), 64, **kwargs)
+    for name, actual, expected in zip(("q", "k", "delta_s"), out, ref):
+        assert torch.equal(actual, expected), name
+
+
+def _sage_int8_attention_ref(
+    q,
+    k,
+    v,
+    layout: str,
+    softmax_scale: float,
+):
+    q_ref, k_ref, v_ref = q, k, v
+    if layout == "bhsd":
+        q_ref = q_ref.permute(0, 2, 1, 3).contiguous()
+        k_ref = k_ref.permute(0, 2, 1, 3).contiguous()
+        v_ref = v_ref.permute(0, 2, 1, 3).contiguous()
+
+    torch_out = attention_ref(
+        q_ref, k_ref, v_ref, dropout_p=0.0, dropout_mask=None, causal=False
+    )
+    torch_out, _, _ = torch_out
+
+    if layout == "bhsd":
+        torch_out = torch_out.permute(0, 2, 1, 3).contiguous()
+    return torch_out
+
+
+@pytest.mark.parametrize("BATCH", [1, 2])
+@pytest.mark.parametrize("SEQLEN_Q, SEQLEN_K", [(64, 64), (128, 256)])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4), (16, 4)])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+@pytest.mark.parametrize("hadamard_rotation", [False, True])
+def test_sage_int8_hadamard(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    layout: str,
+    hadamard_rotation: bool,
+    dtype=torch.bfloat16,
+):
+    """
+    INT8 Sage hadamard_rotation correctness.
+
+    Reference baseline is bf16 ``attention_ref`` (same as ``test_sage``). This test
+    keeps ``q_smooth=False`` so Hadamard is exercised in isolation from Q smoothing.
+    """
+    HEAD_SZ = 128
+    BLOCK_R = 128
+
+    torch.manual_seed(20)
+    torch.cuda.empty_cache()
+
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    triton_out = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=False,
+        layout=layout,
+        q_smooth=False,
+        hadamard_rotation=hadamard_rotation,
+        BLOCK_R=BLOCK_R if hadamard_rotation else None,
+    )
+
+    torch_out = _sage_int8_attention_ref(q, k, v, layout, softmax_scale)
+    assert torch_out.shape == triton_out.shape
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=0.5,
+    )
+
+
+def test_sage_int8_hadamard_preserves_float_logits(dtype=torch.bfloat16):
+    """Orthogonal Hadamard should leave pre-quant QK logits unchanged in float."""
+    HEAD_SZ = 128
+    BLOCK_R = 128
+    BATCH, SEQLEN, NUM_HEADS = 1, 32, 4
+
+    torch.manual_seed(7)
+    q, k, _v = input_helper(
+        BATCH,
+        NUM_HEADS,
+        NUM_HEADS,
+        SEQLEN,
+        SEQLEN,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        "bshd",
+    )
+    # Property check in float32: bf16 matmul rounds each multiply-add, so
+    # (q@r)@(k@r)^T != q@k^T when computed in bf16 even for orthogonal R.
+    q_f = q.float()
+    k_f = k.float()
+    r = create_hadamard_matrix(BLOCK_R, device=q.device, dtype=torch.float32) / (
+        BLOCK_R**0.5
+    )
+
+    q_rot = torch.matmul(q_f, r)
+    k_rot = torch.matmul(k_f, r)
+    scores = torch.matmul(q_f, k_f.transpose(-2, -1))
+    scores_rot = torch.matmul(q_rot, k_rot.transpose(-2, -1))
+
+    assert torch.allclose(
+        scores, scores_rot, rtol=1e-3, atol=1e-3
+    ), "Hadamard rotation should preserve QK logits before quantization"
+
+
+@pytest.mark.parametrize("BATCH", [1, 2])
+@pytest.mark.parametrize("SEQLEN_Q, SEQLEN_K", [(64, 64), (128, 256), (512, 512)])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4), (24, 24)])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+@pytest.mark.parametrize("q_smooth", [False, True])
+def test_sage_int8_q_smooth(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    layout: str,
+    q_smooth: bool,
+    dtype=torch.bfloat16,
+):
+    """
+    INT8 Sage q_smoothing correctness.
+
+    Reference baseline is bf16 ``attention_ref`` (same as ``test_sage``), not fp16
+    and not sage-without-q_smooth. Sage is a quantized attention approximation;
+    unit tests verify each feature path still lands within the established
+    quantized-attention tolerance band vs full-precision attention.
+
+    This test keeps ``hadamard_rotation=False`` so Q smoothing is exercised in
+    isolation from Hadamard rotation.
+    """
+    HEAD_SZ = 128
+    torch.manual_seed(20)
+    torch.cuda.empty_cache()
+
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    triton_out = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=False,
+        layout=layout,
+        q_smooth=q_smooth,
+        hadamard_rotation=False,
+    )
+
+    torch_out = _sage_int8_attention_ref(q, k, v, layout, softmax_scale)
+    assert torch_out.shape == triton_out.shape
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=0.5,
+    )
+
+
+@pytest.mark.parametrize("BATCH", [1, 2])
+@pytest.mark.parametrize("SEQLEN_Q, SEQLEN_K", [(64, 64), (128, 256)])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4), (16, 4)])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+def test_sage_int8_q_smooth_and_hadamard(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    """
+    INT8 Sage with q_smooth and hadamard_rotation enabled together.
+
+    Reference baseline is bf16 ``attention_ref`` (same as ``test_sage``).
+    """
+    HEAD_SZ = 128
+    BLOCK_R = 128
+
+    torch.manual_seed(20)
+    torch.cuda.empty_cache()
+
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    triton_out = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=False,
+        layout=layout,
+        q_smooth=True,
+        hadamard_rotation=True,
+        BLOCK_R=BLOCK_R,
+    )
+
+    torch_out = _sage_int8_attention_ref(q, k, v, layout, softmax_scale)
+    assert torch_out.shape == triton_out.shape
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=0.5,
+    )
+
+
+@pytest.mark.parametrize("BATCH", [1, 4])
+@pytest.mark.parametrize(
+    "SEQLEN_Q, SEQLEN_K",
+    [(128, 128), (64, 128)],
+)
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(2, 2), (16, 16)])
+@pytest.mark.parametrize("HEAD_SZ", [128])
+@pytest.mark.parametrize("layout", ["bshd"])
+def test_sage_block_sparse_none(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    HEAD_SZ: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    """With block_lut=None, output must match non-sparse path (backward compat)."""
+    torch.cuda.empty_cache()
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+    triton_out = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=False,
+        layout=layout,
+        block_lut=None,
+    )
+    triton_out_full = fav3_sage_wrapper_func(
+        q, k, v, softmax_scale, causal=False, return_lse=False, layout=layout
+    )
+    check_attention_outputs(
+        triton_out,
+        triton_out_full,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=0.5,
+    )
+
+
+@pytest.mark.parametrize("BATCH", [1, 2])
+@pytest.mark.parametrize(
+    "SEQLEN_Q, SEQLEN_K",
+    [(256, 256)],
+)
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4)])
+@pytest.mark.parametrize("HEAD_SZ", [128])
+@pytest.mark.parametrize("layout", ["bshd"])
+def test_sage_block_sparse_vs_reference(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    HEAD_SZ: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    """Block-sparse output matches reference that applies the same block mask."""
+    torch.cuda.empty_cache()
+    config = get_sage_fwd_configs()
+    BLOCK_M, BLOCK_N = config["BLOCK_M"], config["BLOCK_N"]
+    num_q_blocks = (SEQLEN_Q + BLOCK_M - 1) // BLOCK_M
+    num_kv_blocks = (SEQLEN_K + BLOCK_N - 1) // BLOCK_N
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+    # Diagonal block mask: Q block qb attends only to KV block qb (and qb-1 for a small band)
+    block_attn_mask = torch.zeros(
+        BATCH, num_q_blocks, num_kv_blocks, dtype=torch.bool, device="cuda"
+    )
+    for qb in range(num_q_blocks):
+        for kb in range(num_kv_blocks):
+            if abs(qb - kb) <= 1:
+                block_attn_mask[:, qb, kb] = True
+
+    block_lut = block_attn_mask_to_ragged_lut(block_attn_mask, num_heads=NUM_Q_HEADS)
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+    triton_out = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=False,
+        layout=layout,
+        block_lut=block_lut,
+    )
+
+    torch_out, _, _ = attention_ref_block_sparse(
+        q, k, v, block_attn_mask, BLOCK_M, BLOCK_N
+    )
+    assert triton_out.shape == torch_out.shape
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=0.5,
+    )
+
+
+@pytest.mark.parametrize("layout", ["bshd"])
+def test_sage_block_sparse_empty_kv_blocks(layout: str, dtype=torch.bfloat16):
+    """When a Q block has no KV blocks allowed, that block's output is zero."""
+    torch.cuda.empty_cache()
+    BATCH, SEQLEN_Q, SEQLEN_K = 1, 256, 256
+    NUM_Q_HEADS, NUM_K_HEADS, HEAD_SZ = 4, 4, 128
+    config = get_sage_fwd_configs()
+    BLOCK_M, BLOCK_N = config["BLOCK_M"], config["BLOCK_N"]
+    num_q_blocks = (SEQLEN_Q + BLOCK_M - 1) // BLOCK_M
+    num_kv_blocks = (SEQLEN_K + BLOCK_N - 1) // BLOCK_N
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+    # First Q block attends to nothing; others attend to all KV blocks
+    block_attn_mask = torch.ones(
+        BATCH, num_q_blocks, num_kv_blocks, dtype=torch.bool, device="cuda"
+    )
+    block_attn_mask[:, 0, :] = False
+
+    block_lut = block_attn_mask_to_ragged_lut(block_attn_mask, num_heads=NUM_Q_HEADS)
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+    triton_out = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=False,
+        layout=layout,
+        block_lut=block_lut,
+    )
+    torch_out, _, _ = attention_ref_block_sparse(
+        q, k, v, block_attn_mask, BLOCK_M, BLOCK_N
+    )
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=0.5,
+    )
+
+
+@pytest.mark.parametrize("layout", ["bshd"])
+def test_sage_block_sparse_empty_kv_blocks_lse_is_neg_inf(
+    layout: str, dtype=torch.bfloat16
+):
+    """
+    For Q blocks that have no allowed KV blocks the kernel takes the
+    `_no_blocks` early-exit path. The returned softmax_lse for those rows must
+    be -inf so FA-style ring merges treat the shard as zero-weight; non-empty
+    Q blocks must keep finite LSE.
+    """
+    torch.cuda.empty_cache()
+    BATCH, SEQLEN_Q, SEQLEN_K = 1, 256, 256
+    NUM_Q_HEADS, NUM_K_HEADS, HEAD_SZ = 4, 4, 128
+    config = get_sage_fwd_configs()
+    BLOCK_M, BLOCK_N = config["BLOCK_M"], config["BLOCK_N"]
+    num_q_blocks = (SEQLEN_Q + BLOCK_M - 1) // BLOCK_M
+    num_kv_blocks = (SEQLEN_K + BLOCK_N - 1) // BLOCK_N
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+    block_attn_mask = torch.ones(
+        BATCH, num_q_blocks, num_kv_blocks, dtype=torch.bool, device="cuda"
+    )
+    block_attn_mask[:, 0, :] = False
+
+    block_lut = block_attn_mask_to_ragged_lut(block_attn_mask, num_heads=NUM_Q_HEADS)
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+    _, lse = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=True,
+        layout=layout,
+        block_lut=block_lut,
+    )
+
+    assert lse.shape == (BATCH, NUM_Q_HEADS, SEQLEN_Q)
+    empty_rows = lse[:, :, :BLOCK_M]
+    rest_rows = lse[:, :, BLOCK_M:]
+    assert torch.isneginf(
+        empty_rows
+    ).all(), f"Expected -inf LSE for empty Q block, got {empty_rows}"
+    assert torch.isfinite(
+        rest_rows
+    ).all(), "Expected finite LSE for Q blocks with valid KV"
+
+
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+@pytest.mark.parametrize("SEQLEN_Q, SEQLEN_K", [(64, 16), (128, 32), (256, 64)])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4), (16, 4)])
+def test_sage_causal_above_diagonal_lse_is_neg_inf(
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    """
+    With causal masking and seqlen_q > seqlen_k, the first (seqlen_q - seqlen_k)
+    Q rows have no valid K positions. Their softmax_lse must be -inf (logsumexp
+    over empty set) so FA-style ring merges treat them correctly.
+    """
+    torch.cuda.empty_cache()
+    BATCH, HEAD_SZ = 2, 128
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    _, lse = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=True,
+        return_lse=True,
+        layout=layout,
+    )
+
+    assert lse.shape == (BATCH, NUM_Q_HEADS, SEQLEN_Q)
+    n_above = SEQLEN_Q - SEQLEN_K
+    above = lse[:, :, :n_above]
+    below = lse[:, :, n_above:]
+    assert torch.isneginf(
+        above
+    ).all(), f"Expected -inf LSE for rows above causal diagonal, got {above}"
+    assert torch.isfinite(
+        below
+    ).all(), "Expected finite LSE for rows on/below causal diagonal"
+
+
+@pytest.mark.parametrize("BATCH", [1, 4, 57, 128])
+@pytest.mark.parametrize(
+    "SEQLEN_Q, SEQLEN_K",
+    [(1, 1), (4, 4), (128, 128), (2, 1), (1, 2), (32, 16), (64, 128)],
+)
+@pytest.mark.parametrize(
+    "NUM_Q_HEADS, NUM_K_HEADS", [(1, 1), (16, 16), (2, 1), (48, 8)]
+)
+@pytest.mark.parametrize("causal", [True, False])
+@pytest.mark.parametrize("qsmooth", [True, False])
+def test_sage_mxfp4(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    causal: bool,
+    qsmooth: bool,
+    dtype=torch.bfloat16,
+):
+    HEAD_SZ = 128
+    layout = "bhsd"
+    hadamard_rotate = True  # hadamard expected to be on
+
+    if not (arch_info.is_fp4_avail()):
+        pytest.skip("MXFP4 not supported on this architecture")
+
+    torch.cuda.empty_cache()
+    torch.manual_seed(20)
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    triton_out = fav3_sage_mxfp4_wrapper(
+        q,
+        k,
+        v,
+        causal=causal,
+        layout=layout,
+        q_smooth=qsmooth,
+        hadamard_rotation=hadamard_rotate,
+    )
+
+    logger.debug("triton_out.shape=%s, triton_out=%s", triton_out.shape, triton_out)
+
+    if layout == "bhsd":
+        q = q.permute(0, 2, 1, 3).contiguous()
+        k = k.permute(0, 2, 1, 3).contiguous()
+        v = v.permute(0, 2, 1, 3).contiguous()
+
+    torch_out = attention_ref(q, k, v, dropout_p=0.0, dropout_mask=None, causal=causal)
+    torch_out, attention_scores, _ = torch_out
+
+    if layout == "bhsd":
+        torch_out = torch_out.permute(0, 2, 1, 3).contiguous()
+
+    assert torch_out.shape == triton_out.shape
+
+    logger.debug("torch_out.shape=%s, torch_out=%s", torch_out.shape, torch_out)
+    logger.debug(
+        "attention_scores.shape=%s, attention_scores=%s",
+        attention_scores.shape,
+        attention_scores,
+    )
+
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=1.5,
+    )
+
+
+@pytest.mark.parametrize("BATCH", [1, 4])
+@pytest.mark.parametrize("SEQLEN_Q, SEQLEN_K", [(256, 256), (256, 512)])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(2, 2), (16, 16)])
+@pytest.mark.parametrize("HEAD_SZ", [128])
+@pytest.mark.parametrize("layout", ["bhsd"])
+def test_sage_mxfp4_block_sparse_none(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    HEAD_SZ: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    """With block_lut=None, MXFP4 output must match non-sparse path."""
+    if not arch_info.is_fp4_avail():
+        pytest.skip("MXFP4 not supported on this architecture")
+    torch.cuda.empty_cache()
+    torch.manual_seed(20)
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+    triton_out = fav3_sage_mxfp4_wrapper(
+        q, k, v, causal=False, layout=layout, hadamard_rotation=True, block_lut=None
+    )
+    triton_out_full = fav3_sage_mxfp4_wrapper(
+        q, k, v, causal=False, layout=layout, hadamard_rotation=True
+    )
+    check_attention_outputs(
+        triton_out,
+        triton_out_full,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=0.5,
+    )
+
+
+@pytest.mark.parametrize("BATCH", [1, 2])
+@pytest.mark.parametrize("SEQLEN_Q, SEQLEN_K", [(512, 512)])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4)])
+@pytest.mark.parametrize("HEAD_SZ", [128])
+@pytest.mark.parametrize("layout", ["bhsd"])
+def test_sage_mxfp4_block_sparse_vs_reference(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    HEAD_SZ: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    """Block-sparse MXFP4 output matches reference that applies the same block mask."""
+    if not arch_info.is_fp4_avail():
+        pytest.skip("MXFP4 not supported on this architecture")
+    torch.cuda.empty_cache()
+    torch.manual_seed(20)
+
+    config = get_sage_fwd_configs_mxfp4()
+    BLOCK_M, BLOCK_N = config["BLOCK_M"], config["BLOCK_N"]
+    num_q_blocks = (SEQLEN_Q + BLOCK_M - 1) // BLOCK_M
+    num_kv_blocks = (SEQLEN_K + BLOCK_N - 1) // BLOCK_N
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    # Band mask: Q block qb attends to KV blocks within distance 1
+    block_attn_mask = torch.zeros(
+        BATCH, num_q_blocks, num_kv_blocks, dtype=torch.bool, device="cuda"
+    )
+    for qb in range(num_q_blocks):
+        for kb in range(num_kv_blocks):
+            if abs(qb - kb) <= 1:
+                block_attn_mask[:, qb, kb] = True
+
+    block_lut = block_attn_mask_to_ragged_lut(block_attn_mask, num_heads=NUM_Q_HEADS)
+    triton_out = fav3_sage_mxfp4_wrapper(
+        q,
+        k,
+        v,
+        causal=False,
+        layout=layout,
+        hadamard_rotation=True,
+        block_lut=block_lut,
+    )
+
+    # Reference expects bshd
+    if layout == "bhsd":
+        q_ref = q.permute(0, 2, 1, 3).contiguous()
+        k_ref = k.permute(0, 2, 1, 3).contiguous()
+        v_ref = v.permute(0, 2, 1, 3).contiguous()
+    else:
+        q_ref, k_ref, v_ref = q, k, v
+
+    torch_out, _, _ = attention_ref_block_sparse(
+        q_ref, k_ref, v_ref, block_attn_mask, BLOCK_M, BLOCK_N
+    )
+    if layout == "bhsd":
+        torch_out = torch_out.permute(0, 2, 1, 3).contiguous()
+
+    assert triton_out.shape == torch_out.shape
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=1.5,
+    )
+
+
+@pytest.mark.parametrize("layout", ["bhsd"])
+def test_sage_mxfp4_block_sparse_empty_kv_blocks(layout: str, dtype=torch.bfloat16):
+    """When a Q block has no KV blocks allowed, that block's output is zero."""
+    if not arch_info.is_fp4_avail():
+        pytest.skip("MXFP4 not supported on this architecture")
+    torch.cuda.empty_cache()
+    torch.manual_seed(20)
+
+    BATCH, SEQLEN_Q, SEQLEN_K = 1, 512, 512
+    NUM_Q_HEADS, NUM_K_HEADS, HEAD_SZ = 4, 4, 128
+    config = get_sage_fwd_configs_mxfp4()
+    BLOCK_M, BLOCK_N = config["BLOCK_M"], config["BLOCK_N"]
+    num_q_blocks = (SEQLEN_Q + BLOCK_M - 1) // BLOCK_M
+    num_kv_blocks = (SEQLEN_K + BLOCK_N - 1) // BLOCK_N
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    # First Q block attends to nothing; others attend to all KV blocks
+    block_attn_mask = torch.ones(
+        BATCH, num_q_blocks, num_kv_blocks, dtype=torch.bool, device="cuda"
+    )
+    block_attn_mask[:, 0, :] = False
+
+    block_lut = block_attn_mask_to_ragged_lut(block_attn_mask, num_heads=NUM_Q_HEADS)
+    triton_out = fav3_sage_mxfp4_wrapper(
+        q,
+        k,
+        v,
+        causal=False,
+        layout=layout,
+        hadamard_rotation=True,
+        block_lut=block_lut,
+    )
+
+    if layout == "bhsd":
+        q_ref = q.permute(0, 2, 1, 3).contiguous()
+        k_ref = k.permute(0, 2, 1, 3).contiguous()
+        v_ref = v.permute(0, 2, 1, 3).contiguous()
+    else:
+        q_ref, k_ref, v_ref = q, k, v
+
+    torch_out, _, _ = attention_ref_block_sparse(
+        q_ref, k_ref, v_ref, block_attn_mask, BLOCK_M, BLOCK_N
+    )
+    if layout == "bhsd":
+        torch_out = torch_out.permute(0, 2, 1, 3).contiguous()
+
+    check_attention_outputs(
+        triton_out,
+        torch_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=1.5,
+    )
+
+
+@pytest.mark.parametrize("BATCH", [1, 4])
+@pytest.mark.parametrize("SEQLEN_Q, SEQLEN_K", [(256, 256), (512, 512)])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4), (16, 16), (16, 4)])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+def test_sage_return_lse_matches_reference(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    """
+    With smooth_k=True the kernel computes LSE against (K - mean(K)). The
+    wrapper's correction term should make the returned LSE match the LSE that
+    an un-smoothed K would produce (within sage's int8/fp8 quant noise).
+    This is the property that FA-style ring-attention merging relies on.
+    """
+    HEAD_SZ = 128
+    torch.cuda.empty_cache()
+    torch.manual_seed(20)
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    _, triton_lse = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=True,
+        layout=layout,
+        smooth_k=True,
+    )
+
+    if layout == "bshd":
+        q_b = q.permute(0, 2, 1, 3).contiguous()
+        k_b = k.permute(0, 2, 1, 3).contiguous()
+    else:
+        q_b = q
+        k_b = k
+    if NUM_Q_HEADS != NUM_K_HEADS:
+        assert NUM_Q_HEADS % NUM_K_HEADS == 0
+        k_b = k_b.repeat_interleave(NUM_Q_HEADS // NUM_K_HEADS, dim=1)
+    qk = (q_b.float() @ k_b.float().transpose(-1, -2)) * softmax_scale
+    lse_ref = torch.logsumexp(qk, dim=-1)
+
+    assert (
+        triton_lse.shape == lse_ref.shape
+    ), f"LSE shape {tuple(triton_lse.shape)} != reference {tuple(lse_ref.shape)}"
+    # Pre-PR (no K-mean correction) the LSE is offset by
+    # softmax_scale * Q . mean(K)^T, which is O(1)+ in magnitude.
+    # With the correction, the residual is bounded by sage's int8/fp8 quant noise.
+    torch.testing.assert_close(
+        triton_lse,
+        lse_ref.to(triton_lse.dtype),
+        atol=2e-1,
+        rtol=5e-2,
+    )
+
+
+def _fa_merge_partial(out_a, lse_a, out_b, lse_b, layout: str):
+    """FA log-sum-exp partial merge. LSE is (B, H_q, S_q); output layout varies."""
+    m = torch.maximum(lse_a, lse_b)
+    w_a = (lse_a - m).exp()
+    w_b = (lse_b - m).exp()
+    denom = w_a + w_b
+    if layout == "bhsd":
+        w_a4 = w_a.unsqueeze(-1)
+        w_b4 = w_b.unsqueeze(-1)
+        denom4 = denom.unsqueeze(-1)
+    else:  # bshd: out is (B, S_q, H_q, D); merge weights into that layout.
+        w_a4 = w_a.transpose(1, 2).unsqueeze(-1)
+        w_b4 = w_b.transpose(1, 2).unsqueeze(-1)
+        denom4 = denom.transpose(1, 2).unsqueeze(-1)
+    out = (out_a * w_a4 + out_b * w_b4) / denom4
+    lse = m + denom.log()
+    return out, lse
+
+
+@pytest.mark.parametrize("BATCH", [1, 2])
+@pytest.mark.parametrize("SEQLEN", [512, 1024])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4), (8, 4)])
+@pytest.mark.parametrize("RING_DEGREE", [2, 4])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+def test_sage_ring_merge_matches_single_call(
+    BATCH: int,
+    SEQLEN: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    RING_DEGREE: int,
+    layout: str,
+    dtype=torch.bfloat16,
+):
+    """
+    Mimic ring attention: split K/V along the sequence dim into RING_DEGREE shards,
+    run sage per shard with return_lse=True, FA-merge the partial (out, lse) pairs,
+    and assert the merged output matches a single-call sage forward (within sage's
+    int8/fp8 quant noise). Pre-PR this diverges with RING_DEGREE because each
+    shard uses a different K mean; post-PR it stays bounded.
+    """
+    HEAD_SZ = 128
+    assert SEQLEN % RING_DEGREE == 0
+
+    torch.cuda.empty_cache()
+    torch.manual_seed(20)
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN,
+        SEQLEN,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    full_out, _ = fav3_sage_wrapper_func(
+        q,
+        k,
+        v,
+        softmax_scale,
+        causal=False,
+        return_lse=True,
+        layout=layout,
+        smooth_k=True,
+    )
+
+    seq_dim_kv = 2 if layout == "bhsd" else 1
+    k_shards = k.chunk(RING_DEGREE, dim=seq_dim_kv)
+    v_shards = v.chunk(RING_DEGREE, dim=seq_dim_kv)
+
+    out_acc = None
+    lse_acc = None
+    for k_s, v_s in zip(k_shards, v_shards):
+        out_s, lse_s = fav3_sage_wrapper_func(
+            q,
+            k_s.contiguous(),
+            v_s.contiguous(),
+            softmax_scale,
+            causal=False,
+            return_lse=True,
+            layout=layout,
+            smooth_k=True,
+        )
+        out_s = out_s.float()
+        lse_s = lse_s.float()
+        if out_acc is None:
+            out_acc, lse_acc = out_s, lse_s
+        else:
+            out_acc, lse_acc = _fa_merge_partial(out_acc, lse_acc, out_s, lse_s, layout)
+
+    merged_out = out_acc.to(full_out.dtype)
+    assert merged_out.shape == full_out.shape
+
+    check_attention_outputs(
+        merged_out,
+        full_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=1.0,
+    )
+
+
+@pytest.mark.parametrize("BATCH", [1, 4])
+@pytest.mark.parametrize("SEQLEN_Q, SEQLEN_K", [(256, 256), (512, 512)])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4), (16, 16), (16, 4)])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+@pytest.mark.parametrize("qsmooth", [False, True])
+def test_sage_mxfp4_return_lse_matches_reference(
+    BATCH: int,
+    SEQLEN_Q: int,
+    SEQLEN_K: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    layout: str,
+    qsmooth: bool,
+    dtype=torch.bfloat16,
+):
+    """
+    With smooth_k=True the kernel computes LSE against (K - mean(K)). The
+    wrapper's correction term should make the returned LSE match the LSE that
+    an un-smoothed K would produce (within mxfp4 quant noise). This is the
+    property that FA-style ring-attention merging relies on.
+    """
+    if not arch_info.is_fp4_avail():
+        pytest.skip("MXFP4 not supported on this architecture")
+
+    HEAD_SZ = 128
+    torch.cuda.empty_cache()
+    torch.manual_seed(20)
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN_Q,
+        SEQLEN_K,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    _, triton_lse = fav3_sage_mxfp4_wrapper(
+        q,
+        k,
+        v,
+        causal=False,
+        layout=layout,
+        q_smooth=qsmooth,
+        hadamard_rotation=True,
+        return_lse=True,
+        smooth_k=True,
+    )
+
+    softmax_scale = 1.0 / math.sqrt(HEAD_SZ)
+    if layout == "bshd":
+        q_b = q.permute(0, 2, 1, 3).contiguous()
+        k_b = k.permute(0, 2, 1, 3).contiguous()
+    else:
+        q_b = q
+        k_b = k
+    if NUM_Q_HEADS != NUM_K_HEADS:
+        assert NUM_Q_HEADS % NUM_K_HEADS == 0
+        k_b = k_b.repeat_interleave(NUM_Q_HEADS // NUM_K_HEADS, dim=1)
+    qk = (q_b.float() @ k_b.float().transpose(-1, -2)) * softmax_scale
+    lse_ref = torch.logsumexp(qk, dim=-1)
+
+    assert (
+        triton_lse.shape == lse_ref.shape
+    ), f"LSE shape {tuple(triton_lse.shape)} != reference {tuple(lse_ref.shape)}"
+    # mxfp4 quant noise is larger than int8 sage; use loose tolerances.
+    torch.testing.assert_close(
+        triton_lse,
+        lse_ref.to(triton_lse.dtype),
+        atol=4e-1,
+        rtol=1e-1,
+    )
+
+
+@pytest.mark.parametrize("BATCH", [1, 2])
+@pytest.mark.parametrize("SEQLEN", [512, 1024])
+@pytest.mark.parametrize("NUM_Q_HEADS, NUM_K_HEADS", [(4, 4), (8, 4)])
+@pytest.mark.parametrize("RING_DEGREE", [2, 4])
+@pytest.mark.parametrize("layout", ["bhsd", "bshd"])
+@pytest.mark.parametrize("qsmooth", [False, True])
+def test_sage_mxfp4_ring_merge_matches_single_call(
+    BATCH: int,
+    SEQLEN: int,
+    NUM_Q_HEADS: int,
+    NUM_K_HEADS: int,
+    RING_DEGREE: int,
+    layout: str,
+    qsmooth: bool,
+    dtype=torch.bfloat16,
+):
+    """
+    Mimic ring attention: split K/V along the sequence dim into RING_DEGREE shards,
+    run mxfp4 sage per shard with return_lse=True, FA-merge the partial (out, lse)
+    pairs, and assert the merged output matches a single-call mxfp4 sage forward
+    (within mxfp4 quant noise). Pre-fix this diverges with RING_DEGREE because
+    each shard uses a different K mean; post-fix it stays bounded.
+    """
+    if not arch_info.is_fp4_avail():
+        pytest.skip("MXFP4 not supported on this architecture")
+
+    HEAD_SZ = 128
+    assert SEQLEN % RING_DEGREE == 0
+
+    torch.cuda.empty_cache()
+    torch.manual_seed(20)
+
+    q, k, v = input_helper(
+        BATCH,
+        NUM_Q_HEADS,
+        NUM_K_HEADS,
+        SEQLEN,
+        SEQLEN,
+        HEAD_SZ,
+        HEAD_SZ,
+        dtype,
+        layout,
+    )
+
+    full_out, _ = fav3_sage_mxfp4_wrapper(
+        q,
+        k,
+        v,
+        causal=False,
+        layout=layout,
+        q_smooth=qsmooth,
+        hadamard_rotation=True,
+        return_lse=True,
+        smooth_k=True,
+    )
+
+    seq_dim_kv = 2 if layout == "bhsd" else 1
+    k_shards = k.chunk(RING_DEGREE, dim=seq_dim_kv)
+    v_shards = v.chunk(RING_DEGREE, dim=seq_dim_kv)
+
+    out_acc = None
+    lse_acc = None
+    for k_s, v_s in zip(k_shards, v_shards):
+        out_s, lse_s = fav3_sage_mxfp4_wrapper(
+            q,
+            k_s.contiguous(),
+            v_s.contiguous(),
+            causal=False,
+            layout=layout,
+            q_smooth=qsmooth,
+            hadamard_rotation=True,
+            return_lse=True,
+            smooth_k=True,
+        )
+        out_s = out_s.float()
+        lse_s = lse_s.float()
+        if out_acc is None:
+            out_acc, lse_acc = out_s, lse_s
+        else:
+            out_acc, lse_acc = _fa_merge_partial(out_acc, lse_acc, out_s, lse_s, layout)
+
+    merged_out = out_acc.to(full_out.dtype)
+    assert merged_out.shape == full_out.shape
+
+    check_attention_outputs(
+        merged_out,
+        full_out,
+        fp8=True,
+        atol=ATOL_fp8,
+        rtol=RTOL_fp8,
+        max_diff_percentage=1.5,
+    )
