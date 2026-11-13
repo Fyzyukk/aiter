@@ -125,6 +125,14 @@ def generate_data(m, n, k, seed, device="cuda", dtype=dtypes.bf16):
     }
 
 
+def run_gemm_a4w4_opus(x, weight_shuffle, x_scale, w_scale, out, kid):
+    # opus a4w4_mxfp4_nt kid (same inputs as asm bpreshuffle); split-K kids pick S themselves
+    from aiter.ops.opus import opus_gemm_a4w4_tune
+
+    m, _k = x.shape
+    return opus_gemm_a4w4_tune(x, weight_shuffle, x_scale, w_scale, Y=out[:m], kernelId=kid)
+
+
 class GemmA4W4BlockScaleTuner(GemmCommonTuner):
     ARG_DEFAULTS: ClassVar[dict[str, Any]] = {
         **GemmCommonTuner.ARG_DEFAULTS,
@@ -364,6 +372,35 @@ class GemmA4W4BlockScaleTuner(GemmCommonTuner):
                     asm_kernels_id = asm_kernels_id + 1
 
                     total_kernel_nums = total_kernel_nums + 1
+            ### opus kernels (kernelName opus_a4w4_kid<kid>, read by gemm_a4w4); ids continue after asm
+            from aiter.ops.opus.gemm_op_a4w4 import A4W4_MXFP4_NT_KIDS
+
+            opus_kernels_id = asm_kernels_id
+            for kid in A4W4_MXFP4_NT_KIDS:
+                if kid == 30030 and (M % 256 or N % 256):  # 256x256 without boundary handling
+                    continue
+                info = ((gfx, cu_num, M, N, K), opus_kernels_id, 0, f"opus_a4w4_kid{kid}")
+                task.append(
+                    (
+                        info,
+                        generate_data,
+                        (M, N, K, seed),
+                        run_gemm_a4w4_opus,
+                        (gemm_ck_keys, kid),
+                        {"num_warmup": 10, "num_iters": 101},
+                        run_torch,
+                        (ref_keys, dtypes.bf16),
+                        {},
+                        None,
+                        1e-2,
+                        0.01,
+                        None,
+                        None,
+                        ("out_ck",),
+                    )
+                )
+                opus_kernels_id = opus_kernels_id + 1
+                total_kernel_nums = total_kernel_nums + 1
             tasks_in_data.append((total_kernel_nums, ()))
 
         ret = []

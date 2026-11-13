@@ -31,3 +31,17 @@ aiter 的 JIT 不会因为 opus 源码（opus_gemm.cu、gen_instances.py、codeg
 `aiter/jit/module_deepgemm_opus.so`；旧 .so 可能缺新入口（例如 `opus_gemm_a4w4`，报 "not found"）。更新代码后先
 `rm -f aiter/jit/module_deepgemm_opus.so`（或设 `AITER_REBUILD=1`）。perf 脚本（perf/perf_gemm_a4w4.sh、
 ../mxfp4_nt_noshuffle_dev/perf/perf_noshuffle.sh）开头会检查 .so 是否比源码旧或缺 `opus_gemm_a4w4`，`REBUILD=1` 时自动删除。
+
+## 调优与调用（aiter a4w4 调优流程，opus 为第三组候选）
+`csrc/ck_gemm_a4w4_blockscale/gemm_a4w4_blockscale_tune.py` 的候选 = CK + asm + opus（kid 300xx：persistent / np / split-K / nob），
+opus 胜出时 tuned csv 写 `kernelName=opus_a4w4_kid<kid>`，`aiter.gemm_a4w4(bpreshuffle=True)` 读到后调用该 kid。
+```bash
+# 1) 自己准备 untuned csv（列 M,N,K，一行一个形状），例如 /path/to/a4w4_untuned.csv
+# 2) 调优（新机器先 rm -f aiter/jit/module_deepgemm_opus.so，保证 opus JIT 模块是最新的）
+cd csrc/ck_gemm_a4w4_blockscale
+HIP_VISIBLE_DEVICES=0 PYTHONPATH=<aiter> python3 gemm_a4w4_blockscale_tune.py \
+    -i /path/to/a4w4_untuned.csv -o /path/to/a4w4_tuned.csv --mp 8
+# 3) 使用：指向 tuned csv（或把其中的行合入 aiter/configs/a4w4_blockscale_tuned_gemm.csv）
+AITER_CONFIG_GEMM_A4W4=/path/to/a4w4_tuned.csv python3 -c "from aiter.ops.gemm_op_a4w4 import gemm_a4w4; ..."
+#    y = gemm_a4w4(xq, shuffle_weight(w, layout=(16, 16)), e8m0_shuffle(xs), e8m0_shuffle(ws), bpreshuffle=True)
+```
