@@ -35,6 +35,16 @@ prof/timing.sh 2 2                           # 等卡空闲后与 candidate_m8 �
 用来确认 kernel 不会读到矩阵之外的 scale）、`MXFP4_CO_DIR=<dir>`（加载预编译 .co）。
 
 ## 预编译 .co
-`gen_co/build_co_noshuffle.py`（复用 `../gen_co/build_co_gfx950.py`，只换 json 和输出目录）按
-`gen_co/co_kernels_gfx950_noshuffle.json` 用 pin 工具链编出 13 个 .co 到 `gen_co/gfx950/`（kid 偏移 100–105 persistent、
-110–115 每 block 一个 tile、130 为 256×256 无边界），`build_info.json` 记录编译器、flags、寄存器、spill、LDS、sha256。
+已并入共享的 `../gen_co/`：`co_kernels_gfx950.json` 里 pipeline `a4w4_mxfp4_nt_noshuffle` 的 13 条（json kid 100–105 persistent、
+110–115 每 block 一个 tile、130 为 256×256 无边界），.co 在 `../gen_co/gfx950/`，用 `../gen_co/build_co_gfx950.py` 重编。
+
+## aiter 接口
+- `aiter.ops.opus.gemm_a4w4_opus(XQ, WQ, x_scale, w_scale, Y=None, bpreshuffle=True)`：`bpreshuffle=False` 走本 pipeline
+  （C++ `opus_gemm_a4w4(..., bpreshuffle)`，kid 30100–30115 / 30130，启发式只在同一布局的 kid 里选）。
+- `opus_gemm_a4w4_tune(..., kernelId)`：kid 301xx 按行主序布局检查输入。
+- 检查：N % 8、K % 256、scale 行主序 `[rows, K/32]`（每 batch ≥ M / N 行，2D `[batch*rows, K/32]` 或 3D）。
+- 测试：`op_tests/test_opus_a4w4_gemm.py`（shuffle 原有用例 + 不 shuffle 用例 + 应报错用例）。
+
+## 性能测试（可移植）
+`perf/perf_noshuffle.sh`：`GPU=<HIP 编号> SMI=<smi 编号，可空> AITER=<checkout> [SHAPES="M,N,K ..."] [M8_EXE=.. DEV_EXE=..]`；
+用 aiter op（CUDA graph）测 asm / opus shuffle / opus noshuffle 和每个 noshuffle kid，可选 dev harness 与 candidate_m8 交替测 8192³。

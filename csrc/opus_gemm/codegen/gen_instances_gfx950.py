@@ -21,6 +21,7 @@ from codegen.common import (
 
 PIPELINE_HEADER_MAP = {
     "a4w4_mxfp4_nt": "gfx950/opus_co_launch_mxfp4_gfx950.cuh",
+    "a4w4_mxfp4_nt_noshuffle": "gfx950/opus_co_launch_mxfp4_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_gemm_pipeline_a8w8_scale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_pipeline_a8w8_noscale_gfx950.cuh",
     "a16w16": "gfx950/opus_gemm_pipeline_a16w16_gfx950.cuh",
@@ -41,6 +42,7 @@ PIPELINE_HEADER_MAP_4G_SAFE = {
 
 TRAITS_HEADER_MAP = {
     "a4w4_mxfp4_nt": "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_gfx950.cuh",
+    "a4w4_mxfp4_nt_noshuffle": "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_noshuffle_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_traits_a8w8_noscale_gfx950.cuh",
     "a16w16": "gfx950/opus_gemm_traits_a16w16_gfx950.cuh",
@@ -52,6 +54,7 @@ TRAITS_HEADER_MAP = {
 
 KERNEL_FUNC_MAP = {
     "a4w4_mxfp4_nt": "gemm_a4w4_mxfp4_nt_kernel",
+    "a4w4_mxfp4_nt_noshuffle": "gemm_a4w4_mxfp4_nt_noshuffle_kernel",
     "a8w8_scale": "gemm_a8w8_scale_kernel",
     "a8w8": "gemm_a8w8_noscale_kernel",
     "a16w16": "gemm_a16w16_kernel",
@@ -69,6 +72,7 @@ KERNEL_FUNC_MAP_4G_SAFE = {
 
 TRAITS_NAME_MAP = {
     "a4w4_mxfp4_nt": "opus_gemm_a4w4_mxfp4_nt_traits_gfx950",
+    "a4w4_mxfp4_nt_noshuffle": "opus_gemm_a4w4_mxfp4_nt_noshuffle_traits_gfx950",
     "a8w8_scale": "opus_gemm_a8w8_scale_traits_gfx950",
     "a8w8": "opus_gemm_a8w8_noscale_traits_gfx950",
     "a16w16": "opus_gemm_a16w16_traits_gfx950",
@@ -80,6 +84,7 @@ TRAITS_NAME_MAP = {
 
 KARGS_NAME_MAP = {
     "a4w4_mxfp4_nt": "opus_gemm_mxfp4_scale_kargs_gfx950",
+    "a4w4_mxfp4_nt_noshuffle": "opus_gemm_mxfp4_scale_kargs_gfx950",
     "a8w8_scale": "opus_gemm_scale_kargs_gfx950",
     "a8w8": "opus_gemm_noscale_kargs_gfx950",
     "a16w16": "opus_gemm_noscale_kargs_gfx950",
@@ -1434,8 +1439,9 @@ void
 
 # ---------- Self-register at import time ----------
 def a4w4_mxfp4_nt_variant(k):
-    """"" persistent, "np" one tile per block, "sk" split-K, "nob" persistent without boundary handling."""
-    t = k.name_tag[len("a4w4_mxfp4_nt"):-len("_co")]
+    """"" persistent, "np" one tile per block, "sk" split-K, "nob" persistent without boundary handling.
+    Works for both kernel tags (a4w4_mxfp4_nt, a4w4_mxfp4_nt_noshuffle): name_tag = <kernel_tag>[_<variant>]_co."""
+    t = k.name_tag[len(k.kernel_tag):-len("_co")]
     return t.lstrip("_")
 
 
@@ -1446,7 +1452,7 @@ def a4w4_mxfp4_nt_mode(k):
 def a4w4_mxfp4_nt_co_symbol(k):
     """gen_co image / extern "C" symbol for a kid (see gen_co/build_co_gfx950.py:kernel_name)."""
     v = a4w4_mxfp4_nt_variant(k)
-    return f"opus_gemm_gfx950_a4w4_mxfp4_nt_co_{k.B_M}x{k.B_N}x{k.B_K}" + (f"_{v}" if v else "")
+    return f"opus_gemm_gfx950_{k.kernel_tag}_co_{k.B_M}x{k.B_N}x{k.B_K}" + (f"_{v}" if v else "")
 
 
 def gen_a4w4_mxfp4_nt_instance(cg, k, traits_header, kargs_name, instance_impl_preamble, A8W8_SCALE_HOST_EXTRA, **_unused):
@@ -1545,7 +1551,105 @@ void
         })
 
 
+
+def gen_a4w4_mxfp4_nt_noshuffle_instance(cg, k, traits_header, kargs_name, instance_impl_preamble, A8W8_SCALE_HOST_EXTRA, **_unused):
+    """gfx950 a4w4_mxfp4_nt_noshuffle launcher emit (host launcher only; pre-compiled .co).
+
+    Inputs (as aiter gemm_a4w4(bpreshuffle=False)): XQ [batch, M, K/2] and WQ [batch, N, K/2] fp4x2 row-major,
+    x_scale [batch(*) M, K/32] / w_scale [batch(*) N, K/32] e8m0 row-major (no padding needed), Y [batch, M, N] bf16.
+    Any M; N % 8 == 0; K % 256 == 0.  No split-K variant.
+    """
+    symbol = a4w4_mxfp4_nt_co_symbol(k)
+    variant = a4w4_mxfp4_nt_variant(k)
+    if variant in ("", "nob"):   # persistent: one block per CU at most
+        mode_code = "grid_x = tiles < cus ? tiles : cus;"
+    elif variant == "np":        # one tile per block
+        mode_code = "(void)cus;"
+    else:                        # split-K (not built for noshuffle): S from opus_mxfp4_pick_split (OPUS_MXFP4_SPLITK overrides), fp32 workspace per stream
+        mode_code = f"""const int S = opus_mxfp4_pick_split(tiles, K, cus);
+    kargs.split_k = S;
+    grid_x = tiles * S;
+    if (S > 1) kargs.ptr_ws = opus_gfx950_co::mxfp4_sk_workspace(stream, opus_mxfp4_sk_ws_bytes(tiles, S, {k.B_M}, {k.B_N}),
+                                                                   opus_mxfp4_sk_counter_bytes(tiles));"""
+    if variant == "nob":
+        mode_code += f"""
+    AITER_CHECK(M % {k.B_M} == 0 && N % {k.B_N} == 0, "a4w4_mxfp4_nt_noshuffle nob variant needs M % {k.B_M} == 0 and N % {k.B_N} == 0");"""
+    preamble = instance_impl_preamble()
+    INSTANCE_IMPL = f"""{preamble}
+#include "{traits_header}"
+#if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
+#include "gfx950/opus_co_launch_mxfp4_gfx950.cuh"
+template <typename D_C>
+void
+{k.name}(
+    aiter_tensor_t &XQ,
+    aiter_tensor_t &WQ,
+    aiter_tensor_t &Y,
+    std::optional<aiter_tensor_t> x_scale,
+    std::optional<aiter_tensor_t> w_scale)
+{{{{
+    static_assert(std::is_same<D_C, opus::bf16_t>::value, "a4w4_mxfp4_nt_noshuffle writes bf16");
+    AITER_CHECK(x_scale.has_value() && w_scale.has_value(), "a4w4_mxfp4_nt_noshuffle needs x_scale and w_scale");
+    const auto& sa = x_scale.value();
+    const auto& sb = w_scale.value();
+    const int batch = XQ.size(0);
+    const int M = XQ.size(1);
+    const int K = XQ.size(2) * 2;            // fp4x2: 2 elements per byte
+    const int N = WQ.size(1);
+    AITER_CHECK(WQ.size(2) * 2 == K && Y.size(1) == M && Y.size(2) == N, "a4w4_mxfp4_nt_noshuffle shape mismatch");
+    AITER_CHECK(N % 8 == 0 && K % {k.B_K} == 0, "a4w4_mxfp4_nt_noshuffle needs N % 8 == 0 and K % {k.B_K} == 0 (N=", N, " K=", K, ")");
+    const int sf_cols_a = sa.size(-1), sf_cols_b = sb.size(-1);
+    const int sf_rows_a = sa.dim() == 3 ? sa.size(1) : sa.size(0) / batch;
+    const int sf_rows_b = sb.dim() == 3 ? sb.size(1) : sb.size(0) / batch;
+    AITER_CHECK(sf_cols_a == K / 32 && sf_cols_b == K / 32, "row-major scales must have K/32 columns");
+    AITER_CHECK(sf_rows_a >= M && sf_rows_b >= N, "row-major scales must have >= M / N rows");
+
+    {kargs_name} kargs{{}};
+    kargs.ptr_a = XQ.data_ptr();
+    kargs.ptr_b = WQ.data_ptr();
+    kargs.ptr_c = Y.data_ptr();
+    kargs.m = M;
+    kargs.n = N;
+    kargs.k = K;
+    kargs.batch = batch;
+    kargs.stride_a = K / 2;                  // bytes
+    kargs.stride_b = K / 2;                  // bytes
+    kargs.stride_c = N;
+    kargs.stride_a_batch = M * (K / 2);
+    kargs.stride_b_batch = N * (K / 2);
+    kargs.stride_c_batch = M * N;
+    kargs.ptr_sfa = sa.data_ptr();
+    kargs.ptr_sfb = sb.data_ptr();
+    kargs.stride_sfa = sf_cols_a;            // row stride of the row-major scales (bytes) = K/32
+    kargs.stride_sfb = sf_cols_b;
+    kargs.stride_sfa_batch = sf_rows_a * sf_cols_a;
+    kargs.stride_sfb_batch = sf_rows_b * sf_cols_b;
+
+    auto stream = aiter::getCurrentHIPStream();
+    const int tiles = ((M + {k.B_M} - 1) / {k.B_M}) * ((N + {k.B_N} - 1) / {k.B_N}) * batch;
+    const int cus = (int)get_num_cu_func();
+    int grid_x = tiles;
+    kargs.split_k = 1;
+    kargs.ptr_ws = nullptr;
+    {mode_code}
+    kargs.grid_blocks = grid_x;
+    static AiterAsmKernelFast& kernel = opus_gfx950_co::mxfp4_co_kernel("{symbol}");
+    opus_mxfp4_co_launch_gfx950(kernel, dim3(grid_x), dim3({k.BLOCK_SIZE}), kargs, stream);
+}}}}
+#endif // launcher only on regular host pass
+"""
+    Path(os.path.join(cg.impl_path, f"{k.name}.cuh")).write_text(INSTANCE_IMPL)
+    # Host instantiation only: there is no device TU (the .co is pre-compiled).
+    for CDtype in k.output_dtypes:
+        cg._host_instantiations.append({
+            "kid_name": k.name, "dtype": CDtype,
+            "host_decl": (f"template void\n{k.name}<{CDtype}>(\n    aiter_tensor_t &XQ,\n    aiter_tensor_t &WQ,\n"
+                          f"    aiter_tensor_t &Y{A8W8_SCALE_HOST_EXTRA});\n"),
+        })
+
+
 register_emit("gfx950", "a4w4_mxfp4_nt", gen_a4w4_mxfp4_nt_instance)
+register_emit("gfx950", "a4w4_mxfp4_nt_noshuffle", gen_a4w4_mxfp4_nt_noshuffle_instance)
 register_emit("gfx950", "a16w16_persistent", gen_persistent_instance)
 register_emit("gfx950", "a8w8_scale", gen_scale_instance)
 register_emit("gfx950", "a16w16", gen_noscale_instance_gfx950)

@@ -1039,9 +1039,35 @@ a4w4_mxfp4_nt_kernels_list = {
 }
 A4W4_MXFP4_NT_KIDS = frozenset(a4w4_mxfp4_nt_kernels_list.keys())
 
+# a4w4_mxfp4_nt_noshuffle (gfx950): same 2x2 pipeline with plain row-major inputs (B not shuffle_weight'ed, scales
+# [rows, K/32] not e8m0_shuffle'd), as aiter gemm_a4w4(bpreshuffle=False).  Pre-compiled
+# gen_co/gfx950/opus_gemm_gfx950_a4w4_mxfp4_nt_noshuffle_co_<B_M>x<B_N>x256[_np|_nob].co.  Kids 30100 + variant offset + tile
+# index (same offsets / tile order as above); no split-K yet.
+A4W4_MXFP4_NT_NOSHUFFLE_KID_BASE = 30100
+A4W4_MXFP4_NT_NOSHUFFLE_VARIANTS = {"": 0, "np": 10, "nob": 30}
+
+
+def _a4w4_mxfp4_nt_noshuffle(bm, bn, variant):
+    tag = "a4w4_mxfp4_nt_noshuffle" + (f"_{variant}" if variant else "") + "_co"
+    return OpusGemmInstance(
+        256, bm, bn, 256, 2, 2, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt_noshuffle", ["bf16_t"],
+        arch_prefix="gfx950", name_tag=tag,
+    )
+
+
+a4w4_mxfp4_nt_noshuffle_kernels_list = {
+    A4W4_MXFP4_NT_NOSHUFFLE_KID_BASE + off + i: _a4w4_mxfp4_nt_noshuffle(bm, bn, v)
+    for v, off in A4W4_MXFP4_NT_NOSHUFFLE_VARIANTS.items()
+    for i, (bm, bn) in enumerate(A4W4_MXFP4_NT_TILES)
+    if not (v == "nob" and (bm, bn) != (256, 256))
+}
+A4W4_MXFP4_NT_NOSHUFFLE_KIDS = frozenset(a4w4_mxfp4_nt_noshuffle_kernels_list.keys())
+A4W4_MXFP4_TAGS = ("a4w4_mxfp4_nt", "a4w4_mxfp4_nt_noshuffle")
+
 # combined list (used by production gen_instances / dispatch)
 kernels_list = {
     **a4w4_mxfp4_nt_kernels_list,
+    **a4w4_mxfp4_nt_noshuffle_kernels_list,
     **a8w8_scale_kernels_list,
     **a8w8_kernels_list,
     **a16w16_kernels_list,

@@ -66,7 +66,7 @@ persistent / 非 persistent、ZC_PEEL、C 写回指令序列。split-K 暂不支
 未完成：HIP 2（smi GPU[2]）在整个工作期间被其他进程占用（use 100%、CU_OCCUPANCY > 0）。`prof/timing.sh 2 2` 会等卡连续 3 次空闲后，
 与 candidate_m8 交替计时 8192³（含 256×256 无边界变体），再测 6 种 tile 的中等 shape；结果写到 /tmp/opus_mxfp4_ns/timing.txt。
 
-## 合并进 shuffle 分支时要改的共享文件
+## 已合并的共享文件改动（基于 shuffle 分支 dfcc999）
 - `opus_gemm_common.py`：新 kernel_tag `a4w4_mxfp4_nt_noshuffle`，kid 30100–30105（persistent）、30110–30115（np）、30130（256×256 nob）。
 - `codegen/gen_instances_gfx950.py`：launcher 的 stride 改行主序（stride_sfa / stride_sfb = K/32，batch stride = rows × K/32），检查 N % 8、K % 256。
 - `gen_co/co_kernels_gfx950.json`：并入 `mxfp4_nt_noshuffle_dev/gen_co/co_kernels_gfx950_noshuffle.json` 的 13 条；.co 移到 `gen_co/gfx950/`。
@@ -74,3 +74,17 @@ persistent / 非 persistent、ZC_PEEL、C 写回指令序列。split-K 暂不支
 - `aiter/ops/opus/gemm_op_a4w4.py`：`bpreshuffle` 参数（与 aiter `gemm_a4w4` 一致），不 shuffle 时检查 scale 为 `[M, K/32]` / `[N, K/32]`。
 - `op_tests/test_opus_a4w4_gemm.py`：不 shuffle 的用例（输入直接用 quant 输出，不做 shuffle）。
 - 若 shuffle 版 pipeline 后续改动（例如加 split-K），重新运行 `gen_noshuffle_pipeline.py`；替换点失配时脚本会断言报错。
+
+## 接入结果（2026-11-13）
+- rebase 到 dfcc999 后用新的 shuffle pipeline 重新生成，非 split-K 实例的设备代码与之前逐字节相同（split-K 改动不影响 MODE 0/1）。
+- 共享文件：opus_gemm_common.py（`a4w4_mxfp4_nt_noshuffle_kernels_list`，kid 30100–30105 / 30110–30115 / 30130）、
+  codegen/gen_instances_gfx950.py（tag 映射 + `gen_a4w4_mxfp4_nt_noshuffle_instance`：行主序 stride、scale stride = K/32、N % 8 检查；
+  variant / co symbol 改为按 kernel_tag 推导）、gen_instances.py（导入、dtype、lookup 表加 noshuffle 列、编译集合）、
+  gen_co/co_kernels_gfx950.json + gfx950/*.co + build_info.json、opus_gemm.cu（kid 表加 noshuffle 字段，启发式 / 调优表按布局过滤，
+  新入口 `opus_gemm_a4w4(..., bpreshuffle)`，输入检查分两套，tune 按 kid 判断布局；`opus_gemm()` 的 fp4x2 分支保持 bpreshuffle 布局）、
+  opus_gemm.h、rocm_ops.hpp（`OPUS_GEMM_A4W4_PYBIND`）、pybind/opus_gemm_pybind.cu、aiter/ops/opus/gemm_op_a4w4.py（`bpreshuffle=True` 参数）、
+  op_tests/test_opus_a4w4_gemm.py。
+- aiter JIT 重建 module_deepgemm_opus（gen_instances：shuffle 18 kids、noshuffle 13 kids），op 测试 ALL OK：8 个 shape
+  （含 N=136 只走 noshuffle、batch 2、2D / 3D scale）× 13 个 noshuffle kid + dispatch：98 项 OK；shuffle 原有 161 项 OK；
+  应报错用例 13 项全部被拒（Python、C++、C++ tune 三层）。
+- 计时：本机卡被占，按用户决定之后在空闲机器上用 `perf/perf_noshuffle.sh` 统一测。
