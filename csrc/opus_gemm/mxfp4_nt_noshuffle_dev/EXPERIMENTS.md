@@ -51,3 +51,26 @@ persistent / 非 persistent、ZC_PEEL、C 写回指令序列。split-K 暂不支
   默认 / MXFP4_SFA_K_PATTERN=1 / PERSIST_GRID=37 / PERSIST_GRID=1），scale 每个 batch 后加 256 行 0xFF（NaN）守护：结果见下。
 - 13 个 .co 通过 `MXFP4_CO_DIR` 加载：6 tile × {8192³ persistent、300×400×768×b2 每 block 一个 tile、1000×4112×7168 persistent}
   + 256×256 无边界 8192³（均带 MXFP4_SFA_K_PATTERN=1）：19/19 VALID。
+
+### 结果（HIP 2，dev 构建）
+| tile | 104 用例矩阵 |
+|---|---|
+| 256×256 | 104/104 |
+| 256×128 | 104/104 |
+| 128×256 | 104/104 |
+| 128×128 | 104/104 |
+| 192×256 | 104/104 |
+| 256×192 | 104/104 |
+
+## 计时
+未完成：HIP 2（smi GPU[2]）在整个工作期间被其他进程占用（use 100%、CU_OCCUPANCY > 0）。`prof/timing.sh 2 2` 会等卡连续 3 次空闲后，
+与 candidate_m8 交替计时 8192³（含 256×256 无边界变体），再测 6 种 tile 的中等 shape；结果写到 /tmp/opus_mxfp4_ns/timing.txt。
+
+## 合并进 shuffle 分支时要改的共享文件
+- `opus_gemm_common.py`：新 kernel_tag `a4w4_mxfp4_nt_noshuffle`，kid 30100–30105（persistent）、30110–30115（np）、30130（256×256 nob）。
+- `codegen/gen_instances_gfx950.py`：launcher 的 stride 改行主序（stride_sfa / stride_sfb = K/32，batch stride = rows × K/32），检查 N % 8、K % 256。
+- `gen_co/co_kernels_gfx950.json`：并入 `mxfp4_nt_noshuffle_dev/gen_co/co_kernels_gfx950_noshuffle.json` 的 13 条；.co 移到 `gen_co/gfx950/`。
+- `opus_gemm.cu` / pybind / `opus_gemm.h`：fp4x2 分支按 bpreshuffle（或 scale 布局）选 shuffle / noshuffle 的分发；输入检查分两套。
+- `aiter/ops/opus/gemm_op_a4w4.py`：`bpreshuffle` 参数（与 aiter `gemm_a4w4` 一致），不 shuffle 时检查 scale 为 `[M, K/32]` / `[N, K/32]`。
+- `op_tests/test_opus_a4w4_gemm.py`：不 shuffle 的用例（输入直接用 quant 输出，不做 shuffle）。
+- 若 shuffle 版 pipeline 后续改动（例如加 split-K），重新运行 `gen_noshuffle_pipeline.py`；替换点失配时脚本会断言报错。
