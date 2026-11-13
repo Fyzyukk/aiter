@@ -78,3 +78,10 @@ prof/timing.sh（等 HIP 2 空闲后测：8192³ zc vs 256×256 交替 6 轮；1
   新入口 `opus_gemm_a4w4_tune(XQ, WQ, Y, x_scale, w_scale, kernelId)`；opus_gemm.h / rocm_ops.hpp / pybind 注册。
 - Python：`aiter/ops/opus/gemm_op_a4w4.py`（`gemm_a4w4_opus`、`opus_gemm_a4w4_tune`），`aiter.ops.opus` 导出。
 - 测试：`op_tests/test_opus_a4w4_gemm.py`（torch 反量化参考 + aiter gemm_a4w4 asm 对比；`--perf` 计时）。
+
+## 接入 aiter 第 6 步：JIT 实际构建 + op 测试（2026-11-13，HIP 2）
+- 用本 worktree 的 aiter（`PYTHONPATH=<worktree> GPU_ARCHS=gfx950`）JIT 构建 module_deepgemm_opus 成功（标准 ROCm hipcc；.co 不参与 JIT 编译，运行时从 `csrc/opus_gemm/gen_co/gfx950` 加载）。
+  环境注意：本分支 aiter 要求 triton ≥ 3.6，本机是 3.4，需 `AITER_USE_SYSTEM_TRITON=1` 才能 import（与本改动无关）。
+- `op_tests/test_opus_a4w4_gemm.py` 全部通过：7 个 shape（256×256×512、1024×2048×1024×b2、300×400×768×b2、1×128×256、100×1280×7168、1000×4112×256、16×4096×4096）
+  × {dispatch, kid 30000–30003}，相对 torch 反量化参考 rel_err 1.2e-3–1.7e-3（bf16 输出舍入量级）；aiter gemm_a4w4 asm 在 256×256×512 上同样 1.67e-3。
+- 性能（`--perf`）尚未测：HIP 2 一直被他人占用（use 100%）。
