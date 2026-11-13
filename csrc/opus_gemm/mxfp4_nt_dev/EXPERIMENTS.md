@@ -85,3 +85,12 @@ prof/timing.sh（等 HIP 2 空闲后测：8192³ zc vs 256×256 交替 6 轮；1
 - `op_tests/test_opus_a4w4_gemm.py` 全部通过：7 个 shape（256×256×512、1024×2048×1024×b2、300×400×768×b2、1×128×256、100×1280×7168、1000×4112×256、16×4096×4096）
   × {dispatch, kid 30000–30003}，相对 torch 反量化参考 rel_err 1.2e-3–1.7e-3（bf16 输出舍入量级）；aiter gemm_a4w4 asm 在 256×256×512 上同样 1.67e-3。
 - 性能（`--perf`）尚未测：HIP 2 一直被他人占用（use 100%）。
+
+## 输入检查（2026-11-13）
+- opus_gemm.cu `opus_a4w4_mxfp4_check`（opus_gemm() 的 fp4x2 分支和 opus_gemm_a4w4_tune() 都调用）新增 AITER_CHECK：
+  WQ / Y 形状与 XQ 一致；N % 16 == 0；K % 256 == 0；x_scale / w_scale 为 1 字节、2D [batch*rows, cols] 或 3D [batch, rows, cols]，
+  列数 == ceil(K/32 / 8) * 8，每 batch 行数 ≥ ceil(rows/32) * 32 且为 32 的倍数（e8m0_shuffle 布局）。
+- gemm_op_a4w4.py 的 `gemm_a4w4_opus` / `opus_gemm_a4w4_tune` 先在 Python 侧做同样的检查（ValueError）。
+- op 测试加 2 个应报错用例（N=100、K=320），分别验证 Python 检查和绕过 Python 直接调 C++ 时的 AITER_CHECK；
+  强制重建 module_deepgemm_opus 后：4 次都被拒绝（C++ 报在 opus_gemm.cu:152 / 153），原有 36 个正确性用例仍全部 OK。
+- 计时脚本已停掉（按要求，性能 / 调优暂不接入）。

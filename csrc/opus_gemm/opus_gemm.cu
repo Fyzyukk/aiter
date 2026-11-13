@@ -145,6 +145,25 @@ static void opus_a4w4_mxfp4_check(const aiter_tensor_t& XQ, const aiter_tensor_t
   AITER_CHECK(XQ.is_contiguous() && WQ.is_contiguous() && Y.is_contiguous() &&
               x_scale.value().is_contiguous() && w_scale.value().is_contiguous(),
               "opus a4w4_mxfp4: tensors must be contiguous");
+  // Shapes: XQ [batch, M, K/2], WQ [batch, N, K/2] (fp4x2), Y [batch, M, N]; N % 16 (shuffle_weight), K % 256 (K tile).
+  const int64_t batch = XQ.size(0), M = XQ.size(1), K = XQ.size(2) * 2, N = WQ.size(1);
+  AITER_CHECK(WQ.size(0) == batch && WQ.size(2) * 2 == K, "opus a4w4_mxfp4: WQ must be [batch, N, K/2] matching XQ");
+  AITER_CHECK(Y.size(0) == batch && Y.size(1) == M && Y.size(2) == N, "opus a4w4_mxfp4: Y must be [batch, M, N]");
+  AITER_CHECK(N % 16 == 0, "opus a4w4_mxfp4: N must be a multiple of 16 (got N=", N, ")");
+  AITER_CHECK(K % 256 == 0 && K > 0, "opus a4w4_mxfp4: K must be a multiple of 256 (got K=", K, ")");
+  // Scales: e8m0_shuffle layout, per batch [rows padded to >= 32, K/32 padded to 8]; 2D [batch * rows, cols] or 3D.
+  const int64_t cols = (K / 32 + 7) / 8 * 8;
+  auto check_sf = [&](const aiter_tensor_t& s, int64_t rows, const char* nm) {
+    AITER_CHECK(s.element_size() == 1, "opus a4w4_mxfp4: ", nm, " must be e8m0 (1 byte)");
+    AITER_CHECK(s.dim() == 2 || (s.dim() == 3 && s.size(0) == batch), "opus a4w4_mxfp4: ", nm, " must be 2D or [batch, rows, cols]");
+    AITER_CHECK(s.dim() == 3 || s.size(0) % batch == 0, "opus a4w4_mxfp4: ", nm, " rows not divisible by batch");
+    const int64_t r = s.dim() == 3 ? s.size(1) : s.size(0) / batch;
+    AITER_CHECK(s.size(-1) == cols, "opus a4w4_mxfp4: ", nm, " must have K/32 padded to 8 = ", cols, " columns (got ", s.size(-1), ")");
+    AITER_CHECK(r >= (rows + 31) / 32 * 32 && r % 32 == 0, "opus a4w4_mxfp4: ", nm, " needs >= ", (rows + 31) / 32 * 32,
+                " rows (multiple of 32, e8m0_shuffle) per batch (got ", r, ")");
+  };
+  check_sf(x_scale.value(), M, "x_scale");
+  check_sf(w_scale.value(), N, "w_scale");
 }
 
 // a16w16 arch routers: switch on opus_get_gfx_arch() to per-arch dispatch.

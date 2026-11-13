@@ -109,6 +109,27 @@ def main():
             o = gemm_a4w4_opus(xq, wsh, xss, wss)
             us = bench(lambda: gemm_a4w4_opus(xq, wsh, xss, wss, Y=o))
             print(f"    dispatch: {us:7.1f} us")
+    # Unsupported shapes must be rejected (Python check and, bypassing it, the C++ AITER_CHECK), not silently miscomputed.
+    if not a.perf:
+        from aiter.ops.opus import gemm_op_a4w4 as op
+        fp4, e8 = aiter.dtypes.fp4x2, aiter.dtypes.fp8_e8m0
+        for M, N, K, why in ((64, 100, 256, "N % 16"), (64, 128, 320, "K % 256")):
+            x = torch.zeros((1, M, K // 2), dtype=torch.uint8, device="cuda").view(fp4)
+            w = torch.zeros((1, N, K // 2), dtype=torch.uint8, device="cuda").view(fp4)
+            cols = (K // 32 + 7) // 8 * 8
+            xs = torch.full((256, cols), 127, dtype=torch.uint8, device="cuda").view(e8)
+            ws = torch.full(((N + 255) // 256 * 256, cols), 127, dtype=torch.uint8, device="cuda").view(e8)
+            calls = (("python", lambda: gemm_a4w4_opus(x, w, xs, ws)),
+                     ("c++", lambda: op._opus_gemm_a4w4_tune_raw(
+                         x, w, torch.empty((1, M, N), dtype=torch.bfloat16, device="cuda"), xs, ws, 30000)))
+            for label, call in calls:
+                try:
+                    call()
+                    torch.cuda.synchronize()
+                    print(f"  M={M} N={N} K={K} ({why}) {label}: NOT rejected -> FAIL")
+                    ok = False
+                except Exception as e:  # noqa: BLE001
+                    print(f"  M={M} N={N} K={K} ({why}) {label}: rejected OK ({str(e).splitlines()[0][:90]})")
     print("ALL OK" if ok else "SOME FAILED")
     sys.exit(0 if ok else 1)
 

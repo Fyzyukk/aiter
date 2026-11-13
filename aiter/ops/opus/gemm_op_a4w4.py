@@ -54,9 +54,29 @@ def _as3d(XQ: Tensor, WQ: Tensor, Y: Tensor | None):
     return x3, w3, Y, y3
 
 
+def _check(x3: Tensor, w3: Tensor, x_scale: Tensor, w_scale: Tensor):
+    batch, M, K = x3.shape[0], x3.shape[1], x3.shape[2] * 2
+    N = w3.shape[1]
+    if w3.shape[0] != batch or w3.shape[2] * 2 != K:
+        raise ValueError(f"opus a4w4: WQ shape {tuple(w3.shape)} does not match XQ {tuple(x3.shape)}")
+    if N % 16:
+        raise ValueError(f"opus a4w4: N must be a multiple of 16 (got N={N})")
+    if K % 256 or K <= 0:
+        raise ValueError(f"opus a4w4: K must be a multiple of 256 (got K={K})")
+    cols = (K // 32 + 7) // 8 * 8
+    for s, rows, nm in ((x_scale, M, "x_scale"), (w_scale, N, "w_scale")):
+        if s.dim() not in (2, 3) or (s.dim() == 3 and s.shape[0] != batch) or (s.dim() == 2 and s.shape[0] % batch):
+            raise ValueError(f"opus a4w4: {nm} must be 2D [batch*rows, cols] or [batch, rows, cols], got {tuple(s.shape)}")
+        r = s.shape[1] if s.dim() == 3 else s.shape[0] // batch
+        need = (rows + 31) // 32 * 32
+        if s.shape[-1] != cols or r < need or r % 32:
+            raise ValueError(f"opus a4w4: {nm} must be e8m0_shuffle'd: >= {need} rows (multiple of 32) x {cols} cols per batch, got {tuple(s.shape)}")
+
+
 def gemm_a4w4_opus(XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor, Y: Tensor | None = None) -> Tensor:
     """MXFP4 GEMM Y = XQ @ WQ^T with 1x32 scales; tile chosen by the tuned table, else the C++ heuristic."""
     x3, w3, Y, y3 = _as3d(XQ, WQ, Y)
+    _check(x3, w3, x_scale, w_scale)
     _opus_gemm_raw(x3, w3, y3, None, x_scale, w_scale, None)
     return Y
 
@@ -66,6 +86,7 @@ def opus_gemm_a4w4_tune(
 ) -> Tensor:
     """Run one a4w4_mxfp4_nt kid (30000..30003) explicitly."""
     x3, w3, Y, y3 = _as3d(XQ, WQ, Y)
+    _check(x3, w3, x_scale, w_scale)
     _opus_gemm_a4w4_tune_raw(x3, w3, y3, x_scale, w_scale, kernelId)
     return Y
 
