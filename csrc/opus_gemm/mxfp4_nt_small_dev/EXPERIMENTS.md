@@ -106,3 +106,52 @@ M ≤ 128：16 个形状里 13 个赢 Triton；输的 3 个是 16×4096×4096（
   M ≥ 512 时可能被不 shuffle 2×2 的 128×128 np 超过（由分发按 tile 数选）。
 - shuffled（work_smallm/select_table_HIP4.csv，M ≤ 128 部分）：direct 16×32 KS4 D3 / D4、32×32 KS4 D2、32×64 KS4 D2 / KS2 D3、16×64 KS4 D3；
   M = 128–512 用 lds 32×128 D3 / D4、64×128 D4（这几个只做过冒烟计时，正式的 shuffled 选择表要用 perf_all.py 在空卡上补）。split 均为 1。
+
+## shuffle 版 M = 128–512：瓶颈分析与 A_LDS 模式（smi 3 = HIP 0，2026-11-13）
+**trace（256×4096×4096，shuffled B_LDS 32×128 D4，7.86 µs；asm f4gemm 32×128 5.95 µs，单 CU ATT，每 wave cycle）**
+| | 总 | main loop（16 个 K tile） | loop 外 |
+|---|---|---|---|
+| 我们 B_LDS 32×128 D4 | 18.3k | 11.1k（≈690 / K tile） | 7.2k |
+| asm 32×128 | 12.9k | 7.3k（≈455 / K tile） | 5.6k |
+| 我们 A_LDS 32×128 D4（新） | 17.2k | 9.4k（≈590 / K tile） | 7.7k |
+- loop 外：入口 `s_waitcnt lgkmcnt(0)` 等 kernarg 的 s_load ≈1.2–1.4k cycle（kernarg 段在主机内存）；
+  `--amdgpu-kernarg-preload-count` 无效（kernel 参数是一个按值传的 struct，不能预载）——要拿到需要把 kernel 签名改成标量参数（接入层的事，记录为需求）。
+  其余是 prologue 的冷 load（200–700 cycle / 条）和结尾等 C store（~0.9k）。
+- asm 结构（反汇编）：1 block / CU、160 KB LDS、512 VGPR；**A 经 LDS-DMA、B 直接进 VGPR**；每 K tile `vmcnt(12)` + barrier 后，8 条 MFMA 之间
+  穿插：下一个 K tile 的 A ds_read（A 提前一个 tile 读）、1 条 A DMA、1 条 scale DMA、4 条 B load、1 条 scale load。每 K tile VMEM 指令数和我们一样（7 条）。
+  我们 B_LDS 的 load 集中在 MFMA 之前成串发出，每条在 TA 上卡 100–220 cycle。
+- 试过无效：split-K（S = 2/4 让每 CU 2 个 block，反而更慢，归约开销更大）；更浅的环让 2 个 block 共存（只有 M = 512 有利）。
+
+**A_LDS（BMODE 2，新增，shuffled 专用）**：A 经 LDS-DMA 进 D 级 LDS 环（每 stage 一个 __shared__ 对象），B 和 scale 直接进 D 级寄存器环；
+asm 式流水：iteration kt 等 group kt+1 落地 + barrier，读 A(kt+1)（提前一个 tile），MFMA(kt) 与 kt+D 的拷贝一条 MFMA 一条 VMEM 穿插。
+实例：32×64 D4/6/8/10、32×128 D3/4/6/8、64×128 D3/4/6、32×256 D3/4（受 (D−1)·G ≤ 63 限制）。
+
+M = 128–512 同卡对比（µs，prof/mid_m_shuffled_vs_asm_smi3.txt）：
+| M×N×K | A_LDS 最好 | B_LDS 最好 | asm |
+|---|---|---|---|
+| 128×4096×4096 | 5.88（32×64 D6） | 7.66 | 5.20 |
+| 256×4096×4096 | 6.98（32×128 D4） | 7.86 | 5.95 |
+| 512×4096×4096 | 9.83（64×128 D4） | 11.17 | 7.48 |
+| 128×2048×7168 | 7.26（32×64 D6） | 10.36 | 6.85 |
+| 256×2048×7168 | 7.85（32×64 D6） | 10.67 | 7.21 |
+| 512×2048×7168 | 9.64（32×128 D4） | 11.48 | 15.61（asm default kernel） |
+| 128×3072×6144 | 6.65（32×64 D6） | 9.46 | 6.46 |
+| 256×3072×6144 | 8.40（32×128 D3） | 9.98 | 6.88 |
+| 512×3072×6144 | 11.93（64×128 D4） | 13.93 | 8.56 |
+| 128×4096×8192 | 8.53（32×64 D6） | 11.68 | 7.72 |
+| 256×4096×8192 | 10.46（32×128 D4） | 12.36 | 8.86 |
+| 512×4096×8192 | 15.14（64×128 D4） | 17.67 | 13.52 |
+A_LDS 比 B_LDS 快 12–30%，和 asm 的差距从 1.3–1.55× 缩到 M = 128：1.03–1.13×、M = 256：1.09–1.22×、M = 512：1.12–1.39×（512×2048×7168 赢 asm 的 default kernel）。
+剩余差距：loop 内 barrier 等待（每 tile 70–150 cycle，asm ~67）和 loop 外（kernarg、冷启动、C store）。
+
+**不 shuffle 的 3 个形状**：把同样的 asm 式流水加到 row-major B_LDS（宏 SMALL_RM_PIPE2）：16×64 略慢（5.25→5.40）、32×64 略快（5.77→5.53），
+3 个形状都没超过 Triton → 默认关闭（已接入的 row-major kid 代码不变）。
+
+**一致性**：已接入的 30400–30408 / 30500–30520 对应的 71 个实例与 9c7522d 逐条指令相同（新增的只有 13 个 A_LDS 实例）。
+
+**接入层需求（只记录，未改）**
+1. 只读查询入口，例如 `opus_gemm_a4w4_select_kid(M, N, K, batch, noshuffle) -> int`（返回调优表命中或启发式选的 kid），供 op 测试断言 M ≤ 64 选到小 tile kid。
+2. 启发式在 M ≤ 64 时要求小 tile 的 B_M ≥ M：M = 64 的 shuffle 侧只能选到 64×128 B_LDS，但 16×32 / 32×32 / 16×64 direct 更快
+   （B_M < M 的 tile 合法，M 方向多几个 block 即可）。
+3. M = 128–512 的 shuffle 侧可加 A_LDS kid：32×64 D6、32×128 D3/D4、64×128 D4（BMODE 2）。
+4. kernarg 预载需要标量参数形式的 kernel 签名（每次省 ~0.5 µs，对 5–10 µs 的小形状占比显著）。

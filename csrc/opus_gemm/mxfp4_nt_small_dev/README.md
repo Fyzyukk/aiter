@@ -14,6 +14,7 @@ Non-persistent: grid = (⌈N/BN⌉, ⌈M/BM⌉, batch × split).
 
 | B path (`-a`) | tiles (`-t`) | other knobs | meant for |
 |---|---|---|---|
+| 2 `A_LDS` (shuffled): A global → LDS-DMA D-deep ring, B + scales → registers, asm-style (A read one tile ahead, copies interleaved with MFMAs) | 32×64, 32×128, 64×128, 32×256 | `-d` 3–10 ((D−1)·G ≤ 63) | M ≈ 128 – 512 (beats B_LDS by 12–30%) |
 | 0 `B_DIRECT`: A, B, scales global → registers, D-deep register ring, no LDS / barrier in the K loop | 16×32, 16×64, 32×32, 32×64 | `-s` KS 2/4 (waves split K, summed via LDS once), `-d` 2–4 | M ≤ 64 (128 when K is not small) |
 | 1 `B_LDS`: A and B global → LDS by LDS-DMA, D-deep LDS ring (one `__shared__` object per stage), one barrier per K tile; scales → registers | 32×128, 64×128 (1×4 waves), 128×128 (2×2 waves), 32×256 (D ≤ 3), 64×256 (D 2) | `-d` 2–4 | M ≈ 128 – 1024 |
 | both | | `-p S` cross-block split-K (last-arriving block reduces, ≤ 8) | few tiles |

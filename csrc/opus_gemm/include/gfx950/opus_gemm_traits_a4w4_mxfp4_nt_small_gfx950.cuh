@@ -33,6 +33,8 @@ enum : int {
 enum : int {
     OPUS_MXFP4_SMALL_B_DIRECT = 0,   // A, B, scales stream from global straight into registers (no LDS, no barrier); KS = 1/2/4
     OPUS_MXFP4_SMALL_B_LDS    = 1,   // A and B go global -> LDS by LDS-DMA (D-deep ring, one barrier per K tile); scales direct
+    OPUS_MXFP4_SMALL_A_LDS    = 2,   // A global -> LDS by LDS-DMA (D-deep ring, shared by the 4 waves), B + scales global -> registers
+                                     //   (D-deep register ring), one barrier per K tile (the asm 32x128 structure); 1x4 waves, shuffled
 };
 
 // BMODE == B_DIRECT: tiles 16/32/64/128 x 32/64/128/256 (4 waves split KS ways along K and 4/KS ways along N).
@@ -45,6 +47,7 @@ struct opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950 {
     static constexpr int BLOCK_SIZE = 256;
     static constexpr int B_K = 256;                      // fp4 elements per K tile (128 bytes per row)
     static_assert(D >= 2);
-    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || BMODE == OPUS_MXFP4_SMALL_B_LDS);
+    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || BMODE == OPUS_MXFP4_SMALL_B_LDS || BMODE == OPUS_MXFP4_SMALL_A_LDS);
     static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || KS == 1, "the LDS path splits work along M / N only");
+    static_assert(BMODE != OPUS_MXFP4_SMALL_A_LDS || LAYOUT == OPUS_MXFP4_SMALL_SHUFFLED, "A_LDS is shuffled-layout only");
 };
