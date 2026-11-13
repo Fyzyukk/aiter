@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <vector>
 #include <algorithm>
-#include "gemm_a4w4_mxfp4_4wave_traits.hpp"
+#include "opus_gemm_traits_a4w4_mxfp4_nt_gfx950.cuh"
 #define CK(x) do { hipError_t e = (x); if (e != hipSuccess) { printf("HIP %s @%d\n", hipGetErrorString(e), __LINE__); exit(1);} } while (0)
 int main(int argc, char** argv) {
     const char* co = argv[1]; const int M = atoi(argv[2]), N = atoi(argv[3]), K = atoi(argv[4]), it = atoi(argv[5]); const char* sym = argv[6];
@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     CK(hipMalloc(&dsa, sa.size())); CK(hipMalloc(&dsb, sb.size()));
     CK(hipMemcpy(da, a.data(), a.size(), hipMemcpyHostToDevice)); CK(hipMemcpy(db, b.data(), b.size(), hipMemcpyHostToDevice));
     CK(hipMemcpy(dsa, sa.data(), sa.size(), hipMemcpyHostToDevice)); CK(hipMemcpy(dsb, sb.data(), sb.size(), hipMemcpyHostToDevice));
-    opus_gemm_mxfp4_scale_kargs k{};
+    opus_gemm_mxfp4_scale_kargs_gfx950 k{};
     k.ptr_a = da; k.ptr_b = db; k.ptr_c = dc; k.m = M; k.n = N; k.k = K; k.batch = 1;
     k.stride_a = K / 2; k.stride_b = K / 2; k.stride_c = N; k.stride_a_batch = M * (K / 2); k.stride_b_batch = N * (K / 2); k.stride_c_batch = M * N;
     k.ptr_sfa = dsa; k.ptr_sfb = dsb; k.stride_sfa = K / 32; k.stride_sfb = K / 32; k.stride_sfa_batch = M * (K / 32); k.stride_sfb_batch = N * (K / 32);

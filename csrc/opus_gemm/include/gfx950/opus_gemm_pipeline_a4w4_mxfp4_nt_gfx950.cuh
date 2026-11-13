@@ -486,7 +486,8 @@ constexpr int c_reg() {
 #endif
 template<class Traits>
 __global__ __launch_bounds__(Traits::BLOCK_SIZE, 1)
-void gemm_a4w4_mxfp4_4wave_kernel(opus_gemm_mxfp4_scale_kargs kargs) {
+void gemm_a4w4_mxfp4_nt_kernel(opus_gemm_mxfp4_scale_kargs_gfx950 kargs) {
+#if defined(__gfx950__)
     using namespace opus;
     using T = opus::remove_cvref_t<Traits>;
     using D_A = opus::fp4_t;    // math types of the MMA
@@ -496,9 +497,9 @@ void gemm_a4w4_mxfp4_4wave_kernel(opus_gemm_mxfp4_scale_kargs kargs) {
     using D_AB = opus::u8_t;
     using D_SF = opus::e8m0_t;  // UE8M0 scale, 1 byte (load<16> = 16 bytes)
 
-    const int num_tiles_n = ceil_div_scale(kargs.n, T::B_N);
+    const int num_tiles_n = opus_mxfp4_ceil_div(kargs.n, T::B_N);
     const int wave_id = __builtin_amdgcn_readfirstlane(thread_id_x() / T::WARP_SIZE);
-    const int tiles_per_batch = ceil_div_scale(kargs.m, T::B_M) * num_tiles_n;
+    const int tiles_per_batch = opus_mxfp4_ceil_div(kargs.m, T::B_M) * num_tiles_n;
     const int total_tiles = tiles_per_batch * kargs.batch;
     const int grid_blocks = kargs.grid_blocks;   // from the kernel arguments: __builtin_amdgcn_grid_size_x() reads the dispatch packet (host memory)
     // Tile 0 (+ scale panel 0) of this block's next output tile is copied during the last K
@@ -555,8 +556,8 @@ void gemm_a4w4_mxfp4_4wave_kernel(opus_gemm_mxfp4_scale_kargs kargs) {
                          static_cast<unsigned int>(cols_in) * static_cast<unsigned int>(kargs.stride_b));
     auto g_c = make_gmem(reinterpret_cast<D_C*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + row * kargs.stride_c + col,
                          static_cast<unsigned int>(rows_in) * static_cast<unsigned int>(kargs.stride_c) * 2u);
-    auto g_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + batch_id * kargs.stride_sfa_batch + (row / 32) * kargs.stride_sfa, static_cast<unsigned int>(ceil_div_scale(kargs.m - row, 32) * kargs.stride_sfa));   // sc: e8m0_shuffle layout
-    auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + batch_id * kargs.stride_sfb_batch + (col / 32) * kargs.stride_sfb, static_cast<unsigned int>(ceil_div_scale(kargs.n - col, 32) * kargs.stride_sfb));
+    auto g_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + batch_id * kargs.stride_sfa_batch + (row / 32) * kargs.stride_sfa, static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.m - row, 32) * kargs.stride_sfa));   // sc: e8m0_shuffle layout
+    auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + batch_id * kargs.stride_sfb_batch + (col / 32) * kargs.stride_sfb, static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.n - col, 32) * kargs.stride_sfb));
 
     const auto u_ga = make_layout_ga<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_a);
     const auto u_gb = make_layout_gb<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_b);
@@ -1227,8 +1228,8 @@ void gemm_a4w4_mxfp4_4wave_kernel(opus_gemm_mxfp4_scale_kargs kargs) {
                               has_next ? static_cast<unsigned int>(kargs.m - n_row) * static_cast<unsigned int>(kargs.stride_a) : 0u);
         auto ng_b = make_gmem(reinterpret_cast<const D_AB*>(kargs.ptr_b) + n_batch * kargs.stride_b_batch + n_col * kargs.stride_b,
                               has_next ? static_cast<unsigned int>(kargs.n - n_col) * static_cast<unsigned int>(kargs.stride_b) : 0u);
-        auto ng_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + n_batch * kargs.stride_sfa_batch + (n_row / 32) * kargs.stride_sfa, has_next ? static_cast<unsigned int>(ceil_div_scale(kargs.m - n_row, 32) * kargs.stride_sfa) : 0u);
-        auto ng_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + n_batch * kargs.stride_sfb_batch + (n_col / 32) * kargs.stride_sfb, has_next ? static_cast<unsigned int>(ceil_div_scale(kargs.n - n_col, 32) * kargs.stride_sfb) : 0u);
+        auto ng_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + n_batch * kargs.stride_sfa_batch + (n_row / 32) * kargs.stride_sfa, has_next ? static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.m - n_row, 32) * kargs.stride_sfa) : 0u);
+        auto ng_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + n_batch * kargs.stride_sfb_batch + (n_col / 32) * kargs.stride_sfb, has_next ? static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.n - n_col, 32) * kargs.stride_sfb) : 0u);
         prefetched = has_next;
 
         s_waitcnt_lgkmcnt(0_I);
@@ -1320,4 +1321,5 @@ void gemm_a4w4_mxfp4_4wave_kernel(opus_gemm_mxfp4_scale_kargs kargs) {
         s_waitcnt_lgkmcnt(0_I);
         store_pend_c(wave_id * T::WARP_SIZE + ln);
     }
+#endif   // __gfx950__
 }

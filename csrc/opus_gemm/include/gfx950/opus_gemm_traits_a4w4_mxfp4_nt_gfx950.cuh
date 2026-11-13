@@ -1,4 +1,15 @@
+// SPDX-License-Identifier: MIT
+// Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
+//
+// Traits and kargs for the a4w4_mxfp4_nt pipeline (MXFP4 x MXFP4, 1x32 UE8M0 scales, NT, 2x2 4-wave, persistent).
 #pragma once
+
+// Only opus is needed (not opus_gemm_utils.cuh): the kernel is built offline with the pin toolchain into a .co, and
+// launchers only need the kargs struct; the full HIP runtime headers do not build with that toolchain on the host side.
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__HIPCC_RTC__)
+#include <opus/hip_minimal.hpp>
+#endif
+#include <opus/opus.hpp>
 
 // Kernel arguments.  Units: fp4 tensors in BYTES (fp4x2 per byte, even k in
 // the low nibble), C in fp32 elements, scales in bytes.  A is row-major [M, K/2]; B is in the aiter
@@ -6,7 +17,7 @@
 // the aiter gfx950 e8m0_shuffle / shuffle_scale layout (rows padded to 32,
 // K/32 padded to 8, [rows/32][K/256][k_lane 4][row 16][kk 2][row-pair 2]);
 // stride_sfa/sfb is the byte stride of one 32-row block (32 * K/32 padded to 8).
-struct opus_gemm_mxfp4_scale_kargs {
+struct opus_gemm_mxfp4_scale_kargs_gfx950 {
     const void* __restrict__ ptr_a;
     const void* __restrict__ ptr_b;
     void* __restrict__ ptr_c;
@@ -29,21 +40,31 @@ struct opus_gemm_mxfp4_scale_kargs {
     int grid_blocks;          // persistent kernel: number of launched blocks (avoids reading the dispatch packet)
 };
 
-__host__ __device__ inline int ceil_div_scale(int a, int b) { return (a + b - 1) / b; }
+__host__ __device__ inline int opus_mxfp4_ceil_div(int a, int b) { return (a + b - 1) / b; }
 
 // MXFP4 x MXFP4 NT, 4 waves (2x2), tile 256x256x256 (elements), 1x32 UE8M0.
 // K tile = 256 fp4 = 128 bytes per row: the gmem/LDS geometry of the fp8
 // 4-wave kernel.  One fp4 MFMA covers K = W_K = 128, so a K tile is
 // E_K = 2 MFMAs along K (kk = 0: bytes [16g, +16) = K [32g, +32);
 // kk = 1: bytes [64+16g, +16) = K [128+32g, +32), g = lane / 16).
-template<int BM_, int BN_>
-struct gemm_a4w4_mxfp4_4wave_traits_t {
-    static constexpr int BLOCK_SIZE = 256;
+// aiter form: <BLOCK_SIZE, seq<B_M, B_N, B_K>, tuple<D_A, D_B, D_C, D_ACC, D_SF>, seq<VEC_A, VEC_B, VEC_C>, seq<GROUP_M, GROUP_N, GROUP_K>>.
+// Supported: BLOCK_SIZE 256, B_M / B_N in {256, 128}, B_K 256, VEC <16, 16, 4>, GROUP <1, 1, 32>.
+template<int BLOCK_SIZE_, typename BLOCK_, typename DTYPE_, typename VEC_, typename GROUP_>
+struct opus_gemm_a4w4_mxfp4_nt_traits_gfx950 {
+    using BLOCK = opus::remove_cvref_t<BLOCK_>;
+    using DTYPE = opus::remove_cvref_t<DTYPE_>;
+    using VEC   = opus::remove_cvref_t<VEC_>;
+    using GROUP = opus::remove_cvref_t<GROUP_>;
+    static constexpr int BLOCK_SIZE = BLOCK_SIZE_;
+    static_assert(BLOCK_SIZE == 256, "4 waves");
+    static_assert(opus::get<2>(BLOCK{}) == 256, "B_K is one 256-element K tile");
+    static_assert(opus::get<0>(VEC{}) == 16 && opus::get<1>(VEC{}) == 16 && opus::get<2>(VEC{}) == 4);
+    static_assert(opus::get<0>(GROUP{}) == 1 && opus::get<1>(GROUP{}) == 1 && opus::get<2>(GROUP{}) == 32, "1x32 scales");
     static constexpr int WARP_SIZE = 64;
     static constexpr int NUM_WAVES = BLOCK_SIZE / WARP_SIZE;   // 4
 
-    static constexpr int B_M = BM_;   // 256 or 128
-    static constexpr int B_N = BN_;   // 256 or 128
+    static constexpr int B_M = opus::get<0>(BLOCK{});   // 256 or 128
+    static constexpr int B_N = opus::get<1>(BLOCK{});   // 256 or 128
     static_assert((B_M == 256 || B_M == 128) && (B_N == 256 || B_N == 128));
     static constexpr int B_K = 256;                            // fp4 elements
     static constexpr int ELEMS_PER_BYTE = 2;
@@ -119,4 +140,7 @@ struct gemm_a4w4_mxfp4_4wave_traits_t {
     static constexpr int LDS_BYTES = SMEM_A_BYTES + SMEM_B_BYTES + SCALE_PANEL_BUFFERS * (SFA_PANEL_BYTES + SFB_PANEL_BYTES);
     static_assert(LDS_BYTES <= 163840);   // s1: padding 64 -> exactly 160 KB
 };
-using gemm_a4w4_mxfp4_4wave_traits = gemm_a4w4_mxfp4_4wave_traits_t<256, 256>;
+// Shorthand used by the dev harness: opus_mxfp4_nt_traits<B_M, B_N>.
+template<int BM, int BN>
+using opus_mxfp4_nt_traits = opus_gemm_a4w4_mxfp4_nt_traits_gfx950<256, opus::seq<BM, BN, 256>,
+    opus::tuple<opus::fp4_t, opus::fp4_t, opus::bf16_t, opus::fp32_t, opus::e8m0_t>, opus::seq<16, 16, 4>, opus::seq<1, 1, 32>>;

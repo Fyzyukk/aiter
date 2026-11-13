@@ -20,7 +20,7 @@
 #include "opus_gemm_traits_a4w4_mxfp4_nt_gfx950.cuh"
 
 template<class Traits>
-__global__ void gemm_a4w4_mxfp4_4wave_kernel(opus_gemm_mxfp4_scale_kargs kargs);
+__global__ void gemm_a4w4_mxfp4_nt_kernel(opus_gemm_mxfp4_scale_kargs_gfx950 kargs);
 
 #define CHECK_HIP(call)                                                                                   \
     do {                                                                                                  \
@@ -31,7 +31,7 @@ __global__ void gemm_a4w4_mxfp4_4wave_kernel(opus_gemm_mxfp4_scale_kargs kargs);
         }                                                                                                 \
     } while(0)
 
-template<int BM, int BN> using TileTraits = gemm_a4w4_mxfp4_4wave_traits_t<BM, BN>;
+template<int BM, int BN> using TileTraits = opus_mxfp4_nt_traits<BM, BN>;
 using fp32_t = float;
 using e8m0_t = uint8_t;
 
@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
     CHECK_HIP(hipMemset(d_c, 0xFF, c_cnt * sizeof(uint16_t))); // NaN poison
 
     const int num_tiles_m = (M + tile_m - 1) / tile_m, num_tiles_n = (N + tile_n - 1) / tile_n;
-    opus_gemm_mxfp4_scale_kargs kargs{};
+    opus_gemm_mxfp4_scale_kargs_gfx950 kargs{};
     kargs.ptr_a = d_a; kargs.ptr_b = d_b_s; kargs.ptr_c = d_c;   // bs: shuffled B
     kargs.m = M; kargs.n = N; kargs.k = K; kargs.batch = batch;
     kargs.stride_a = K / 2; kargs.stride_b = K / 2; kargs.stride_c = N;
@@ -258,10 +258,10 @@ int main(int argc, char** argv) {
     dim3 grid(grid_x, 1, 1), block(T::BLOCK_SIZE);
     kargs.grid_blocks = grid_x;
     auto launch = [&]() {
-        if (tile_m == 256 && tile_n == 256)      gemm_a4w4_mxfp4_4wave_kernel<TileTraits<256, 256>><<<grid, block>>>(kargs);
-        else if (tile_m == 256 && tile_n == 128) gemm_a4w4_mxfp4_4wave_kernel<TileTraits<256, 128>><<<grid, block>>>(kargs);
-        else if (tile_m == 128 && tile_n == 256) gemm_a4w4_mxfp4_4wave_kernel<TileTraits<128, 256>><<<grid, block>>>(kargs);
-        else                                     gemm_a4w4_mxfp4_4wave_kernel<TileTraits<128, 128>><<<grid, block>>>(kargs);
+        if (tile_m == 256 && tile_n == 256)      gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 256>><<<grid, block>>>(kargs);
+        else if (tile_m == 256 && tile_n == 128) gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 128>><<<grid, block>>>(kargs);
+        else if (tile_m == 128 && tile_n == 256) gemm_a4w4_mxfp4_nt_kernel<TileTraits<128, 256>><<<grid, block>>>(kargs);
+        else                                     gemm_a4w4_mxfp4_nt_kernel<TileTraits<128, 128>><<<grid, block>>>(kargs);
     };
     std::printf("MXFP4xMXFP4 NT 4-wave (1x32 UE8M0) tile %dx%d M=%d N=%d K=%d batch=%d grid=(%u,1,%u) block=%d\n",
                 tile_m, tile_n, M, N, K, batch, grid.x, grid.z, T::BLOCK_SIZE);

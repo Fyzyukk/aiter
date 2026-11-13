@@ -39,3 +39,10 @@ v_cndmask +3、v_mad_u64 +3。C 写回 / store_pend_c 的指令序列保持原�
 ## 计时
 prof/timing.sh（等 HIP 2 空闲后测：8192³ zc vs 256×256 交替 6 轮；1024×4096×8192、2048×4096×8192 上 4 个 tile + aiter asm）。
 截至提交时 HIP 2 一直被他人进程占用（use 82–100%），**尚无有效计时**。卡空闲后运行 `prof/timing.sh`。
+
+## 接入 aiter 第 1 步：traits / kargs 改成 aiter 形式（2026-11-13）
+- traits：`opus_gemm_a4w4_mxfp4_nt_traits_gfx950<BLOCK_SIZE, seq<B_M,B_N,B_K>, tuple<fp4,fp4,bf16,fp32,e8m0>, seq<16,16,4>, seq<1,1,32>>`
+  （断言 BLOCK_SIZE 256、B_K 256、VEC、GROUP 只支持当前值），简写 `opus_mxfp4_nt_traits<B_M, B_N>`；内部推导不变。
+- kargs `opus_gemm_mxfp4_scale_kargs_gfx950`；kernel `gemm_a4w4_mxfp4_nt_kernel`，体内 `#if defined(__gfx950__)`；`ceil_div_scale` → `opus_mxfp4_ceil_div`（避免与其他头冲突）。
+- traits 只 include opus（hip_minimal 用于 device / RTC），不 include opus_gemm_utils.cuh：后者在非 RTC host pass 拉入完整 HIP runtime，pin 工具链编不过；launcher 只需要 kargs。
+- 生成的代码与改名前（/tmp/exp_tiles/t2）逐条指令相同（9169 行反汇编一致，只有符号名不同）；4 个 tile × {8192³, 300×400×768×b2, 1000×4112×256} × SFA_K_PATTERN 全部 errors=0。
