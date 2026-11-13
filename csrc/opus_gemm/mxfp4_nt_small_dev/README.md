@@ -6,6 +6,9 @@ covers M ≳ 1024.
 - kernel: `../include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh`
   (`gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE>>`)
 - traits / kargs: `../include/gfx950/opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh`
+- row-major (noshuffle) variant: `../include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh`
+  (`gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>>`,
+  traits `..._nt_small_noshuffle_gfx950.cuh`; same kargs, reuses the shuffle file's helpers)
 - **standard ROCm toolchain** (`/opt/rocm/llvm/bin/clang++`): no pin attributes, no opus → can go through the aiter JIT, no `.co`.
 
 Inputs as aiter `gemm_a4w4(bpreshuffle=True)`: A `[M, K/2]` row-major fp4x2, B `shuffle_weight(16,16)`, scaleA / scaleB
@@ -39,12 +42,13 @@ and aiter asm (CUDA graph), and writes `results.csv`, `table.txt` and `select.cs
 
 ## Interface for integration (kids / dispatch)
 
-**Template**: `gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE, LAYOUT>>`,
+**Template**: shuffle `gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE>>`;
+row-major `gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>>`.
 `__launch_bounds__(256, 1)`, block = 256, standard hipcc (no pin, no opus → plain aiter JIT, no `.co`).
-- `BMODE`: `OPUS_MXFP4_SMALL_B_DIRECT` (0) or `OPUS_MXFP4_SMALL_B_LDS` (1).  `KS` only for B_DIRECT (2/4), 1 for B_LDS.  `D` = ring depth.
-- `LAYOUT` (default `OPUS_MXFP4_SMALL_SHUFFLED` = 0): 0 = gemm_a4w4(bpreshuffle=True) inputs (B shuffle_weight(16,16), scales e8m0_shuffle),
-  1 = `OPUS_MXFP4_SMALL_ROWMAJOR` = Triton gemm_afp4wfp4 inputs (B [N, K/2], scales [rows, K/32], no padding).
-  The shuffled instances are instruction-identical to the 5-parameter version (00bc51f); row-major uses separate bodies.
+- `BMODE`: `OPUS_MXFP4_SMALL_B_DIRECT` (0), `OPUS_MXFP4_SMALL_B_LDS` (1), `OPUS_MXFP4_SMALL_A_LDS` (2, shuffle only).
+  `KS` only for B_DIRECT (2/4), 1 otherwise.  `D` = ring depth.
+- Shuffle file: gemm_a4w4(bpreshuffle=True) inputs (B shuffle_weight(16,16), scales e8m0_shuffle).  Noshuffle file: Triton
+  gemm_afp4wfp4 inputs (B [N, K/2], scales [rows, K/32], no padding).  The harness `-l 0/1` picks the file.
 - Constraints: K % 256 == 0; N % 16 (shuffled) / N % 8 (row-major); any M; batch ≥ 1.  Shuffled B_LDS: BM ∈ {32, 64, 128}, BN ∈ {128, 256}
   (128 only with BM 128).  Row-major B_LDS additionally BM 16 and BN 64.
 

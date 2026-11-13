@@ -1661,20 +1661,23 @@ def gen_a4w4_mxfp4_nt_small_instance(cg, k, instance_impl_preamble, A8W8_SCALE_H
     from opus_gemm_common import A4W4_MXFP4_NT_SMALL_CFG
 
     bm, bn, d, ks, bmode, layout, S = A4W4_MXFP4_NT_SMALL_CFG[k.name_tag]
-    traits = f"opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<{bm}, {bn}, {d}, {ks}, {bmode}, {layout}>"
+    # layout 0: shuffle pipeline file; layout 1: row-major (noshuffle) pipeline file, own traits / kernel
+    sfx = "_noshuffle" if layout else ""
+    kernel = f"gemm_a4w4_mxfp4_nt_small{sfx}_kernel"
+    traits = f"opus_gemm_a4w4_mxfp4_nt_small{sfx}_traits_gfx950<{bm}, {bn}, {d}, {ks}, {bmode}>"
     # shuffle: bytes per 32-row block (32 x round_up(K/32, 8) columns); row-major: bytes per row (K/32)
     sf_mul = 32 if layout == 0 else 1
     INSTANCE_IMPL = f"""{instance_impl_preamble()}
 #ifdef OPUS_FUSED_HOST_TU
-#include "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh"
+#include "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_small{sfx}_gfx950.cuh"
 template<class Traits>
-__global__ __launch_bounds__(256, 1) void gemm_a4w4_mxfp4_nt_small_kernel(opus_gemm_mxfp4_small_kargs_gfx950 ka);
+__global__ __launch_bounds__(256, 1) void {kernel}(opus_gemm_mxfp4_small_kargs_gfx950 ka);
 #else
 #ifdef __HIPCC_RTC__
 #define OPUS_SMALL_DEVICE_TU 1
 #undef __HIPCC_RTC__
 #endif
-#include "gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh"
+#include "gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small{sfx}_gfx950.cuh"
 #endif
 #if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__) && !defined(OPUS_SMALL_DEVICE_TU)
 #include "gfx950/opus_small_launch_mxfp4_gfx950.cuh"
@@ -1708,7 +1711,7 @@ void
     const int tm = (M + {bm} - 1) / {bm}, tn = (N + {bn} - 1) / {bn};
     auto stream = aiter::getCurrentHIPStream();
     if (S > 1) opus_gfx950_small::workspace(stream, (long)batch * tm * tn, (long)batch * S * tm * {bm} * tn * {bn}, kargs.cnt, kargs.ws);
-    gemm_a4w4_mxfp4_nt_small_kernel<{traits}><<<dim3(tn, tm, batch * S), dim3(256), 0, stream>>>(kargs);
+    {kernel}<{traits}><<<dim3(tn, tm, batch * S), dim3(256), 0, stream>>>(kargs);
 }}}}
 #endif // launcher only on regular host pass
 """
@@ -1722,7 +1725,7 @@ void
         if S == 1:
             cg._device_instantiations.append({
                 "kid_name": k.name, "dtype": CDtype,
-                "device_decl": f"template __global__ void gemm_a4w4_mxfp4_nt_small_kernel<{traits}>(opus_gemm_mxfp4_small_kargs_gfx950);\n",
+                "device_decl": f"template __global__ void {kernel}<{traits}>(opus_gemm_mxfp4_small_kargs_gfx950);\n",
             })
 
 

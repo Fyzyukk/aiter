@@ -16,6 +16,8 @@
 #include <vector>
 #include <omp.h>
 #include "opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh"
+#include "opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh"
+enum : int { OPUS_MXFP4_SMALL_SHUFFLED = 0, OPUS_MXFP4_SMALL_ROWMAJOR = 1 };   // -l: input layout
 using smallm_kargs = opus_gemm_mxfp4_small_kargs_gfx950;
 #define CHECK_HIP(call) do { hipError_t s_ = call; if (s_ != hipSuccess) { fprintf(stderr, "HIP error (%s:%d): %s\n", __FILE__, __LINE__, hipGetErrorString(s_)); exit(1); } } while (0)
 using e8m0_t = uint8_t;
@@ -129,7 +131,10 @@ cmp_stats compare(const float* ref, const float* got, const float* mag, size_t c
 
 template<int BM, int BN, int D, int KS, int BMODE, int L> void launch_k(const smallm_kargs& ka, hipStream_t st) {
     dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.splitk);
-    gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE, L>><<<grid, 256, 0, st>>>(ka);
+    if constexpr (L == OPUS_MXFP4_SMALL_ROWMAJOR)
+        gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(ka);
+    else
+        gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(ka);
 }
 static int g_layout = OPUS_MXFP4_SMALL_SHUFFLED;
 template<int BM, int BN, int D> void launch_lr(const smallm_kargs& ka, hipStream_t st) {   // row-major-only LDS tiles
