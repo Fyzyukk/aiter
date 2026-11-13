@@ -1,7 +1,8 @@
 // Host driver / test harness for the small-tile MXFP4 GEMM (../include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh).  Same data / reference as work_m10's host; inputs in the
 // aiter gemm_a4w4(bpreshuffle=True) layout.  Arbitrary M, N (N % 16 == 0), K % 256 == 0.
 //   -a 0: B_DIRECT (-t 16x32 / 16x64 / 32x32 / 32x64, -s KS 2/4)   -a 1: B_LDS (-t 32x128 / 64x128 / 128x128 / 32x256 / 64x256)
-//   -d prefetch depth (ring)  -p split-K over blocks
+//   -l 0: shuffled inputs (gemm_a4w4 bpreshuffle)   -l 1: row-major inputs (Triton gemm_afp4wfp4: B, scales row-major, N % 8)
+//   -D dir: dump raw inputs + C   -d prefetch depth (ring)  -p split-K over blocks
 //   -m -n -k -b   -v verify   -i graph iterations (0 = no timing).  Default 16x32 KS4 D3.
 #include <hip/hip_runtime.h>
 #include <algorithm>
@@ -126,12 +127,22 @@ cmp_stats compare(const float* ref, const float* got, const float* mag, size_t c
     return {errors, max_diff, max_ratio, cd};
 }
 
-template<int BM, int BN, int D, int KS, int BMODE> void launch_k(const smallm_kargs& ka, hipStream_t st) {
+template<int BM, int BN, int D, int KS, int BMODE, int L> void launch_k(const smallm_kargs& ka, hipStream_t st) {
     dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.splitk);
-    gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(ka);
+    gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE, L>><<<grid, 256, 0, st>>>(ka);
 }
-template<int BM, int BN, int D, int KS> void launch_t(const smallm_kargs& ka, hipStream_t st) { launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_B_DIRECT>(ka, st); }
-template<int BM, int BN, int D> void launch_l(const smallm_kargs& ka, hipStream_t st) { launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS>(ka, st); }
+static int g_layout = OPUS_MXFP4_SMALL_SHUFFLED;
+template<int BM, int BN, int D> void launch_lr(const smallm_kargs& ka, hipStream_t st) {   // row-major-only LDS tiles
+    launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS, OPUS_MXFP4_SMALL_ROWMAJOR>(ka, st);
+}
+template<int BM, int BN, int D, int KS> void launch_t(const smallm_kargs& ka, hipStream_t st) {
+    if (g_layout == OPUS_MXFP4_SMALL_ROWMAJOR) launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_B_DIRECT, OPUS_MXFP4_SMALL_ROWMAJOR>(ka, st);
+    else                                      launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_B_DIRECT, OPUS_MXFP4_SMALL_SHUFFLED>(ka, st);
+}
+template<int BM, int BN, int D> void launch_l(const smallm_kargs& ka, hipStream_t st) {
+    if (g_layout == OPUS_MXFP4_SMALL_ROWMAJOR) launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS, OPUS_MXFP4_SMALL_ROWMAJOR>(ka, st);
+    else                                      launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS, OPUS_MXFP4_SMALL_SHUFFLED>(ka, st);
+}
 using launch_fn = void (*)(const smallm_kargs&, hipStream_t);
 // Instantiated configurations (the small-tile pipeline's tile set):
 //   B_DIRECT: 16x32 KS4, 16x64 KS2/KS4, 32x32 KS4, 32x64 KS2/KS4, D 2-4    B_LDS: 32x128 / 64x128 / 128x128 D 2-4, 32x256 D 2-3, 64x256 D 2
@@ -140,6 +151,13 @@ launch_fn pick_lds(int bm, int bn, int d) {
 #define SL4(BM, BN) SL3(BM, BN) if (bm == BM && bn == BN && d == 4) return launch_l<BM, BN, 4>;
     SL4(32, 128) SL4(64, 128) SL4(128, 128) SL3(32, 256)
     if (bm == 64 && bn == 256 && d == 2) return launch_l<64, 256, 2>;
+    // row-major only (-l 1): BM 16 / BN 64 LDS tiles
+    if (g_layout == OPUS_MXFP4_SMALL_ROWMAJOR) {
+        if (bm == 16 && bn == 64) { if (d == 2) return launch_lr<16, 64, 2>; if (d == 3) return launch_lr<16, 64, 3>; if (d == 4) return launch_lr<16, 64, 4>; }
+        if (bm == 32 && bn == 64) { if (d == 2) return launch_lr<32, 64, 2>; if (d == 3) return launch_lr<32, 64, 3>; if (d == 4) return launch_lr<32, 64, 4>; }
+        if (bm == 16 && bn == 128) { if (d == 2) return launch_lr<16, 128, 2>; if (d == 3) return launch_lr<16, 128, 3>; if (d == 4) return launch_lr<16, 128, 4>; }
+        if (bm == 64 && bn == 64) { if (d == 2) return launch_lr<64, 64, 2>; if (d == 3) return launch_lr<64, 64, 3>; }
+    }
 #undef SL3
 #undef SL4
     return nullptr;
@@ -152,10 +170,12 @@ launch_fn pick(int bm, int bn, int d, int ks) {
 }
 
 int main(int argc, char** argv) {
-    int M = 16, N = 1024, K = 4096, batch = 1, verify = 1, iters = 0, depth = 0, bm = 16, bn = 32, ks = 4, splitk = 1, alds = 0;   // default: best overall (52 of 60 target shapes)
+    int M = 16, N = 1024, K = 4096, batch = 1, verify = 1, iters = 0, depth = 0, bm = 16, bn = 32, ks = 4, splitk = 1, alds = 0;
+    const char* dump_dir = nullptr;   // default: best overall (52 of 60 target shapes)
     for (int i = 1; i + 1 < argc; i += 2) {
         const char* f = argv[i];
         if (!std::strcmp(f, "-t")) { std::sscanf(argv[i + 1], "%dx%d", &bm, &bn); continue; }
+        if (!std::strcmp(f, "-D")) { dump_dir = argv[i + 1]; continue; }
         const int v = std::atoi(argv[i + 1]);
         if (!std::strcmp(f, "-m")) M = v; else if (!std::strcmp(f, "-n")) N = v; else if (!std::strcmp(f, "-k")) K = v;
         else if (!std::strcmp(f, "-b")) batch = v; else if (!std::strcmp(f, "-v")) verify = v; else if (!std::strcmp(f, "-i")) iters = v;
@@ -163,12 +183,14 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(f, "-s")) ks = v;
         else if (!std::strcmp(f, "-p")) splitk = v;
         else if (!std::strcmp(f, "-a")) alds = v;
+        else if (!std::strcmp(f, "-l")) g_layout = v;
         else { std::fprintf(stderr, "unknown flag %s\n", f); return 1; }
     }
     if (depth == 0) depth = (bm * bn >= 64 * 256) ? 2 : 3;
     launch_fn launch = alds ? pick_lds(bm, bn, depth) : pick(bm, bn, depth, ks);
     if (!launch) { std::fprintf(stderr, "unsupported tile %dx%d depth %d ks %d\n", bm, bn, depth, ks); return 1; }
-    if (N % 16 || K % 256 || M < 1) { std::fprintf(stderr, "need N %% 16 == 0, K %% 256 == 0\n"); return 1; }
+    const bool RM = g_layout == OPUS_MXFP4_SMALL_ROWMAJOR;
+    if (N % (RM ? 8 : 16) || K % 256 || M < 1) { std::fprintf(stderr, "need N %% %d == 0, K %% 256 == 0\n", RM ? 8 : 16); return 1; }
 
     const size_t a_bytes = (size_t)batch * M * K / 2, b_bytes = (size_t)batch * N * K / 2, c_cnt = (size_t)batch * M * N;
     const int kg = K / 32, kg8 = (kg + 7) / 8 * 8;
@@ -192,25 +214,33 @@ int main(int argc, char** argv) {
     };
     int ma_pad, nb_pad;
     const std::vector<e8m0_t> h_sfa_s = shuffle_sf(h_sfa, M, ma_pad), h_sfb_s = shuffle_sf(h_sfb, N, nb_pad);
-    std::vector<uint8_t> h_b_s(b_bytes);
+    const size_t bs_bytes = (size_t)batch * ((N + 15) / 16 * 16) * K / 2;   // shuffled B: rows padded to 16
+    std::vector<uint8_t> h_b_s(bs_bytes);
     { const size_t Kb = (size_t)K / 2;
       for (int bb = 0; bb < batch; ++bb) for (int n = 0; n < N; ++n) for (size_t kb = 0; kb < Kb; ++kb) {
           const size_t o = ((size_t)n / 16) * 16 * Kb + (kb / 32) * 512 + ((kb / 16) % 2) * 256 + (n % 16) * 16 + kb % 16;
-          h_b_s[(size_t)bb * N * Kb + o] = h_b[((size_t)bb * N + n) * Kb + kb];
+          h_b_s[(size_t)bb * ((N + 15) / 16 * 16) * Kb + o] = h_b[((size_t)bb * N + n) * Kb + kb];
       } }
     uint8_t *d_a, *d_b, *d_b_s; e8m0_t *d_sfa, *d_sfb, *d_sfa_s, *d_sfb_s; uint16_t* d_c;
-    CHECK_HIP(hipMalloc(&d_a, a_bytes)); CHECK_HIP(hipMalloc(&d_b, b_bytes)); CHECK_HIP(hipMalloc(&d_b_s, b_bytes));
+    CHECK_HIP(hipMalloc(&d_a, a_bytes)); CHECK_HIP(hipMalloc(&d_b, b_bytes)); CHECK_HIP(hipMalloc(&d_b_s, bs_bytes));
     CHECK_HIP(hipMalloc(&d_sfa, sfa_cnt)); CHECK_HIP(hipMalloc(&d_sfb, sfb_cnt));
     CHECK_HIP(hipMalloc(&d_sfa_s, h_sfa_s.size())); CHECK_HIP(hipMalloc(&d_sfb_s, h_sfb_s.size()));
     CHECK_HIP(hipMalloc(&d_c, c_cnt * 2));
     CHECK_HIP(hipMemcpy(d_a, h_a.data(), a_bytes, hipMemcpyHostToDevice));
     CHECK_HIP(hipMemcpy(d_b, h_b.data(), b_bytes, hipMemcpyHostToDevice));
-    CHECK_HIP(hipMemcpy(d_b_s, h_b_s.data(), b_bytes, hipMemcpyHostToDevice));
+    CHECK_HIP(hipMemcpy(d_b_s, h_b_s.data(), bs_bytes, hipMemcpyHostToDevice));
     CHECK_HIP(hipMemcpy(d_sfa, h_sfa.data(), sfa_cnt, hipMemcpyHostToDevice));
     CHECK_HIP(hipMemcpy(d_sfb, h_sfb.data(), sfb_cnt, hipMemcpyHostToDevice));
     CHECK_HIP(hipMemcpy(d_sfa_s, h_sfa_s.data(), h_sfa_s.size(), hipMemcpyHostToDevice));
     CHECK_HIP(hipMemcpy(d_sfb_s, h_sfb_s.data(), h_sfb_s.size(), hipMemcpyHostToDevice));
     CHECK_HIP(hipMemset(d_c, 0xFF, c_cnt * 2));   // NaN poison: every C element must be written
+    // row-major scales (Triton gemm_afp4wfp4 layout): exactly [batch*rows, K/32], followed by a 256-row 0xFF (NaN) guard
+    // that the kernel must never read (buffer ranges stop at row M / N).
+    e8m0_t *d_sfa_r, *d_sfb_r;
+    CHECK_HIP(hipMalloc(&d_sfa_r, sfa_cnt + 256 * kg)); CHECK_HIP(hipMalloc(&d_sfb_r, sfb_cnt + 256 * kg));
+    CHECK_HIP(hipMemset(d_sfa_r + sfa_cnt, 0xFF, 256 * kg)); CHECK_HIP(hipMemset(d_sfb_r + sfb_cnt, 0xFF, 256 * kg));
+    CHECK_HIP(hipMemcpy(d_sfa_r, h_sfa.data(), sfa_cnt, hipMemcpyHostToDevice));
+    CHECK_HIP(hipMemcpy(d_sfb_r, h_sfb.data(), sfb_cnt, hipMemcpyHostToDevice));
 
     smallm_kargs ka{};
     ka.ptr_a = d_a; ka.ptr_b = d_b_s; ka.ptr_c = d_c; ka.ptr_sfa = d_sfa_s; ka.ptr_sfb = d_sfb_s;
@@ -218,14 +248,30 @@ int main(int argc, char** argv) {
     ka.stride_sfa = 32 * kg8; ka.stride_sfb = 32 * kg8;
     ka.stride_a_batch = (long long)M * K / 2; ka.stride_b_batch = (long long)N * K / 2; ka.stride_c_batch = (long long)M * N;
     ka.stride_sfa_batch = (long long)ma_pad * kg8; ka.stride_sfb_batch = (long long)nb_pad * kg8;
+    if (RM) {
+        ka.ptr_b = d_b; ka.ptr_sfa = d_sfa_r; ka.ptr_sfb = d_sfb_r;
+        ka.stride_sfa = kg; ka.stride_sfb = kg; ka.stride_sfa_batch = (long long)M * kg; ka.stride_sfb_batch = (long long)N * kg;
+    }
     ka.splitk = std::max(1, std::min(std::min(splitk, 8), K / 256));
     { const size_t tm = (M + bm - 1) / bm, tn = (N + bn - 1) / bn;
       CHECK_HIP(hipMalloc(&ka.cnt, batch * tm * tn * sizeof(int))); CHECK_HIP(hipMemset(ka.cnt, 0, batch * tm * tn * sizeof(int)));
       CHECK_HIP(hipMalloc(&ka.ws, ka.splitk > 1 ? (size_t)batch * ka.splitk * tm * bm * tn * bn * sizeof(float) : 4)); }
+    std::printf("%s ", RM ? "rowmajor" : "shuffled");
     std::printf("smallm split%d ks%d tile %dx%d d%d M=%d N=%d K=%d batch=%d grid=(%d,%d,%d)\n", ka.splitk, ks, bm, bn, depth, M, N, K, batch,
                 (N + bn - 1) / bn, (M + bm - 1) / bm, batch);
     launch(ka, 0); CHECK_HIP(hipGetLastError()); CHECK_HIP(hipDeviceSynchronize());
 
+    if (dump_dir) {   // raw inputs (row-major / unshuffled) and the kernel's C, for an external comparison (Triton)
+        auto dump = [&](const char* name, const void* dptr, size_t bytes) {
+            std::vector<uint8_t> h(bytes); CHECK_HIP(hipMemcpy(h.data(), dptr, bytes, hipMemcpyDeviceToHost));
+            const std::string path = std::string(dump_dir) + "/" + name;
+            FILE* f = std::fopen(path.c_str(), "wb"); std::fwrite(h.data(), 1, bytes, f); std::fclose(f);
+        };
+        dump("a.bin", d_a, a_bytes); dump("b.bin", d_b, b_bytes); dump("sfa.bin", d_sfa, sfa_cnt); dump("sfb.bin", d_sfb, sfb_cnt);
+        dump("c.bin", d_c, c_cnt * 2);
+        const std::string meta = std::string(dump_dir) + "/meta.txt";
+        FILE* f = std::fopen(meta.c_str(), "w"); std::fprintf(f, "%d %d %d %d\n", M, N, K, batch); std::fclose(f);
+    }
     bool ok = true;
     if (verify) {
         std::vector<float> h_c(c_cnt), h_ref(c_cnt), h_mag(c_cnt);

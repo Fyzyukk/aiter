@@ -56,3 +56,53 @@ scale 补齐区填 0xFF（e8m0 NaN），补齐值若进入 C 即报错。结果�
 direct 16×32 KS4 D3/D4、16×64 KS4 D3、16×64 KS2 D3、32×32 KS4 D2/D3、32×64 KS4 D3/D4、32×64 KS2 D3；
 lds 32×128 D2/D3/D4、64×128 D2/D3/D4、64×256 D2、128×128 D2/D3、32×256 D3（split 取 1/2/3/8）。
 补充：lds 128×128 D4、32×256 D2 也 264/264（共 21 个配置全部通过）。
+
+## 不 shuffle（row-major）版本：Triton gemm_afp4wfp4 的布局（2026-11-13，只和 Triton 比）
+输入：A [M, K/2]、B [N, K/2] 行主序 fp4x2，scaleA [M, K/32]、scaleB [N, K/32] 行主序 e8m0，不补齐、不 shuffle；N % 8，K % 256。
+同一个文件，traits 加第 6 个模板参数 LAYOUT（默认 SHUFFLED = 原行为）。**shuffle 路径的接口和生成代码不变**：row-major 用单独的
+body_direct_rm / body_lds_rm（kernel 入口按 LAYOUT 选），shuffle 的 30 个实例与 00bc51f 逐条指令相同（已 diff）。
+host：`-l 1` 选 row-major（scale 后面接 256 行 0xFF NaN 守护区，kernel 不能读到）；`-D dir` 导出输入和 C 供外部比较。
+
+做法：
+- B_DIRECT：B 操作数和 A 一样按行读（每行 4 个 lane × 16 B）。scale 每个 16 行块读本行的 8 B（本 K tile 的 8 个 group），
+  一条 v_perm 把 lane 组 g 的 kk0 / kk1 字节（第 g、4+g 字节）放到字节 0 / 1，MFMA opsel = kk。
+  偶数预取深度时（PAIR），每个 wave 的 K tile 改成连续一段（KS 不再交错），两个 K tile 的 scale（每行连续 16 B）用一条 16 B load 取，
+  scale 指令减半（单个 row-major scale load 覆盖 16 行 = 16 条 cache line，是主要开销）。
+- B_LDS：B 进 LDS 用和 A 相同的 8 行块 / 1088 B 块距 / 16 B XOR swizzle 映像（m7/m8 做法），按 A 的方式读。
+  scale 也经 LDS-DMA：每 K tile 一组 4 B/lane 的 DMA（一条 = 32 行 × 8 B，整块共享），每个 stage 末尾放 [row][8 B] 映像，wave 用 ds_read_b64 取本行。
+  DMA 条数不能被 4 整除时多出来的 wave 重复拷最后一份（同数据同地址），因此 row-major 还支持 16×64、32×64、16×128、64×64 的 LDS tile。
+  坑：重复拷贝的 clamp 让编译器认不出块号 / 描述符是 wave 一致的，每条 DMA 变成 readfirstlane 瀑布循环（≈3 倍慢）→ 块号 readfirstlane，
+  scale 描述符用 readfirstlane 过的基址 / 大小现造（不在两个描述符之间 select）。
+
+正确性：prof/check.sh 加 LAYOUT 字段（row-major 的不对齐 N 用 {136, 400, 1032}），264 用例 / 配置；另用 prof/vs_triton.py 在同一份输入上
+和 Triton gemm_afp4wfp4 逐元素比较：3 个配置 × 5 个形状（含 300×400×768、128×4104×2304）全部 rel_diff = 0（逐位相同）。
+
+开发计时（HIP 4，graph，单位 µs；Triton 数取自 HIP 6 同形状）：
+| 形状 | row-major 最好 | Triton |
+|---|---|---|
+| 16×4096×4096 | 5.22（lds 16×64 d4） | 4.97 |
+| 64×4096×4096 | 5.66（lds 16×64 d4） | 5.30 |
+| 128×4096×4096 | 6.30（lds 32×64 d4） | 8.48 |
+| 256×4096×4096 | 9.68（lds 32×128 d4） | 12.13 |
+正式对比见下面的 HIP 6 全量表（perf_rowmajor.py）。
+
+### 结果（HIP 6，perf_rowmajor.py，Triton config=None，graph 计时；prof/results_rowmajor_HIP6/）
+| M | 4096×4096 | 2048×7168 | 3072×6144 | 4096×8192 |
+|---|---|---|---|---|
+| 1 | 4.93 / 6.07（0.81） | 5.98 / 9.66（0.62） | 5.83 / 7.09（0.82） | 6.40 / 7.85（0.82） |
+| 16 | 5.25 / 4.95（1.06） | 6.05 / 7.50（0.81） | 6.03 / 6.72（0.90） | 6.52 / 8.35（0.78） |
+| 64 | 5.72 / 5.26（1.09） | 7.06 / 7.22（0.98） | 7.08 / 6.88（1.03） | 8.43 / 12.09（0.70） |
+| 128 | 6.31 / 8.45（0.75） | 7.38 / 13.03（0.57） | 7.87 / 11.54（0.68） | 9.60 / 18.49（0.52） |
+| 256 | 8.85 / 12.15（0.73） | 8.95 / 19.22（0.47） | 10.40 / 16.99（0.61） | 13.22 / 23.07（0.57） |
+| 512 | 12.48 / 18.08（0.69） | 12.45 / 28.12（0.44） | 15.60 / 26.23（0.59） | 20.45 / 43.41（0.47） |
+（µs，小 tile 最好 / Triton，括号内比值。M=512 的 4096×4096、3072×6144 不 shuffle 2×2 的 128×128 更快：11.08、14.18。）
+M ≤ 128：16 个形状里 13 个赢 Triton；输的 3 个是 16×4096×4096（1.06）、64×4096×4096（1.09）、64×3072×6144（1.03）。
+补测这 3 个形状上的 D2 / split 2 / 16×128 / direct KS2 等，都没有超过表中配置。
+正确性：row-major 25 个配置（direct 16×32、16×64、32×32、32×64 各 KS/D；lds 16×64、32×64、64×64、16×128、32×128、64×128、128×128、32×256、64×256）× 264 全部通过
+（prof/check_results_rowmajor.txt）；与 Triton 逐位相同（vs_triton.py）。
+
+### 实际有用的配置（用于接成 kid）
+- row-major（选择表里出现过的）：lds 16×64 D3 / D4、lds 32×64 D4、lds 64×64 D3、lds 64×128 D3 / D4、direct 16×32 KS4 D2；split 1 / 2 / 4。
+  M ≥ 512 时可能被不 shuffle 2×2 的 128×128 np 超过（由分发按 tile 数选）。
+- shuffled（work_smallm/select_table_HIP4.csv，M ≤ 128 部分）：direct 16×32 KS4 D3 / D4、32×32 KS4 D2、32×64 KS4 D2 / KS2 D3、16×64 KS4 D3；
+  M = 128–512 用 lds 32×128 D3 / D4、64×128 D4（这几个只做过冒烟计时，正式的 shuffled 选择表要用 perf_all.py 在空卡上补）。split 均为 1。
