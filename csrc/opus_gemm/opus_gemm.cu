@@ -23,6 +23,7 @@
 #include "gfx942/opus_gemm_heuristic_dispatch_gfx942.cuh"
 #endif
 #include "opus_gemm_manifest.h"                    // a8w8 launcher symbols
+#include "opus_gemm_a4w4_mxfp4_lookup.h"           // a4w4_mxfp4_nt kid table + tuned (M,N,K) -> kid
 #include "opus_gemm_utils.cuh"                     // bf16_t / fp32_t
 #include "aiter_stream.h"                          // aiter::getCurrentHIPStream
 
@@ -65,6 +66,85 @@ OpusNoscaleKernel opus_dispatch_a8w8(int M, int N, int K)
   (void)K;
   return nullptr;
 #endif
+}
+
+// ── a4w4_mxfp4_nt (gfx950, pre-compiled .co) ─────────────────────────────────
+// Kid table (kid, launcher, B_M, B_N) and the tuned (M, N, K) -> kid table come from gen_instances.py.
+struct OpusA4w4Mxfp4Kid {
+  int kid;
+  OpusScaleKernel fn;
+  int b_m, b_n;
+};
+struct OpusA4w4Mxfp4Tuned {
+  int mnk[3];
+  int kid;
+};
+
+static const OpusA4w4Mxfp4Kid* opus_a4w4_mxfp4_kids(int& n)
+{
+#if OPUS_A4W4_MXFP4_HAS_KIDS
+  static const OpusA4w4Mxfp4Kid table[] = {GENERATE_A4W4_MXFP4_KIDS};
+  n = static_cast<int>(sizeof(table) / sizeof(table[0]));
+  return table;
+#else
+  n = 0;
+  return nullptr;
+#endif
+}
+
+static OpusScaleKernel opus_a4w4_mxfp4_by_kid(int kid)
+{
+  int n = 0;
+  const auto* t = opus_a4w4_mxfp4_kids(n);
+  for (int i = 0; i < n; ++i)
+    if (t[i].kid == kid) return t[i].fn;
+  AITER_CHECK(false, "opus a4w4_mxfp4: kid ", kid, " is not built");
+  return nullptr;
+}
+
+// Heuristic: minimise rounds x per-tile cost, rounds = ceil(tiles / CUs) of the persistent launch and the per-tile
+// cost ~ tile area / efficiency (smaller tiles move more bytes per FLOP; efficiencies from 8192^3 measurements are
+// to be refined by the tuned table).
+static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch)
+{
+  (void)K;
+  int n = 0;
+  const auto* t = opus_a4w4_mxfp4_kids(n);
+  AITER_CHECK(n > 0, "opus a4w4_mxfp4: no kernels built");
+  const int cus = static_cast<int>(get_num_cu_func());
+  int best = t[0].kid;
+  double best_cost = 1e300;
+  for (int i = 0; i < n; ++i) {
+    const long tiles = (long)((M + t[i].b_m - 1) / t[i].b_m) * ((N + t[i].b_n - 1) / t[i].b_n) * batch;
+    const long rounds = (tiles + cus - 1) / cus;
+    const int area = t[i].b_m * t[i].b_n;
+    const double eff = area >= 65536 ? 1.0 : area >= 32768 ? 0.9 : 0.78;
+    const double cost = static_cast<double>(rounds) * area / eff;
+    if (cost < best_cost) { best_cost = cost; best = t[i].kid; }
+  }
+  return best;
+}
+
+static OpusScaleKernel opus_dispatch_a4w4_mxfp4_gfx950(int M, int N, int K, int batch)
+{
+  static const OpusA4w4Mxfp4Tuned tuned[] = {GENERATE_A4W4_MXFP4_TUNED {{0, 0, 0}, -1}};
+  for (const auto& e : tuned)
+    if (e.kid >= 0 && e.mnk[0] == M && e.mnk[1] == N && e.mnk[2] == K) return opus_a4w4_mxfp4_by_kid(e.kid);
+  return opus_a4w4_mxfp4_by_kid(opus_a4w4_mxfp4_heuristic_kid(M, N, K, batch));
+}
+
+static void opus_a4w4_mxfp4_check(const aiter_tensor_t& XQ, const aiter_tensor_t& WQ, const aiter_tensor_t& Y,
+                                  const std::optional<aiter_tensor_t>& x_scale,
+                                  const std::optional<aiter_tensor_t>& w_scale)
+{
+  const auto& arch_info = opus_get_arch_info();
+  AITER_CHECK(arch_info.arch == OpusGfxArch::Gfx950, "opus a4w4_mxfp4 is gfx950-only; device ", arch_info.name);
+  AITER_CHECK(WQ.dtype() == AITER_DTYPE_fp4x2, "opus a4w4_mxfp4: WQ must be fp4x2");
+  AITER_CHECK(Y.dtype() == AITER_DTYPE_bf16, "opus a4w4_mxfp4: Y must be bf16");
+  AITER_CHECK(x_scale.has_value() && w_scale.has_value(), "opus a4w4_mxfp4 needs x_scale and w_scale (e8m0_shuffle)");
+  AITER_CHECK(XQ.is_contiguous() && WQ.is_contiguous() && Y.is_contiguous() &&
+              x_scale.value().is_contiguous() && w_scale.value().is_contiguous(),
+              "opus a4w4_mxfp4: tensors must be contiguous");
 }
 
 // a16w16 arch routers: switch on opus_get_gfx_arch() to per-arch dispatch.
@@ -202,10 +282,40 @@ void opus_gemm(
       AITER_CHECK(false, "opus_gemm a16w16: unsupported output dtype, expected bf16 or fp32");
     }
   }
+  else if (XQ.dtype() == AITER_DTYPE_fp4x2)
+  {
+#ifdef OPUS_BUILD_HAS_GFX950
+    AITER_CHECK(!bias.has_value(), "opus_gemm a4w4_mxfp4: bias is not supported");
+    opus_a4w4_mxfp4_check(XQ, WQ, Y, x_scale, w_scale);
+    opus_dispatch_a4w4_mxfp4_gfx950(M, N, K * 2, XQ.size(0))(XQ, WQ, Y, x_scale, w_scale);
+#else
+    AITER_CHECK(false, "opus_gemm a4w4_mxfp4 needs a gfx950 build of module_deepgemm_opus");
+#endif
+  }
   else
   {
-    AITER_CHECK(false, "opus_gemm: unsupported input dtype, expected fp8 or bf16");
+    AITER_CHECK(false, "opus_gemm: unsupported input dtype, expected fp8, bf16 or fp4x2");
   }
+}
+
+// opus_gemm_a4w4_tune(): run a specific a4w4_mxfp4_nt kid (kernelId = kid, e.g. 30000..30003).
+void opus_gemm_a4w4_tune(
+  aiter_tensor_t &XQ,
+  aiter_tensor_t &WQ,
+  aiter_tensor_t &Y,
+  std::optional<aiter_tensor_t> x_scale,
+  std::optional<aiter_tensor_t> w_scale,
+  int kernelId)
+{
+  aiter_detail::g_aiter_can_throw = true;
+  AITER_CHECK(XQ.dim() == 3 && WQ.dim() == 3 && Y.dim() == 3, "opus_gemm_a4w4_tune: XQ / WQ / Y must be 3D");
+  AITER_CHECK(XQ.dtype() == AITER_DTYPE_fp4x2, "opus_gemm_a4w4_tune: XQ must be fp4x2");
+#ifdef OPUS_BUILD_HAS_GFX950
+  opus_a4w4_mxfp4_check(XQ, WQ, Y, x_scale, w_scale);
+  opus_a4w4_mxfp4_by_kid(kernelId)(XQ, WQ, Y, x_scale, w_scale);
+#else
+  AITER_CHECK(false, "opus_gemm_a4w4_tune needs a gfx950 build of module_deepgemm_opus");
+#endif
 }
 
 // opus_gemm_a16w16_tune() — id-based tune entry.

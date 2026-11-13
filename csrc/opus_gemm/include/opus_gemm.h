@@ -28,6 +28,14 @@ void opus_gemm_a16w16_tune(aiter_tensor_t& XQ,
                            int kernelId,
                            int splitK);
 
+// a4w4_mxfp4_nt (gfx950): run kid kernelId (30000..30003). Inputs as gemm_a4w4(bpreshuffle=True).
+void opus_gemm_a4w4_tune(aiter_tensor_t& XQ,
+                         aiter_tensor_t& WQ,
+                         aiter_tensor_t& Y,
+                         std::optional<aiter_tensor_t> x_scale,
+                         std::optional<aiter_tensor_t> w_scale,
+                         int kernelId);
+
 void opus_gemm_a8w8_blockscale_bpreshuffle_tune(aiter_tensor_t& XQ,
                                                 aiter_tensor_t& WQ,
                                                 std::optional<aiter_tensor_t> x_scale,

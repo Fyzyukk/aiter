@@ -30,6 +30,7 @@ from opus_gemm_common import (
     OpusGemmInstance,
     a8w8_kernels_list,
     a8w8_scale_kernels_list,
+    a4w4_mxfp4_nt_kernels_list,
     a16w16_flatmm_kernels_list,
     a16w16_flatmm_splitk_kernels_list,
     a16w16_kernels_list,
@@ -139,6 +140,7 @@ def _kernel_func_for(k):
 INPUT_DTYPE_MAP = {
     "a8w8_scale": ("fp8_t", "fp8_t"),
     "a8w8": ("fp8_t", "fp8_t"),
+    "a4w4_mxfp4_nt": ("fp4_t", "fp4_t"),
     "a8w8_blockscale_bpreshuffle_singlebuf": ("fp8_t", "fp8_t"),
     **{tag: ("bf16_t", "bf16_t") for tag in _A16W16_TAGS},
 }
@@ -902,6 +904,25 @@ void
         self.gen_manifest_head(kernels_dict)
         self.gen_a16w16_tune_lookup(kernels_dict)
         self.gen_a8w8_tune_lookup(kernels_dict)
+        self.gen_a4w4_mxfp4_lookup(kernels_dict)
+
+    def gen_a4w4_mxfp4_lookup(self, kernels_dict, tuned_rows=()):
+        """Emit opus_gemm_a4w4_mxfp4_lookup.h: the a4w4_mxfp4_nt kid table (kid, launcher, B_M, B_N) used by both the
+        tune entry (by kid) and the heuristic, plus the (M, N, K) -> kid table baked from the tuned CSV (may be empty)."""
+        rows = sorted((kid, k) for kid, k in kernels_dict.items() if isinstance(kid, int) and k.kernel_tag == "a4w4_mxfp4_nt")
+        lines = ["#pragma once", "// Auto-generated. See gen_instances.py:gen_a4w4_mxfp4_lookup.",
+                 "#define OPUS_A4W4_MXFP4_HAS_KIDS %d" % (1 if rows else 0),
+                 "#define GENERATE_A4W4_MXFP4_KIDS \\"]
+        for i, (kid, k) in enumerate(rows):
+            lines.append(f"    {{ {kid}, &{k.name}<bf16_t>, {k.B_M}, {k.B_N} }}," + (" \\" if i + 1 < len(rows) else ""))
+        if not rows:
+            lines[-1] = "#define GENERATE_A4W4_MXFP4_KIDS"
+        valid = {kid for kid, _ in rows}
+        tuned = sorted({(m, n, kk, kid) for (m, n, kk, kid) in tuned_rows if kid in valid})
+        lines.append("#define GENERATE_A4W4_MXFP4_TUNED" + (" \\" if tuned else ""))
+        for i, (m, n, kk, kid) in enumerate(tuned):
+            lines.append(f"    {{ {{{m}, {n}, {kk}}}, {kid} }}," + (" \\" if i + 1 < len(tuned) else ""))
+        Path(os.path.join(self.working_path, "opus_gemm_a4w4_mxfp4_lookup.h")).write_text("\n".join(lines) + "\n")
 
 
 def get_tune_dict(tune_dict_csv):
@@ -1032,6 +1053,11 @@ if __name__ == "__main__":
         help="[DEPRECATED] alias for --tune_files (single path). Use --tune_files instead.",
     )
 
+    parser.add_argument(
+        "--a4w4_mxfp4_tune_file",
+        default=None,
+        help="CSV (M,N,K,kernelId,...) of tuned a4w4_mxfp4_nt kids baked into opus_gemm_a4w4_mxfp4_lookup.h",
+    )
     args = parser.parse_args()
     if args.tune_files is None and args.tune_file is not None:
         args.tune_files = args.tune_file
@@ -1155,6 +1181,7 @@ if __name__ == "__main__":
     if target_arches is None or "gfx950" in target_arches:
         S |= set(a8w8_scale_kernels_list.keys())
         S |= set(a8w8_kernels_list.keys())
+        S |= set(a4w4_mxfp4_nt_kernels_list.keys())   # host launchers only (pre-compiled .co)
 
     # Honor --kernel_tag as a developer override that *further restricts* the set (within the a16w16
     # / a8w8 families).
@@ -1166,6 +1193,7 @@ if __name__ == "__main__":
             if target_arches is None or "gfx950" in target_arches:
                 S |= set(a8w8_scale_kernels_list.keys())
                 S |= set(a8w8_kernels_list.keys())
+                S |= set(a4w4_mxfp4_nt_kernels_list.keys())
 
     # Heuristic-fallback invariant (single source of truth: opus_gemm_common.py).
     required_heuristic = set(heuristic_kids_for_arch(target_arches))
@@ -1262,6 +1290,18 @@ if __name__ == "__main__":
             f"[opus gen_instances] --tune_files {args.tune_files} matched no "
             f"existing files; using empty lookup"
         )
+
+    # a4w4_mxfp4_nt tuned (M, N, K) -> kid table.
+    mx_rows = []
+    if args.a4w4_mxfp4_tune_file and os.path.exists(args.a4w4_mxfp4_tune_file):
+        try:
+            mdf = pd.read_csv(args.a4w4_mxfp4_tune_file)
+            for _, r in mdf.iterrows():
+                mx_rows.append((int(r["M"]), int(r["N"]), int(r["K"]), int(r["kernelId"])))
+        except (pd.errors.EmptyDataError, KeyError, ValueError):
+            mx_rows = []
+    codegen.gen_a4w4_mxfp4_lookup(kdict, mx_rows)
+    print(f"[opus gen_instances] a4w4_mxfp4_nt: {sum(1 for k in kdict.values() if k.kernel_tag == 'a4w4_mxfp4_nt')} kids, {len(mx_rows)} tuned rows")
 
     # Persist the expanded compile set so subsequent rebuilds reuse it.
     try:

@@ -20,6 +20,7 @@ from codegen.common import (
 # ---------------- gfx950 arch-override maps ----------------
 
 PIPELINE_HEADER_MAP = {
+    "a4w4_mxfp4_nt": "gfx950/opus_co_launch_mxfp4_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_gemm_pipeline_a8w8_scale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_pipeline_a8w8_noscale_gfx950.cuh",
     "a16w16": "gfx950/opus_gemm_pipeline_a16w16_gfx950.cuh",
@@ -39,6 +40,7 @@ PIPELINE_HEADER_MAP_4G_SAFE = {
 }
 
 TRAITS_HEADER_MAP = {
+    "a4w4_mxfp4_nt": "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_traits_a8w8_noscale_gfx950.cuh",
     "a16w16": "gfx950/opus_gemm_traits_a16w16_gfx950.cuh",
@@ -49,6 +51,7 @@ TRAITS_HEADER_MAP = {
 }
 
 KERNEL_FUNC_MAP = {
+    "a4w4_mxfp4_nt": "gemm_a4w4_mxfp4_nt_kernel",
     "a8w8_scale": "gemm_a8w8_scale_kernel",
     "a8w8": "gemm_a8w8_noscale_kernel",
     "a16w16": "gemm_a16w16_kernel",
@@ -65,6 +68,7 @@ KERNEL_FUNC_MAP_4G_SAFE = {
 }
 
 TRAITS_NAME_MAP = {
+    "a4w4_mxfp4_nt": "opus_gemm_a4w4_mxfp4_nt_traits_gfx950",
     "a8w8_scale": "opus_gemm_a8w8_scale_traits_gfx950",
     "a8w8": "opus_gemm_a8w8_noscale_traits_gfx950",
     "a16w16": "opus_gemm_a16w16_traits_gfx950",
@@ -75,6 +79,7 @@ TRAITS_NAME_MAP = {
 }
 
 KARGS_NAME_MAP = {
+    "a4w4_mxfp4_nt": "opus_gemm_mxfp4_scale_kargs_gfx950",
     "a8w8_scale": "opus_gemm_scale_kargs_gfx950",
     "a8w8": "opus_gemm_noscale_kargs_gfx950",
     "a16w16": "opus_gemm_noscale_kargs_gfx950",
@@ -1428,6 +1433,89 @@ void
 
 
 # ---------- Self-register at import time ----------
+def a4w4_mxfp4_nt_co_symbol(k):
+    """gen_co image / extern "C" symbol for a kid (see gen_co/build_co_gfx950.py:kernel_name)."""
+    return f"opus_gemm_gfx950_a4w4_mxfp4_nt_co_{k.B_M}x{k.B_N}x{k.B_K}"
+
+
+def gen_a4w4_mxfp4_nt_instance(cg, k, traits_header, kargs_name, instance_impl_preamble, A8W8_SCALE_HOST_EXTRA, **_unused):
+    """gfx950 a4w4_mxfp4_nt launcher emit: host launcher only; the device code is a pre-compiled .co loaded at runtime.
+
+    Inputs (same as aiter gemm_a4w4(bpreshuffle=True)): XQ [batch, M, K/2] fp4x2 row-major, WQ [batch, N, K/2] fp4x2 in
+    shuffle_weight(16,16) layout, x_scale / w_scale e8m0 in e8m0_shuffle layout ([rows padded to 256 (32 accepted),
+    K/32 padded to 8] per batch), Y [batch, M, N] bf16.  Any M; N % 16 == 0; K % 256 == 0.
+    """
+    symbol = a4w4_mxfp4_nt_co_symbol(k)
+    preamble = instance_impl_preamble()
+    INSTANCE_IMPL = f"""{preamble}
+#include "{traits_header}"
+#if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
+#include "gfx950/opus_co_launch_mxfp4_gfx950.cuh"
+template <typename D_C>
+void
+{k.name}(
+    aiter_tensor_t &XQ,
+    aiter_tensor_t &WQ,
+    aiter_tensor_t &Y,
+    std::optional<aiter_tensor_t> x_scale,
+    std::optional<aiter_tensor_t> w_scale)
+{{{{
+    static_assert(std::is_same<D_C, opus::bf16_t>::value, "a4w4_mxfp4_nt writes bf16");
+    AITER_CHECK(x_scale.has_value() && w_scale.has_value(), "a4w4_mxfp4_nt needs x_scale and w_scale");
+    const auto& sa = x_scale.value();
+    const auto& sb = w_scale.value();
+    const int batch = XQ.size(0);
+    const int M = XQ.size(1);
+    const int K = XQ.size(2) * 2;            // fp4x2: 2 elements per byte
+    const int N = WQ.size(1);
+    AITER_CHECK(WQ.size(2) * 2 == K && Y.size(1) == M && Y.size(2) == N, "a4w4_mxfp4_nt shape mismatch");
+    AITER_CHECK(N % 16 == 0 && K % {k.B_K} == 0, "a4w4_mxfp4_nt needs N % 16 == 0 and K % {k.B_K} == 0 (N=", N, " K=", K, ")");
+    const int sf_cols_a = sa.size(-1), sf_cols_b = sb.size(-1);
+    const int sf_rows_a = sa.dim() == 3 ? sa.size(1) : sa.size(0) / batch;
+    const int sf_rows_b = sb.dim() == 3 ? sb.size(1) : sb.size(0) / batch;
+    AITER_CHECK(sf_cols_a == (K / 32 + 7) / 8 * 8 && sf_cols_b == sf_cols_a, "scale columns must be K/32 padded to 8");
+    AITER_CHECK(sf_rows_a >= (M + 31) / 32 * 32 && sf_rows_b >= (N + 31) / 32 * 32, "scale rows must cover M / N (padded to 32)");
+
+    {kargs_name} kargs{{}};
+    kargs.ptr_a = XQ.data_ptr();
+    kargs.ptr_b = WQ.data_ptr();
+    kargs.ptr_c = Y.data_ptr();
+    kargs.m = M;
+    kargs.n = N;
+    kargs.k = K;
+    kargs.batch = batch;
+    kargs.stride_a = K / 2;                  // bytes
+    kargs.stride_b = K / 2;                  // row stride of the unshuffled B (bytes)
+    kargs.stride_c = N;
+    kargs.stride_a_batch = M * (K / 2);
+    kargs.stride_b_batch = N * (K / 2);
+    kargs.stride_c_batch = M * N;
+    kargs.ptr_sfa = sa.data_ptr();
+    kargs.ptr_sfb = sb.data_ptr();
+    kargs.stride_sfa = 32 * sf_cols_a;       // bytes of one 32-row block
+    kargs.stride_sfb = 32 * sf_cols_b;
+    kargs.stride_sfa_batch = sf_rows_a * sf_cols_a;
+    kargs.stride_sfb_batch = sf_rows_b * sf_cols_b;
+
+    const int tiles = ((M + {k.B_M} - 1) / {k.B_M}) * ((N + {k.B_N} - 1) / {k.B_N}) * batch;
+    const int grid_x = tiles < (int)get_num_cu_func() ? tiles : (int)get_num_cu_func();   // persistent
+    kargs.grid_blocks = grid_x;
+    static AiterAsmKernelFast& kernel = opus_gfx950_co::mxfp4_co_kernel("{symbol}");
+    opus_mxfp4_co_launch_gfx950(kernel, dim3(grid_x), dim3({k.BLOCK_SIZE}), kargs, aiter::getCurrentHIPStream());
+}}}}
+#endif // launcher only on regular host pass
+"""
+    Path(os.path.join(cg.impl_path, f"{k.name}.cuh")).write_text(INSTANCE_IMPL)
+    # Host instantiation only: there is no device TU (the .co is pre-compiled).
+    for CDtype in k.output_dtypes:
+        cg._host_instantiations.append({
+            "kid_name": k.name, "dtype": CDtype,
+            "host_decl": (f"template void\n{k.name}<{CDtype}>(\n    aiter_tensor_t &XQ,\n    aiter_tensor_t &WQ,\n"
+                          f"    aiter_tensor_t &Y{A8W8_SCALE_HOST_EXTRA});\n"),
+        })
+
+
+register_emit("gfx950", "a4w4_mxfp4_nt", gen_a4w4_mxfp4_nt_instance)
 register_emit("gfx950", "a16w16_persistent", gen_persistent_instance)
 register_emit("gfx950", "a8w8_scale", gen_scale_instance)
 register_emit("gfx950", "a16w16", gen_noscale_instance_gfx950)

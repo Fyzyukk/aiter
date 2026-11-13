@@ -50,6 +50,16 @@ if _arch_ok:
 
         return _impl(*args, **kwargs)
 
+    def gemm_a4w4_opus(*args, **kwargs):
+        from .gemm_op_a4w4 import gemm_a4w4_opus as _impl
+
+        return _impl(*args, **kwargs)
+
+    def opus_gemm_a4w4_tune(*args, **kwargs):
+        from .gemm_op_a4w4 import opus_gemm_a4w4_tune as _impl
+
+        return _impl(*args, **kwargs)
+
 else:
     # Don't raise ImportError -- aiter/__init__.py's star-import would catch
     # it and silently disable the 30+ subsequent op imports.
@@ -59,10 +69,14 @@ else:
         "opus_gemm_a8w8_blockscale_bpreshuffle_tune"
     )
     opus_gemm_workspace_init = _make_unsupported_arch_stub("opus_gemm_workspace_init")
+    gemm_a4w4_opus = _make_unsupported_arch_stub("gemm_a4w4_opus")
+    opus_gemm_a4w4_tune = _make_unsupported_arch_stub("opus_gemm_a4w4_tune")
 
 
 __all__ = [
     "gemm_a16w16_opus",
+    "gemm_a4w4_opus",
+    "opus_gemm_a4w4_tune",
     "opus_gemm_a8w8_blockscale_bpreshuffle_tune",
     "opus_gemm_a16w16_tune",
     "opus_gemm_workspace_init",

@@ -312,6 +312,17 @@ namespace py = pybind11;
           py::arg("Y"),                                   \
           py::arg("kernelId"));
 
+#define OPUS_GEMM_A4W4_TUNE_PYBIND        \
+    m.def("opus_gemm_a4w4_tune",          \
+          &opus_gemm_a4w4_tune,           \
+          "opus_gemm_a4w4_tune",          \
+          py::arg("XQ"),                  \
+          py::arg("WQ"),                  \
+          py::arg("Y"),                   \
+          py::arg("x_scale"),             \
+          py::arg("w_scale"),             \
+          py::arg("kernelId"));
+
 #define OPUS_GEMM_WORKSPACE_INIT_PYBIND                              \
     m.def("opus_gemm_workspace_init",                                \
           &opus_gemm_workspace_init,                                 \

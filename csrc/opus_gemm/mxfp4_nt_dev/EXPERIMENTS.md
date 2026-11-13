@@ -64,3 +64,17 @@ prof/timing.sh（等 HIP 2 空闲后测：8192³ zc vs 256×256 交替 6 轮；1
   先试过 blockscale 的 gfx950 默认 flags（`-fgpu-flush-denormals-to-zero -fno-offload-uniform-block ...`），代码差异更大，改回与 dev 相同的 `-ffast-math`。
 - 验证：dev host 新增 `MXFP4_CO_DIR=<gen_co/gfx950>`，用 hipModuleLoad 加载 .co 并复用原校验；4 个 tile × {8192³, 300×400×768×b2, 1000×4112×256} × SFA_K_PATTERN 全部 errors=0。
 - 计时仍等卡（HIP 2 被占）。
+
+## 接入 aiter 第 3–5 步：codegen / 分发 / Python / 测试（2026-11-13）
+- opus_gemm_common.py：`a4w4_mxfp4_nt_kernels_list`，kid 30000–30003（256×256、256×128、128×256、128×128），
+  `OpusGemmInstance(256, B_M, B_N, 256, 2, 2, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt", ["bf16_t"], arch_prefix="gfx950", name_tag="a4w4_mxfp4_nt_co")`。
+- gen_instances_gfx950.py：4 张表加 tag；`gen_a4w4_mxfp4_nt_instance` 只生成 host launcher（fp4 字节 stride、e8m0_shuffle scale stride = 32 × cols、
+  persistent grid = min(tile 数, CU 数) 写入 grid_blocks、bf16 输出、`opus_gfx950_co::mxfp4_co_kernel(symbol)` 运行时加载 .co），只记 host 实例化、无 device TU。
+- gen_instances.py：gfx950 构建总把 mxfp4 kid 加进编译集；生成 `opus_gemm_a4w4_mxfp4_lookup.h`（kid 表 + 可选 `--a4w4_mxfp4_tune_file` 的 (M,N,K)→kid 表）。
+  离线跑 `GPU_ARCHS=gfx950 gen_instances.py` 已验证：4 个 impl、host TU 里 4 个实例化、manifest 4 个声明。
+- include/gfx950/opus_co_launch_mxfp4_gfx950.cuh：读 `OPUS_GEN_CO_DIR`（环境变量优先，JIT 加 `-DOPUS_GEN_CO_DIR=<csrc>/opus_gemm/gen_co`）下 gfx950/<symbol>.co，
+  AiterAsmKernelFast 注册，按 sizeof(kargs) 传参（kargs 104 B，不是 a8w8 co 的 96 B）。
+- opus_gemm.cu：`opus_gemm()` 新增 fp4x2 分支 → `opus_dispatch_a4w4_mxfp4_gfx950`（调优表 → 启发式：min 轮数 × tile 面积 / 效率，效率暂定 1.0 / 0.9 / 0.78，待计时校准）；
+  新入口 `opus_gemm_a4w4_tune(XQ, WQ, Y, x_scale, w_scale, kernelId)`；opus_gemm.h / rocm_ops.hpp / pybind 注册。
+- Python：`aiter/ops/opus/gemm_op_a4w4.py`（`gemm_a4w4_opus`、`opus_gemm_a4w4_tune`），`aiter.ops.opus` 导出。
+- 测试：`op_tests/test_opus_a4w4_gemm.py`（torch 反量化参考 + aiter gemm_a4w4 asm 对比；`--perf` 计时）。

@@ -1012,8 +1012,23 @@ for _bm, _bn, _bk, _wg in _GFX1250_CLUSTERLAUNCH_TILES:
 assert _cl_kid <= 21000, f"clusterlaunch gfx1250 kids overflow [20100,21000): {_cl_kid}"
 GFX1250_CLUSTERLAUNCH_KIDS = frozenset(gfx1250_clusterlaunch_kernels_list.keys())
 
+# a4w4_mxfp4_nt (gfx950): MXFP4 x MXFP4 NT, 1x32 e8m0 scales, 2x2 4-wave persistent pipeline. Device code is the
+# pre-compiled gen_co/gfx950/opus_gemm_gfx950_a4w4_mxfp4_nt_co_<B_M>x<B_N>x256.co (pin toolchain); only the host
+# launcher is JIT-built. Kids 30000..30003 (tile index order is also the heuristic's candidate order).
+A4W4_MXFP4_NT_KID_BASE = 30000
+A4W4_MXFP4_NT_TILES = [(256, 256), (256, 128), (128, 256), (128, 128)]
+a4w4_mxfp4_nt_kernels_list = {
+    A4W4_MXFP4_NT_KID_BASE + i: OpusGemmInstance(
+        256, bm, bn, 256, 2, 2, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt", ["bf16_t"],
+        arch_prefix="gfx950", name_tag="a4w4_mxfp4_nt_co",
+    )
+    for i, (bm, bn) in enumerate(A4W4_MXFP4_NT_TILES)
+}
+A4W4_MXFP4_NT_KIDS = frozenset(a4w4_mxfp4_nt_kernels_list.keys())
+
 # combined list (used by production gen_instances / dispatch)
 kernels_list = {
+    **a4w4_mxfp4_nt_kernels_list,
     **a8w8_scale_kernels_list,
     **a8w8_kernels_list,
     **a16w16_kernels_list,
