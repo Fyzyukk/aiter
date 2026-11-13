@@ -105,10 +105,11 @@ static OpusScaleKernel opus_a4w4_mxfp4_by_kid(int kid)
   return nullptr;
 }
 
-// Heuristic: estimated time = rounds x per-tile time + fixed costs, per (tile, mode).  Per-tile time ~ B_M * B_N * K_seg /
-// (rate x efficiency): rate from 8192^3 on 256x256 (~55 us per 256x256x8192 tile at the power cap), efficiencies per tile
-// size; persistent pays nothing extra, one-tile-per-block (mode 1) is preferred when tiles <= CUs, split-K adds a fixed
-// partial-write / reduce cost.  Constants are rough and meant to be replaced by the tuned table.
+// Heuristic: estimated time per (tile, variant) = launch / prologue fixed cost + rounds x per-tile time, per-tile time
+// ~ B_M * B_N * K_seg / (rate x efficiency).  Calibrated on HIP 6 (gfx950, 1400 W): 128x128 one-tile-per-block K = 512
+// 4.6 us, K = 4096 8.8 us; 256x256 persistent 8192^3 ~55 us per tile round.  Split-K adds ~6 us (fp32 partial write
+// + reduce; measured S = 2 overhead 5-6 us on 128..512 x 2048..4096 x 7168..8192), so it is only chosen when the K
+// reduction clearly wins.  Constants are rough and meant to be replaced by the tuned table.
 static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch)
 {
   int n = 0;
@@ -116,28 +117,27 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch)
   AITER_CHECK(n > 0, "opus a4w4_mxfp4: no kernels built");
   const int cus = static_cast<int>(get_num_cu_func());
   constexpr double US_PER_ELEM = 55.0 / (256.0 * 256.0 * 8192.0);
-  constexpr double SK_FIXED_US = 4.0;
+  constexpr double FIXED_US = 3.5, SK_FIXED_US = 6.0;
   int best = -1;
   double best_cost = 1e300;
   for (int i = 0; i < n; ++i) {
     const auto& e = t[i];
-    const int tiles_m = (M + e.b_m - 1) / e.b_m, tiles_n = (N + e.b_n - 1) / e.b_n;
-    const long tiles = static_cast<long>(tiles_m) * tiles_n * batch;
     if (!e.boundary && (M % e.b_m || N % e.b_n)) continue;
+    const long tiles = static_cast<long>((M + e.b_m - 1) / e.b_m) * ((N + e.b_n - 1) / e.b_n) * batch;
     const int area = e.b_m * e.b_n;
     const double eff = area >= 65536 ? 1.0 : area >= 49152 ? 0.95 : area >= 32768 ? 0.9 : 0.78;
     double cost;
     if (e.mode == 0) {
-      cost = static_cast<double>((tiles + cus - 1) / cus) * area * K * US_PER_ELEM / eff;
-      if (e.boundary) cost *= 1.006;   // the nob variant is ~0.6% faster when it applies
-      if (tiles <= cus) cost *= 1.01;  // prefer mode 1 when there is a single round
+      if (tiles <= cus) continue;   // a single round: the one-tile-per-block variant does the same without cross-tile code
+      cost = FIXED_US + static_cast<double>((tiles + cus - 1) / cus) * area * K * US_PER_ELEM / eff;
+      if (e.boundary) cost *= 1.003;   // prefer the no-boundary variant when it applies
     } else if (e.mode == 1) {
       if (tiles > cus) continue;
-      cost = area * static_cast<double>(K) * US_PER_ELEM / eff;
+      cost = FIXED_US + area * static_cast<double>(K) * US_PER_ELEM / eff;
     } else {
       const int S = opus_mxfp4_pick_split(static_cast<int>(tiles), K, cus);
       if (S <= 1) continue;
-      cost = area * static_cast<double>(K / S) * US_PER_ELEM / eff + SK_FIXED_US;
+      cost = FIXED_US + SK_FIXED_US + area * static_cast<double>(K / S) * US_PER_ELEM / eff;
     }
     if (cost < best_cost) { best_cost = cost; best = e.kid; }
   }

@@ -475,6 +475,9 @@ constexpr int c_reg() {
 // ===========================================================================
 // Kernel
 // ===========================================================================
+#ifndef SK_AUX   // cache policy of the split-K partial stores / loads: sc0 sc1 (system coherent, bypass L2)
+#define SK_AUX 17
+#endif
 #ifndef C_AUX
 #define C_AUX 2
 #endif
@@ -503,7 +506,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     const int tiles_per_batch = opus_mxfp4_ceil_div(kargs.m, T::B_M) * num_tiles_n;
     const int total_tiles = tiles_per_batch * kargs.batch;
     // MODE 1 / 2: one tile (or tile x K segment) per block; the tile loop below runs once.
-    const int split_k = T::SPLITK ? kargs.split_k : 1;
+    const int split_k = T::SPLITK ? (kargs.split_k < 0 ? -kargs.split_k : kargs.split_k) : 1;
     const int grid_blocks = T::PERSIST ? kargs.grid_blocks : total_tiles;
     const int first_tile = T::SPLITK ? static_cast<int>(block_id_x()) / split_k : static_cast<int>(block_id_x());
     const int k_split = T::SPLITK ? static_cast<int>(block_id_x()) % split_k : 0;   // from the kernel arguments: __builtin_amdgcn_grid_size_x() reads the dispatch packet (host memory)
@@ -1371,7 +1374,9 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
         // its accumulators and writes C below.  Agent-scope fences: the blocks of a tile may sit on different XCDs.
         // Broadcast flag in the scale-panel LDS (no longer read after the last K tile; LDS is full for 256 x 256).
         int* const sk_last_p = reinterpret_cast<int*>(smem_sfa);
-        if (split_k > 1) {
+        // kargs.split_k < 0: partials only (|S| segments), a separate reduce kernel (gemm_a4w4_mxfp4_nt_sk_reduce) sums them.
+        const bool sk_separate = kargs.split_k < 0;
+        if (split_k > 1 || sk_separate) {
             const long tile_elems = static_cast<long>(T::B_M) * T::B_N;
             float* const ws_tiles = reinterpret_cast<float*>(reinterpret_cast<char*>(kargs.ptr_ws) + opus_mxfp4_sk_counter_bytes(total_tiles));
             int* const counters = reinterpret_cast<int*>(kargs.ptr_ws);
@@ -1381,14 +1386,22 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
             auto g_own = part(k_split);
             const auto wc_offs = opus::layout_to_offsets<T::VEC_C>(u_wc);   // per fragment (16 B per lane)
             static_assert(MMA::mma_c_len == T::VEC_C);
+            if (sk_separate) {   // the reduce kernel runs after this one: plain (L2-cached) stores, coherence by the kernel boundary
+                opus::static_for<2>([&](auto hm) { opus::static_for<2>([&](auto hn) { opus::static_for<T::E_M * T::E_N>([&](auto f) {
+                    store<T::VEC_C>(g_own, v_c[hm.value][hn.value][f.value], wc_offs[f.value] + (hm.value * T::HALF_B_M * T::B_N + hn.value * T::HALF_B_N));
+                }); }); });
+                return;
+            }
             opus::static_for<2>([&](auto hm) { opus::static_for<2>([&](auto hn) { opus::static_for<T::E_M * T::E_N>([&](auto f) {
-                store<T::VEC_C>(g_own, v_c[hm.value][hn.value][f.value], wc_offs[f.value] + (hm.value * T::HALF_B_M * T::B_N + hn.value * T::HALF_B_N));
+                store<T::VEC_C>(g_own, v_c[hm.value][hn.value][f.value], wc_offs[f.value] + (hm.value * T::HALF_B_M * T::B_N + hn.value * T::HALF_B_N), 0, opus::number<SK_AUX>{});
             }); }); });
-            __builtin_amdgcn_fence(__ATOMIC_RELEASE, "agent");    // partial visible device-wide before the counter
+            // No agent-scope fences: on gfx950 they write back / invalidate the whole L2 (other blocks' A / B too) and made
+            // split-K several times slower.  Partials use system-coherent (sc0 sc1) stores / loads instead, which bypass the
+            // non-coherent L2, so "stores acknowledged" (vmcnt(0)) before the relaxed device-scope counter is enough.
             s_waitcnt_vmcnt(0_I);
             __builtin_amdgcn_s_barrier();
             if (thread_id_x() == 0) {
-                const int arrived = __scoped_atomic_fetch_add(&counters[tile_id], 1, __ATOMIC_ACQ_REL, __MEMORY_SCOPE_DEVICE);
+                const int arrived = __scoped_atomic_fetch_add(&counters[tile_id], 1, __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE);
                 const int last = arrived == split_k - 1;
                 if (last) __scoped_atomic_store_n(&counters[tile_id], 0, __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE);   // ready for the next launch
                 *sk_last_p = last;
@@ -1396,12 +1409,11 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
             s_waitcnt_lgkmcnt(0_I);
             __builtin_amdgcn_s_barrier();
             if (!*sk_last_p) return;
-            __builtin_amdgcn_fence(__ATOMIC_ACQUIRE, "agent");    // see the other blocks' partials
             for (int s2 = 0; s2 < split_k; ++s2) {
                 if (s2 == k_split) continue;
                 auto g_p = part(s2);
                 opus::static_for<2>([&](auto hm) { opus::static_for<2>([&](auto hn) { opus::static_for<T::E_M * T::E_N>([&](auto f) {
-                    const auto q = load<T::VEC_C>(g_p, wc_offs[f.value] + (hm.value * T::HALF_B_M * T::B_N + hn.value * T::HALF_B_N));
+                    const auto q = load<T::VEC_C>(g_p, wc_offs[f.value] + (hm.value * T::HALF_B_M * T::B_N + hn.value * T::HALF_B_N), 0, opus::number<SK_AUX>{});
                     opus::static_for<MMA::mma_c_len>([&](auto j) { v_c[hm.value][hn.value][f.value][j.value] += q[j.value]; });
                 }); }); });
             }
@@ -1450,4 +1462,51 @@ template<class Traits>
 __global__ __launch_bounds__(Traits::BLOCK_SIZE, 1)
 void gemm_a4w4_mxfp4_nt_kernel(opus_gemm_mxfp4_scale_kargs_gfx950 kargs) {
     gemm_a4w4_mxfp4_nt_body<Traits>(kargs);
+}
+
+// Split-K reduce for kargs.split_k < 0: C[tile] = bf16(sum_s partial[tile][s]) with the M / N boundary.  One block of 256
+// threads per (tile, row slab); each thread owns 8 consecutive columns of one row and loads 2 x 16 B per segment.
+template<class Traits>
+__device__ __forceinline__ void gemm_a4w4_mxfp4_nt_sk_reduce_body(opus_gemm_mxfp4_scale_kargs_gfx950 kargs) {
+#if defined(__gfx950__)
+    using T = opus::remove_cvref_t<Traits>;
+    const int S = kargs.split_k < 0 ? -kargs.split_k : kargs.split_k;
+    const int num_tiles_n = opus_mxfp4_ceil_div(kargs.n, T::B_N);
+    const int tiles_per_batch = opus_mxfp4_ceil_div(kargs.m, T::B_M) * num_tiles_n;
+    const int total_tiles = tiles_per_batch * kargs.batch;
+    constexpr int COLS8 = T::B_N / 8;                         // threads per row
+    constexpr int ROWS = 256 / COLS8;                         // rows per block (B_N 256: 8, 192: 10 with 240 threads, 128: 16)
+    constexpr int SLABS = (T::B_M + ROWS - 1) / ROWS;
+    const int bid = static_cast<int>(opus::block_id_x());
+    const int tile_id = bid / SLABS, slab = bid % SLABS;
+    const int tid = static_cast<int>(opus::thread_id_x());
+    const int r = slab * ROWS + tid / COLS8, c = (tid % COLS8) * 8;
+    if (tid >= ROWS * COLS8 || r >= T::B_M || tile_id >= total_tiles) return;
+    const int batch_id = tile_id / tiles_per_batch, tib = tile_id % tiles_per_batch;
+    const int row = (tib / num_tiles_n) * T::B_M + r, col = (tib % num_tiles_n) * T::B_N + c;
+    if (row >= kargs.m || col >= kargs.n) return;
+    const long tile_elems = static_cast<long>(T::B_M) * T::B_N;
+    // Buffer base per tile (wave-uniform: a lane-dependent base would turn every load into a readfirstlane waterfall loop).
+    const float* ws = reinterpret_cast<const float*>(reinterpret_cast<const char*>(kargs.ptr_ws) + opus_mxfp4_sk_counter_bytes(total_tiles))
+                      + static_cast<long>(tile_id) * S * tile_elems;
+    auto g = opus::make_gmem(ws, static_cast<unsigned int>(S * tile_elems * 4));
+    const int lane_off = r * T::B_N + c;
+    opus::vector_t<float, 8> acc;
+    for (int j = 0; j < 8; ++j) acc[j] = 0.f;
+    for (int s = 0; s < S; ++s) {
+        const auto lo = g.template load<4>(lane_off, static_cast<int>(s * tile_elems));
+        const auto hi = g.template load<4>(lane_off + 4, static_cast<int>(s * tile_elems));
+        for (int j = 0; j < 4; ++j) { acc[j] += lo[j]; acc[4 + j] += hi[j]; }
+    }
+    opus::vector_t<opus::bf16_t, 8> out;
+    for (int j = 0; j < 8; ++j) out[j] = static_cast<opus::bf16_t>(acc[j]);
+    auto gc = opus::make_gmem(reinterpret_cast<opus::bf16_t*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch);
+    gc.template store<8>(out, row * kargs.stride_c + col);
+#endif
+}
+
+template<class Traits>
+__global__ __launch_bounds__(256, 1)
+void gemm_a4w4_mxfp4_nt_sk_reduce(opus_gemm_mxfp4_scale_kargs_gfx950 kargs) {
+    gemm_a4w4_mxfp4_nt_sk_reduce_body<Traits>(kargs);
 }

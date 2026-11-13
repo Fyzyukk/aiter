@@ -125,3 +125,23 @@ traits 增加 `MODE_`（0 persistent，1 每 block 一个 tile，2 split-K）和
   {8,4,2} 中满足 tiles×S ≤ CU 且 K % (S×256) == 0 的最大值，`OPUS_MXFP4_SPLITK` 可覆盖）；workspace 每 stream 一份、按需增长（不可在 graph capture 中首次分配）。
   分发启发式改成按 (tile, variant) 估时（rounds × 面积 × K_seg × 速率 / 效率 + split-K 固定开销 4 µs），常数待计时校准。
 - 正确性：aiter op 测试 169 个用例全 OK（含 split-K S ∈ {1,2,4,8} 75 个、np、nob）；dev 104 矩阵：mode 1 的 256×256 / 256×128 / 128×256 已 104/104，其余在跑。
+
+### split-K 修正与开销（HIP 6）
+- 第一版用 agent 范围 release / acquire fence：gfx950 上它们会 write back / invalidate 整个 L2（含其他 block 的 A/B），split-K 慢到 S 倍（128×4096×4096：S=8 128 µs）。
+  改成部分和用 sc0 sc1（系统一致、绕过非一致 L2）读写 + vmcnt(0) + relaxed device 原子计数，去掉 fence：S=8 24.7 µs。只改 sc1 也对，aux 0 / nt 结果错（跨 XCD 不一致）。
+- 剩余开销来自"最后到达的 block"单 CU 读 S−1 份 64 KB 部分和（单 CU 只有约 25 GB/s）。另做了"只写部分和 + 独立 reduce kernel"（kargs.split_k < 0，
+  `gemm_a4w4_mxfp4_nt_sk_reduce`，dev 用 MXFP4_SK_SEPARATE=1）：reduce kernel 一开始因按 lane 构造 buffer 基址变成 readfirstlane 瀑布循环（43 µs），改成每 tile 基址后单独 3 µs；
+  但"部分和 kernel + reduce kernel"合计在 S≥4 时远大于两者之和（例如 S=4：7.5 + 3.2 → 32 µs），原因未查清；S=2 与 in-kernel 相当。
+- 量化（dev harness，128×128，非图）：
+
+| shape | 非 split（np） | S=2 in-kernel / 独立 reduce | S=4 | S=8 |
+|---|---|---|---|---|
+| 128×4096×8192 | 15.1 | 15.2 / 15.3 | 17.7 / 14.8 | 24.0 / 17.7 |
+| 256×4096×8192 | 15.3 | 17.7 / 19.1 | 19.0 / 17.1 | 41.1 / 23.9 |
+| 512×2048×7168 | 13.8 | 16.3 / 17.5 | 19.3 / 19.2 | — |
+| 128×2048×7168 | 13.3 | 14.1 / 13.3 | 15.7 / 12.7 | — |
+
+  S=2 的固定开销约 5–6 µs（比小 shape 线的 3–4 µs 大），2×2 的 128×128 tile 上 split-K 基本没有收益（最好 −5%）。小 M 落后 asm 的根本原因是 tile 太大（asm 用 32×128 / 64×128，tile 数多）。
+- 分发启发式重新标定（固定 3.5 µs + 轮数 × 面积 × K × 速率 / 效率；tile 数 ≤ CU 用 np；split-K 加 6 µs），集成只用 in-kernel 归约。
+- 正确性：dev 矩阵 mode 1 六个 tile 104/104；split-K 128×128 S ∈ {1,2,4,8}、其余 4 个 tile S ∈ {2,8}、256×192 S=4 全部通过（不计 tile 数 > 1024 的预期拒绝）；
+  nob 256×256 在整除形状 24/24；aiter op 测试 169 个用例全 OK。
