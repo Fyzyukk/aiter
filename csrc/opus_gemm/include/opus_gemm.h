@@ -37,6 +37,9 @@ void opus_gemm_a4w4(aiter_tensor_t& XQ,
                     std::optional<aiter_tensor_t> w_scale,
                     bool bpreshuffle);
 
+// a4w4_mxfp4_nt (gfx950): kid the dispatch would pick for this shape (tuned table, else heuristic); read-only.
+int opus_gemm_a4w4_select_kid(int M, int N, int K, int batch, bool noshuffle);
+
 // a4w4_mxfp4_nt (gfx950): run kid kernelId (300xx: bpreshuffle layout, 301xx: row-major layout).
 void opus_gemm_a4w4_tune(aiter_tensor_t& XQ,
                          aiter_tensor_t& WQ,

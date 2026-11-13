@@ -324,6 +324,14 @@ namespace py = pybind11;
           py::arg("bpreshuffle") = true);
 
 #define OPUS_GEMM_A4W4_TUNE_PYBIND        \
+    m.def("opus_gemm_a4w4_select_kid",    \
+          &opus_gemm_a4w4_select_kid,     \
+          "opus_gemm_a4w4_select_kid",    \
+          py::arg("M"),                   \
+          py::arg("N"),                   \
+          py::arg("K"),                   \
+          py::arg("batch") = 1,           \
+          py::arg("noshuffle") = false);  \
     m.def("opus_gemm_a4w4_tune",          \
           &opus_gemm_a4w4_tune,           \
           "opus_gemm_a4w4_tune",          \

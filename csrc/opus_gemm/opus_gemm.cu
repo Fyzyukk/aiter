@@ -130,15 +130,19 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
   const int cus = static_cast<int>(get_num_cu_func());
   int best = -1;
   double best_cost = 1e300;
-  // M <= 64: small-tile pipeline -- the first (kid order) S = 1 small kid of this layout with the smallest B_M >= M.
+  // M <= 64: small-tile pipeline; B_M need not cover M (more M blocks beat a taller tile). Best measured (HIP 6 / smi 3):
+  //   shuffled M <= 16: 16x32 KS4 D3 (30400); M <= 64: 32x32 KS4 D2 (30402)
+  //   row-major M <= 8: direct 16x32 KS4 D2 (30518); M <= 64: B_LDS 16x64 D4 (30503)
+  // Falls back to the first S = 1 small kid of this layout if the preferred one is not built.
   if (M <= 64) {
+    const int want = noshuffle ? (M <= 8 ? 30518 : 30503) : (M <= 16 ? 30400 : 30402);
     for (int i = 0; i < n; ++i) {
       const auto& e = t[i];
-      if (e.mode != 3 || e.noshuffle != noshuffle || e.b_m < M) continue;
-      if (best < 0 || e.b_m < best_cost) { best = e.kid; best_cost = e.b_m; }
+      if (e.mode != 3 || e.noshuffle != noshuffle) continue;
+      if (e.kid == want) return want;
+      if (best < 0) best = e.kid;
     }
     if (best >= 0) return best;
-    best_cost = 1e300;
   }
   for (int i = 0; i < n; ++i) {
     const auto& e = t[i];
@@ -168,13 +172,24 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
   return best;
 }
 
-static OpusScaleKernel opus_dispatch_a4w4_mxfp4_gfx950(int M, int N, int K, int batch, int noshuffle)
+static int opus_select_a4w4_mxfp4_kid(int M, int N, int K, int batch, int noshuffle)
 {
   static const OpusA4w4Mxfp4Tuned tuned[] = {GENERATE_A4W4_MXFP4_TUNED {{0, 0, 0}, -1}};
   for (const auto& e : tuned)
     if (e.kid >= 0 && e.mnk[0] == M && e.mnk[1] == N && e.mnk[2] == K && opus_a4w4_mxfp4_kid_noshuffle(e.kid) == noshuffle)
-      return opus_a4w4_mxfp4_by_kid(e.kid);
-  return opus_a4w4_mxfp4_by_kid(opus_a4w4_mxfp4_heuristic_kid(M, N, K, batch, noshuffle));
+      return e.kid;
+  return opus_a4w4_mxfp4_heuristic_kid(M, N, K, batch, noshuffle);
+}
+
+static OpusScaleKernel opus_dispatch_a4w4_mxfp4_gfx950(int M, int N, int K, int batch, int noshuffle)
+{
+  return opus_a4w4_mxfp4_by_kid(opus_select_a4w4_mxfp4_kid(M, N, K, batch, noshuffle));
+}
+
+// K is the logical (unpacked) K.
+int opus_gemm_a4w4_select_kid(int M, int N, int K, int batch, bool noshuffle)
+{
+  return opus_select_a4w4_mxfp4_kid(M, N, K, batch, noshuffle ? 1 : 0);
 }
 
 static void opus_a4w4_mxfp4_check(const aiter_tensor_t& XQ, const aiter_tensor_t& WQ, const aiter_tensor_t& Y,

@@ -1066,12 +1066,13 @@ A4W4_MXFP4_TAGS = ("a4w4_mxfp4_nt", "a4w4_mxfp4_nt_noshuffle", "a4w4_mxfp4_nt_sm
 
 # a4w4_mxfp4_nt_small (gfx950): small-tile pipeline (include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh), standard
 # hipcc, built by the aiter JIT (no .co).  Config = (BM, BN, D, KS, BMODE (0 B_DIRECT, 1 B_LDS), LAYOUT (0 shuffle, 1 row-major), S).
-#   shuffle (gemm_a4w4 bpreshuffle=True inputs): kids 30400 + i, S = 1
+#   shuffle (gemm_a4w4 bpreshuffle=True inputs): kids 30400 + i, S = 1; A_LDS (BMODE 2, M ~ 128-512) kids 30410 + i, S = 1
 #   row-major (gemm_a4w4_opus_noshuffle inputs): kids 30500 + 3 * i + {0, 1, 2} for S = 1 / 2 / 4 (split-K over blocks)
 A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS = [
     (16, 32, 3, 4, 0), (16, 32, 4, 4, 0), (32, 32, 2, 4, 0), (32, 64, 2, 4, 0), (32, 64, 3, 2, 0), (16, 64, 3, 4, 0),
     (32, 128, 3, 1, 1), (32, 128, 4, 1, 1), (64, 128, 4, 1, 1),
 ]
+A4W4_MXFP4_NT_SMALL_SHUFFLE_ALDS_CFGS = [(32, 64, 6, 1, 2), (32, 128, 3, 1, 2), (32, 128, 4, 1, 2), (64, 128, 4, 1, 2)]
 A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS = [
     (16, 64, 3, 1, 1), (16, 64, 4, 1, 1), (32, 64, 4, 1, 1), (64, 64, 3, 1, 1), (64, 128, 3, 1, 1), (64, 128, 4, 1, 1),
     (16, 32, 2, 4, 0),
@@ -1081,7 +1082,8 @@ A4W4_MXFP4_NT_SMALL_CFG = {}   # name_tag -> (BM, BN, D, KS, BMODE, LAYOUT, S)
 
 
 def _a4w4_mxfp4_nt_small(bm, bn, d, ks, bmode, layout, s):
-    tag = f"a4w4_mxfp4_nt_small_{'rm' if layout else 'sh'}_{'lds' if bmode else 'dir'}_d{d}ks{ks}_s{s}"
+    # the tag keys A4W4_MXFP4_NT_SMALL_CFG, so it must be unique per config (tile included)
+    tag = f"a4w4_mxfp4_nt_small_{'rm' if layout else 'sh'}_{('dir', 'lds', 'alds')[bmode]}_{bm}x{bn}_d{d}ks{ks}_s{s}"
     A4W4_MXFP4_NT_SMALL_CFG[tag] = (bm, bn, d, ks, bmode, layout, s)
     return OpusGemmInstance(
         256, bm, bn, 256, 1, 4, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt_small", ["bf16_t"],
@@ -1091,6 +1093,7 @@ def _a4w4_mxfp4_nt_small(bm, bn, d, ks, bmode, layout, s):
 
 a4w4_mxfp4_nt_small_kernels_list = {
     **{30400 + i: _a4w4_mxfp4_nt_small(*c, 0, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS)},
+    **{30410 + i: _a4w4_mxfp4_nt_small(*c, 0, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_SHUFFLE_ALDS_CFGS)},
     **{30500 + 3 * i + j: _a4w4_mxfp4_nt_small(*c, 1, s)
        for i, c in enumerate(A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS) for j, s in enumerate(A4W4_MXFP4_NT_SMALL_SPLITS)},
 }

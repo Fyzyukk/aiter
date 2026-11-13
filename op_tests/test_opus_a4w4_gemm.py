@@ -15,6 +15,7 @@ import torch
 
 import aiter
 from aiter.ops.opus import gemm_a4w4_opus, gemm_a4w4_opus_noshuffle, opus_gemm_a4w4_tune
+from aiter.ops.opus.gemm_op_a4w4 import opus_gemm_a4w4_select_kid
 from aiter.ops import gemm_op_a4w4 as top   # aiter.gemm_a4w4 (opus = third backend for bpreshuffle=True)
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.fp4_utils import e8m0_shuffle
@@ -25,6 +26,7 @@ KIDS = {**{30000 + i: t for i, t in enumerate(_T)}, **{30010 + i: t + " np" for 
 SK_KIDS = {30020 + i: t + " sk" for i, t in enumerate(_T) if i}
 SMALL_KIDS = {30400 + i: t for i, t in enumerate(("dir 16x32 KS4 D3", "dir 16x32 KS4 D4", "dir 32x32 KS4 D2", "dir 32x64 KS4 D2",
                                                  "dir 32x64 KS2 D3", "dir 16x64 KS4 D3", "lds 32x128 D3", "lds 32x128 D4", "lds 64x128 D4"))}
+SMALL_KIDS.update({30410 + i: t for i, t in enumerate(("alds 32x64 D6", "alds 32x128 D3", "alds 32x128 D4", "alds 64x128 D4"))})
 _RM = ("lds 16x64 D3", "lds 16x64 D4", "lds 32x64 D4", "lds 64x64 D3", "lds 64x128 D3", "lds 64x128 D4", "dir 16x32 KS4 D2")
 NS_SMALL_KIDS = {30500 + 3 * i + j: f"{t} S{s}" for i, t in enumerate(_RM) for j, s in enumerate((1, 2, 4))}
 NS_KIDS = {**{30100 + i: t + " ns" for i, t in enumerate(_T)}, **{30110 + i: t + " ns np" for i, t in enumerate(_T)}, 30130: "256x256 ns nob"}
@@ -144,6 +146,12 @@ def main():
         print(f"M={M} N={N} K={K} batch={b}")
         r = ref(x, w, xs, ws) if M * N * K * b <= 2 ** 34 else None
         shuffled = wsh is not None
+        if M <= 64:   # dispatch must route M <= 64 to an S = 1 small-tile kid of the right layout
+            sk = opus_gemm_a4w4_select_kid(M, N, K, b, not shuffled)
+            want = NS_SMALL_KIDS if not shuffled else SMALL_KIDS
+            good = sk in want and (shuffled or want[sk].endswith("S1"))
+            print(f"  {'select_kid':28s} {sk} {'OK' if good else 'FAIL'}")
+            ok &= good
         if shuffled:
             out = gemm_a4w4_opus(xq, wsh, xss, wss)
             if r is not None:
