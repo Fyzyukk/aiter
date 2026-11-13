@@ -373,10 +373,10 @@ class GemmA4W4BlockScaleTuner(GemmCommonTuner):
 
                     total_kernel_nums = total_kernel_nums + 1
             ### opus kernels (kernelName opus_a4w4_kid<kid>, read by gemm_a4w4); ids continue after asm
-            from aiter.ops.opus.gemm_op_a4w4 import A4W4_MXFP4_NT_KIDS
+            from aiter.ops.opus.gemm_op_a4w4 import A4W4_MXFP4_NT_KIDS, A4W4_MXFP4_NT_SMALL_KIDS
 
             opus_kernels_id = asm_kernels_id
-            for kid in A4W4_MXFP4_NT_KIDS:
+            for kid in A4W4_MXFP4_NT_KIDS + A4W4_MXFP4_NT_SMALL_KIDS:
                 if kid == 30030 and (M % 256 or N % 256):  # 256x256 without boundary handling
                     continue
                 info = ((gfx, cu_num, M, N, K), opus_kernels_id, 0, f"opus_a4w4_kid{kid}")

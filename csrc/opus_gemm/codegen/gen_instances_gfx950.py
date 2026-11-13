@@ -21,6 +21,7 @@ from codegen.common import (
 
 PIPELINE_HEADER_MAP = {
     "a4w4_mxfp4_nt": "gfx950/opus_co_launch_mxfp4_gfx950.cuh",
+    "a4w4_mxfp4_nt_small": "gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh",
     "a4w4_mxfp4_nt_noshuffle": "gfx950/opus_co_launch_mxfp4_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_gemm_pipeline_a8w8_scale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_pipeline_a8w8_noscale_gfx950.cuh",
@@ -42,6 +43,7 @@ PIPELINE_HEADER_MAP_4G_SAFE = {
 
 TRAITS_HEADER_MAP = {
     "a4w4_mxfp4_nt": "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_gfx950.cuh",
+    "a4w4_mxfp4_nt_small": "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh",
     "a4w4_mxfp4_nt_noshuffle": "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_noshuffle_gfx950.cuh",
     "a8w8_scale": "gfx950/opus_gemm_traits_a8w8_scale_gfx950.cuh",
     "a8w8": "gfx950/opus_gemm_traits_a8w8_noscale_gfx950.cuh",
@@ -54,6 +56,7 @@ TRAITS_HEADER_MAP = {
 
 KERNEL_FUNC_MAP = {
     "a4w4_mxfp4_nt": "gemm_a4w4_mxfp4_nt_kernel",
+    "a4w4_mxfp4_nt_small": "gemm_a4w4_mxfp4_nt_small_kernel",
     "a4w4_mxfp4_nt_noshuffle": "gemm_a4w4_mxfp4_nt_noshuffle_kernel",
     "a8w8_scale": "gemm_a8w8_scale_kernel",
     "a8w8": "gemm_a8w8_noscale_kernel",
@@ -72,6 +75,7 @@ KERNEL_FUNC_MAP_4G_SAFE = {
 
 TRAITS_NAME_MAP = {
     "a4w4_mxfp4_nt": "opus_gemm_a4w4_mxfp4_nt_traits_gfx950",
+    "a4w4_mxfp4_nt_small": "opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950",
     "a4w4_mxfp4_nt_noshuffle": "opus_gemm_a4w4_mxfp4_nt_noshuffle_traits_gfx950",
     "a8w8_scale": "opus_gemm_a8w8_scale_traits_gfx950",
     "a8w8": "opus_gemm_a8w8_noscale_traits_gfx950",
@@ -84,6 +88,7 @@ TRAITS_NAME_MAP = {
 
 KARGS_NAME_MAP = {
     "a4w4_mxfp4_nt": "opus_gemm_mxfp4_scale_kargs_gfx950",
+    "a4w4_mxfp4_nt_small": "opus_gemm_mxfp4_small_kargs_gfx950",
     "a4w4_mxfp4_nt_noshuffle": "opus_gemm_mxfp4_scale_kargs_gfx950",
     "a8w8_scale": "opus_gemm_scale_kargs_gfx950",
     "a8w8": "opus_gemm_noscale_kargs_gfx950",
@@ -1648,7 +1653,81 @@ void
         })
 
 
+def gen_a4w4_mxfp4_nt_small_instance(cg, k, instance_impl_preamble, A8W8_SCALE_HOST_EXTRA, **_unused):
+    """gfx950 small-tile a4w4 launcher + device code (standard hipcc, JIT; no .co); config from
+    opus_gemm_common.A4W4_MXFP4_NT_SMALL_CFG.  The pipeline header needs the full HIP runtime, so the device TU's __HIPCC_RTC__
+    is undefined around it (OPUS_SMALL_DEVICE_TU keeps the launcher out of that TU).  One device instantiation per traits
+    (the S = 1 kid); S > 1 kids launch the same kernel.  Inputs are checked by opus_gemm.cu before the launcher."""
+    from opus_gemm_common import A4W4_MXFP4_NT_SMALL_CFG
+
+    bm, bn, d, ks, bmode, layout, S = A4W4_MXFP4_NT_SMALL_CFG[k.name_tag]
+    traits = f"opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<{bm}, {bn}, {d}, {ks}, {bmode}, {layout}>"
+    # shuffle: bytes per 32-row block (32 x round_up(K/32, 8) columns); row-major: bytes per row (K/32)
+    sf_mul = 32 if layout == 0 else 1
+    INSTANCE_IMPL = f"""{instance_impl_preamble()}
+#ifdef OPUS_FUSED_HOST_TU
+#include "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh"
+template<class Traits>
+__global__ __launch_bounds__(256, 1) void gemm_a4w4_mxfp4_nt_small_kernel(opus_gemm_mxfp4_small_kargs_gfx950 ka);
+#else
+#ifdef __HIPCC_RTC__
+#define OPUS_SMALL_DEVICE_TU 1
+#undef __HIPCC_RTC__
+#endif
+#include "gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh"
+#endif
+#if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__) && !defined(OPUS_SMALL_DEVICE_TU)
+#include "gfx950/opus_small_launch_mxfp4_gfx950.cuh"
+template <typename D_C>
+void
+{k.name}(
+    aiter_tensor_t &XQ,
+    aiter_tensor_t &WQ,
+    aiter_tensor_t &Y,
+    std::optional<aiter_tensor_t> x_scale,
+    std::optional<aiter_tensor_t> w_scale)
+{{{{
+    const auto& sa = x_scale.value();
+    const auto& sb = w_scale.value();
+    const int batch = XQ.size(0), M = XQ.size(1), K = XQ.size(2) * 2, N = WQ.size(1);
+    constexpr int S = {S};
+    AITER_CHECK(K / 256 >= S, "a4w4_mxfp4_nt_small: K / 256 must be >= the split ", S);
+    const long cols_a = sa.size(-1), cols_b = sb.size(-1);
+    const long rows_a = sa.dim() == 3 ? sa.size(1) : sa.size(0) / batch;
+    const long rows_b = sb.dim() == 3 ? sb.size(1) : sb.size(0) / batch;
+    opus_gemm_mxfp4_small_kargs_gfx950 kargs{{}};
+    kargs.ptr_a = XQ.data_ptr(); kargs.ptr_b = WQ.data_ptr(); kargs.ptr_c = Y.data_ptr();
+    kargs.ptr_sfa = sa.data_ptr(); kargs.ptr_sfb = sb.data_ptr();
+    kargs.m = M; kargs.n = N; kargs.k = K; kargs.batch = batch;
+    kargs.stride_a = K / 2; kargs.stride_c = N;
+    kargs.stride_sfa = {sf_mul} * cols_a; kargs.stride_sfb = {sf_mul} * cols_b;
+    kargs.stride_a_batch = (long long)M * (K / 2); kargs.stride_b_batch = (long long)N * (K / 2);
+    kargs.stride_c_batch = (long long)M * N;
+    kargs.stride_sfa_batch = rows_a * cols_a; kargs.stride_sfb_batch = rows_b * cols_b;
+    kargs.splitk = S;
+    const int tm = (M + {bm} - 1) / {bm}, tn = (N + {bn} - 1) / {bn};
+    auto stream = aiter::getCurrentHIPStream();
+    if (S > 1) opus_gfx950_small::workspace(stream, (long)batch * tm * tn, (long)batch * S * tm * {bm} * tn * {bn}, kargs.cnt, kargs.ws);
+    gemm_a4w4_mxfp4_nt_small_kernel<{traits}><<<dim3(tn, tm, batch * S), dim3(256), 0, stream>>>(kargs);
+}}}}
+#endif // launcher only on regular host pass
+"""
+    Path(os.path.join(cg.impl_path, f"{k.name}.cuh")).write_text(INSTANCE_IMPL)
+    for CDtype in k.output_dtypes:
+        cg._host_instantiations.append({
+            "kid_name": k.name, "dtype": CDtype,
+            "host_decl": (f"template void\n{k.name}<{CDtype}>(\n    aiter_tensor_t &XQ,\n    aiter_tensor_t &WQ,\n"
+                          f"    aiter_tensor_t &Y{A8W8_SCALE_HOST_EXTRA});\n"),
+        })
+        if S == 1:
+            cg._device_instantiations.append({
+                "kid_name": k.name, "dtype": CDtype,
+                "device_decl": f"template __global__ void gemm_a4w4_mxfp4_nt_small_kernel<{traits}>(opus_gemm_mxfp4_small_kargs_gfx950);\n",
+            })
+
+
 register_emit("gfx950", "a4w4_mxfp4_nt", gen_a4w4_mxfp4_nt_instance)
+register_emit("gfx950", "a4w4_mxfp4_nt_small", gen_a4w4_mxfp4_nt_small_instance)
 register_emit("gfx950", "a4w4_mxfp4_nt_noshuffle", gen_a4w4_mxfp4_nt_noshuffle_instance)
 register_emit("gfx950", "a16w16_persistent", gen_persistent_instance)
 register_emit("gfx950", "a8w8_scale", gen_scale_instance)

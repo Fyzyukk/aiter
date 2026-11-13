@@ -23,6 +23,10 @@ import os
 _T = ("256x256", "256x128", "128x256", "128x128", "192x256", "256x192")
 KIDS = {**{30000 + i: t for i, t in enumerate(_T)}, **{30010 + i: t + " np" for i, t in enumerate(_T)}, 30030: "256x256 nob"}
 SK_KIDS = {30020 + i: t + " sk" for i, t in enumerate(_T) if i}
+SMALL_KIDS = {30400 + i: t for i, t in enumerate(("dir 16x32 KS4 D3", "dir 16x32 KS4 D4", "dir 32x32 KS4 D2", "dir 32x64 KS4 D2",
+                                                 "dir 32x64 KS2 D3", "dir 16x64 KS4 D3", "lds 32x128 D3", "lds 32x128 D4", "lds 64x128 D4"))}
+_RM = ("lds 16x64 D3", "lds 16x64 D4", "lds 32x64 D4", "lds 64x64 D3", "lds 64x128 D3", "lds 64x128 D4", "dir 16x32 KS4 D2")
+NS_SMALL_KIDS = {30500 + 3 * i + j: f"{t} S{s}" for i, t in enumerate(_RM) for j, s in enumerate((1, 2, 4))}
 NS_KIDS = {**{30100 + i: t + " ns" for i, t in enumerate(_T)}, **{30110 + i: t + " ns np" for i, t in enumerate(_T)}, 30130: "256x256 ns nob"}
 _LUT = None
 
@@ -181,6 +185,10 @@ def main():
             if a.perf:
                 us = bench(lambda: opus_gemm_a4w4_tune(xq, wsh, xss, wss, Y=o, kernelId=kid))
                 print(f"    {t}: {us:7.1f} us  {2 * M * N * K * b / us / 1e9:.0f} TFLOPS")
+        for kid, t in (SMALL_KIDS.items() if shuffled else ()):
+            o = opus_gemm_a4w4_tune(xq, wsh, xss, wss, kernelId=kid)
+            if r is not None:
+                ok &= check(o, r, f"kid {kid} (small {t})")
         for kid, t in (SK_KIDS.items() if shuffled else ()):
             for S in (1, 2, 4, 8):
                 if K % (S * 256):
@@ -228,8 +236,10 @@ def main():
                 ok &= d < 1e-2
             except Exception as e:  # noqa: BLE001
                 print(f"  triton gemm_afp4wfp4 unavailable: {type(e).__name__}: {str(e)[:120]}")
-        for kid, t in NS_KIDS.items():
+        for kid, t in {**NS_KIDS, **NS_SMALL_KIDS}.items():
             if kid == 30130 and (M % 256 or N % 256):
+                continue
+            if kid in NS_SMALL_KIDS and K // 256 < int(t.split("S")[-1]):
                 continue
             o = gemm_a4w4_opus_noshuffle(xq, wq, xsr, wsr, kernelId=kid)
             if r is not None:

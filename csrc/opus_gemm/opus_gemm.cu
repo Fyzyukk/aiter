@@ -75,7 +75,7 @@ struct OpusA4w4Mxfp4Kid {
   int kid;
   OpusScaleKernel fn;
   int b_m, b_n;
-  int mode;       // 0 persistent, 1 one tile per block, 2 split-K
+  int mode;       // 0 persistent, 1 one tile per block, 2 split-K, 3 small-tile (S = 1), 4 small-tile split-K (by kid only)
   int boundary;   // 0: needs M % B_M == 0 && N % B_N == 0
   int noshuffle;  // 1: a4w4_mxfp4_nt_noshuffle (row-major B / scales), 0: shuffle_weight B + e8m0_shuffle scales
 };
@@ -130,9 +130,19 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
   const int cus = static_cast<int>(get_num_cu_func());
   int best = -1;
   double best_cost = 1e300;
+  // M <= 64: small-tile pipeline -- the first (kid order) S = 1 small kid of this layout with the smallest B_M >= M.
+  if (M <= 64) {
+    for (int i = 0; i < n; ++i) {
+      const auto& e = t[i];
+      if (e.mode != 3 || e.noshuffle != noshuffle || e.b_m < M) continue;
+      if (best < 0 || e.b_m < best_cost) { best = e.kid; best_cost = e.b_m; }
+    }
+    if (best >= 0) return best;
+    best_cost = 1e300;
+  }
   for (int i = 0; i < n; ++i) {
     const auto& e = t[i];
-    if (e.noshuffle != noshuffle) continue;
+    if (e.noshuffle != noshuffle || e.mode >= 3) continue;
     if (!e.boundary && (M % e.b_m || N % e.b_n)) continue;
     const long tiles = static_cast<long>((M + e.b_m - 1) / e.b_m) * ((N + e.b_n - 1) / e.b_n) * batch;
     const double area = static_cast<double>(e.b_m) * e.b_n;

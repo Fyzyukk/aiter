@@ -31,8 +31,15 @@ A4W4_MXFP4_NT_TILE_NAMES = ("256x256", "256x128", "128x256", "128x128", "192x256
 A4W4_MXFP4_NT_KIDS = (
     tuple(30000 + i for i in range(6)) + tuple(30010 + i for i in range(6)) + tuple(30021 + i for i in range(5)) + (30030,)
 )
-# Row-major (bpreshuffle=False) kids: 30100 + i persistent, 30110 + i one tile per block, 30130 = 256x256 without boundary.
-A4W4_MXFP4_NT_NOSHUFFLE_KIDS = tuple(30100 + i for i in range(6)) + tuple(30110 + i for i in range(6)) + (30130,)
+# Small-tile pipeline (JIT-built), shuffle layout: 30400..30408 (B_DIRECT 16x32 KS4 D3/D4, 32x32 KS4 D2, 32x64 KS4 D2 / KS2 D3,
+# 16x64 KS4 D3; B_LDS 32x128 D3/D4, 64x128 D4); the opus dispatch uses them for M <= 64.
+A4W4_MXFP4_NT_SMALL_KIDS = tuple(30400 + i for i in range(9))
+# Row-major kids: 30100 + i persistent, 30110 + i one tile per block, 30130 = 256x256 without boundary; small-tile
+# 30500 + 3 * i + {0, 1, 2} = split 1 / 2 / 4 of (B_LDS 16x64 D3/D4, 32x64 D4, 64x64 D3, 64x128 D3/D4; B_DIRECT 16x32 KS4 D2).
+A4W4_MXFP4_NT_SMALL_ROWMAJOR_KIDS = tuple(30500 + i for i in range(21))
+A4W4_MXFP4_NT_NOSHUFFLE_KIDS = (
+    tuple(30100 + i for i in range(6)) + tuple(30110 + i for i in range(6)) + (30130,) + A4W4_MXFP4_NT_SMALL_ROWMAJOR_KIDS
+)
 
 
 def _fake_dispatch(XQ, WQ, Y, group_layout=None, x_scale=None, w_scale=None, bias=None) -> Tensor:
@@ -152,4 +159,5 @@ def opus_gemm_a4w4_tune(
     return Y
 
 
-__all__ = ["gemm_a4w4_opus", "gemm_a4w4_opus_noshuffle", "opus_gemm_a4w4_tune", "A4W4_MXFP4_NT_KIDS", "A4W4_MXFP4_NT_NOSHUFFLE_KIDS"]
+__all__ = ["gemm_a4w4_opus", "gemm_a4w4_opus_noshuffle", "opus_gemm_a4w4_tune", "A4W4_MXFP4_NT_KIDS", "A4W4_MXFP4_NT_SMALL_KIDS",
+           "A4W4_MXFP4_NT_NOSHUFFLE_KIDS"]

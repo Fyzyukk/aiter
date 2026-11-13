@@ -32,6 +32,8 @@ from opus_gemm_common import (
     a8w8_scale_kernels_list,
     a4w4_mxfp4_nt_kernels_list,
     a4w4_mxfp4_nt_noshuffle_kernels_list,
+    a4w4_mxfp4_nt_small_kernels_list,
+    A4W4_MXFP4_NT_SMALL_CFG,
     a16w16_flatmm_kernels_list,
     a16w16_flatmm_splitk_kernels_list,
     a16w16_kernels_list,
@@ -143,6 +145,7 @@ INPUT_DTYPE_MAP = {
     "a8w8": ("fp8_t", "fp8_t"),
     "a4w4_mxfp4_nt": ("fp4_t", "fp4_t"),
     "a4w4_mxfp4_nt_noshuffle": ("fp4_t", "fp4_t"),
+    "a4w4_mxfp4_nt_small": ("fp4_t", "fp4_t"),
     "a8w8_blockscale_bpreshuffle_singlebuf": ("fp8_t", "fp8_t"),
     **{tag: ("bf16_t", "bf16_t") for tag in _A16W16_TAGS},
 }
@@ -912,15 +915,19 @@ void
         """Emit opus_gemm_a4w4_mxfp4_lookup.h: the a4w4_mxfp4_nt(_noshuffle) kid table (kid, launcher, B_M, B_N, mode, boundary,
         noshuffle) used by both the
         tune entry (by kid) and the heuristic, plus the (M, N, K) -> kid table baked from the tuned CSV (may be empty)."""
-        rows = sorted((kid, k) for kid, k in kernels_dict.items() if isinstance(kid, int) and k.kernel_tag in ("a4w4_mxfp4_nt", "a4w4_mxfp4_nt_noshuffle"))
+        rows = sorted((kid, k) for kid, k in kernels_dict.items() if isinstance(kid, int) and k.kernel_tag in ("a4w4_mxfp4_nt", "a4w4_mxfp4_nt_noshuffle", "a4w4_mxfp4_nt_small"))
         lines = ["#pragma once", "// Auto-generated. See gen_instances.py:gen_a4w4_mxfp4_lookup.",
                  "#define OPUS_A4W4_MXFP4_HAS_KIDS %d" % (1 if rows else 0),
                  "#define GENERATE_A4W4_MXFP4_KIDS \\"]
         for i, (kid, k) in enumerate(rows):
             from codegen.gen_instances_gfx950 import a4w4_mxfp4_nt_mode, a4w4_mxfp4_nt_variant
-            mode = a4w4_mxfp4_nt_mode(k)
-            boundary = 0 if a4w4_mxfp4_nt_variant(k) == "nob" else 1
-            noshuffle = 1 if k.kernel_tag == "a4w4_mxfp4_nt_noshuffle" else 0
+            if k.kernel_tag == "a4w4_mxfp4_nt_small":   # mode 3: small-tile pipeline (JIT), layout from its config
+                cfg = A4W4_MXFP4_NT_SMALL_CFG[k.name_tag]
+                mode, boundary, noshuffle = (3 if cfg[6] == 1 else 4), 1, cfg[5]   # 4: split-K variant, tune / tuned table only
+            else:
+                mode = a4w4_mxfp4_nt_mode(k)
+                boundary = 0 if a4w4_mxfp4_nt_variant(k) == "nob" else 1
+                noshuffle = 1 if k.kernel_tag == "a4w4_mxfp4_nt_noshuffle" else 0
             lines.append(f"    {{ {kid}, &{k.name}<bf16_t>, {k.B_M}, {k.B_N}, {mode}, {boundary}, {noshuffle} }}," + (" \\" if i + 1 < len(rows) else ""))
         if not rows:
             lines[-1] = "#define GENERATE_A4W4_MXFP4_KIDS"
@@ -1190,6 +1197,7 @@ if __name__ == "__main__":
         S |= set(a8w8_kernels_list.keys())
         S |= set(a4w4_mxfp4_nt_kernels_list.keys())   # host launchers only (pre-compiled .co)
         S |= set(a4w4_mxfp4_nt_noshuffle_kernels_list.keys())
+        S |= set(a4w4_mxfp4_nt_small_kernels_list.keys())   # small-tile pipeline, JIT-built
 
     # Honor --kernel_tag as a developer override that *further restricts* the set (within the a16w16
     # / a8w8 families).
@@ -1203,6 +1211,7 @@ if __name__ == "__main__":
                 S |= set(a8w8_kernels_list.keys())
                 S |= set(a4w4_mxfp4_nt_kernels_list.keys())
                 S |= set(a4w4_mxfp4_nt_noshuffle_kernels_list.keys())
+                S |= set(a4w4_mxfp4_nt_small_kernels_list.keys())   # small-tile pipeline, JIT-built
 
     # Heuristic-fallback invariant (single source of truth: opus_gemm_common.py).
     required_heuristic = set(heuristic_kids_for_arch(target_arches))
