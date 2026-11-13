@@ -1,18 +1,15 @@
-# gemm_a4w4_opus_noshuffle (row-major inputs, the Triton gemm_afp4wfp4 layout) vs Triton gemm_afp4wfp4 (same inputs) and
-# aiter gemm_a4w4 asm (default, on the shuffled copies of the same data); CUDA graph of IT calls, median of 5 replays.  Same random data for all (fp4 bytes, e8m0 in [124, 130]); the shuffled copies are derived
+# gemm_a4w4_opus_noshuffle (row-major inputs, the Triton gemm_afp4wfp4 layout) vs Triton gemm_afp4wfp4 on the same inputs
+# (asm is not compared: it needs e8m0_shuffle'd scales, a different layout); CUDA graph of IT calls, median of 5 replays.  Same random data for all (fp4 bytes, e8m0 in [124, 130]); the shuffled copies are derived
 # from it.  Portable: only needs this aiter checkout on PYTHONPATH (JIT builds module_deepgemm_opus).
 # usage: AITER_USE_SYSTEM_TRITON=1 PYTHONPATH=<aiter checkout> HIP_VISIBLE_DEVICES=<gpu> python3 perf_noshuffle.py [M,N,K ...]
-# prints per shape: asm, triton, opus noshuffle dispatch, every noshuffle kid (KIDS=0 skips the per-kid sweep).
+# prints per shape: triton, opus noshuffle dispatch, ours/triton, every noshuffle kid (KIDS=0 skips the per-kid sweep).
 import sys, torch, aiter
-from aiter.ops.gemm_op_a4w4 import gemm_a4w4
 import os
 from aiter.ops.opus import gemm_a4w4_opus_noshuffle
 try:
     from aiter.ops.triton.gemm.basic.gemm_afp4wfp4 import gemm_afp4wfp4
 except Exception:  # noqa: BLE001
     gemm_afp4wfp4 = None
-from aiter.ops.shuffle import shuffle_weight
-from aiter.utility.fp4_utils import e8m0_shuffle
 
 IT = 100; dev = "cuda"; fp4 = aiter.dtypes.fp4x2; e8 = aiter.dtypes.fp8_e8m0
 T = ("256x256", "256x128", "128x256", "128x128", "192x256", "256x192")
@@ -46,13 +43,6 @@ for spec in sys.argv[1:] or DEFAULT:
     ws = torch.randint(124, 131, (N, K // 32), dtype=torch.uint8, device=dev).view(e8)
     y = torch.empty((M, N), dtype=torch.bfloat16, device=dev)
     res = {}
-    os.environ.pop("AITER_A4W4_BACKEND", None)   # asm default
-    if N % 16 == 0:
-        wsh, xss, wss = shuffle_weight(w, layout=(16, 16)), e8m0_shuffle(xs), e8m0_shuffle(ws)
-        try:
-            res["asm"] = graph_us(lambda: gemm_a4w4(x, wsh, xss, wss, bpreshuffle=True))
-        except Exception as e:  # noqa: BLE001
-            res["asm"] = float("nan"); print(f"# asm failed: {type(e).__name__}: {str(e)[:100]}", file=sys.stderr)
     xu, wu, xsu, wsu = x.view(torch.uint8), w.view(torch.uint8), xs.view(torch.uint8), ws.view(torch.uint8)
     if gemm_afp4wfp4 is not None:
         try:
@@ -60,10 +50,11 @@ for spec in sys.argv[1:] or DEFAULT:
         except Exception as e:  # noqa: BLE001
             res["triton"] = float("nan"); print(f"# triton failed: {type(e).__name__}: {str(e)[:100]}", file=sys.stderr)
     res["opus_noshuffle"] = graph_us(lambda: gemm_a4w4_opus_noshuffle(xu, wu, xsu, wsu, Y=y))
+    res["ours/triton"] = res["opus_noshuffle"] / res["triton"] if res.get("triton") else float("nan")
     for kid, t in (NS_KIDS.items() if os.environ.get("KIDS", "1") != "0" else ()):
         if kid == 30130 and (M % 256 or N % 256):
             continue
         res[t] = graph_us(lambda: gemm_a4w4_opus_noshuffle(xu, wu, xsu, wsu, Y=y, kernelId=kid))
     kids = [(v, k) for k, v in res.items() if k in NS_KIDS.values()]
     best = f" | best_ns={min(kids)[1]} {min(kids)[0]:.2f}" if kids else ""
-    print(f"{M} {N} {K} | " + " ".join(f"{k}={v:.2f}" for k, v in res.items()) + best, flush=True)
+    print(f"{M} {N} {K} | " + " ".join(f"{k}={v:.3f}" if k == "ours/triton" else f"{k}={v:.2f}" for k, v in res.items()) + best, flush=True)

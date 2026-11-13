@@ -51,3 +51,9 @@ prof/timing.sh 2 2                           # 等卡空闲后与 candidate_m8 �
 `perf/perf_noshuffle.sh`：`GPU=<HIP 编号> SMI=<smi 编号，可空> AITER=<checkout> [SHAPES="M,N,K ..."] [KIDS=0] [M8_EXE=.. DEV_EXE=..]`；
 CUDA graph 测 `gemm_a4w4_opus_noshuffle`（分发 + 每个 kid）、Triton `gemm_afp4wfp4`（同一份输入）、asm（`gemm_a4w4` 默认，同数据的 shuffle 副本）；
 可选 dev harness 与 candidate_m8 交替测 8192³。
+
+## 注意：JIT 模块不会自动重编
+aiter 的 JIT 不会因为 opus 源码（opus_gemm.cu、gen_instances.py、codegen、include、rocm_ops.hpp、pybind）更新而重编
+`aiter/jit/module_deepgemm_opus.so`；旧 .so 可能缺新入口（例如 `opus_gemm_a4w4`，报 "not found"）。更新代码后先
+`rm -f aiter/jit/module_deepgemm_opus.so`（或设 `AITER_REBUILD=1`）。perf 脚本（perf/perf_gemm_a4w4.sh、
+../mxfp4_nt_noshuffle_dev/perf/perf_noshuffle.sh）开头会检查 .so 是否比源码旧或缺 `opus_gemm_a4w4`，`REBUILD=1` 时自动删除。

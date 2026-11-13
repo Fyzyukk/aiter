@@ -25,3 +25,9 @@ $E -m 8192 -n 8192 -k 8192 -b 1 -t 256x256 -v 0 -w 1000 -i 200 # 计时
 
 ## 性能（8192³，GPU2 = HIP 2）
 256×256：208.8 µs（约 5.27P），同时段 aiter asm f4gemm BpreShuffle_256x256 205.8 µs。
+
+## 注意：JIT 模块不会自动重编
+aiter 的 JIT 不会因为 opus 源码（opus_gemm.cu、gen_instances.py、codegen、include、rocm_ops.hpp、pybind）更新而重编
+`aiter/jit/module_deepgemm_opus.so`；旧 .so 可能缺新入口（例如 `opus_gemm_a4w4`，报 "not found"）。更新代码后先
+`rm -f aiter/jit/module_deepgemm_opus.so`（或设 `AITER_REBUILD=1`）。perf 脚本（perf/perf_gemm_a4w4.sh、
+../mxfp4_nt_noshuffle_dev/perf/perf_noshuffle.sh）开头会检查 .so 是否比源码旧或缺 `opus_gemm_a4w4`，`REBUILD=1` 时自动删除。

@@ -74,8 +74,9 @@ def _opus_gemm_a4w4_tune_raw(
 def _as3d(XQ: Tensor, WQ: Tensor, Y: Tensor | None):
     x3 = XQ if XQ.dim() == 3 else XQ.unsqueeze(0)
     w3 = WQ if WQ.dim() == 3 else WQ.unsqueeze(0)
-    if Y is None:
-        Y = torch.empty((x3.shape[0], x3.shape[1], w3.shape[1]), device=XQ.device, dtype=torch.bfloat16)
+    if Y is None:   # same rank as XQ: 2D input -> [M, N] (as Triton gemm_afp4wfp4), 3D -> [batch, M, N]
+        shape = (x3.shape[1], w3.shape[1]) if XQ.dim() == 2 else (x3.shape[0], x3.shape[1], w3.shape[1])
+        Y = torch.empty(shape, device=XQ.device, dtype=torch.bfloat16)
     y3 = Y if Y.dim() == 3 else Y.unsqueeze(0)
     return x3, w3, Y, y3
 

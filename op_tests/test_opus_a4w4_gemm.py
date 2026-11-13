@@ -202,6 +202,20 @@ def main():
             ok &= check(out, r, "  (2D scales)")
         if b == 1:
             o_ns = gemm_a4w4_opus_noshuffle(x[0], w[0], xs[0], ws[0])   # uint8 tensors, exactly as gemm_afp4wfp4 takes them
+            if tuple(o_ns.shape) != (M, N):
+                print(f"  noshuffle 2D input returned shape {tuple(o_ns.shape)} != {(M, N)} -> FAIL"); ok = False
+            o3 = gemm_a4w4_opus_noshuffle(x, w, xs, ws)   # 3D input -> [batch, M, N]
+            if tuple(o3.shape) != (1, M, N):
+                print(f"  noshuffle 3D input returned shape {tuple(o3.shape)} -> FAIL"); ok = False
+            if shuffled:
+                o2 = gemm_a4w4_opus(xq[0], wsh[0], xss[0], wss[0])
+                if tuple(o2.shape) != (M, N):
+                    print(f"  gemm_a4w4_opus 2D input returned shape {tuple(o2.shape)} -> FAIL"); ok = False
+                elif r is not None:
+                    ok &= check(o2.unsqueeze(0), r, "gemm_a4w4_opus (2D input)")
+            yu = torch.empty((1, M, N), dtype=torch.bfloat16, device="cuda")   # user Y keeps its rank
+            if gemm_a4w4_opus_noshuffle(x[0], w[0], xs[0], ws[0], Y=yu) is not yu or yu.dim() != 3:
+                print("  user-provided Y not returned as given -> FAIL"); ok = False
             if r is not None:
                 ok &= check(o_ns.unsqueeze(0), r, "  (uint8 inputs, 2D)")
             try:
