@@ -88,3 +88,17 @@ persistent / 非 persistent、ZC_PEEL、C 写回指令序列。split-K 暂不支
   （含 N=136 只走 noshuffle、batch 2、2D / 3D scale）× 13 个 noshuffle kid + dispatch：98 项 OK；shuffle 原有 161 项 OK；
   应报错用例 13 项全部被拒（Python、C++、C++ tune 三层）。
 - 计时：本机卡被占，按用户决定之后在空闲机器上用 `perf/perf_noshuffle.sh` 统一测。
+
+## 接口调整（用户决定，2026-11-13）
+- shuffle 版：作为 `aiter.gemm_a4w4(bpreshuffle=True)` 的第三个后端（asm / CK 之外），见 aiter/ops/gemm_op_a4w4.py。
+  调优 csv 的 kernelName `opus_a4w4_kid<kid>` → 指定 kid；`opus_a4w4_auto` 或 `opus_a4w4_kid-1` → opus 分发（查表 → 启发式）；
+  环境变量 `AITER_A4W4_BACKEND=opus` → gfx950 上所有 bpreshuffle=True 调用走 opus 分发。bias / alpha≠1 / beta≠0 / 非 bf16 输出 /
+  bpreshuffle=False / 非 gfx950 时仍走 asm（csv 名字被忽略）。gemm_a4w4 分配的 out 行数补到 32，opus 写 `out[:m]` 并返回它。
+- 不 shuffle 版：`gemm_a4w4_opus_noshuffle(XQ, WQ, x_scale, w_scale, Y=None, kernelId=None)`，布局同 Triton gemm_afp4wfp4。
+  `gemm_a4w4_opus` 去掉了 bpreshuffle 参数（只表示 shuffle 版）。
+- 测试：op_tests/test_opus_a4w4_gemm.py ALL OK（343 项 OK、13 个应报错用例全部被拒）：gemm_a4w4 三种走 opus 的方式各 shape 都正确，
+  且用桩函数确认确实进了 opus（csv kid → tune 入口、auto / 环境变量 → 分发入口；默认 → asm）；opus 与 asm 结果逐位一致；
+  noshuffle 与 Triton gemm_afp4wfp4 逐位一致（uint8 输入直接传）。
+  踩坑：aiter 把配置文件路径按环境变量名缓存（`AITER_CONFIG.get_config_file` 有 lru_cache），测试里换 csv 要同时清这个缓存和 get_GEMM_config 的缓存。
+- 性能脚本：`../mxfp4_nt_dev/perf/perf_gemm_a4w4.{sh,py}`（gemm_a4w4：asm 默认 vs AITER_A4W4_BACKEND=opus vs Triton）、
+  `perf/perf_noshuffle.{sh,py}`（gemm_a4w4_opus_noshuffle vs Triton vs asm）；参数化 GPU / SMI / AITER / SHAPES，到空闲机器上跑。

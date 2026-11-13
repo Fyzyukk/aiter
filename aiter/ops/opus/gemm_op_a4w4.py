@@ -1,21 +1,26 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Opus gfx950 MXFP4 x MXFP4 NT GEMM (a4w4_mxfp4_nt, 1x32 e8m0 scales).
+"""Opus gfx950 MXFP4 x MXFP4 NT GEMM (1x32 e8m0 scales), two input layouts:
 
-Inputs follow aiter ``gemm_a4w4(..., bpreshuffle=...)``.  ``bpreshuffle=True`` (default):
+``gemm_a4w4_opus`` (kernel a4w4_mxfp4_nt, kids 300xx) -- same inputs as aiter ``gemm_a4w4(..., bpreshuffle=True)``; normally
+reached through ``aiter.gemm_a4w4`` (tuned-CSV kernelName ``opus_a4w4_kid<kid>`` / ``opus_a4w4_auto``, or
+``AITER_A4W4_BACKEND=opus``):
   * ``XQ``: [M, K/2] (or [batch, M, K/2]) fp4x2, row-major.
-  * ``WQ``: [N, K/2] (or [batch, N, K/2]) fp4x2 in ``shuffle_weight(w, layout=(16, 16))`` layout.
-  * ``x_scale`` / ``w_scale``: e8m0 in ``e8m0_shuffle`` layout ([rows padded to 256 (32 is enough), K/32 padded to 8]
-    per batch; for batch > 1 either [batch, rows, cols] or [batch * rows, cols]).
-  * output bf16 [M, N] (or [batch, M, N]).
-Any M; N % 16 == 0; K % 256 == 0.
-``bpreshuffle=False``: ``WQ`` plain row-major [N, K/2]; ``x_scale`` / ``w_scale`` row-major e8m0 [M, K/32] / [N, K/32]
-(per batch; 2D [batch * rows, K/32] or 3D); any M; N % 8 == 0; K % 256 == 0 (kernel a4w4_mxfp4_nt_noshuffle, kids 301xx).
-Device code is the pre-compiled gen_co/gfx950/*.co (pin toolchain).
+  * ``WQ``: [N, K/2] fp4x2 in ``shuffle_weight(w, layout=(16, 16))`` layout.
+  * ``x_scale`` / ``w_scale``: e8m0 in ``e8m0_shuffle`` layout ([rows padded to 32 or 256, K/32 padded to 8] per batch).
+  Any M; N % 16 == 0; K % 256 == 0.
+
+``gemm_a4w4_opus_noshuffle`` (kernel a4w4_mxfp4_nt_noshuffle, kids 301xx) -- plain row-major inputs, the layout of Triton
+``gemm_afp4wfp4``: ``XQ`` [M, K/2], ``WQ`` [N, K/2] (fp4x2 or uint8), ``x_scale`` [M, K/32], ``w_scale`` [N, K/32]
+(e8m0 or uint8).  Any M; N % 8 == 0; K % 256 == 0.
+
+Output bf16 [M, N] (or [batch, M, N]).  Device code is the pre-compiled gen_co/gfx950/*.co (pin toolchain).
 """
 
 import torch
 from torch import Tensor
+
+import aiter
 
 from ...jit.core import compile_ops
 
@@ -106,14 +111,33 @@ def _check(x3: Tensor, w3: Tensor, x_scale: Tensor, w_scale: Tensor, bpreshuffle
             raise ValueError(f"opus a4w4: {nm} must be e8m0_shuffle'd: >= {need} rows (multiple of 32) x {cols} cols per batch, got {tuple(s.shape)}")
 
 
-def gemm_a4w4_opus(
-    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor, Y: Tensor | None = None, bpreshuffle: bool = True
-) -> Tensor:
-    """MXFP4 GEMM Y = XQ @ WQ^T with 1x32 scales; tile chosen by the tuned table, else the C++ heuristic.
-    bpreshuffle selects the input layout as in aiter gemm_a4w4 (see the module docstring)."""
+def gemm_a4w4_opus(XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor, Y: Tensor | None = None) -> Tensor:
+    """MXFP4 GEMM Y = XQ @ WQ^T, inputs as aiter gemm_a4w4(bpreshuffle=True) (shuffle_weight B, e8m0_shuffle scales);
+    tile chosen by the tuned table, else the C++ heuristic."""
     x3, w3, Y, y3 = _as3d(XQ, WQ, Y)
-    _check(x3, w3, x_scale, w_scale, bpreshuffle)
-    _opus_gemm_a4w4_raw(x3, w3, y3, x_scale, w_scale, bool(bpreshuffle))
+    _check(x3, w3, x_scale, w_scale, True)
+    _opus_gemm_a4w4_raw(x3, w3, y3, x_scale, w_scale, True)
+    return Y
+
+
+def _fp4(t: Tensor) -> Tensor:
+    return t.view(aiter.dtypes.fp4x2) if t.dtype == torch.uint8 else t
+
+
+def gemm_a4w4_opus_noshuffle(
+    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor, Y: Tensor | None = None, kernelId: int | None = None
+) -> Tensor:
+    """MXFP4 GEMM Y = XQ @ WQ^T with plain row-major inputs (layout of Triton gemm_afp4wfp4): XQ [M, K/2], WQ [N, K/2]
+    (fp4x2 or uint8), x_scale [M, K/32], w_scale [N, K/32] (e8m0 or uint8).  kernelId: one of
+    A4W4_MXFP4_NT_NOSHUFFLE_KIDS, default None = tuned table, else the C++ heuristic."""
+    x3, w3, Y, y3 = _as3d(_fp4(XQ), _fp4(WQ), Y)
+    _check(x3, w3, x_scale, w_scale, False)
+    if kernelId is None or kernelId < 0:
+        _opus_gemm_a4w4_raw(x3, w3, y3, x_scale, w_scale, False)
+    else:
+        if kernelId not in A4W4_MXFP4_NT_NOSHUFFLE_KIDS:
+            raise ValueError(f"gemm_a4w4_opus_noshuffle: kernelId {kernelId} is not a row-major kid {A4W4_MXFP4_NT_NOSHUFFLE_KIDS}")
+        _opus_gemm_a4w4_tune_raw(x3, w3, y3, x_scale, w_scale, kernelId)
     return Y
 
 
@@ -127,4 +151,4 @@ def opus_gemm_a4w4_tune(
     return Y
 
 
-__all__ = ["gemm_a4w4_opus", "opus_gemm_a4w4_tune", "A4W4_MXFP4_NT_KIDS", "A4W4_MXFP4_NT_NOSHUFFLE_KIDS"]
+__all__ = ["gemm_a4w4_opus", "gemm_a4w4_opus_noshuffle", "opus_gemm_a4w4_tune", "A4W4_MXFP4_NT_KIDS", "A4W4_MXFP4_NT_NOSHUFFLE_KIDS"]

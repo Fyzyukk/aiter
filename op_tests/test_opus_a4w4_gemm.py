@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Correctness / performance of the opus gfx950 MXFP4 GEMM (a4w4_mxfp4_nt, bpreshuffle=True, and a4w4_mxfp4_nt_noshuffle,
-bpreshuffle=False) vs a torch reference and aiter gemm_a4w4 asm.
+"""Correctness / performance of the opus gfx950 MXFP4 GEMM vs a torch reference, aiter gemm_a4w4 asm and Triton gemm_afp4wfp4:
+the shuffle kernel (a4w4_mxfp4_nt) directly and as the opus backend of aiter.gemm_a4w4(bpreshuffle=True) (tuned-CSV
+kernelName opus_a4w4_kid<kid> / opus_a4w4_auto, AITER_A4W4_BACKEND=opus), and the row-major kernel (a4w4_mxfp4_nt_noshuffle)
+through gemm_a4w4_opus_noshuffle.
 
 Inputs are random fp4 bytes and e8m0 scales in [124, 130] (the data used for kernel development); the reference
 dequantises with the raw (unshuffled) operands. Run: python3 op_tests/test_opus_a4w4_gemm.py [--perf]
@@ -12,7 +14,8 @@ import sys
 import torch
 
 import aiter
-from aiter.ops.opus import gemm_a4w4_opus, opus_gemm_a4w4_tune
+from aiter.ops.opus import gemm_a4w4_opus, gemm_a4w4_opus_noshuffle, opus_gemm_a4w4_tune
+from aiter.ops import gemm_op_a4w4 as top   # aiter.gemm_a4w4 (opus = third backend for bpreshuffle=True)
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.fp4_utils import e8m0_shuffle
 
@@ -40,11 +43,59 @@ def make(M, N, K, batch=1, seed=0):
     xs = torch.randint(124, 131, (batch, M, K // 32), dtype=torch.uint8, device="cuda", generator=g)
     ws = torch.randint(124, 131, (batch, N, K // 32), dtype=torch.uint8, device="cuda", generator=g)
     fp4, e8 = aiter.dtypes.fp4x2, aiter.dtypes.fp8_e8m0
-    # shuffle_weight(16, 16) needs N % 16 == 0: other N only run the bpreshuffle=False path
+    # shuffle_weight(16, 16) needs N % 16 == 0: other N only run the no-shuffle path
     wsh = torch.stack([shuffle_weight(w[b].view(fp4), layout=(16, 16)) for b in range(batch)]) if N % 16 == 0 else None
     xss = torch.stack([e8m0_shuffle(xs[b].view(e8)) for b in range(batch)])
     wss = torch.stack([e8m0_shuffle(ws[b].view(e8)) for b in range(batch)])
     return x, w, xs, ws, x.view(fp4), wsh, xss, wss
+
+
+_CSV_DIR = None
+
+
+def use_csv(rows):
+    """Point aiter.gemm_a4w4's tuned config at a temporary CSV with the given (M, N, K, kernelName) rows (None: default)."""
+    global _CSV_DIR
+    import tempfile
+    from aiter.jit.utils.chip_info import get_cu_num, get_gfx_runtime
+    if rows is None:
+        os.environ.pop("AITER_CONFIG_GEMM_A4W4", None)
+    else:
+        _CSV_DIR = _CSV_DIR or tempfile.mkdtemp(prefix="opus_a4w4_csv_")
+        path = os.path.join(_CSV_DIR, "a4w4_opus_test.csv")
+        with open(path, "w") as f:
+            f.write("gfx,cu_num,M,N,K,kernelId,splitK,us,kernelName,tflops,bw,errRatio\n")
+            for M, N, K, name in rows:
+                f.write(f"{get_gfx_runtime()},{get_cu_num()},{M},{N},{K},0,0,0,{name},0,0,0\n")
+        os.environ["AITER_CONFIG_GEMM_A4W4"] = path
+    from aiter.jit.core import AITER_CONFIG
+    AITER_CONFIG.get_config_file.cache_clear()   # the resolved config path is cached per env-var name, not per value
+    top.get_GEMM_config.cache_clear()
+    if hasattr(top.get_GEMM_config, "gemm_dict"):
+        del top.get_GEMM_config.gemm_dict
+
+
+_CALLS = []
+
+
+def _spy():
+    """Record which opus entry gemm_a4w4 actually reaches (so a silent fall-back to asm cannot pass)."""
+    from aiter.ops.opus import gemm_op_a4w4 as op
+    for nm in ("_opus_gemm_a4w4_raw", "_opus_gemm_a4w4_tune_raw"):
+        f = getattr(op, nm)
+        if not getattr(f, "_spied", False):
+            g = (lambda f, nm: lambda *a, **k: (_CALLS.append(nm), f(*a, **k))[1])(f, nm)
+            g._spied = True
+            setattr(op, nm, g)
+
+
+def routed(fn, expect):
+    _CALLS.clear()
+    o = fn()
+    got = _CALLS[-1] if _CALLS else "asm"
+    if got != expect:
+        print(f"  routing: expected {expect}, got {got} -> FAIL")
+    return o, got == expect
 
 
 def ref(x, w, xs, ws):
@@ -93,6 +144,34 @@ def main():
             out = gemm_a4w4_opus(xq, wsh, xss, wss)
             if r is not None:
                 ok &= check(out, r, "gemm_a4w4_opus (dispatch)")
+        if shuffled and b == 1 and not a.perf:
+            # aiter.gemm_a4w4(bpreshuffle=True) on the opus backend: CSV kid, CSV auto, AITER_A4W4_BACKEND=opus.
+            # gemm_a4w4 allocates C with M padded to 32 and hands opus out[:M]; the result must match asm / reference.
+            A2, B2, S1, S2 = xq[0], wsh[0], xss[0], wss[0]
+            _spy()
+            gemm = lambda: top.gemm_a4w4(A2, B2, S1, S2, bpreshuffle=True)
+            for kid in (30003, 30010 + (0 if M >= 256 and N >= 256 else 3), 30023):
+                use_csv([(M, N, K, f"opus_a4w4_kid{kid}")])
+                if kid in SK_KIDS:
+                    os.environ["OPUS_MXFP4_SPLITK"] = "2" if K % 512 == 0 else "1"
+                o, rt = routed(gemm, "_opus_gemm_a4w4_tune_raw")
+                os.environ.pop("OPUS_MXFP4_SPLITK", None)
+                ok &= rt and o.shape == (M, N) and (r is None or check(o.unsqueeze(0), r, f"gemm_a4w4 csv opus_a4w4_kid{kid}"))
+            for name in ("opus_a4w4_auto", "opus_a4w4_kid-1"):
+                use_csv([(M, N, K, name)])
+                o, rt = routed(gemm, "_opus_gemm_a4w4_raw")
+                ok &= rt and o.shape == (M, N) and (r is None or check(o.unsqueeze(0), r, f"gemm_a4w4 csv {name}"))
+            use_csv(None)
+            os.environ["AITER_A4W4_BACKEND"] = "opus"
+            o, rt = routed(gemm, "_opus_gemm_a4w4_raw")
+            ok &= rt and o.shape == (M, N) and (r is None or check(o.unsqueeze(0), r, "gemm_a4w4 AITER_A4W4_BACKEND=opus"))
+            del os.environ["AITER_A4W4_BACKEND"]
+            if M % 32 == 0:
+                oa, rt = routed(gemm, "asm")   # default config (asm / CK) for comparison
+                ok &= rt
+                d = ((o.float() - oa.float()).norm() / oa.float().norm()).item()
+                print(f"  {'gemm_a4w4 opus vs asm':28s} rel_diff {d:.2e} {'OK' if d < 1e-2 else 'FAIL'}")
+                ok &= d < 1e-2
         for kid, t in (KIDS.items() if shuffled else ()):
             if kid == 30030 and (M % 256 or N % 256):
                 continue
@@ -111,24 +190,38 @@ def main():
                 if r is not None:
                     ok &= check(o, r, f"kid {kid} ({t} S={S})")
                 del os.environ["OPUS_MXFP4_SPLITK"]
-        # bpreshuffle=False: plain row-major WQ and [rows, K/32] scales (no padding).
+        # No-shuffle (row-major B and [rows, K/32] scales: the Triton gemm_afp4wfp4 layout).
         e8 = aiter.dtypes.fp8_e8m0
         wq, xsr, wsr = w.view(aiter.dtypes.fp4x2), xs.view(e8), ws.view(e8)
-        out = gemm_a4w4_opus(xq, wq, xsr, wsr, bpreshuffle=False)
+        out = gemm_a4w4_opus_noshuffle(xq, wq, xsr, wsr)
         if r is not None:
-            ok &= check(out, r, "gemm_a4w4_opus bpreshuffle=False")
+            ok &= check(out, r, "gemm_a4w4_opus_noshuffle")
         xs2, ws2 = xsr.reshape(-1, K // 32), wsr.reshape(-1, K // 32)   # 2D [batch * rows, K/32] form
-        out = gemm_a4w4_opus(xq, wq, xs2, ws2, bpreshuffle=False)
+        out = gemm_a4w4_opus_noshuffle(xq, wq, xs2, ws2)
         if r is not None:
             ok &= check(out, r, "  (2D scales)")
+        if b == 1:
+            o_ns = gemm_a4w4_opus_noshuffle(x[0], w[0], xs[0], ws[0])   # uint8 tensors, exactly as gemm_afp4wfp4 takes them
+            if r is not None:
+                ok &= check(o_ns.unsqueeze(0), r, "  (uint8 inputs, 2D)")
+            try:
+                from aiter.ops.triton.gemm.basic.gemm_afp4wfp4 import gemm_afp4wfp4
+                yt = gemm_afp4wfp4(x[0], w[0], xs[0], ws[0], torch.bfloat16)
+                if r is not None:
+                    check(yt.unsqueeze(0), r, "triton gemm_afp4wfp4")
+                d = ((o_ns.float() - yt.float()).norm() / yt.float().norm()).item()
+                print(f"  {'noshuffle vs triton':28s} rel_diff {d:.2e} {'OK' if d < 1e-2 else 'FAIL'}")
+                ok &= d < 1e-2
+            except Exception as e:  # noqa: BLE001
+                print(f"  triton gemm_afp4wfp4 unavailable: {type(e).__name__}: {str(e)[:120]}")
         for kid, t in NS_KIDS.items():
             if kid == 30130 and (M % 256 or N % 256):
                 continue
-            o = opus_gemm_a4w4_tune(xq, wq, xsr, wsr, kernelId=kid)
+            o = gemm_a4w4_opus_noshuffle(xq, wq, xsr, wsr, kernelId=kid)
             if r is not None:
                 ok &= check(o, r, f"kid {kid} ({t})")
             if a.perf:
-                us = bench(lambda: opus_gemm_a4w4_tune(xq, wq, xsr, wsr, Y=o, kernelId=kid))
+                us = bench(lambda: gemm_a4w4_opus_noshuffle(xq, wq, xsr, wsr, Y=o, kernelId=kid))
                 print(f"    {t}: {us:7.1f} us  {2 * M * N * K * b / us / 1e9:.0f} TFLOPS")
         if b == 1 and M % 32 == 0 and shuffled:
             try:
@@ -176,7 +269,7 @@ def main():
             c = sfcols or K // 32
             xs = torch.full((M, c), 127, dtype=torch.uint8, device="cuda").view(e8)
             ws = torch.full((N, c), 127, dtype=torch.uint8, device="cuda").view(e8)
-            calls = (("python", lambda: gemm_a4w4_opus(x, w, xs, ws, bpreshuffle=False)),
+            calls = (("python", lambda: gemm_a4w4_opus_noshuffle(x, w, xs, ws)),
                      ("c++", lambda: op._opus_gemm_a4w4_raw(
                          x, w, torch.empty((1, M, N), dtype=torch.bfloat16, device="cuda"), xs, ws, False)),
                      ("c++ tune", lambda: op._opus_gemm_a4w4_tune_raw(

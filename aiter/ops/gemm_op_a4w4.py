@@ -2,6 +2,7 @@
 # Copyright (C) 2024-2026, Advanced Micro Devices, Inc. All rights reserved.
 
 import functools
+import os
 
 import pandas as pd
 import torch
@@ -122,6 +123,35 @@ def _f4gemm_asm_dispatch(
     )
 
 
+# ---- opus backend (gfx950, bpreshuffle=True only) -------------------------------------------------------------------
+# Tuned CSV kernelName "opus_a4w4_kid<kid>" runs that opus a4w4_mxfp4_nt kid (aiter.ops.opus.A4W4_MXFP4_NT_KIDS);
+# "opus_a4w4_auto" (or "opus_a4w4_kid-1") runs the opus dispatch (its tuned table, else heuristic).
+# AITER_A4W4_BACKEND=opus forces every gfx950 gemm_a4w4(bpreshuffle=True) call onto the opus dispatch.
+# Bias / alpha != 1 / beta != 0 / non-bf16 output are not supported by opus: those calls stay on asm.
+OPUS_A4W4_PREFIX = "opus_a4w4_"
+
+
+def _opus_a4w4_kid(kernel_name):
+    """kernelName -> opus kid (-1 = opus dispatch), or None when it is not an opus name."""
+    if not isinstance(kernel_name, str) or not kernel_name.startswith(OPUS_A4W4_PREFIX):
+        return None
+    tag = kernel_name[len(OPUS_A4W4_PREFIX):]
+    if tag == "auto":
+        return -1
+    if tag.startswith("kid"):
+        return int(tag[3:])
+    raise ValueError(f"gemm_a4w4: bad opus kernelName {kernel_name!r} (use opus_a4w4_kid<kid> or opus_a4w4_auto)")
+
+
+def _opus_a4w4_supported(bias, alpha, beta, dtype):
+    return (
+        bias is None
+        and (alpha is None or alpha == 1.0)
+        and (beta is None or beta == 0.0)
+        and dtype == dtypes.bf16
+    )
+
+
 def gemm_a4w4_fake(
     A: Tensor,  # A:[M, K/2] f4x2
     B: Tensor,  # B:[N, K/2] f4x2
@@ -204,6 +234,24 @@ def gemm_a4w4(
     if ck_config is not None:
         splitK = ck_config.get("splitK", None)
         kernelName = ck_config["kernelName"]
+    opus_kid = _opus_a4w4_kid(kernelName)
+    if os.environ.get("AITER_A4W4_BACKEND", "").lower() == "opus" and bpreshuffle and gfx_arch == "gfx950":
+        opus_kid = -1
+    if opus_kid is not None:
+        if bpreshuffle and gfx_arch == "gfx950" and _opus_a4w4_supported(bias, alpha, beta, dtype):
+            from .opus.gemm_op_a4w4 import gemm_a4w4_opus, opus_gemm_a4w4_tune
+
+            y = out[:m]   # opus needs no row padding: write the first m rows of the padded buffer
+            if opus_kid < 0:
+                gemm_a4w4_opus(A.view(m, k // 2), B, A_scale, B_scale, Y=y)
+            else:
+                opus_gemm_a4w4_tune(A.view(m, k // 2), B, A_scale, B_scale, Y=y, kernelId=opus_kid)
+            return y.view(*A.shape[:-1], n)
+        logger.info(
+            f"gemm_a4w4: opus backend ({kernelName or 'AITER_A4W4_BACKEND'}) does not apply "
+            f"(bpreshuffle={bpreshuffle}, bias/alpha/beta/dtype unsupported or not gfx950); using asm default"
+        )
+        ck_config, kernelName, splitK = None, "", 0
     if (
         ck_config is not None
         and kernelName.find("_ZN") == -1

@@ -39,12 +39,15 @@ prof/timing.sh 2 2                           # 等卡空闲后与 candidate_m8 �
 110–115 每 block 一个 tile、130 为 256×256 无边界），.co 在 `../gen_co/gfx950/`，用 `../gen_co/build_co_gfx950.py` 重编。
 
 ## aiter 接口
-- `aiter.ops.opus.gemm_a4w4_opus(XQ, WQ, x_scale, w_scale, Y=None, bpreshuffle=True)`：`bpreshuffle=False` 走本 pipeline
-  （C++ `opus_gemm_a4w4(..., bpreshuffle)`，kid 30100–30115 / 30130，启发式只在同一布局的 kid 里选）。
-- `opus_gemm_a4w4_tune(..., kernelId)`：kid 301xx 按行主序布局检查输入。
+- 不 shuffle 版单独调用，输入布局与 Triton `gemm_afp4wfp4` 相同：
+  `aiter.ops.opus.gemm_a4w4_opus_noshuffle(XQ, WQ, x_scale, w_scale, Y=None, kernelId=None)`
+  （XQ `[M, K/2]`、WQ `[N, K/2]` 为 fp4x2 或 uint8；x_scale `[M, K/32]`、w_scale `[N, K/32]` 为 e8m0 或 uint8；
+  kernelId 取 `A4W4_MXFP4_NT_NOSHUFFLE_KIDS` 之一，默认 None = opus 分发）。支持 batch（3D 输入）。
 - 检查：N % 8、K % 256、scale 行主序 `[rows, K/32]`（每 batch ≥ M / N 行，2D `[batch*rows, K/32]` 或 3D）。
-- 测试：`op_tests/test_opus_a4w4_gemm.py`（shuffle 原有用例 + 不 shuffle 用例 + 应报错用例）。
+- C++：`opus_gemm_a4w4(XQ, WQ, Y, x_scale, w_scale, bpreshuffle=False)`（内部实现）、`opus_gemm_a4w4_tune`（kid 301xx）。
+- shuffle 版不在这里：走 `aiter.gemm_a4w4(..., bpreshuffle=True)` 的 opus 后端（见 ../mxfp4_nt_dev/README.md）。
 
 ## 性能测试（可移植）
-`perf/perf_noshuffle.sh`：`GPU=<HIP 编号> SMI=<smi 编号，可空> AITER=<checkout> [SHAPES="M,N,K ..."] [M8_EXE=.. DEV_EXE=..]`；
-用 aiter op（CUDA graph）测 asm / opus shuffle / opus noshuffle 和每个 noshuffle kid，可选 dev harness 与 candidate_m8 交替测 8192³。
+`perf/perf_noshuffle.sh`：`GPU=<HIP 编号> SMI=<smi 编号，可空> AITER=<checkout> [SHAPES="M,N,K ..."] [KIDS=0] [M8_EXE=.. DEV_EXE=..]`；
+CUDA graph 测 `gemm_a4w4_opus_noshuffle`（分发 + 每个 kid）、Triton `gemm_afp4wfp4`（同一份输入）、asm（`gemm_a4w4` 默认，同数据的 shuffle 副本）；
+可选 dev harness 与 candidate_m8 交替测 8192³。
