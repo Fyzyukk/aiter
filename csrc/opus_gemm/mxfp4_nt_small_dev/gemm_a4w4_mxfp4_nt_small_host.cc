@@ -1,6 +1,7 @@
 // Host driver / test harness for the small-tile MXFP4 GEMM (../include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh).  Same data / reference as work_m10's host; inputs in the
 // aiter gemm_a4w4(bpreshuffle=True) layout.  Arbitrary M, N (N % 16 == 0), K % 256 == 0.
-//   -a 0: B_DIRECT (-t 16x32 / 16x64 / 32x32 / 32x64, -s KS 2/4)   -a 1: B_LDS (-t 32x128 / 64x128 / 128x128 / 32x256 / 64x256)
+//   -a 0: B_DIRECT (-t 16x32 / 16x64 / 32x32 / 32x64, -s KS 2/4)   -a 1: B_LDS, row-major only (-t 32x128 / 64x128 / 128x128 / ...)
+//   -a 2: A_LDS, shuffle only (-t 32x64 / 32x128 / 64x128 / 32x256)
 //   -l 0: shuffled inputs (gemm_a4w4 bpreshuffle)   -l 1: row-major inputs (Triton gemm_afp4wfp4: B, scales row-major, N % 8)
 //   -D dir: dump raw inputs + C   -d prefetch depth (ring)  -p split-K over blocks
 //   -m -n -k -b   -v verify   -i graph iterations (0 = no timing).  Default 16x32 KS4 D3.
@@ -144,14 +145,15 @@ template<int BM, int BN, int D, int KS> void launch_t(const smallm_kargs& ka, hi
     if (g_layout == OPUS_MXFP4_SMALL_ROWMAJOR) launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_B_DIRECT, OPUS_MXFP4_SMALL_ROWMAJOR>(ka, st);
     else                                      launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_B_DIRECT, OPUS_MXFP4_SMALL_SHUFFLED>(ka, st);
 }
-template<int BM, int BN, int D> void launch_l(const smallm_kargs& ka, hipStream_t st) {
-    if (g_layout == OPUS_MXFP4_SMALL_ROWMAJOR) launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS, OPUS_MXFP4_SMALL_ROWMAJOR>(ka, st);
-    else                                      launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS, OPUS_MXFP4_SMALL_SHUFFLED>(ka, st);
+template<int BM, int BN, int D> void launch_l(const smallm_kargs& ka, hipStream_t st) {   // B_LDS is row-major only
+    launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS, OPUS_MXFP4_SMALL_ROWMAJOR>(ka, st);
 }
 using launch_fn = void (*)(const smallm_kargs&, hipStream_t);
 // Instantiated configurations (the small-tile pipeline's tile set):
-//   B_DIRECT: 16x32 KS4, 16x64 KS2/KS4, 32x32 KS4, 32x64 KS2/KS4, D 2-4    B_LDS: 32x128 / 64x128 / 128x128 D 2-4, 32x256 D 2-3, 64x256 D 2
+//   B_DIRECT: 16x32 KS4, 16x64 KS2/KS4, 32x32 KS4, 32x64 KS2/KS4, D 2-4    B_LDS (row-major only): 32x128 / 64x128 / 128x128
+//   D 2-4, 32x256 D 2-3, 64x256 D 2, 16x64 / 32x64 / 16x128 D 2-4, 64x64 D 2-3    A_LDS (shuffle only): see pick_alds
 launch_fn pick_lds(int bm, int bn, int d) {
+    if (g_layout != OPUS_MXFP4_SMALL_ROWMAJOR) return nullptr;
 #define SL3(BM, BN) if (bm == BM && bn == BN) { if (d == 2) return launch_l<BM, BN, 2>; if (d == 3) return launch_l<BM, BN, 3>; }
 #define SL4(BM, BN) SL3(BM, BN) if (bm == BM && bn == BN && d == 4) return launch_l<BM, BN, 4>;
     SL4(32, 128) SL4(64, 128) SL4(128, 128) SL3(32, 256)

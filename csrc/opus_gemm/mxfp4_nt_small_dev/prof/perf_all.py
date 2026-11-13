@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Portable one-command performance sweep: small-tile pipeline (B_DIRECT / B_LDS configs) + optional 2x2 big-tile pipeline
+# Portable one-command performance sweep: small-tile pipeline (B_DIRECT / A_LDS configs) + optional 2x2 big-tile pipeline
 # + aiter gemm_a4w4 asm, same GPU, every shape guarded by "GPU idle before and after" checks.
 #
 #   python3 perf_all.py --small-exe /tmp/opus_mxfp4_small/small.exe [--big-exe <mxfp4_nt_dev exe>] --gpu 2 [--out DIR]
@@ -17,10 +17,8 @@ SHAPES_M = [1, 16, 64, 128, 256, 512, 1024]
 SMALL = [("direct 16x32 ks4 d3", "-a 0 -t 16x32 -s 4 -d 3"), ("direct 16x32 ks4 d4", "-a 0 -t 16x32 -s 4 -d 4"),
          ("direct 16x64 ks4 d3", "-a 0 -t 16x64 -s 4 -d 3"), ("direct 32x32 ks4 d3", "-a 0 -t 32x32 -s 4 -d 3"),
          ("direct 32x64 ks4 d3", "-a 0 -t 32x64 -s 4 -d 3"), ("direct 32x64 ks2 d3", "-a 0 -t 32x64 -s 2 -d 3"),
-         ("lds 32x128 d3", "-a 1 -t 32x128 -d 3"), ("lds 32x128 d4", "-a 1 -t 32x128 -d 4"),
-         ("lds 64x128 d3", "-a 1 -t 64x128 -d 3"), ("lds 64x128 d4", "-a 1 -t 64x128 -d 4"),
-         ("lds 32x256 d3", "-a 1 -t 32x256 -d 3"), ("lds 64x256 d2", "-a 1 -t 64x256 -d 2"),
-         ("lds 128x128 d2", "-a 1 -t 128x128 -d 2"), ("lds 128x128 d3", "-a 1 -t 128x128 -d 3")]
+         ("alds 32x64 d6", "-a 2 -t 32x64 -d 6"), ("alds 32x128 d3", "-a 2 -t 32x128 -d 3"),
+         ("alds 32x128 d4", "-a 2 -t 32x128 -d 4"), ("alds 64x128 d4", "-a 2 -t 64x128 -d 4")]
 SPLITS = [2, 4]   # cross-block split-K tried on top of every small-tile config when K allows it
 # 2x2 big-tile configs (mxfp4_nt_dev host: -t tile, -p mode 0 persistent / 1 one tile per block / 2 split-K, -s S)
 BIG_TILES = ["256x256", "256x128", "128x256", "128x128", "192x256", "256x192"]

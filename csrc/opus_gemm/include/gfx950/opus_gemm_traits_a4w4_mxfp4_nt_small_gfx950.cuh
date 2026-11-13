@@ -26,14 +26,13 @@ struct opus_gemm_mxfp4_small_kargs_gfx950 {
 // B operand path of the small-tile pipeline.
 enum : int {
     OPUS_MXFP4_SMALL_B_DIRECT = 0,   // A, B, scales stream from global straight into registers (no LDS, no barrier); KS = 1/2/4
-    OPUS_MXFP4_SMALL_B_LDS    = 1,   // A and B go global -> LDS by LDS-DMA (D-deep ring, one barrier per K tile); scales direct
+    OPUS_MXFP4_SMALL_B_LDS    = 1,   // A and B go global -> LDS by LDS-DMA (D-deep ring, one barrier per K tile); scales direct;
+                                     //   row-major (noshuffle) pipeline only
     OPUS_MXFP4_SMALL_A_LDS    = 2,   // A global -> LDS by LDS-DMA (D-deep ring, shared by the 4 waves), B + scales global -> registers
                                      //   (D-deep register ring), one barrier per K tile (the asm 32x128 structure); 1x4 waves, shuffled
 };
 
 // BMODE == B_DIRECT: tiles 16/32/64/128 x 32/64/128/256 (4 waves split KS ways along K and 4/KS ways along N).
-// BMODE == B_LDS   : tiles 32/64 x 128/256 with a 1x4 wave layout (wave w owns all BM rows, BN/4 columns) and
-//                    128 x 128 with a 2x2 wave layout (each wave 64 x 64).
 // BMODE == A_LDS   : tiles 32/64 x 64/128/256, 1x4 waves; ring depth limited by (D - 1) * (VMEM per K tile) <= 63.
 template<int BM_, int BN_, int D_, int KS_, int BMODE_>
 struct opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950 {
@@ -41,6 +40,6 @@ struct opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950 {
     static constexpr int BLOCK_SIZE = 256;
     static constexpr int B_K = 256;                      // fp4 elements per K tile (128 bytes per row)
     static_assert(D >= 2);
-    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || BMODE == OPUS_MXFP4_SMALL_B_LDS || BMODE == OPUS_MXFP4_SMALL_A_LDS);
-    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || KS == 1, "the LDS path splits work along M / N only");
+    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || BMODE == OPUS_MXFP4_SMALL_A_LDS, "shuffle: B_DIRECT / A_LDS");
+    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || KS == 1, "A_LDS splits work along N only");
 };
