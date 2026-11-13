@@ -1433,9 +1433,20 @@ void
 
 
 # ---------- Self-register at import time ----------
+def a4w4_mxfp4_nt_variant(k):
+    """"" persistent, "np" one tile per block, "sk" split-K, "nob" persistent without boundary handling."""
+    t = k.name_tag[len("a4w4_mxfp4_nt"):-len("_co")]
+    return t.lstrip("_")
+
+
+def a4w4_mxfp4_nt_mode(k):
+    return {"": 0, "nob": 0, "np": 1, "sk": 2}[a4w4_mxfp4_nt_variant(k)]
+
+
 def a4w4_mxfp4_nt_co_symbol(k):
     """gen_co image / extern "C" symbol for a kid (see gen_co/build_co_gfx950.py:kernel_name)."""
-    return f"opus_gemm_gfx950_a4w4_mxfp4_nt_co_{k.B_M}x{k.B_N}x{k.B_K}"
+    v = a4w4_mxfp4_nt_variant(k)
+    return f"opus_gemm_gfx950_a4w4_mxfp4_nt_co_{k.B_M}x{k.B_N}x{k.B_K}" + (f"_{v}" if v else "")
 
 
 def gen_a4w4_mxfp4_nt_instance(cg, k, traits_header, kargs_name, instance_impl_preamble, A8W8_SCALE_HOST_EXTRA, **_unused):
@@ -1446,6 +1457,20 @@ def gen_a4w4_mxfp4_nt_instance(cg, k, traits_header, kargs_name, instance_impl_p
     K/32 padded to 8] per batch), Y [batch, M, N] bf16.  Any M; N % 16 == 0; K % 256 == 0.
     """
     symbol = a4w4_mxfp4_nt_co_symbol(k)
+    variant = a4w4_mxfp4_nt_variant(k)
+    if variant in ("", "nob"):   # persistent: one block per CU at most
+        mode_code = "grid_x = tiles < cus ? tiles : cus;"
+    elif variant == "np":        # one tile per block
+        mode_code = "(void)cus;"
+    else:                        # split-K: S from opus_mxfp4_pick_split (OPUS_MXFP4_SPLITK overrides), fp32 workspace per stream
+        mode_code = f"""const int S = opus_mxfp4_pick_split(tiles, K, cus);
+    kargs.split_k = S;
+    grid_x = tiles * S;
+    if (S > 1) kargs.ptr_ws = opus_gfx950_co::mxfp4_sk_workspace(stream, opus_mxfp4_sk_ws_bytes(tiles, S, {k.B_M}, {k.B_N}),
+                                                                   opus_mxfp4_sk_counter_bytes(tiles));"""
+    if variant == "nob":
+        mode_code += f"""
+    AITER_CHECK(M % {k.B_M} == 0 && N % {k.B_N} == 0, "a4w4_mxfp4_nt nob variant needs M % {k.B_M} == 0 and N % {k.B_N} == 0");"""
     preamble = instance_impl_preamble()
     INSTANCE_IMPL = f"""{preamble}
 #include "{traits_header}"
@@ -1497,11 +1522,16 @@ void
     kargs.stride_sfa_batch = sf_rows_a * sf_cols_a;
     kargs.stride_sfb_batch = sf_rows_b * sf_cols_b;
 
+    auto stream = aiter::getCurrentHIPStream();
     const int tiles = ((M + {k.B_M} - 1) / {k.B_M}) * ((N + {k.B_N} - 1) / {k.B_N}) * batch;
-    const int grid_x = tiles < (int)get_num_cu_func() ? tiles : (int)get_num_cu_func();   // persistent
+    const int cus = (int)get_num_cu_func();
+    int grid_x = tiles;
+    kargs.split_k = 1;
+    kargs.ptr_ws = nullptr;
+    {mode_code}
     kargs.grid_blocks = grid_x;
     static AiterAsmKernelFast& kernel = opus_gfx950_co::mxfp4_co_kernel("{symbol}");
-    opus_mxfp4_co_launch_gfx950(kernel, dim3(grid_x), dim3({k.BLOCK_SIZE}), kargs, aiter::getCurrentHIPStream());
+    opus_mxfp4_co_launch_gfx950(kernel, dim3(grid_x), dim3({k.BLOCK_SIZE}), kargs, stream);
 }}}}
 #endif // launcher only on regular host pass
 """

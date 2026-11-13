@@ -502,7 +502,11 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     const int wave_id = __builtin_amdgcn_readfirstlane(thread_id_x() / T::WARP_SIZE);
     const int tiles_per_batch = opus_mxfp4_ceil_div(kargs.m, T::B_M) * num_tiles_n;
     const int total_tiles = tiles_per_batch * kargs.batch;
-    const int grid_blocks = kargs.grid_blocks;   // from the kernel arguments: __builtin_amdgcn_grid_size_x() reads the dispatch packet (host memory)
+    // MODE 1 / 2: one tile (or tile x K segment) per block; the tile loop below runs once.
+    const int split_k = T::SPLITK ? kargs.split_k : 1;
+    const int grid_blocks = T::PERSIST ? kargs.grid_blocks : total_tiles;
+    const int first_tile = T::SPLITK ? static_cast<int>(block_id_x()) / split_k : static_cast<int>(block_id_x());
+    const int k_split = T::SPLITK ? static_cast<int>(block_id_x()) % split_k : 0;   // from the kernel arguments: __builtin_amdgcn_grid_size_x() reads the dispatch packet (host memory)
     // Tile 0 (+ scale panel 0) of this block's next output tile is copied during the last K
     // tile of the current one (see "2. Last tile"); the next prologue then skips it.
     int prefetched = 0;
@@ -539,12 +543,16 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     fp4x32_t v_a[2][T::E_K][T::E_M];   // [half][kk]: E_M fp4 operands, 16 B each
     fp4x32_t v_b[2][T::E_K][T::E_N];
 #pragma clang loop unroll(disable)
-    for (int tile_id = block_id_x(); tile_id < total_tiles; tile_id += grid_blocks) {
+    for (int tile_id = first_tile; tile_id < total_tiles; tile_id += grid_blocks) {
     const int batch_id = tile_id / tiles_per_batch;
     const int tile_in_batch = tile_id % tiles_per_batch;
     const int block_m = tile_in_batch / num_tiles_n;
     const int block_n = tile_in_batch % num_tiles_n;
-    const int loops = kargs.k / T::B_K;
+    // Split-K: this block's K segment [k0, k0 + k / S); bases below are moved to k0 (A: bytes, B: 2 KB per K tile in each
+    // 16-row block of shuffle_weight(16,16), scales: 256 B per K tile in each 32-row block of e8m0_shuffle).
+    const int k_seg = T::SPLITK ? kargs.k / split_k : kargs.k;
+    const int kt0 = T::SPLITK ? k_split * (k_seg / T::B_K) : 0;     // first K tile
+    const int loops = k_seg / T::B_K;
     const int row = block_m * T::B_M;
     const int col = block_n * T::B_N;
     // lane id from mbcnt over an opaque all-ones mask: the compiler still knows it is in
@@ -558,15 +566,16 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
 
     // M / N boundary: rows of A / B (and C) past the matrix are outside the buffer range -- loads return 0,
     // stores are dropped; C columns past N are masked per 16 B copy (see copy_output_half).
-    const int rows_in = kargs.m - row, cols_in = kargs.n - col;
-    auto g_a = make_gmem(reinterpret_cast<const D_AB*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * kargs.stride_a,
-                         static_cast<unsigned int>(rows_in) * static_cast<unsigned int>(kargs.stride_a));
-    auto g_b = make_gmem(reinterpret_cast<const D_AB*>(kargs.ptr_b) + batch_id * kargs.stride_b_batch + col * kargs.stride_b,
-                         static_cast<unsigned int>(cols_in) * static_cast<unsigned int>(kargs.stride_b));
+    const int rows_in = T::BOUNDARY ? kargs.m - row : T::B_M, cols_in = T::BOUNDARY ? kargs.n - col : T::B_N;
+    const int a_k0 = kt0 * T::B_K_BYTES, b_k0 = kt0 * T::B_K_BYTES * T::W_N, sf_k0 = kt0 * 256;
+    auto g_a = make_gmem(reinterpret_cast<const D_AB*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * kargs.stride_a + a_k0,
+                         T::BOUNDARY ? static_cast<unsigned int>(rows_in) * static_cast<unsigned int>(kargs.stride_a) - a_k0 : 0xffffffffu);
+    auto g_b = make_gmem(reinterpret_cast<const D_AB*>(kargs.ptr_b) + batch_id * kargs.stride_b_batch + col * kargs.stride_b + b_k0,
+                         T::BOUNDARY ? static_cast<unsigned int>(cols_in) * static_cast<unsigned int>(kargs.stride_b) - b_k0 : 0xffffffffu);
     auto g_c = make_gmem(reinterpret_cast<D_C*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + row * kargs.stride_c + col,
-                         static_cast<unsigned int>(rows_in) * static_cast<unsigned int>(kargs.stride_c) * 2u);
-    auto g_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + batch_id * kargs.stride_sfa_batch + (row / 32) * kargs.stride_sfa, static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.m - row, 32) * kargs.stride_sfa));   // sc: e8m0_shuffle layout
-    auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + batch_id * kargs.stride_sfb_batch + (col / 32) * kargs.stride_sfb, static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.n - col, 32) * kargs.stride_sfb));
+                         T::BOUNDARY ? static_cast<unsigned int>(rows_in) * static_cast<unsigned int>(kargs.stride_c) * 2u : 0xffffffffu);
+    auto g_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + batch_id * kargs.stride_sfa_batch + (row / 32) * kargs.stride_sfa + sf_k0, static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.m - row, 32) * kargs.stride_sfa - sf_k0));   // sc: e8m0_shuffle layout
+    auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + batch_id * kargs.stride_sfb_batch + (col / 32) * kargs.stride_sfb + sf_k0, static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.n - col, 32) * kargs.stride_sfb - sf_k0));
 
     const auto u_ga = make_layout_ga<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_a);
     const auto u_gb = make_layout_gb<T>(lane_id, wave_id_m, wave_id_n, kargs.stride_b);
@@ -861,7 +870,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
         // C00 of tile 0 + A1, B1 of tile 0 (+ h1: the previous tile's bottom-half stores).
         load_a(rd_a, number<1>{});
         LOAD_B(rd_b, 1, 0);
-        store_pend_c(wave_id * T::WARP_SIZE + lane_id);
+        if constexpr (T::PERSIST) store_pend_c(wave_id * T::WARP_SIZE + lane_id);
         opus::static_for<frags>([&](auto i) {
             constexpr int m = decltype(i)::value / T::E_N, n = decltype(i)::value % T::E_N;
             mma_scale_one<T, SOA(0, m), SOB(0, n), c_reg<T, 0, 0, m, n>()>(mma, v_a[0][0][m], v_b[0][0][n], v_c[0][0][m * T::E_N + n], SFA(0, 0, m), SFB(0, 0, n));   // kk = 0
@@ -1285,17 +1294,19 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
                               has_next ? static_cast<unsigned int>(kargs.n - n_col) * static_cast<unsigned int>(kargs.stride_b) : 0u);
         auto ng_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + n_batch * kargs.stride_sfa_batch + (n_row / 32) * kargs.stride_sfa, has_next ? static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.m - n_row, 32) * kargs.stride_sfa) : 0u);
         auto ng_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + n_batch * kargs.stride_sfb_batch + (n_col / 32) * kargs.stride_sfb, has_next ? static_cast<unsigned int>(opus_mxfp4_ceil_div(kargs.n - n_col, 32) * kargs.stride_sfb) : 0u);
-        prefetched = has_next;
+        prefetched = T::PERSIST ? has_next : false;
 
         s_waitcnt_lgkmcnt(0_I);
         __builtin_amdgcn_s_barrier();
         __builtin_amdgcn_sched_barrier(0);
 
         // C10(t) + A0, B0 of the next tile's K tile 0.
+        if constexpr (T::PERSIST) {
         if constexpr (T::A_ODD) dma_odd_a(ng_a, sa_offset(0, 0), ga_offset(0, 0));
         else async_load_imm<T::VEC_A>(ng_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 0), ga_offset(0, 0));
         if constexpr (T::B_ODD) dma_odd_b(ng_b, sb_offset(0, 0), gb_offset(0, 0));
         else async_load_imm<T::VEC_B>(ng_b, s_b.ptr, u_gb, u_sb + sb_offset(0, 0), gb_offset(0, 0));
+        }
         opus::static_for<frags>([&](auto i) {
             constexpr int m = decltype(i)::value / T::E_N, n = decltype(i)::value % T::E_N;
             mma_scale_one<T, SOA(0, m), SOB(0, n), c_reg<T, 1, 0, m, n>()>(mma, v_a[1][0][m], v_b[0][0][n], v_c[1][0][m * T::E_N + n], SFA(1, 0, m), SFB(0, 0, n));   // kk = 0
@@ -1305,10 +1316,12 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
         __builtin_amdgcn_sched_barrier(0);
 
         // C01(t) + A1, B1 of the next tile's K tile 0.
+        if constexpr (T::PERSIST) {
         if constexpr (T::A_ODD) dma_odd_a(ng_a, sa_offset(0, 1), ga_offset(1, 0));
         else async_load_imm<T::VEC_A>(ng_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 1), ga_offset(1, 0));
         if constexpr (T::B_ODD) dma_odd_b(ng_b, sb_offset(0, 1), gb_offset(1, 0));
         else async_load_imm<T::VEC_B>(ng_b, s_b.ptr, u_gb, u_sb + sb_offset(0, 1), gb_offset(1, 0));
+        }
         opus::static_for<frags>([&](auto i) {
             constexpr int m = decltype(i)::value / T::E_N, n = decltype(i)::value % T::E_N;
             mma_scale_one<T, SOA(0, m), SOB(0, n), c_reg<T, 0, 1, m, n>()>(mma, v_a[0][0][m], v_b[1][0][n], v_c[0][1][m * T::E_N + n], SFA(0, 0, m), SFB(1, 0, n));   // kk = 0
@@ -1318,7 +1331,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
         __builtin_amdgcn_sched_barrier(0);
 
         // C11(t) + scale panel 0 of the next tile.
-        {   // sc4: lane offsets re-derived here (opaque lane id) so the per-tile ones need not stay live / spill
+        if constexpr (T::PERSIST) {   // sc4: lane offsets re-derived here (opaque lane id) so the per-tile ones need not stay live / spill
             unsigned int lm = ~0u; asm volatile("" : "+s"(lm));
             const int ln = static_cast<int>(__builtin_amdgcn_mbcnt_hi(lm, __builtin_amdgcn_mbcnt_lo(lm, 0u)));
             const int ws_a = wave_id % T::SF_WAVES_A, ws_b = wave_id % T::SF_WAVES_B;
@@ -1352,6 +1365,48 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     // which is exactly the 66 KB of stage 1.  Top half (Q00 / Q01), then bottom half.
     // No vmcnt waits here: the next tile's K tile 0 copies are in flight.  Stage 1 was last
     // read before the barrier at the start of "2. Last tile".
+    if constexpr (T::SPLITK) {
+        // Split-K: S > 1 -> store this segment's fp32 partial tile (C fragment layout, row stride B_N) to the workspace;
+        // the last block to arrive for this tile (atomic counter, reset by that block) adds the other S - 1 partials to
+        // its accumulators and writes C below.  Agent-scope fences: the blocks of a tile may sit on different XCDs.
+        // Broadcast flag in the scale-panel LDS (no longer read after the last K tile; LDS is full for 256 x 256).
+        int* const sk_last_p = reinterpret_cast<int*>(smem_sfa);
+        if (split_k > 1) {
+            const long tile_elems = static_cast<long>(T::B_M) * T::B_N;
+            float* const ws_tiles = reinterpret_cast<float*>(reinterpret_cast<char*>(kargs.ptr_ws) + opus_mxfp4_sk_counter_bytes(total_tiles));
+            int* const counters = reinterpret_cast<int*>(kargs.ptr_ws);
+            auto u_wc = partition_layout_c<T::VEC_C>(mma, opus::make_tuple(opus::number<T::B_N>{}, 1_I), p_coord_c);
+            auto part = [&](int s_) { return make_gmem(ws_tiles + (static_cast<long>(tile_id) * split_k + s_) * tile_elems,
+                                                       static_cast<unsigned int>(tile_elems * 4)); };
+            auto g_own = part(k_split);
+            const auto wc_offs = opus::layout_to_offsets<T::VEC_C>(u_wc);   // per fragment (16 B per lane)
+            static_assert(MMA::mma_c_len == T::VEC_C);
+            opus::static_for<2>([&](auto hm) { opus::static_for<2>([&](auto hn) { opus::static_for<T::E_M * T::E_N>([&](auto f) {
+                store<T::VEC_C>(g_own, v_c[hm.value][hn.value][f.value], wc_offs[f.value] + (hm.value * T::HALF_B_M * T::B_N + hn.value * T::HALF_B_N));
+            }); }); });
+            __builtin_amdgcn_fence(__ATOMIC_RELEASE, "agent");    // partial visible device-wide before the counter
+            s_waitcnt_vmcnt(0_I);
+            __builtin_amdgcn_s_barrier();
+            if (thread_id_x() == 0) {
+                const int arrived = __scoped_atomic_fetch_add(&counters[tile_id], 1, __ATOMIC_ACQ_REL, __MEMORY_SCOPE_DEVICE);
+                const int last = arrived == split_k - 1;
+                if (last) __scoped_atomic_store_n(&counters[tile_id], 0, __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE);   // ready for the next launch
+                *sk_last_p = last;
+            }
+            s_waitcnt_lgkmcnt(0_I);
+            __builtin_amdgcn_s_barrier();
+            if (!*sk_last_p) return;
+            __builtin_amdgcn_fence(__ATOMIC_ACQUIRE, "agent");    // see the other blocks' partials
+            for (int s2 = 0; s2 < split_k; ++s2) {
+                if (s2 == k_split) continue;
+                auto g_p = part(s2);
+                opus::static_for<2>([&](auto hm) { opus::static_for<2>([&](auto hn) { opus::static_for<T::E_M * T::E_N>([&](auto f) {
+                    const auto q = load<T::VEC_C>(g_p, wc_offs[f.value] + (hm.value * T::HALF_B_M * T::B_N + hn.value * T::HALF_B_N));
+                    opus::static_for<MMA::mma_c_len>([&](auto j) { v_c[hm.value][hn.value][f.value][j.value] += q[j.value]; });
+                }); }); });
+            }
+        }
+    }
     stage_quadrant(v_c[0][0], 0);
     stage_quadrant(v_c[0][1], 1);
     sync_lds();
@@ -1360,6 +1415,9 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     stage_quadrant(v_c[1][0], 0);
     stage_quadrant(v_c[1][1], 1);
     sync_lds();
+    if constexpr (!T::PERSIST) {   // one tile per block: bottom half straight out
+        copy_output_half(1);
+    } else {
     opus::static_for<c_copies>([&](auto i) {   // h1: bottom half -> registers, stored in the next prologue
         if constexpr (T::B_N == 192) {
             v_pend_c[i.value] = load<VEC_OUT>(s_c, c_row(output_thread_id, i) * c_lds_stride + c_col(output_thread_id, i));
@@ -1372,13 +1430,14 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     pend_c = 1;
     pend_rows = rows_in;
     pend_cols = cols_in;
+    }
     // Next tile's prologue copies overwrite the A+B LDS used for staging C: every wave must
     // have finished its staged-C reads.
     s_waitcnt_lgkmcnt(0_I);
     __builtin_amdgcn_s_barrier();
     __builtin_amdgcn_sched_barrier(0);
     }   // persistent tile loop
-    if (pend_c) {   // h1: the last tile's bottom half
+    if (T::PERSIST && pend_c) {   // h1: the last tile's bottom half
         unsigned int lm = ~0u; asm volatile("" : "+s"(lm));
         const int ln = static_cast<int>(__builtin_amdgcn_mbcnt_hi(lm, __builtin_amdgcn_mbcnt_lo(lm, 0u)));
         s_waitcnt_lgkmcnt(0_I);

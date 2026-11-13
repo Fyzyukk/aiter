@@ -36,8 +36,10 @@ extern "C" __global__ __launch_bounds__({lb0}, {lb1}) void {name}({kargs} kargs)
 
 
 def kernel_name(e):
+    """variant: "" persistent, "np" one tile per block, "sk" split-K, "nob" persistent without M/N boundary handling."""
     m, n, k = e["tile"]
-    return f"opus_gemm_gfx950_{e['pipeline']}_co_{m}x{n}x{k}"
+    v = e.get("variant", "")
+    return f"opus_gemm_gfx950_{e['pipeline']}_co_{m}x{n}x{k}" + (f"_{v}" if v else "")
 
 
 def load_entries(path=JSON):
@@ -74,7 +76,8 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     info_path = os.path.join(OUT_DIR, "build_info.json")
     info = json.load(open(info_path)) if os.path.isfile(info_path) else {"kernels": []}
-    by_name = {k["name"]: k for k in info.get("kernels", [])}
+    declared = {kernel_name(e) for e in load_entries()}
+    by_name = {k["name"]: k for k in info.get("kernels", []) if k["name"] in declared}
     ok = True
     for e in load_entries():
         name = kernel_name(e)
@@ -108,7 +111,7 @@ def main():
                 open(os.path.join(OUT_DIR, "asm", name + ".dis"), "w").write(
                     subprocess.run([objdump, "-d", "--mcpu=gfx950", dst], capture_output=True, text=True).stdout)
         rec = {"kid": e["kid"], "name": name, "image": name + ".co", "symbol": name, "pipeline": e["pipeline"],
-               "tile": e["tile"], "traits": e["traits"], "co_sha256": hashlib.sha256(data).hexdigest(),
+               "tile": e["tile"], "mode": e.get("mode", 0), "boundary": e.get("boundary", True), "traits": e["traits"], "co_sha256": hashlib.sha256(data).hexdigest(),
                "compiler": version, "llvm_bin": a.llvm_bin, "opus_include": a.opus_include,
                "device_flags": e["device_flags"], **{k: v for k, v in meta.items() if k != "symbol"},
                "zero_vgpr_spill": meta.get("vgpr_spill_count", 0) == 0 and meta.get("private_segment_fixed_size", 0) == 0}

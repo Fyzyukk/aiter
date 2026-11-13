@@ -24,6 +24,7 @@
 #endif
 #include "opus_gemm_manifest.h"                    // a8w8 launcher symbols
 #include "opus_gemm_a4w4_mxfp4_lookup.h"           // a4w4_mxfp4_nt kid table + tuned (M,N,K) -> kid
+#include "gfx950/opus_co_launch_mxfp4_gfx950.cuh"  // opus_mxfp4_pick_split (host-only helpers)
 #include "opus_gemm_utils.cuh"                     // bf16_t / fp32_t
 #include "aiter_stream.h"                          // aiter::getCurrentHIPStream
 
@@ -74,6 +75,8 @@ struct OpusA4w4Mxfp4Kid {
   int kid;
   OpusScaleKernel fn;
   int b_m, b_n;
+  int mode;       // 0 persistent, 1 one tile per block, 2 split-K
+  int boundary;   // 0: needs M % B_M == 0 && N % B_N == 0
 };
 struct OpusA4w4Mxfp4Tuned {
   int mnk[3];
@@ -102,26 +105,43 @@ static OpusScaleKernel opus_a4w4_mxfp4_by_kid(int kid)
   return nullptr;
 }
 
-// Heuristic: minimise rounds x per-tile cost, rounds = ceil(tiles / CUs) of the persistent launch and the per-tile
-// cost ~ tile area / efficiency (smaller tiles move more bytes per FLOP; efficiencies from 8192^3 measurements are
-// to be refined by the tuned table).
+// Heuristic: estimated time = rounds x per-tile time + fixed costs, per (tile, mode).  Per-tile time ~ B_M * B_N * K_seg /
+// (rate x efficiency): rate from 8192^3 on 256x256 (~55 us per 256x256x8192 tile at the power cap), efficiencies per tile
+// size; persistent pays nothing extra, one-tile-per-block (mode 1) is preferred when tiles <= CUs, split-K adds a fixed
+// partial-write / reduce cost.  Constants are rough and meant to be replaced by the tuned table.
 static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch)
 {
-  (void)K;
   int n = 0;
   const auto* t = opus_a4w4_mxfp4_kids(n);
   AITER_CHECK(n > 0, "opus a4w4_mxfp4: no kernels built");
   const int cus = static_cast<int>(get_num_cu_func());
-  int best = t[0].kid;
+  constexpr double US_PER_ELEM = 55.0 / (256.0 * 256.0 * 8192.0);
+  constexpr double SK_FIXED_US = 4.0;
+  int best = -1;
   double best_cost = 1e300;
   for (int i = 0; i < n; ++i) {
-    const long tiles = (long)((M + t[i].b_m - 1) / t[i].b_m) * ((N + t[i].b_n - 1) / t[i].b_n) * batch;
-    const long rounds = (tiles + cus - 1) / cus;
-    const int area = t[i].b_m * t[i].b_n;
-    const double eff = area >= 65536 ? 1.0 : area >= 49152 ? 0.95 : area >= 32768 ? 0.9 : 0.78;   // 256x256 / 192x256 / 256x128 / 128x128
-    const double cost = static_cast<double>(rounds) * area / eff;
-    if (cost < best_cost) { best_cost = cost; best = t[i].kid; }
+    const auto& e = t[i];
+    const int tiles_m = (M + e.b_m - 1) / e.b_m, tiles_n = (N + e.b_n - 1) / e.b_n;
+    const long tiles = static_cast<long>(tiles_m) * tiles_n * batch;
+    if (!e.boundary && (M % e.b_m || N % e.b_n)) continue;
+    const int area = e.b_m * e.b_n;
+    const double eff = area >= 65536 ? 1.0 : area >= 49152 ? 0.95 : area >= 32768 ? 0.9 : 0.78;
+    double cost;
+    if (e.mode == 0) {
+      cost = static_cast<double>((tiles + cus - 1) / cus) * area * K * US_PER_ELEM / eff;
+      if (e.boundary) cost *= 1.006;   // the nob variant is ~0.6% faster when it applies
+      if (tiles <= cus) cost *= 1.01;  // prefer mode 1 when there is a single round
+    } else if (e.mode == 1) {
+      if (tiles > cus) continue;
+      cost = area * static_cast<double>(K) * US_PER_ELEM / eff;
+    } else {
+      const int S = opus_mxfp4_pick_split(static_cast<int>(tiles), K, cus);
+      if (S <= 1) continue;
+      cost = area * static_cast<double>(K / S) * US_PER_ELEM / eff + SK_FIXED_US;
+    }
+    if (cost < best_cost) { best_cost = cost; best = e.kid; }
   }
+  AITER_CHECK(best >= 0, "opus a4w4_mxfp4: no applicable kernel");
   return best;
 }
 

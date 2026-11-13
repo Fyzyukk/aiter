@@ -13,7 +13,10 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <mutex>
+#include <unordered_map>
 #include "aiter_hip_common.h"
+#include "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_gfx950.cuh"
 
 #ifndef OPUS_GEN_CO_DIR
 #define OPUS_GEN_CO_DIR ""
@@ -45,11 +48,42 @@ private:
     }
 };
 
+// Per-stream split-K workspace (grown on demand; the counter block is zeroed on allocation and kept at zero by the kernel).
+// Allocation is not graph-capture safe: run the largest split-K shape once eagerly before capturing.
+inline void* mxfp4_sk_workspace(hipStream_t stream, long bytes, long counter_bytes) {
+    struct Ws { void* p = nullptr; long bytes = 0; };
+    static std::mutex mu;
+    static std::unordered_map<hipStream_t, Ws> map;
+    std::lock_guard<std::mutex> g(mu);
+    Ws& w = map[stream];
+    if (w.bytes < bytes) {
+        if (w.p) { HIP_CALL(hipStreamSynchronize(stream)); HIP_CALL(hipFree(w.p)); }
+        HIP_CALL(hipMalloc(&w.p, bytes));
+        HIP_CALL(hipMemsetAsync(w.p, 0, counter_bytes, stream));
+        w.bytes = bytes;
+    }
+    return w.p;
+}
+
 inline AiterAsmKernelFast& mxfp4_co_kernel(const std::string& symbol) {
     static SynchronizedCache<std::string, MxCoModule> cache;
     return cache.get_or_create(symbol, [&]() { return MxCoModule(symbol); }).kernel;
 }
 } // namespace opus_gfx950_co
+
+// Split-K factor: largest S in {8, 4, 2} with tiles * S <= CUs and K a multiple of S * 256 (each segment whole K tiles);
+// 1 if none (or tiles > OPUS_MXFP4_SK_MAX_TILES).  OPUS_MXFP4_SPLITK=<S> overrides (tuning / tests).
+inline int opus_mxfp4_pick_split(int tiles, int K, int cus) {
+    if (const char* e = std::getenv("OPUS_MXFP4_SPLITK")) {
+        const int s = std::atoi(e);
+        AITER_CHECK(s >= 1 && K % (s * 256) == 0, "OPUS_MXFP4_SPLITK=", s, " needs K % (S * 256) == 0 (K=", K, ")");
+        return s;
+    }
+    if (tiles > OPUS_MXFP4_SK_MAX_TILES) return 1;
+    for (int s : {8, 4, 2})
+        if (tiles * s <= cus && K % (s * 256) == 0) return s;
+    return 1;
+}
 
 template <class Kargs>
 inline void opus_mxfp4_co_launch_gfx950(AiterAsmKernelFast& kernel, dim3 grid, dim3 block, Kargs& args, hipStream_t stream) {

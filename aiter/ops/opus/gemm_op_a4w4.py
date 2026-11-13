@@ -16,7 +16,13 @@ from torch import Tensor
 
 from ...jit.core import compile_ops
 
-A4W4_MXFP4_NT_KIDS = (30000, 30001, 30002, 30003, 30004, 30005)   # tiles 256x256, 256x128, 128x256, 128x128, 192x256, 256x192
+# kid = 30000 + variant offset + tile index; tiles 256x256, 256x128, 128x256, 128x128, 192x256, 256x192.
+# variants: +0 persistent, +10 one tile per block, +20 split-K (no 256x256; S from the C++ heuristic or OPUS_MXFP4_SPLITK),
+# 30030 = persistent 256x256 without M/N boundary handling (M, N multiples of 256).
+A4W4_MXFP4_NT_TILE_NAMES = ("256x256", "256x128", "128x256", "128x128", "192x256", "256x192")
+A4W4_MXFP4_NT_KIDS = (
+    tuple(30000 + i for i in range(6)) + tuple(30010 + i for i in range(6)) + tuple(30021 + i for i in range(5)) + (30030,)
+)
 
 
 def _fake_dispatch(XQ, WQ, Y, group_layout=None, x_scale=None, w_scale=None, bias=None) -> Tensor:
@@ -84,7 +90,7 @@ def gemm_a4w4_opus(XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor, Y: 
 def opus_gemm_a4w4_tune(
     XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor, Y: Tensor | None = None, kernelId: int = 30000
 ) -> Tensor:
-    """Run one a4w4_mxfp4_nt kid (30000..30005) explicitly."""
+    """Run one a4w4_mxfp4_nt kid (see A4W4_MXFP4_NT_KIDS) explicitly."""
     x3, w3, Y, y3 = _as3d(XQ, WQ, Y)
     _check(x3, w3, x_scale, w_scale)
     _opus_gemm_a4w4_tune_raw(x3, w3, y3, x_scale, w_scale, kernelId)

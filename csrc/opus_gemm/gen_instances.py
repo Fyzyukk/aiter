@@ -914,7 +914,10 @@ void
                  "#define OPUS_A4W4_MXFP4_HAS_KIDS %d" % (1 if rows else 0),
                  "#define GENERATE_A4W4_MXFP4_KIDS \\"]
         for i, (kid, k) in enumerate(rows):
-            lines.append(f"    {{ {kid}, &{k.name}<bf16_t>, {k.B_M}, {k.B_N} }}," + (" \\" if i + 1 < len(rows) else ""))
+            from codegen.gen_instances_gfx950 import a4w4_mxfp4_nt_mode, a4w4_mxfp4_nt_variant
+            mode = a4w4_mxfp4_nt_mode(k)
+            boundary = 0 if a4w4_mxfp4_nt_variant(k) == "nob" else 1
+            lines.append(f"    {{ {kid}, &{k.name}<bf16_t>, {k.B_M}, {k.B_N}, {mode}, {boundary} }}," + (" \\" if i + 1 < len(rows) else ""))
         if not rows:
             lines[-1] = "#define GENERATE_A4W4_MXFP4_KIDS"
         valid = {kid for kid, _ in rows}

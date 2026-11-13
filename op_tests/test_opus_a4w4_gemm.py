@@ -15,7 +15,10 @@ from aiter.ops.opus import gemm_a4w4_opus, opus_gemm_a4w4_tune
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.fp4_utils import e8m0_shuffle
 
-KIDS = {30000: "256x256", 30001: "256x128", 30002: "128x256", 30003: "128x128", 30004: "192x256", 30005: "256x192"}
+import os
+_T = ("256x256", "256x128", "128x256", "128x128", "192x256", "256x192")
+KIDS = {**{30000 + i: t for i, t in enumerate(_T)}, **{30010 + i: t + " np" for i, t in enumerate(_T)}, 30030: "256x256 nob"}
+SK_KIDS = {30020 + i: t + " sk" for i, t in enumerate(_T) if i}
 _LUT = None
 
 
@@ -86,12 +89,23 @@ def main():
         if r is not None:
             ok &= check(out, r, "gemm_a4w4_opus (dispatch)")
         for kid, t in KIDS.items():
+            if kid == 30030 and (M % 256 or N % 256):
+                continue
             o = opus_gemm_a4w4_tune(xq, wsh, xss, wss, kernelId=kid)
             if r is not None:
                 ok &= check(o, r, f"kid {kid} ({t})")
             if a.perf:
                 us = bench(lambda: opus_gemm_a4w4_tune(xq, wsh, xss, wss, Y=o, kernelId=kid))
                 print(f"    {t}: {us:7.1f} us  {2 * M * N * K * b / us / 1e9:.0f} TFLOPS")
+        for kid, t in SK_KIDS.items():
+            for S in (1, 2, 4, 8):
+                if K % (S * 256):
+                    continue
+                os.environ["OPUS_MXFP4_SPLITK"] = str(S)
+                o = opus_gemm_a4w4_tune(xq, wsh, xss, wss, kernelId=kid)
+                if r is not None:
+                    ok &= check(o, r, f"kid {kid} ({t} S={S})")
+                del os.environ["OPUS_MXFP4_SPLITK"]
         if b == 1 and M % 32 == 0:
             try:
                 from aiter.ops.gemm_op_a4w4 import gemm_a4w4_asm

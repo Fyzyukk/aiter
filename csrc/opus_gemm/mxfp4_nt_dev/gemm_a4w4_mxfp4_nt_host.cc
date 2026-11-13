@@ -146,7 +146,8 @@ cmp_stats compare(const float* ref, const float* got, const float* mag, size_t c
 
 int main(int argc, char** argv) {
     int M = 256, N = 512, K = 512, batch = 2, verify = 1, warmup = 50, iters = 100, cpu_check = -1;
-    int tile_m = 256, tile_n = 256;   // -t 256x256 | 256x128 | 128x256 | 128x128
+    int tile_m = 256, tile_n = 256;   // -t 256x256 | 256x128 | 128x256 | 128x128 | 192x256 | 256x192
+    int mode = -1, split = 1, boundary = 1;   // -p 0 persistent | 1 one tile per block | 2 split-K (-1: auto); -s S; -o 0 = no boundary handling (256x256, mode 0 only)
     for (int i = 1; i + 1 < argc; i += 2) {
         const char* f = argv[i]; const int v = std::atoi(argv[i + 1]);
         if (!std::strcmp(f, "-t")) {
@@ -161,6 +162,9 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(f, "-w")) warmup = v;
         else if (!std::strcmp(f, "-i")) iters = v;
         else if (!std::strcmp(f, "-c")) cpu_check = v;
+        else if (!std::strcmp(f, "-p")) mode = v;
+        else if (!std::strcmp(f, "-s")) split = v;
+        else if (!std::strcmp(f, "-o")) boundary = v;
         else { std::fprintf(stderr, "unknown flag %s\n", f); return 1; }
     }
     using T = TileTraits<256, 256>;   // tile-independent constants
@@ -255,14 +259,28 @@ int main(int argc, char** argv) {
     // (batch, m, n) tile list with stride gridDim.x.  PERSIST_GRID overrides the block count.
     int num_cu = 0; CHECK_HIP(hipDeviceGetAttribute(&num_cu, hipDeviceAttributeMultiprocessorCount, 0));
     const int total_tiles = num_tiles_m * num_tiles_n * batch;
-    int grid_x = std::min(total_tiles, num_cu);
-    if (std::getenv("PERSIST_GRID")) grid_x = std::min(total_tiles, std::atoi(std::getenv("PERSIST_GRID")));
+    if (mode < 0) mode = split > 1 ? 2 : (total_tiles > num_cu || std::getenv("PERSIST_GRID") ? 0 : 1);
+    if (mode == 2 && total_tiles > OPUS_MXFP4_SK_MAX_TILES) { std::fprintf(stderr, "split-K: at most %d tiles\n", OPUS_MXFP4_SK_MAX_TILES); return 1; }
+    if (mode == 2 && tile_m == 256 && tile_n == 256) { std::fprintf(stderr, "split-K: no 256x256 variant\n"); return 1; }
+    if (split > 1 && (mode != 2 || K % (split * T::B_K))) { std::fprintf(stderr, "split-K needs -p 2 and K %% (S * 256) == 0\n"); return 1; }
+    if (!boundary && (mode != 0 || tile_m != 256 || tile_n != 256 || M % 256 || N % 256)) { std::fprintf(stderr, "-o 0 only for 256x256 mode 0, M/N %% 256 == 0\n"); return 1; }
+    int grid_x = mode == 0 ? std::min(total_tiles, num_cu) : total_tiles * (mode == 2 ? split : 1);
+    if (mode == 0 && std::getenv("PERSIST_GRID")) grid_x = std::min(total_tiles, std::atoi(std::getenv("PERSIST_GRID")));
     dim3 grid(grid_x, 1, 1), block(T::BLOCK_SIZE);
     kargs.grid_blocks = grid_x;
+    kargs.split_k = mode == 2 ? split : 1;
+    void* d_ws = nullptr;
+    if (mode == 2) {   // counters must start at 0; the kernel resets them, so one memset is enough
+        const long ws = opus_mxfp4_sk_ws_bytes(total_tiles, split, tile_m, tile_n);
+        CHECK_HIP(hipMalloc(&d_ws, ws));
+        CHECK_HIP(hipMemset(d_ws, 0, opus_mxfp4_sk_counter_bytes(total_tiles)));
+        kargs.ptr_ws = d_ws;
+    }
     // MXFP4_CO_DIR=<dir>: launch the pre-compiled gen_co image <dir>/opus_gemm_gfx950_a4w4_mxfp4_nt_co_<BM>x<BN>x256.co instead.
     hipFunction_t co_fn = nullptr;
     if (const char* co_dir = std::getenv("MXFP4_CO_DIR")) {
-        char sym[128]; std::snprintf(sym, sizeof(sym), "opus_gemm_gfx950_a4w4_mxfp4_nt_co_%dx%dx256", tile_m, tile_n);
+        char sym[160]; std::snprintf(sym, sizeof(sym), "opus_gemm_gfx950_a4w4_mxfp4_nt_co_%dx%dx256%s", tile_m, tile_n,
+                                     !boundary ? "_nob" : mode == 1 ? "_np" : mode == 2 ? "_sk" : "");
         const std::string path = std::string(co_dir) + "/" + sym + ".co";
         hipModule_t mod; CHECK_HIP(hipModuleLoad(&mod, path.c_str()));
         CHECK_HIP(hipModuleGetFunction(&co_fn, mod, sym));
@@ -272,15 +290,22 @@ int main(int argc, char** argv) {
     void* co_cfg[] = {HIP_LAUNCH_PARAM_BUFFER_POINTER, &kargs, HIP_LAUNCH_PARAM_BUFFER_SIZE, &kargs_size, HIP_LAUNCH_PARAM_END};
     auto launch = [&]() {
         if (co_fn) { CHECK_HIP(hipModuleLaunchKernel(co_fn, grid.x, 1, 1, block.x, 1, 1, 0, nullptr, nullptr, co_cfg)); return; }
-        if (tile_m == 256 && tile_n == 256)      gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 256>><<<grid, block>>>(kargs);
-        else if (tile_m == 256 && tile_n == 128) gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 128>><<<grid, block>>>(kargs);
-        else if (tile_m == 128 && tile_n == 256) gemm_a4w4_mxfp4_nt_kernel<TileTraits<128, 256>><<<grid, block>>>(kargs);
-        else if (tile_m == 192)                  gemm_a4w4_mxfp4_nt_kernel<TileTraits<192, 256>><<<grid, block>>>(kargs);
-        else if (tile_n == 192)                  gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 192>><<<grid, block>>>(kargs);
-        else                                     gemm_a4w4_mxfp4_nt_kernel<TileTraits<128, 128>><<<grid, block>>>(kargs);
+        if (!boundary) { gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<256, 256, 0, false>><<<grid, block>>>(kargs); return; }
+        auto go = [&](auto mode_) {
+            constexpr int MD = decltype(mode_)::value;
+            if (tile_m == 256 && tile_n == 256)      { if constexpr (MD != 2) gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<256, 256, MD>><<<grid, block>>>(kargs); }
+            else if (tile_m == 256 && tile_n == 128) gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<256, 128, MD>><<<grid, block>>>(kargs);
+            else if (tile_m == 128 && tile_n == 256) gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<128, 256, MD>><<<grid, block>>>(kargs);
+            else if (tile_m == 192)                  gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<192, 256, MD>><<<grid, block>>>(kargs);
+            else if (tile_n == 192)                  gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<256, 192, MD>><<<grid, block>>>(kargs);
+            else                                     gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<128, 128, MD>><<<grid, block>>>(kargs);
+        };
+        if (mode == 0) go(std::integral_constant<int, 0>{});
+        else if (mode == 1) go(std::integral_constant<int, 1>{});
+        else go(std::integral_constant<int, 2>{});
     };
-    std::printf("MXFP4xMXFP4 NT 4-wave (1x32 UE8M0) tile %dx%d M=%d N=%d K=%d batch=%d grid=(%u,1,%u) block=%d\n",
-                tile_m, tile_n, M, N, K, batch, grid.x, grid.z, T::BLOCK_SIZE);
+    std::printf("MXFP4xMXFP4 NT 4-wave (1x32 UE8M0) tile %dx%d mode %d split %d M=%d N=%d K=%d batch=%d grid=(%u,1,%u) block=%d\n",
+                tile_m, tile_n, mode, kargs.split_k, M, N, K, batch, grid.x, grid.z, T::BLOCK_SIZE);
     launch();
     CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());

@@ -38,6 +38,8 @@ struct opus_gemm_mxfp4_scale_kargs_gfx950 {
     int stride_sfa_batch;
     int stride_sfb_batch;
     int grid_blocks;          // persistent kernel: number of launched blocks (avoids reading the dispatch packet)
+    int split_k;              // MODE 2 (split-K): number of K segments S (grid = tiles * S); otherwise unused
+    void* __restrict__ ptr_ws;   // MODE 2: workspace = [tile counters (int, padded to 256 B)][tiles][S][B_M * B_N] fp32 partials
 };
 
 __host__ __device__ inline int opus_mxfp4_ceil_div(int a, int b) { return (a + b - 1) / b; }
@@ -49,13 +51,21 @@ __host__ __device__ inline int opus_mxfp4_ceil_div(int a, int b) { return (a + b
 // kk = 1: bytes [64+16g, +16) = K [128+32g, +32), g = lane / 16).
 // aiter form: <BLOCK_SIZE, seq<B_M, B_N, B_K>, tuple<D_A, D_B, D_C, D_ACC, D_SF>, seq<VEC_A, VEC_B, VEC_C>, seq<GROUP_M, GROUP_N, GROUP_K>>.
 // Supported: BLOCK_SIZE 256, B_M / B_N in {256, 128}, B_K 256, VEC <16, 16, 4>, GROUP <1, 1, 32>.
-template<int BLOCK_SIZE_, typename BLOCK_, typename DTYPE_, typename VEC_, typename GROUP_>
+// MODE_: 0 = persistent (grid = min(tiles, CUs), next tile prefetched in the last K tile, bottom half of C stored in the
+//        next tile's prologue); 1 = one tile per block (grid = tiles, no cross-tile code); 2 = split-K, one (tile, K segment)
+//        per block, fp32 partials in a workspace, the last-arriving block of a tile reduces them and writes C.
+// BOUNDARY_: false drops the M / N boundary handling (M % B_M == 0 and N % B_N == 0 required).
+template<int BLOCK_SIZE_, typename BLOCK_, typename DTYPE_, typename VEC_, typename GROUP_, int MODE_ = 0, bool BOUNDARY_ = true>
 struct opus_gemm_a4w4_mxfp4_nt_traits_gfx950 {
     using BLOCK = opus::remove_cvref_t<BLOCK_>;
     using DTYPE = opus::remove_cvref_t<DTYPE_>;
     using VEC   = opus::remove_cvref_t<VEC_>;
     using GROUP = opus::remove_cvref_t<GROUP_>;
     static constexpr int BLOCK_SIZE = BLOCK_SIZE_;
+    static constexpr int MODE = MODE_;
+    static constexpr bool PERSIST = MODE_ == 0, SPLITK = MODE_ == 2, BOUNDARY = BOUNDARY_;
+    static_assert(MODE_ >= 0 && MODE_ <= 2);
+    static_assert(!(MODE_ == 2 && opus::get<0>(BLOCK{}) == 256 && opus::get<1>(BLOCK{}) == 256), "split-K 256x256 runs out of VGPRs (86 spilled); use a smaller tile");
     static_assert(BLOCK_SIZE == 256, "4 waves");
     static_assert(opus::get<2>(BLOCK{}) == 256, "B_K is one 256-element K tile");
     static_assert(opus::get<0>(VEC{}) == 16 && opus::get<1>(VEC{}) == 16 && opus::get<2>(VEC{}) == 4);
@@ -143,6 +153,14 @@ struct opus_gemm_a4w4_mxfp4_nt_traits_gfx950 {
     static_assert(LDS_BYTES <= 163840);   // s1: padding 64 -> exactly 160 KB
 };
 // Shorthand used by the dev harness: opus_mxfp4_nt_traits<B_M, B_N>.
-template<int BM, int BN>
+template<int BM, int BN, int MODE = 0, bool BOUNDARY = true>
 using opus_mxfp4_nt_traits = opus_gemm_a4w4_mxfp4_nt_traits_gfx950<256, opus::seq<BM, BN, 256>,
-    opus::tuple<opus::fp4_t, opus::fp4_t, opus::bf16_t, opus::fp32_t, opus::e8m0_t>, opus::seq<16, 16, 4>, opus::seq<1, 1, 32>>;
+    opus::tuple<opus::fp4_t, opus::fp4_t, opus::bf16_t, opus::fp32_t, opus::e8m0_t>, opus::seq<16, 16, 4>, opus::seq<1, 1, 32>, MODE, BOUNDARY>;
+// Split-K workspace: a fixed 4 KB counter block (one int per tile, at most 1024 tiles; zeroed once, each tile's last block
+// resets its counter) followed by tiles * S partial tiles of B_M * B_N fp32.  The fixed size keeps the counters in place
+// whatever the shape, so a reused workspace never needs re-zeroing.
+constexpr int OPUS_MXFP4_SK_MAX_TILES = 1024;
+__host__ __device__ inline long opus_mxfp4_sk_counter_bytes(int /*tiles*/) { return OPUS_MXFP4_SK_MAX_TILES * 4; }
+__host__ __device__ inline long opus_mxfp4_sk_ws_bytes(int tiles, int split_k, int b_m, int b_n) {
+    return opus_mxfp4_sk_counter_bytes(tiles) + static_cast<long>(tiles) * split_k * b_m * b_n * 4;
+}

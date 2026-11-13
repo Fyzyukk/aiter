@@ -1014,15 +1014,28 @@ GFX1250_CLUSTERLAUNCH_KIDS = frozenset(gfx1250_clusterlaunch_kernels_list.keys()
 
 # a4w4_mxfp4_nt (gfx950): MXFP4 x MXFP4 NT, 1x32 e8m0 scales, 2x2 4-wave persistent pipeline. Device code is the
 # pre-compiled gen_co/gfx950/opus_gemm_gfx950_a4w4_mxfp4_nt_co_<B_M>x<B_N>x256.co (pin toolchain); only the host
-# launcher is JIT-built. Kids 30000..30005 (tile index order is also the heuristic's candidate order).
+# launcher is JIT-built. Kids 30000..30030 (see variants below) (tile index order is also the heuristic's candidate order).
 A4W4_MXFP4_NT_KID_BASE = 30000
 A4W4_MXFP4_NT_TILES = [(256, 256), (256, 128), (128, 256), (128, 128), (192, 256), (256, 192)]
-a4w4_mxfp4_nt_kernels_list = {
-    A4W4_MXFP4_NT_KID_BASE + i: OpusGemmInstance(
+# Variants (name_tag): persistent "a4w4_mxfp4_nt_co" (kid 30000 + i), one tile per block "a4w4_mxfp4_nt_np_co" (30010 + i),
+# split-K "a4w4_mxfp4_nt_sk_co" (30020 + i, no 256x256), persistent without M/N boundary handling "a4w4_mxfp4_nt_nob_co"
+# (30030, 256x256 only).  i indexes A4W4_MXFP4_NT_TILES.
+A4W4_MXFP4_NT_VARIANTS = {"": 0, "np": 10, "sk": 20, "nob": 30}
+
+
+def _a4w4_mxfp4_nt(bm, bn, variant):
+    tag = "a4w4_mxfp4_nt" + (f"_{variant}" if variant else "") + "_co"
+    return OpusGemmInstance(
         256, bm, bn, 256, 2, 2, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt", ["bf16_t"],
-        arch_prefix="gfx950", name_tag="a4w4_mxfp4_nt_co",
+        arch_prefix="gfx950", name_tag=tag,
     )
+
+
+a4w4_mxfp4_nt_kernels_list = {
+    A4W4_MXFP4_NT_KID_BASE + off + i: _a4w4_mxfp4_nt(bm, bn, v)
+    for v, off in A4W4_MXFP4_NT_VARIANTS.items()
     for i, (bm, bn) in enumerate(A4W4_MXFP4_NT_TILES)
+    if not (v == "sk" and (bm, bn) == (256, 256)) and not (v == "nob" and (bm, bn) != (256, 256))
 }
 A4W4_MXFP4_NT_KIDS = frozenset(a4w4_mxfp4_nt_kernels_list.keys())
 

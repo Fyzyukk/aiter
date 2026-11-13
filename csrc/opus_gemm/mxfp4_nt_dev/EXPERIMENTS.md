@@ -110,3 +110,18 @@ prof/timing.sh（等 HIP 2 空闲后测：8192³ zc vs 256×256 交替 6 轮；1
 - 正确性：dev 104 用例矩阵 192×256、256×192 各 104/104；新 .co 经 MXFP4_CO_DIR 加载 3 个 shape × SFA_K_PATTERN 全部 errors=0；
   aiter op 测试（重建 module_deepgemm_opus）50 个正确性用例全 OK（含 kid 30004 / 30005 共 14 个），4 个报错用例都被拒绝。
 - 启发式效率表加 192×256 / 256×192 一档（0.95，暂定）。性能未测（按要求等小 shape 流水线后统一测）。
+
+## 非 persistent / split-K / 无边界 变体（2026-11-13，HIP 6）
+traits 增加 `MODE_`（0 persistent，1 每 block 一个 tile，2 split-K）和 `BOUNDARY_`（false：M、N 整除时去掉边界处理）；kargs 末尾加 `split_k`、`ptr_ws`（104 → 120 B）。
+- MODE 1：grid = tile 数，tile 循环只跑一次；编译期去掉下一 tile 预取（A/B/scale 的 DMA）、prologue 的下半 C 补写和循环后的 pend；下半 C 在 epilogue 直接写出。
+- MODE 2：block = (tile, K 段)，s = block % S（同一 tile 的段相邻）。各段 K = K/S（256 的倍数；奇数个 K tile 时最后一个 scale panel 只用一半，已覆盖）。
+  A / B / scale 的基址按段起点平移（A：字节，B：shuffle_weight 下每 K tile 2 KB，scale：e8m0_shuffle 下每 K tile 256 B）。
+  归约：各段把 fp32 部分和按 C 片段布局（每 lane 16 B）写到 workspace，agent 范围 release fence + 原子计数；最后到达的 block（计数 = S−1）
+  把计数清零、acquire fence、读其余 S−1 份加到自己的累加器，再走正常 bf16 epilogue（含边界）。单次 launch，无需归约 kernel。
+  workspace = 固定 4 KB 计数区（≤ 1024 tile，只在分配时清零一次）+ tiles × S × B_M × B_N fp32。256×256 不做 split-K（VGPR 已满，spill 86）。
+- 生成代码：6 个 persistent tile 与改动前逐条指令相同；MODE 1/2 均无 VGPR spill（split-K SGPR spill 38–45，进 VGPR lane）。
+- .co：18 个（persistent 6、np 6、sk 5、nob 1），kid 30000–30005 / 30010–30015 / 30021–30025 / 30030。
+- 接入：kid 表按 variant 生成；launcher 按 variant 决定 grid（persistent: min(tiles, CU)；np: tiles；sk: tiles × S，S = `opus_mxfp4_pick_split`：
+  {8,4,2} 中满足 tiles×S ≤ CU 且 K % (S×256) == 0 的最大值，`OPUS_MXFP4_SPLITK` 可覆盖）；workspace 每 stream 一份、按需增长（不可在 graph capture 中首次分配）。
+  分发启发式改成按 (tile, variant) 估时（rounds × 面积 × K_seg × 速率 / 效率 + split-K 固定开销 4 µs），常数待计时校准。
+- 正确性：aiter op 测试 169 个用例全 OK（含 split-K S ∈ {1,2,4,8} 75 个、np、nob）；dev 104 矩阵：mode 1 的 256×256 / 256×128 / 128×256 已 104/104，其余在跑。
