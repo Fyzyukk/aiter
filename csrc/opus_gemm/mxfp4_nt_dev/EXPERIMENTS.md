@@ -46,3 +46,21 @@ prof/timing.sh（等 HIP 2 空闲后测：8192³ zc vs 256×256 交替 6 轮；1
 - kargs `opus_gemm_mxfp4_scale_kargs_gfx950`；kernel `gemm_a4w4_mxfp4_nt_kernel`，体内 `#if defined(__gfx950__)`；`ceil_div_scale` → `opus_mxfp4_ceil_div`（避免与其他头冲突）。
 - traits 只 include opus（hip_minimal 用于 device / RTC），不 include opus_gemm_utils.cuh：后者在非 RTC host pass 拉入完整 HIP runtime，pin 工具链编不过；launcher 只需要 kargs。
 - 生成的代码与改名前（/tmp/exp_tiles/t2）逐条指令相同（9169 行反汇编一致，只有符号名不同）；4 个 tile × {8192³, 300×400×768×b2, 1000×4112×256} × SFA_K_PATTERN 全部 errors=0。
+
+## 接入 aiter 第 2 步：gfx950 预编译 .co（2026-11-13）
+- pipeline 拆成 `__device__ gemm_a4w4_mxfp4_nt_body<Traits>(kargs)` + 模板 `__global__` 包装（dev 构建生成代码不变，已核对）。
+- 新增 `gen_co/`（只带 gfx950 / mxfp4 需要的部分，未移植 blockscale 分支的 gfx1250 / mxfp8 条目和其 codegen 依赖）：
+  `co_kernels_gfx950.json`（4 个 tile）、`build_co_gfx950.py`（stub → pin clang `--cuda-device-only` → unbundle → 校验符号 → build_info.json）、README。
+- 4 个 .co 已提交（pin 工具链 yuyzhang512 amdgpu-pin-op-dst，opus 用 blockscale 分支 csrc/include，flags `-O3 -std=c++17 -ffast-math`）：
+
+| image | VGPR / AGPR | VGPR spill | SGPR spill | LDS | scratch |
+|---|---|---|---|---|---|
+| ..._co_256x256x256 | 512 / 256 | 0 | 21 | 163840 | 0 |
+| ..._co_256x128x256 | 448 / 224 | 0 | 23 | 122880 | 0 |
+| ..._co_128x256x256 | 448 / 224 | 0 | 20 | 122880 | 0 |
+| ..._co_128x128x256 | 416 / 208 | 0 | 18 | 81920 | 0 |
+
+- 与 dev 构建（模板 __global__）相比：寄存器 / spill / LDS 相同；256×256 的指令差异只有尾部 s_nop 填充、45 处 v_and → v_mul_i32_i24（地址计算）和少量 SALU 重排（extern "C" 入口 + 不同 TU 的寄存器分配差异）。
+  先试过 blockscale 的 gfx950 默认 flags（`-fgpu-flush-denormals-to-zero -fno-offload-uniform-block ...`），代码差异更大，改回与 dev 相同的 `-ffast-math`。
+- 验证：dev host 新增 `MXFP4_CO_DIR=<gen_co/gfx950>`，用 hipModuleLoad 加载 .co 并复用原校验；4 个 tile × {8192³, 300×400×768×b2, 1000×4112×256} × SFA_K_PATTERN 全部 errors=0。
+- 计时仍等卡（HIP 2 被占）。

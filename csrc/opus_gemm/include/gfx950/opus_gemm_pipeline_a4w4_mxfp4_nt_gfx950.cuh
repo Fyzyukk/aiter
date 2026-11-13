@@ -484,9 +484,10 @@ constexpr int c_reg() {
 #ifndef BAR_STEP
 #define BAR_STEP 8
 #endif
+// Kernel body as a device function, so the same code backs the JIT-style template __global__ below and the
+// extern "C" entry points of the pre-compiled .co images (gen_co/build_co_gfx950.py).
 template<class Traits>
-__global__ __launch_bounds__(Traits::BLOCK_SIZE, 1)
-void gemm_a4w4_mxfp4_nt_kernel(opus_gemm_mxfp4_scale_kargs_gfx950 kargs) {
+__device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_kargs_gfx950 kargs) {
 #if defined(__gfx950__)
     using namespace opus;
     using T = opus::remove_cvref_t<Traits>;
@@ -1322,4 +1323,10 @@ void gemm_a4w4_mxfp4_nt_kernel(opus_gemm_mxfp4_scale_kargs_gfx950 kargs) {
         store_pend_c(wave_id * T::WARP_SIZE + ln);
     }
 #endif   // __gfx950__
+}
+
+template<class Traits>
+__global__ __launch_bounds__(Traits::BLOCK_SIZE, 1)
+void gemm_a4w4_mxfp4_nt_kernel(opus_gemm_mxfp4_scale_kargs_gfx950 kargs) {
+    gemm_a4w4_mxfp4_nt_body<Traits>(kargs);
 }

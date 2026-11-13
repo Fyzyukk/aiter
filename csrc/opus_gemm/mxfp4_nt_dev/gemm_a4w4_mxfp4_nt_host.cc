@@ -15,6 +15,7 @@
 #include <memory>
 #include <random>
 #include <vector>
+#include <string>
 #include <omp.h>
 
 #include "opus_gemm_traits_a4w4_mxfp4_nt_gfx950.cuh"
@@ -257,7 +258,19 @@ int main(int argc, char** argv) {
     if (std::getenv("PERSIST_GRID")) grid_x = std::min(total_tiles, std::atoi(std::getenv("PERSIST_GRID")));
     dim3 grid(grid_x, 1, 1), block(T::BLOCK_SIZE);
     kargs.grid_blocks = grid_x;
+    // MXFP4_CO_DIR=<dir>: launch the pre-compiled gen_co image <dir>/opus_gemm_gfx950_a4w4_mxfp4_nt_co_<BM>x<BN>x256.co instead.
+    hipFunction_t co_fn = nullptr;
+    if (const char* co_dir = std::getenv("MXFP4_CO_DIR")) {
+        char sym[128]; std::snprintf(sym, sizeof(sym), "opus_gemm_gfx950_a4w4_mxfp4_nt_co_%dx%dx256", tile_m, tile_n);
+        const std::string path = std::string(co_dir) + "/" + sym + ".co";
+        hipModule_t mod; CHECK_HIP(hipModuleLoad(&mod, path.c_str()));
+        CHECK_HIP(hipModuleGetFunction(&co_fn, mod, sym));
+        std::printf("using code object %s\n", path.c_str());
+    }
+    size_t kargs_size = sizeof(kargs);
+    void* co_cfg[] = {HIP_LAUNCH_PARAM_BUFFER_POINTER, &kargs, HIP_LAUNCH_PARAM_BUFFER_SIZE, &kargs_size, HIP_LAUNCH_PARAM_END};
     auto launch = [&]() {
+        if (co_fn) { CHECK_HIP(hipModuleLaunchKernel(co_fn, grid.x, 1, 1, block.x, 1, 1, 0, nullptr, nullptr, co_cfg)); return; }
         if (tile_m == 256 && tile_n == 256)      gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 256>><<<grid, block>>>(kargs);
         else if (tile_m == 256 && tile_n == 128) gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 128>><<<grid, block>>>(kargs);
         else if (tile_m == 128 && tile_n == 256) gemm_a4w4_mxfp4_nt_kernel<TileTraits<128, 256>><<<grid, block>>>(kargs);
