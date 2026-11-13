@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// Host-only helper for the JIT-built small-tile a4w4 launchers (opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh):
+// Host-only helper for the JIT-built small-tile a4w4 launchers (shuffle and row-major small-tile pipelines):
 // per-stream split-K workspace = [int counters, fixed MAX_COUNTERS][fp32 partials].  Counters are zeroed when the buffer is
 // (re)allocated; every launch's reducing block resets the counters it used, so the buffer is reused without re-zeroing
 // (one stream at a time, as the kernel requires).

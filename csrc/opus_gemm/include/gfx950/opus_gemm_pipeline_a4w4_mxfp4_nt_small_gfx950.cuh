@@ -1,112 +1,28 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
-// Small-tile MXFP4 x MXFP4 NT GEMM (gfx950): one file for the small-M (M <= ~64) and medium-M (M ~ 128 - 1024) tiles.
-// Standard ROCm toolchain: no pin attributes, no opus (HIP builtins only).  Inputs as aiter gemm_a4w4(bpreshuffle=True);
-// the row-major (Triton gemm_afp4wfp4) variant is opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh.
+// Small-tile MXFP4 x MXFP4 NT GEMM (gfx950), shuffle layout (aiter gemm_a4w4(bpreshuffle=True)): A [M, K/2] fp4x2
+// row-major, B shuffle_weight(16, 16), scales e8m0_shuffle (1x32 UE8M0), C [M, N] bf16.  M <= ~512.  Standard ROCm
+// toolchain (no pin attributes, no opus).  Row-major inputs: opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh.
 //
-// One pipeline, A_LDS (BMODE 2): A global -> LDS by LDS-DMA (D-deep ring, shared by the 4 waves), B + scales global -> a
-//   D-deep register ring (asm 32x128 style); KS = 2 / 4 splits the 4 waves along K (partials summed through LDS at the end).
-//   (The former B_DIRECT / B_LDS shuffle variants were removed; both remain in the row-major file.)
+// One pipeline, A_LDS: A global -> LDS by LDS-DMA (D-deep ring, shared by the 4 waves), B + scales global -> a D-deep
+//   register ring (asm 32x128 style); KS = 2 / 4 splits the 4 waves along K (partials summed through LDS at the end).
 // MFMA v_mfma_scale_f32_16x16x128_f8f6f4 with B as srcA (each lane holds 4 consecutive columns of one C row);
 //   scales read as raw e8m0_shuffle dwords ([kk0 half0, kk0 half1, kk1 half0, kk1 half1] of a 32-row block) with a
 //   compile-time opsel; split-K over blocks (last-arriving block reduces); M / N tails by buffer ranges + 16-column C mask.
 #pragma once
 #include "opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh"
-
-#ifndef OPUS_MXFP4_SMALL_WAUX   // cache policy of the split-K partial-sum stores / loads (sc1)
-#define OPUS_MXFP4_SMALL_WAUX 0x10
-#endif
+#include "opus_gemm_pipeline_a4w4_mxfp4_nt_small_common_gfx950.cuh"
 
 namespace opus_mxfp4_small {
-using kargs_t = opus_gemm_mxfp4_small_kargs_gfx950;
-typedef int   i32x4 __attribute__((ext_vector_type(4)));
-typedef int   i32x8 __attribute__((ext_vector_type(8)));
-typedef float f32x4 __attribute__((ext_vector_type(4)));
-typedef unsigned u32x2 __attribute__((ext_vector_type(2)));
-typedef unsigned u32x4 __attribute__((ext_vector_type(4)));
-template<int I> using ic = std::integral_constant<int, I>;
-template<int N, class F, int I = 0> __device__ __forceinline__ void static_for(F&& f) {
-    if constexpr (I < N) { f(ic<I>{}); static_for<N, F, I + 1>(static_cast<F&&>(f)); }
-}
-__device__ __forceinline__ __amdgpu_buffer_rsrc_t rsrc(const void* base, unsigned bytes) {
-    return __builtin_amdgcn_make_buffer_rsrc(const_cast<void*>(base), (short)0, (int)bytes, 0x00020000);
-}
-__device__ __forceinline__ unsigned clampb(long long v) { return v <= 0 ? 0u : (v > 0x7fffffffLL ? 0x7fffffffu : (unsigned)v); }
-__device__ __forceinline__ unsigned bf16_rne(float f) {
-    const unsigned u = __builtin_bit_cast(unsigned, f);
-    return (u + 0x7fffu + ((u >> 16) & 1u)) >> 16;
-}
 
-// Split-K (S > 1): park the partial tile, the last of the S blocks to arrive adds the other S-1 partials.  Partials go
-// through sc1 (write through to memory, read past the caches), so only "stores acknowledged before the counter atomic"
-// is needed -- no L2 flush.  Returns false for the blocks that must not write C.
-template<int EM, int EN, int BM, int BN>
-__device__ __forceinline__ bool splitk_reduce(f32x4 (&acc)[EM][EN], const kargs_t& ka, bool owner, int lane,
-                                              int row0, int wrow, int ncol0, int bz, int sk, int S) {
-    const int Mp = (ka.m + BM - 1) / BM * BM, Np = (ka.n + BN - 1) / BN * BN;
-    float* wsb = ka.ws + (long long)bz * S * Mp * Np;
-    const auto rw = rsrc(wsb, clampb((long long)S * Mp * Np * 4)), r0w = rsrc(wsb, 0u);
-    if (owner)
-        static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-            const int o = ((sk * Mp + row0 + wrow + 16 * e() + lane % 16) * Np + ncol0 + 16 * n() + 4 * (lane / 16)) * 4;
-            __builtin_amdgcn_raw_buffer_store_b128(__builtin_bit_cast(u32x4, acc[e()][n()]), rw, o, 0, OPUS_MXFP4_SMALL_WAUX);
-        }); });
-    asm volatile("s_waitcnt vmcnt(0)" ::: "memory");
-    __syncthreads();
-    __shared__ int s_last;
-    int* ctr = ka.cnt + ((long long)bz * gridDim.y + blockIdx.y) * gridDim.x + blockIdx.x;
-    if (threadIdx.x == 0) s_last = (__hip_atomic_fetch_add(ctr, 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT) == S - 1);
-    __syncthreads();
-    if (!s_last) return false;
-    if (owner)
-        static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-            const int o0 = ((row0 + wrow + 16 * e() + lane % 16) * Np + ncol0 + 16 * n() + 4 * (lane / 16)) * 4;
-            f32x4 part[7];
-            static_for<7>([&](auto t) {          // up to 8 splits; splits >= S read 0 through a zero-range descriptor
-                const int j = t() < sk ? t() : t() + 1;
-                part[t()] = __builtin_bit_cast(f32x4, __builtin_amdgcn_raw_buffer_load_b128(t() < S - 1 ? rw : r0w,
-                                               o0 + j * Mp * Np * 4, 0, OPUS_MXFP4_SMALL_WAUX));
-            });
-            static_for<7>([&](auto t) { acc[e()][n()] += part[t()]; });
-        }); });
-    if (threadIdx.x == 0) __hip_atomic_store(ctr, 0, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);   // ready for the next launch
-    return true;
-}
-
-// C: lane holds row wrow + 16e + lane%16 (relative to row0), columns ncol0 + 16n + 4*(lane/16) .. +3.
-template<int EM, int EN>
-__device__ __forceinline__ void store_c(const f32x4 (&acc)[EM][EN], const kargs_t& ka, int lane, int row0, int wrow, int ncol0, int bz) {
-    uint16_t* pc = (uint16_t*)ka.ptr_c + bz * ka.stride_c_batch + (long long)row0 * ka.stride_c;
-    const auto rc = rsrc(pc, clampb((long long)(ka.m - row0) * ka.stride_c * 2));
-    static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-        const int col = ncol0 + 16 * n() + 4 * (lane / 16);
-        if (col < ka.n) {
-            const f32x4 v = acc[e()][n()];
-            const u32x2 w = u32x2{bf16_rne(v[0]) | (bf16_rne(v[1]) << 16), bf16_rne(v[2]) | (bf16_rne(v[3]) << 16)};
-            __builtin_amdgcn_raw_buffer_store_b64(__builtin_bit_cast(u32x2, w), rc,
-                                                  ((wrow + 16 * e() + lane % 16) * ka.stride_c + col) * 2, 0, 0);
-        }
-    }); });
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// One __shared__ object per ring stage: the compiler's waitcnt pass then knows an LDS-DMA into stage j cannot alias a
-// ds_read of stage i, instead of waiting for every in-flight copy before each read (one array = everything aliases).
-template<int I, int BYTES>
-__device__ __forceinline__ char* lds_stage() {
-    __shared__ __attribute__((aligned(16))) char buf[BYTES];
-    return buf;
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// A_LDS (shuffled): A global -> LDS by LDS-DMA through a D-deep ring of LDS stages (shared by the 4 waves, one barrier per
-// K tile); B (shuffle_weight, contiguous 1 KB per operand) and the scales go straight into a D-deep register ring.
-// 1x4 waves: wave w owns all BM rows and columns [col0 + w*BN/4, +BN/4).  A stage image: BM/8 blocks of 8 rows (one DMA =
+// A_LDS: A global -> LDS by LDS-DMA through a D-deep ring of LDS stages (shared by the 4 waves, one barrier per ring
+// step); B (shuffle_weight, contiguous 1 KB per operand) and the scales go straight into a D-deep register ring.
+// KS = 1: 1x4 waves, wave w owns all BM rows and columns [col0 + w*BN/4, +BN/4).  A stage image: BM/8 blocks of 8 rows (one DMA =
 // 64 lanes x 16 B), block stride 1088 B, row r of a block at r*128 with its 16 B chunk c at slot c ^ ((r >> 1) & 3) (the 16
 // lanes of an A ds_read_b128 hit distinct bank groups); one __shared__ object per stage (lds_stage).  The ring schedule is
 // described at the K loop below.
-// KS > 1: the 4 waves split KS ways along K and 4/KS ways along N .  One ring step then covers KS consecutive
+// KS > 1: the 4 waves split KS ways along K and 4/KS ways along N.  One ring step then covers KS consecutive
 // K tiles: the stage holds A of all KS tiles, wave group g computes tile step*KS + g; partials summed through LDS at the end.
 // BM == 16: one 16-row block, the A scale is half of a 32-row e8m0_shuffle block (byte shift).
 template<int BM, int BN, int D, int KS = 1>
@@ -116,12 +32,12 @@ __device__ __forceinline__ void body_alds(const kargs_t& ka) {
     constexpr int WN = 4 / KS;
     static_assert(BN == 32 || BN == 64 || BN == 128 || BN == 256);
     constexpr int WCOLS = BN / WN, EM = BM / 16, EN = WCOLS / 16;
-    static_assert(EN >= 1 && (EN % 2 == 0 || EN == 1), "");
+    static_assert(EN % 2 == 0 || EN == 1, "a wave covers one 16-column block or whole 32-row scale blocks");
     constexpr int SA = (BM + 31) / 32, SB = (EN + 1) / 2;
     constexpr int BLK = 1088, A_BYTES = BM / 8 * BLK, STAGE = KS * A_BYTES;
     static_assert(D * STAGE <= 160 * 1024, "LDS ring too deep for this tile");
     constexpr int A_BLK = KS * BM / 8, A_DMA = (A_BLK + 3) / 4;
-    constexpr int G = A_DMA + SA + 2 * EN + SB;                       // VMEM instructions per wave per K tile
+    constexpr int G = A_DMA + SA + 2 * EN + SB;                       // VMEM instructions per wave per ring step
     static_assert((D - 1) * G <= 63, "vmcnt range: ring too deep for this tile");
 
     const int lane = __lane_id();
@@ -166,11 +82,9 @@ __device__ __forceinline__ void body_alds(const kargs_t& ka) {
             const int b = (A_BLK % 4 == 0) ? b0 : __builtin_amdgcn_readfirstlane(b0 < A_BLK ? b0 : A_BLK - 1);
             const int t = KS == 1 ? 0 : b / (BM / 8), r = KS == 1 ? b : b % (BM / 8);   // K tile kt+t, 8-row block r
             const auto rat = KS == 1 ? ra : (kt + t < kend ? ra_ : r0);
-#if defined(__HIP_DEVICE_COMPILE__)
+#if defined(__HIP_DEVICE_COMPILE__)   // host pass: the LDS-DMA builtin is device-only
             __builtin_amdgcn_raw_ptr_buffer_load_lds(rat, (__attribute__((address_space(3))) void*)(base + b * BLK),
                                                      16, dma_goff, r * 8 * ka.stride_a + (kt + t) * 128, 0, 0);
-#else
-            (void)rat; (void)r; (void)base;
 #endif
         });
         static_for<SA>([&](auto j) { vsa[st][j()] = __builtin_amdgcn_raw_buffer_load_b32(rsa, lane * 4, j() * ka.stride_sfa + kw * 256, 0); });
@@ -183,23 +97,22 @@ __device__ __forceinline__ void body_alds(const kargs_t& ka) {
     f32x4 acc[EM][EN];
     static_for<EM>([&](auto e) { static_for<EN>([&](auto n) { acc[e()][n()] = f32x4{0.f, 0.f, 0.f, 0.f}; }); });
     const int nk = kend > kbeg ? (kend - kbeg + KS - 1) / KS : 0;   // ring steps (KS K tiles each)
-    // asm-style pipeline: K tile t lives in slot t % D (LDS stage for A, registers for B / scales).  A operands are read
-    // from LDS one tile ahead: iteration kt waits until group kt+1 landed (D-2 younger groups in flight), barrier (A(kt+1)
-    // visible; every wave finished reading A(kt), so its stage is free), ds_reads A(kt+1), and runs the MFMAs of kt
-    // interleaved with the copies of tile kt+D into kt's slot (one VMEM per MFMA).
+    // asm-style pipeline: ring step t lives in slot t % D (LDS stage for A, registers for B / scales).  A operands are read
+    // from LDS one step ahead: step t waits until group t+1 landed (D-2 younger groups in flight), barrier (A(t+1)
+    // visible; every wave finished reading A(t), so its stage is free), ds_reads A(t+1), and runs the MFMAs of t
+    // interleaved with the copies of step t+D into t's slot (one VMEM per MFMA).
     static_for<D>([&](auto t) { issue(t, kbeg + KS * t()); __builtin_amdgcn_sched_barrier(0); });
-    i32x4 va[2][EM];   // A operands of the current tile
+    i32x4 va[2][EM];   // A operands of the current step
     asm volatile("s_waitcnt vmcnt(%0)" :: "n"((D - 1) * G) : "memory");
     __builtin_amdgcn_s_barrier();
     static_for<2>([&](auto kk) { static_for<EM>([&](auto e) { va[kk()][e()] = *(const i32x4*)(lds_stage<0, STAGE>() + rd_a(e(), kk())); }); });
     __builtin_amdgcn_sched_barrier(0);
-    static_assert(D % 2 == 0 || true, "");
 #pragma clang loop unroll(disable)
     for (int i0 = 0; i0 < nk; i0 += D) {
         static_for<D>([&](auto u) {
             constexpr int s = u(), sn = (s + 1) % D;
             const int kt = kbeg + KS * (i0 + u());
-            asm volatile("s_waitcnt vmcnt(%0) lgkmcnt(0)" :: "n"((D - 2) * G) : "memory");   // group kt+1 landed; A(kt) reads done
+            asm volatile("s_waitcnt vmcnt(%0) lgkmcnt(0)" :: "n"((D - 2) * G) : "memory");   // group t+1 landed; A(t) reads done
             __builtin_amdgcn_s_barrier();
             __builtin_amdgcn_sched_barrier(0);
             i32x4 vn[2][EM];
@@ -214,7 +127,7 @@ __device__ __forceinline__ void body_alds(const kargs_t& ka) {
                                                                                  opb, (int)sb, opa, (int)sa);
             }); }); });
             issue(ic<s>{}, kt + KS * D);
-            // schedule: the next tile's ds_reads first, then MFMA / VMEM alternating
+            // schedule: the next step's ds_reads first, then MFMA / VMEM alternating
             __builtin_amdgcn_sched_group_barrier(0x100, 2 * EM, 0);
             static_for<2 * EM * EN>([&](auto m) {
                 __builtin_amdgcn_sched_group_barrier(0x008, 1, 0);
@@ -250,8 +163,8 @@ __device__ __forceinline__ void body_alds(const kargs_t& ka) {
 // grid = ((N + BN - 1) / BN, (M + BM - 1) / BM, batch * splitk), block = 256.
 template<class Traits>
 __global__ __launch_bounds__(256, 1) void gemm_a4w4_mxfp4_nt_small_kernel(opus_gemm_mxfp4_small_kargs_gfx950 ka) {
-#if defined(__gfx950__) || !defined(__HIP_DEVICE_COMPILE__)
+#if defined(__gfx950__)
     using T = Traits;
     opus_mxfp4_small::body_alds<T::BM, T::BN, T::D, T::KS>(ka);
-#endif
+#endif   // __gfx950__
 }

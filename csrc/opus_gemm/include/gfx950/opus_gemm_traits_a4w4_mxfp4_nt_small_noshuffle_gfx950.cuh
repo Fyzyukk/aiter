@@ -10,7 +10,7 @@
 #include "opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh"   // opus_gemm_mxfp4_small_kargs_gfx950, OPUS_MXFP4_SMALL_B_*
 
 // BMODE == B_DIRECT: tiles 16/32/64/128 x 32/64/128/256 (4 waves split KS ways along K and 4/KS ways along N).
-// BMODE == B_LDS   : tiles 16/32/64 x 64/128/256 with a 1x4 wave layout and 128 x 128 with a 2x2 wave layout.
+// BMODE == B_LDS   : tiles 16/32/64 x 64/128/256 with a 1x4 wave layout and 128 x 128 with a 2x2 wave layout; KS = 1.
 template<int BM_, int BN_, int D_, int KS_, int BMODE_>
 struct opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950 {
     static constexpr int BM = BM_, BN = BN_, D = D_, KS = KS_, BMODE = BMODE_;
@@ -18,5 +18,5 @@ struct opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950 {
     static constexpr int B_K = 256;                      // fp4 elements per K tile (128 bytes per row)
     static_assert(D >= 2);
     static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || BMODE == OPUS_MXFP4_SMALL_B_LDS, "row-major: B_DIRECT / B_LDS only");
-    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || KS == 1, "the LDS path splits work along M / N only");
+    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || KS == 1, "B_LDS splits work along M / N only");
 };

@@ -144,7 +144,7 @@ M = 128–512 同卡对比（µs，prof/mid_m_shuffled_vs_asm_smi3.txt）：
 A_LDS 比 B_LDS 快 12–30%，和 asm 的差距从 1.3–1.55× 缩到 M = 128：1.03–1.13×、M = 256：1.09–1.22×、M = 512：1.12–1.39×（512×2048×7168 赢 asm 的 default kernel）。
 剩余差距：loop 内 barrier 等待（每 tile 70–150 cycle，asm ~67）和 loop 外（kernarg、冷启动、C store）。
 
-**不 shuffle 的 3 个形状**：把同样的 asm 式流水加到 row-major B_LDS（宏 SMALL_RM_PIPE2）：16×64 略慢（5.25→5.40）、32×64 略快（5.77→5.53），
+**不 shuffle 的 3 个形状**：把同样的 asm 式流水加到 row-major B_LDS（宏 SMALL_RM_PIPE2，代码已在整理时删除，见 52a6ca608 及之前的提交）：16×64 略慢（5.25→5.40）、32×64 略快（5.77→5.53），
 3 个形状都没超过 Triton → 默认关闭（已接入的 row-major kid 代码不变）。
 
 **一致性**：已接入的 30400–30408 / 30500–30520 对应的 71 个实例与 9c7522d 逐条指令相同（新增的只有 13 个 A_LDS 实例）。
