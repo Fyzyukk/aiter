@@ -169,15 +169,22 @@ launch_fn pick_lds(int bm, int bn, int d) {
 #undef SL4
     return nullptr;
 }
-template<int BM, int BN, int D> void launch_a(const smallm_kargs& ka, hipStream_t st) {
-    launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_A_LDS, OPUS_MXFP4_SMALL_SHUFFLED>(ka, st);
+template<int BM, int BN, int D, int KS> void launch_a(const smallm_kargs& ka, hipStream_t st) {
+    launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_A_LDS, OPUS_MXFP4_SMALL_SHUFFLED>(ka, st);
 }
-launch_fn pick_alds(int bm, int bn, int d) {   // -a 2 (shuffled only); depth limited by (D-1) * G <= 63
-#define SA(BM, BN, DD) if (bm == BM && bn == BN && d == DD) return launch_a<BM, BN, DD>;
+launch_fn pick_alds(int bm, int bn, int d, int ks) {   // -a 2 (shuffled only); depth limited by (D-1) * G <= 63; -s KS (default 1)
+#define SA(BM, BN, DD) if (bm == BM && bn == BN && d == DD && ks == 1) return launch_a<BM, BN, DD, 1>;
+#define SK(BM, BN, KS, DD) if (bm == BM && bn == BN && d == DD && ks == KS) return launch_a<BM, BN, DD, KS>;
+    // small M: BM 16 and in-block K split
+    SA(16, 64, 4) SA(16, 64, 6) SA(16, 64, 8) SA(16, 128, 4) SA(16, 128, 6)
+    SK(16, 32, 4, 3) SK(16, 32, 4, 4) SK(16, 32, 4, 6) SK(16, 32, 4, 8) SK(16, 32, 2, 4) SK(16, 32, 2, 6) SK(16, 32, 2, 8)
+    SK(16, 64, 4, 3) SK(16, 64, 4, 4) SK(16, 64, 4, 5) SK(16, 64, 2, 4) SK(16, 64, 2, 6)
+    SK(32, 32, 4, 3) SK(32, 32, 4, 4) SK(32, 32, 4, 6) SK(32, 64, 4, 3) SK(32, 64, 4, 4) SK(32, 64, 2, 4) SK(32, 64, 2, 6)
     SA(32, 64, 4) SA(32, 64, 6) SA(32, 64, 8) SA(32, 64, 10)
     SA(32, 128, 3) SA(32, 128, 4) SA(32, 128, 6) SA(32, 128, 8)
     SA(64, 128, 3) SA(64, 128, 4) SA(64, 128, 6) SA(32, 256, 3) SA(32, 256, 4)
 #undef SA
+#undef SK
     return nullptr;
 }
 launch_fn pick(int bm, int bn, int d, int ks) {
@@ -188,7 +195,7 @@ launch_fn pick(int bm, int bn, int d, int ks) {
 }
 
 int main(int argc, char** argv) {
-    int M = 16, N = 1024, K = 4096, batch = 1, verify = 1, iters = 0, depth = 0, bm = 16, bn = 32, ks = 4, splitk = 1, alds = 0;
+    int M = 16, N = 1024, K = 4096, batch = 1, verify = 1, iters = 0, depth = 0, bm = 16, bn = 32, ks = -1, splitk = 1, alds = 0;
     const char* dump_dir = nullptr;   // default: best overall (52 of 60 target shapes)
     for (int i = 1; i + 1 < argc; i += 2) {
         const char* f = argv[i];
@@ -205,7 +212,8 @@ int main(int argc, char** argv) {
         else { std::fprintf(stderr, "unknown flag %s\n", f); return 1; }
     }
     if (depth == 0) depth = (bm * bn >= 64 * 256) ? 2 : 3;
-    launch_fn launch = alds == 2 ? pick_alds(bm, bn, depth) : alds ? pick_lds(bm, bn, depth) : pick(bm, bn, depth, ks);
+    if (ks < 0) ks = alds == 2 ? 1 : 4;
+    launch_fn launch = alds == 2 ? pick_alds(bm, bn, depth, ks) : alds ? pick_lds(bm, bn, depth) : pick(bm, bn, depth, ks);
     if (!launch) { std::fprintf(stderr, "unsupported tile %dx%d depth %d ks %d\n", bm, bn, depth, ks); return 1; }
     const bool RM = g_layout == OPUS_MXFP4_SMALL_ROWMAJOR;
     if (N % (RM ? 8 : 16) || K % 256 || M < 1) { std::fprintf(stderr, "need N %% %d == 0, K %% 256 == 0\n", RM ? 8 : 16); return 1; }

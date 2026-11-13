@@ -33,7 +33,8 @@ enum : int {
 };
 
 // BMODE == B_DIRECT: tiles 16/32/64/128 x 32/64/128/256 (4 waves split KS ways along K and 4/KS ways along N).
-// BMODE == A_LDS   : tiles 32/64 x 64/128/256, 1x4 waves; ring depth limited by (D - 1) * (VMEM per K tile) <= 63.
+// BMODE == A_LDS   : tiles 16/32/64 x 32/64/128/256; KS = 1: 1x4 waves along N; KS = 2 / 4: waves split K (as B_DIRECT);
+//                    ring depth limited by (D - 1) * (VMEM per wave per ring step) <= 63.
 template<int BM_, int BN_, int D_, int KS_, int BMODE_>
 struct opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950 {
     static constexpr int BM = BM_, BN = BN_, D = D_, KS = KS_, BMODE = BMODE_;
@@ -41,5 +42,5 @@ struct opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950 {
     static constexpr int B_K = 256;                      // fp4 elements per K tile (128 bytes per row)
     static_assert(D >= 2);
     static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || BMODE == OPUS_MXFP4_SMALL_A_LDS, "shuffle: B_DIRECT / A_LDS");
-    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || KS == 1, "A_LDS splits work along N only");
+    static_assert(KS == 1 || KS == 2 || KS == 4);
 };
