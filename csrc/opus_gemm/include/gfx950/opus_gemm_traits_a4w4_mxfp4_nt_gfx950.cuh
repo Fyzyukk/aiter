@@ -65,7 +65,7 @@ struct opus_gemm_a4w4_mxfp4_nt_traits_gfx950 {
 
     static constexpr int B_M = opus::get<0>(BLOCK{});   // 256 or 128
     static constexpr int B_N = opus::get<1>(BLOCK{});   // 256 or 128
-    static_assert((B_M == 256 || B_M == 128) && (B_N == 256 || B_N == 128));
+    static_assert((B_M == 256 || B_M == 192 || B_M == 128) && (B_N == 256 || B_N == 192 || B_N == 128));
     static constexpr int B_K = 256;                            // fp4 elements
     static constexpr int ELEMS_PER_BYTE = 2;
     static constexpr int B_K_BYTES = B_K / ELEMS_PER_BYTE;     // 128
@@ -108,7 +108,9 @@ struct opus_gemm_a4w4_mxfp4_nt_traits_gfx950 {
     static constexpr int b_buffer_load_insts = HALF_B_N * B_K_BYTES / (BLOCK_SIZE * VEC_B);   // 4
     static constexpr int smem_n_rep = HALF_B_N / smem_sub_b;
     // Per-wave LDS-DMA issues per half tile (each issue = 64 lanes x 16 B = 8 rows of A / half a 16-row B block).
-    static_assert(a_buffer_load_insts >= 2 && a_buffer_load_insts % 2 == 0 && b_buffer_load_insts >= 2 && b_buffer_load_insts % 2 == 0);
+    static_assert(a_buffer_load_insts >= 2 && b_buffer_load_insts >= 2);
+    // Odd issue counts (B_M / B_N = 192: 3 per half) use explicit per-issue chunk addressing (dma_odd in the pipeline).
+    static constexpr bool A_ODD = a_buffer_load_insts % 2 == 1, B_ODD = b_buffer_load_insts % 2 == 1;
     // Scale panels: 32-row blocks, 2 blocks (2 x 512 B = one 1 KB DMA) per wave; with fewer blocks than 2 x NUM_WAVES the
     // remaining waves repeat the copies of the first ones (same data to the same LDS bytes), so every wave issues one DMA.
     static constexpr int SF_WAVES_A = B_M / 64;

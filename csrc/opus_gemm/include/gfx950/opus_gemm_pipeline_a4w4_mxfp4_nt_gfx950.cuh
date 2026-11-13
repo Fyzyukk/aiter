@@ -518,6 +518,13 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     constexpr int C_OOB = 0x40000000;
     auto store_pend_c = [&](int tid) {
         auto g_cp = make_gmem(pend_c_ptr, pend_c ? static_cast<unsigned int>(pend_rows) * static_cast<unsigned int>(kargs.stride_c) * 2u : 0u);
+        if constexpr (T::B_N == 192) {   // 3 column blocks of 64: copy i -> rows (i / 3) * 32 + tid / 8, columns (i % 3) * 64 + (tid % 8) * 8
+            opus::static_for<H1_COPIES>([&](auto i) {
+                constexpr int I = decltype(i)::value;
+                const int r = (I / 3) * 32 + tid / 8 + T::HALF_B_M, c = (I % 3) * 64 + (tid % 8) * 8;
+                store<H1_VEC>(g_cp, v_pend_c[I], r * kargs.stride_c + c + (c < pend_cols ? 0 : C_OOB), 0, opus::number<C_AUX>{});
+            });
+        } else {
         // A thread's column is the same in every copy (copies step by whole rows): one out-of-range add per thread.
         const int oob = (tid * H1_VEC) % T::B_N < pend_cols ? 0 : C_OOB;
         opus::static_for<H1_COPIES>([&](auto i) {
@@ -525,6 +532,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
             const int r = linear / T::B_N + T::HALF_B_M, c = linear % T::B_N;
             store<H1_VEC>(g_cp, v_pend_c[i.value], r * kargs.stride_c + c + oob, 0, opus::number<C_AUX>{});
         });
+        }
     };
     opus::vector_t<opus::e8m0_t, Traits::VEC_GLOBAL_SCALE> v_nsfa0, v_nsfb0;   // next tile's scale panel 0
     // A / B operands live across output tiles (B_DIRECT loads the next tile's B0 in the last K tile).
@@ -621,11 +629,40 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     auto ssfb_offset = [&](int stage, int tile_in_panel) { return stage * T::SFB_PANEL_BYTES + tile_in_panel * T::NUM_KGROUPS; };
 
     // ---- global -> LDS ----
+    // Odd LDS-DMA issue counts (E = 3): wave w copies chunks w * NI + i (same chunk -> rows map as the layouts:
+    // A chunk c = rows (c / 2) * 16 + 2 * (lane / 8) + c % 2, B chunk c = 16-row block c / 2, K half c % 2), so a chunk
+    // pair can straddle two waves and the per-issue parity is a (wave-uniform) runtime value.
+    constexpr int DMA_CHUNK = T::smem_linear_wave_a + T::smem_padding;   // 1088
+    const int a_kcol = ((lane_id % 8) ^ ((((lane_id / 8) >> 1) & 1) << 1)) * T::VEC_A;
+    auto dma_odd_a = [&](auto& g, int lds_off, int s_os) {
+        constexpr int NI = T::a_buffer_load_insts;
+        const int w = wave_id_n * 2 + wave_id_m;
+        char* const base = reinterpret_cast<char*>(s_a.ptr) + lds_off + w * NI * DMA_CHUNK;
+        opus::static_for<NI>([&](auto i_) {
+            constexpr int i = decltype(i_)::value, io = i * DMA_CHUNK;
+            const int c = w * NI + i;
+            const int goff = ((c >> 1) * 16 + 2 * (lane_id / 8) + (c & 1)) * kargs.stride_a + a_kcol;
+            g.template async_load<T::VEC_A>(base, goff - io, s_os, opus::number<io>{}, opus::number<AB_AUX>{});
+        });
+    };
+    auto dma_odd_b = [&](auto& g, int lds_off, int s_os) {
+        constexpr int NI = T::b_buffer_load_insts;
+        const int w = wave_id_m * 2 + wave_id_n;
+        char* const base = reinterpret_cast<char*>(s_b.ptr) + lds_off + w * NI * DMA_CHUNK;
+        opus::static_for<NI>([&](auto i_) {
+            constexpr int i = decltype(i_)::value, io = i * DMA_CHUNK;
+            const int c = w * NI + i;
+            const int goff = (c >> 1) * T::W_N * kargs.stride_b + (c & 1) * 1024 + lane_id * T::VEC_B;
+            g.template async_load<T::VEC_B>(base, goff - io, s_os, opus::number<io>{}, opus::number<AB_AUX>{});
+        });
+    };
     auto prefetch_a = [&](int stage, int tile, int half_tile_m) {
-        async_load_imm<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(stage, half_tile_m), ga_offset(half_tile_m, tile));
+        if constexpr (T::A_ODD) dma_odd_a(g_a, sa_offset(stage, half_tile_m), ga_offset(half_tile_m, tile));
+        else async_load_imm<T::VEC_A>(g_a, s_a.ptr, u_ga, u_sa + sa_offset(stage, half_tile_m), ga_offset(half_tile_m, tile));
     };
     auto prefetch_b = [&](int stage, int tile, int half_tile_n) {
-        async_load_imm<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(stage, half_tile_n), gb_offset(half_tile_n, tile));
+        if constexpr (T::B_ODD) dma_odd_b(g_b, sb_offset(stage, half_tile_n), gb_offset(half_tile_n, tile));
+        else async_load_imm<T::VEC_B>(g_b, s_b.ptr, u_gb, u_sb + sb_offset(stage, half_tile_n), gb_offset(half_tile_n, tile));
     };
     // Scale panels go global -> VGPR -> 4x4 byte transpose -> LDS, so LDS holds the MFMA scale
     // layout and the main loop reads it as is (one transpose per panel instead of one per wave
@@ -753,6 +790,8 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
         };
         opus::static_for<T::E_M / 2>([&](auto q) { shr2(v_sfa_raw[h][2 * q.value], v_sfa_raw[h][2 * q.value + 1], sfa_sh, v_ssa[h][2 * q.value], v_ssa[h][2 * q.value + 1]); });
         opus::static_for<T::E_N / 2>([&](auto q) { shr2(v_sfb_raw[h][2 * q.value], v_sfb_raw[h][2 * q.value + 1], sfb_sh, v_ssb[h][2 * q.value], v_ssb[h][2 * q.value + 1]); });
+        if constexpr (T::E_M % 2) v_ssa[h][T::E_M - 1] = v_sfa_raw[h][T::E_M - 1] >> sfa_sh;   // odd E: last dword alone
+        if constexpr (T::E_N % 2) v_ssb[h][T::E_N - 1] = v_sfb_raw[h][T::E_N - 1] >> sfb_sh;
         (void)sf_gather;
     };
 
@@ -774,7 +813,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     constexpr int QA = T::a_buffer_load_insts, QB = T::b_buffer_load_insts;   // A / B LDS-DMA issues per half tile
     constexpr int RA = T::E_K * T::E_M, RB = T::E_K * T::E_N;                  // A / B ds_read_b128 per half tile
     constexpr int SFR = T::E_M + T::E_N;                                       // scale ds_read2st64 per K tile
-    constexpr int SV = T::E_M / 2 + T::E_N / 2;                                // scale v_lshrrev_b64 per half
+    constexpr int SV = (T::E_M + 1) / 2 + (T::E_N + 1) / 2;                    // scale shifts per half
     // Issue tile 0 and scale panel 0, then tile 1 and panel 1 (tile 2, 3); wait only for
     // tile 0 + panel 0 (counted vmcnt), read A0 / B0 and the scales of tile 0, and compute
     // C00 of tile 0 while A1 / B1 of tile 0 are read.  The main loop then starts with
@@ -1185,8 +1224,22 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     // compiler does not move a ds_read above a buffer_store (it cannot tell them apart), so a
     // read / store loop would expose every read latency.
     constexpr int c_copies = T::HALF_B_M * T::B_N / (T::BLOCK_SIZE * VEC_OUT);   // 16
-    static_assert(T::BLOCK_SIZE * 8 % T::B_N == 0, "a thread's C column is the same in every copy");
+    static_assert(T::B_N == 192 || T::BLOCK_SIZE * 8 % T::B_N == 0, "a thread's C column is the same in every copy");
+    static_assert(T::B_N != 192 || (c_copies % 3 == 0 && T::HALF_B_M % 32 == 0));
+    // B_N = 192: copy i of thread t -> staged row (i / 3) * 32 + t / 8, column (i % 3) * 64 + (t % 8) * 8.
+    auto c_row = [&](int t, auto i_) { constexpr int I = decltype(i_)::value; return (I / 3) * 32 + t / 8; };
+    auto c_col = [&](int t, auto i_) { constexpr int I = decltype(i_)::value; return (I % 3) * 64 + (t % 8) * 8; };
     auto copy_output_half = [&](int half_tile_m) {
+      if constexpr (T::B_N == 192) {
+        opus::vector_t<D_C, VEC_OUT> v[c_copies];
+        opus::static_for<c_copies>([&](auto i) {
+            v[i.value] = load<VEC_OUT>(s_c, c_row(output_thread_id, i) * c_lds_stride + c_col(output_thread_id, i));
+        });
+        opus::static_for<c_copies>([&](auto i) {
+            const int r = c_row(output_thread_id, i) + half_tile_m * T::HALF_B_M, c = c_col(output_thread_id, i);
+            store<VEC_OUT>(g_c, v[i.value], r * kargs.stride_c + c + (c < cols_in ? 0 : C_OOB), 0, opus::number<C_AUX>{});
+        });
+      } else {
         const int oob = (output_thread_id * VEC_OUT) % T::B_N < cols_in ? 0 : C_OOB;
         opus::vector_t<D_C, VEC_OUT> v[c_copies];
         opus::static_for<c_copies>([&](auto i) {
@@ -1198,6 +1251,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
             const int r = linear / T::B_N + half_tile_m * T::HALF_B_M, c = linear % T::B_N;
             store<VEC_OUT>(g_c, v[i.value], r * kargs.stride_c + c + oob, 0, opus::number<C_AUX>{});
         });
+      }
     };
     // fp32 accumulators -> bf16 -> LDS (columns hn * 128 of the staged half).
     auto stage_quadrant = [&](const auto& acc, int half_tile_n) {
@@ -1238,8 +1292,10 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
         __builtin_amdgcn_sched_barrier(0);
 
         // C10(t) + A0, B0 of the next tile's K tile 0.
-        async_load_imm<T::VEC_A>(ng_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 0), ga_offset(0, 0));
-        async_load_imm<T::VEC_B>(ng_b, s_b.ptr, u_gb, u_sb + sb_offset(0, 0), gb_offset(0, 0));
+        if constexpr (T::A_ODD) dma_odd_a(ng_a, sa_offset(0, 0), ga_offset(0, 0));
+        else async_load_imm<T::VEC_A>(ng_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 0), ga_offset(0, 0));
+        if constexpr (T::B_ODD) dma_odd_b(ng_b, sb_offset(0, 0), gb_offset(0, 0));
+        else async_load_imm<T::VEC_B>(ng_b, s_b.ptr, u_gb, u_sb + sb_offset(0, 0), gb_offset(0, 0));
         opus::static_for<frags>([&](auto i) {
             constexpr int m = decltype(i)::value / T::E_N, n = decltype(i)::value % T::E_N;
             mma_scale_one<T, SOA(0, m), SOB(0, n), c_reg<T, 1, 0, m, n>()>(mma, v_a[1][0][m], v_b[0][0][n], v_c[1][0][m * T::E_N + n], SFA(1, 0, m), SFB(0, 0, n));   // kk = 0
@@ -1249,8 +1305,10 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
         __builtin_amdgcn_sched_barrier(0);
 
         // C01(t) + A1, B1 of the next tile's K tile 0.
-        async_load_imm<T::VEC_A>(ng_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 1), ga_offset(1, 0));
-        async_load_imm<T::VEC_B>(ng_b, s_b.ptr, u_gb, u_sb + sb_offset(0, 1), gb_offset(1, 0));
+        if constexpr (T::A_ODD) dma_odd_a(ng_a, sa_offset(0, 1), ga_offset(1, 0));
+        else async_load_imm<T::VEC_A>(ng_a, s_a.ptr, u_ga, u_sa + sa_offset(0, 1), ga_offset(1, 0));
+        if constexpr (T::B_ODD) dma_odd_b(ng_b, sb_offset(0, 1), gb_offset(1, 0));
+        else async_load_imm<T::VEC_B>(ng_b, s_b.ptr, u_gb, u_sb + sb_offset(0, 1), gb_offset(1, 0));
         opus::static_for<frags>([&](auto i) {
             constexpr int m = decltype(i)::value / T::E_N, n = decltype(i)::value % T::E_N;
             mma_scale_one<T, SOA(0, m), SOB(0, n), c_reg<T, 0, 1, m, n>()>(mma, v_a[0][0][m], v_b[1][0][n], v_c[0][1][m * T::E_N + n], SFA(0, 0, m), SFB(1, 0, n));   // kk = 0
@@ -1303,8 +1361,12 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     stage_quadrant(v_c[1][1], 1);
     sync_lds();
     opus::static_for<c_copies>([&](auto i) {   // h1: bottom half -> registers, stored in the next prologue
+        if constexpr (T::B_N == 192) {
+            v_pend_c[i.value] = load<VEC_OUT>(s_c, c_row(output_thread_id, i) * c_lds_stride + c_col(output_thread_id, i));
+        } else {
         const int linear = output_thread_id * VEC_OUT + decltype(i)::value * T::BLOCK_SIZE * VEC_OUT;
         v_pend_c[i.value] = c_unswz(load<VEC_OUT>(s_c, (linear / T::B_N) * c_lds_stride + linear % T::B_N), i);
+        }
     });
     pend_c_ptr = reinterpret_cast<D_C*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + row * kargs.stride_c + col;
     pend_c = 1;

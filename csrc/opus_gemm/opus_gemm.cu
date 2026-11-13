@@ -118,7 +118,7 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch)
     const long tiles = (long)((M + t[i].b_m - 1) / t[i].b_m) * ((N + t[i].b_n - 1) / t[i].b_n) * batch;
     const long rounds = (tiles + cus - 1) / cus;
     const int area = t[i].b_m * t[i].b_n;
-    const double eff = area >= 65536 ? 1.0 : area >= 32768 ? 0.9 : 0.78;
+    const double eff = area >= 65536 ? 1.0 : area >= 49152 ? 0.95 : area >= 32768 ? 0.9 : 0.78;   // 256x256 / 192x256 / 256x128 / 128x128
     const double cost = static_cast<double>(rounds) * area / eff;
     if (cost < best_cost) { best_cost = cost; best = t[i].kid; }
   }

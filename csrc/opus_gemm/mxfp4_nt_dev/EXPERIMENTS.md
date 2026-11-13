@@ -94,3 +94,19 @@ prof/timing.sh（等 HIP 2 空闲后测：8192³ zc vs 256×256 交替 6 轮；1
 - op 测试加 2 个应报错用例（N=100、K=320），分别验证 Python 检查和绕过 Python 直接调 C++ 时的 AITER_CHECK；
   强制重建 module_deepgemm_opus 后：4 次都被拒绝（C++ 报在 opus_gemm.cu:152 / 153），原有 36 个正确性用例仍全部 OK。
 - 计时脚本已停掉（按要求，性能 / 调优暂不接入）。
+
+## 192 tile：192×256、256×192（E = 3，kid 30004 / 30005，2026-11-13）
+- traits：B_M / B_N 允许 192；DMA 条数不再要求偶数，新增 `A_ODD` / `B_ODD`。
+- A/B LDS-DMA：每 wave 每半区 3 条，chunk 对（16 行块的两半 / B 的 kk 两半）会跨两个 wave，所以 E = 3 时改用 `dma_odd_a/b`：
+  wave w 拷 chunk w×3 + i，chunk → 行的对应关系与读 layout 相同（A：行 (c/2)·16 + 2·(lane/8) + c%2，B：16 行块 c/2、K 半 c%2），
+  LDS 偏移用 MUBUF 立即数（i × 1088），奇偶由 wave 号在运行时决定（wave 内一致）。偶数条的 tile 仍走原 `async_load_imm`。
+- scale：panel 6 个 32 行块 → wave 0–2 各拷 2 块、wave 3 重复 wave 0（原 wave % SF_WAVES 机制）；SF_SHIFT 每半区 3 个 dword，最后一个用 32 位移位。
+- C：B_N = 192 时一行 24 个 16 B，256 线程不能整行覆盖，改用"copy i → 行 (i/3)·32 + t/8、列 (i%3)·64 + (t%8)·8"（12 份），每份单独算列越界；
+  不做 C 暂存 swizzle（行距 400 B）。bank 冲突没测成：rocprofv3 --pmc 对 dev 可执行文件崩溃（core dump），未深究。
+- 调度用 sched_spread（每 quadrant 24 条 MFMA），SV 改为 ceil(E/2)（E 为偶数时不变），vmcnt 公式自动适配。
+- 资源：两个新 tile 都是 VGPR 480 / AGPR 240，VGPR spill 0，SGPR spill 23 / 25，LDS 140 KB，scratch 0。
+- 原 4 个 tile：dev 构建与改动前逐条指令相同；.co 代码段与改动前相同。
+- `build_co_gfx950.py` 加 `-cuid=<name>`：之前每次重编 .co 只因 `__hip_cuid_<随机>` 符号不同而变（代码相同），现在可复现（连编两次 md5 相同）。4 个旧 .co 因此重新提交一次（只有该符号不同）。
+- 正确性：dev 104 用例矩阵 192×256、256×192 各 104/104；新 .co 经 MXFP4_CO_DIR 加载 3 个 shape × SFA_K_PATTERN 全部 errors=0；
+  aiter op 测试（重建 module_deepgemm_opus）50 个正确性用例全 OK（含 kid 30004 / 30005 共 14 个），4 个报错用例都被拒绝。
+- 启发式效率表加 192×256 / 256×192 一档（0.95，暂定）。性能未测（按要求等小 shape 流水线后统一测）。

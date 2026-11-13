@@ -11,7 +11,7 @@ include/gfx950/opus_co_launch_mxfp4_gfx950.cuh; the host launchers / dispatch go
 Source of truth: gen_co/co_kernels_gfx950.json. Names: <name>.co == extern "C" symbol == host launcher symbol, with
 name = opus_gemm_gfx950_<pipeline>_co_<B_M>x<B_N>x<B_K>  (see kernel_name()).
 
-The toolchain is not pinned; the resolved clang, its version, flags and per-kernel metadata (registers, spills,
+Builds are reproducible (-cuid=<name> instead of the temp-path-derived default). The toolchain is not pinned; the resolved clang, its version, flags and per-kernel metadata (registers, spills,
 LDS, sha256) are recorded in gen_co/gfx950/build_info.json.
 
 Usage:
@@ -86,7 +86,7 @@ def main():
                                              name=name, kargs=e["kargs"], body=e["body_func"], traits=e["traits"]))
             co = os.path.join(td, name + ".co")
             cmd = [clang, "-x", "hip", src, "--offload-arch=gfx950", "--cuda-device-only", "-O3", "-std=c++17",
-                   "-D__HIPCC_RTC__", f"-I{INCLUDE_DIR}", f"-I{os.path.join(INCLUDE_DIR, 'gfx950')}", f"-I{a.opus_include}",
+                   "-D__HIPCC_RTC__", f"-cuid={name}", f"-I{INCLUDE_DIR}", f"-I{os.path.join(INCLUDE_DIR, 'gfx950')}", f"-I{a.opus_include}",
                    *e["device_flags"], "-o", co]
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode:

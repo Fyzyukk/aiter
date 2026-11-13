@@ -164,7 +164,8 @@ int main(int argc, char** argv) {
         else { std::fprintf(stderr, "unknown flag %s\n", f); return 1; }
     }
     using T = TileTraits<256, 256>;   // tile-independent constants
-    if (!((tile_m == 256 || tile_m == 128) && (tile_n == 256 || tile_n == 128))) { std::fprintf(stderr, "tile must be 256|128 x 256|128\n"); return 1; }
+    const bool tile_ok = (tile_m == 256 || tile_m == 128 || tile_m == 192) && (tile_n == 256 || tile_n == 128 || tile_n == 192) && !(tile_m == 192 && tile_n != 256) && !(tile_n == 192 && tile_m != 256);
+    if (!tile_ok) { std::fprintf(stderr, "tile must be 256x256 / 256x128 / 128x256 / 128x128 / 192x256 / 256x192\n"); return 1; }
     // Any M; N a multiple of 16 (shuffle_weight); K a multiple of one K tile (256).
     if (M < 1 || N % 16 || K % T::B_K || K < T::B_K) {
         std::fprintf(stderr, "need M >= 1, N %% 16 == 0, K %% %d == 0\n", T::B_K);
@@ -274,6 +275,8 @@ int main(int argc, char** argv) {
         if (tile_m == 256 && tile_n == 256)      gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 256>><<<grid, block>>>(kargs);
         else if (tile_m == 256 && tile_n == 128) gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 128>><<<grid, block>>>(kargs);
         else if (tile_m == 128 && tile_n == 256) gemm_a4w4_mxfp4_nt_kernel<TileTraits<128, 256>><<<grid, block>>>(kargs);
+        else if (tile_m == 192)                  gemm_a4w4_mxfp4_nt_kernel<TileTraits<192, 256>><<<grid, block>>>(kargs);
+        else if (tile_n == 192)                  gemm_a4w4_mxfp4_nt_kernel<TileTraits<256, 192>><<<grid, block>>>(kargs);
         else                                     gemm_a4w4_mxfp4_nt_kernel<TileTraits<128, 128>><<<grid, block>>>(kargs);
     };
     std::printf("MXFP4xMXFP4 NT 4-wave (1x32 UE8M0) tile %dx%d M=%d N=%d K=%d batch=%d grid=(%u,1,%u) block=%d\n",

@@ -15,7 +15,7 @@ from aiter.ops.opus import gemm_a4w4_opus, opus_gemm_a4w4_tune
 from aiter.ops.shuffle import shuffle_weight
 from aiter.utility.fp4_utils import e8m0_shuffle
 
-KIDS = {30000: "256x256", 30001: "256x128", 30002: "128x256", 30003: "128x128"}
+KIDS = {30000: "256x256", 30001: "256x128", 30002: "128x256", 30003: "128x128", 30004: "192x256", 30005: "256x192"}
 _LUT = None
 
 

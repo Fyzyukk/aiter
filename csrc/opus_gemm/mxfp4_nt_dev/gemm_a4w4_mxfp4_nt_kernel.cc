@@ -6,3 +6,5 @@ template __global__ void gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<256, 256
 template __global__ void gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<256, 128>>(opus_gemm_mxfp4_scale_kargs_gfx950);
 template __global__ void gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<128, 256>>(opus_gemm_mxfp4_scale_kargs_gfx950);
 template __global__ void gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<128, 128>>(opus_gemm_mxfp4_scale_kargs_gfx950);
+template __global__ void gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<192, 256>>(opus_gemm_mxfp4_scale_kargs_gfx950);
+template __global__ void gemm_a4w4_mxfp4_nt_kernel<opus_mxfp4_nt_traits<256, 192>>(opus_gemm_mxfp4_scale_kargs_gfx950);
