@@ -5,10 +5,10 @@
 // Standard ROCm toolchain: no pin attributes, no opus (HIP builtins only).  Inputs as aiter gemm_a4w4(bpreshuffle=True);
 // the row-major (Triton gemm_afp4wfp4) variant is opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh.
 //
-//   B_DIRECT (BMODE 0): every wave streams its A / B / scale operands from global straight into registers through a D-deep
-//     ring (no LDS, no barrier in the K loop).  KS splits the 4 waves along K (partials summed through LDS once at the end).
-//   A_LDS    (BMODE 2): A global -> LDS by LDS-DMA (D-deep ring), B + scales global -> a D-deep register ring (asm 32x128 style).
-// All: MFMA v_mfma_scale_f32_16x16x128_f8f6f4 with B as srcA (each lane holds 4 consecutive columns of one C row);
+// One pipeline, A_LDS (BMODE 2): A global -> LDS by LDS-DMA (D-deep ring, shared by the 4 waves), B + scales global -> a
+//   D-deep register ring (asm 32x128 style); KS = 2 / 4 splits the 4 waves along K (partials summed through LDS at the end).
+//   (The former B_DIRECT / B_LDS shuffle variants were removed; both remain in the row-major file.)
+// MFMA v_mfma_scale_f32_16x16x128_f8f6f4 with B as srcA (each lane holds 4 consecutive columns of one C row);
 //   scales read as raw e8m0_shuffle dwords ([kk0 half0, kk0 half1, kk1 half0, kk1 half1] of a 32-row block) with a
 //   compile-time opsel; split-K over blocks (last-arriving block reduces); M / N tails by buffer ranges + 16-column C mask.
 #pragma once
@@ -91,105 +91,6 @@ __device__ __forceinline__ void store_c(const f32x4 (&acc)[EM][EN], const kargs_
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// B_DIRECT: no LDS in the K loop.  KS: the 4 waves split KS ways along K (wave group kg takes K tiles kg, kg + KS, ...)
-// and 4 / KS ways along N; the KS partial accumulators are summed through LDS at the end (one barrier).
-template<int BM, int BN, int D, int KS>
-__device__ __forceinline__ void body_direct(const kargs_t& ka) {
-    static_assert(BM == 16 || BM == 32 || BM == 64 || BM == 128);
-    static_assert(BN == 32 || BN == 64 || BN == 128 || BN == 256);
-    constexpr int EM = BM / 16;
-    static_assert(KS == 1 || KS == 2 || KS == 4);
-    constexpr int WN = 4 / KS;
-    constexpr int EN = BN / (16 * WN);
-    static_assert(EN % 2 == 0, "a wave's columns must cover whole 32-row scale blocks");
-    constexpr int SA = (BM + 31) / 32, SB = EN / 2;
-    const int lane = __lane_id();
-    const int wave = __builtin_amdgcn_readfirstlane(threadIdx.x / 64);
-    const int S = ka.splitk;
-    const int col0 = blockIdx.x * BN, row0 = blockIdx.y * BM, bz = blockIdx.z / S, sk = blockIdx.z % S;
-    const int ktot = ka.k / 256, kper = (ktot + S - 1) / S, kbeg = sk * kper;
-    const int loops = (ktot < kbeg + kper ? ktot : kbeg + kper);    // this block's K tiles: [kbeg, loops)
-    const int Kb = ka.k / 2;
-    const int wn = wave % WN, kgrp = wave / WN;
-    const int ncol0 = col0 + wn * (BN / WN);
-
-    const uint8_t* pa  = (const uint8_t*)ka.ptr_a   + bz * ka.stride_a_batch   + (long long)row0 * ka.stride_a;
-    const uint8_t* pb  = (const uint8_t*)ka.ptr_b   + bz * ka.stride_b_batch   + (long long)ncol0 * Kb;
-    const uint8_t* psa = (const uint8_t*)ka.ptr_sfa + bz * ka.stride_sfa_batch + (long long)(row0 / 32) * ka.stride_sfa;
-    const uint8_t* psb = (const uint8_t*)ka.ptr_sfb + bz * ka.stride_sfb_batch + (long long)(ncol0 / 32) * ka.stride_sfb;
-    const auto ra_  = rsrc(pa,  clampb((long long)(ka.m - row0) * ka.stride_a));
-    const auto rb_  = rsrc(pb,  clampb((long long)(ka.n - ncol0) * Kb));
-    const auto rsa_ = rsrc(psa, clampb((long long)((ka.m + 31) / 32 - row0 / 32) * ka.stride_sfa));
-    const auto rsb_ = rsrc(psb, clampb((long long)((ka.n + 31) / 32 - ncol0 / 32) * ka.stride_sfb));
-    const int a_lane = (lane % 16) * ka.stride_a + (lane / 16) * 16;   // A operand: row lane%16, K bytes [16*(lane/16), +16)
-    const unsigned sh_a = (BM == 16) ? 8u * ((row0 / 16) & 1) : 0u;    // BM == 16: half of the 32-row scale block
-
-    i32x4 va[D][EM][2], vb[D][EN][2];
-    unsigned vsa[D][SA], vsb[D][SB];
-    // K tiles past the end load through zero-range descriptors (reads return 0, scales too), so the MFMAs run
-    // unconditionally: no branch in the loop keeps the compiler's vmcnt counting exact across the ring.
-    const auto r0 = rsrc(pa, 0u);
-    auto issue = [&](auto s_, int kt) {
-        constexpr int s = decltype(s_)::value;
-        const bool in = kt < loops;
-        const auto ra = in ? ra_ : r0;  const auto rb = in ? rb_ : r0;
-        const auto rsa = in ? rsa_ : r0; const auto rsb = in ? rsb_ : r0;
-        static_for<EN>([&](auto e) { static_for<2>([&](auto kk) {
-            vb[s][e()][kk()] = __builtin_bit_cast(i32x4, __builtin_amdgcn_raw_buffer_load_b128(rb, lane * 16, e() * 16 * Kb + kt * 2048 + kk() * 1024, 0));
-        }); });
-        static_for<EM>([&](auto e) { static_for<2>([&](auto kk) {
-            va[s][e()][kk()] = __builtin_bit_cast(i32x4, __builtin_amdgcn_raw_buffer_load_b128(ra, a_lane, e() * 16 * ka.stride_a + kt * 128 + kk() * 64, 0));
-        }); });
-        static_for<SA>([&](auto j) { vsa[s][j()] = __builtin_amdgcn_raw_buffer_load_b32(rsa, lane * 4, j() * ka.stride_sfa + kt * 256, 0); });
-        static_for<SB>([&](auto j) { vsb[s][j()] = __builtin_amdgcn_raw_buffer_load_b32(rsb, lane * 4, j() * ka.stride_sfb + kt * 256, 0); });
-    };
-
-    f32x4 acc[EM][EN];
-    static_for<EM>([&](auto e) { static_for<EN>([&](auto n) { acc[e()][n()] = f32x4{0.f, 0.f, 0.f, 0.f}; }); });
-    auto compute = [&](auto s_) {
-        constexpr int s = decltype(s_)::value;
-        static_for<2>([&](auto kk) { static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-            const i32x8 a8 = __builtin_shufflevector(va[s][e()][kk()], va[s][e()][kk()], 0, 1, 2, 3, -1, -1, -1, -1);
-            const i32x8 b8 = __builtin_shufflevector(vb[s][n()][kk()], vb[s][n()][kk()], 0, 1, 2, 3, -1, -1, -1, -1);
-            constexpr int ja = (BM == 16) ? 0 : e() / 2, opa = 2 * kk() + ((BM == 16) ? 0 : e() % 2);
-            constexpr int jb = n() / 2, opb = 2 * kk() + n() % 2;
-            const unsigned sa = (BM == 16) ? (vsa[s][ja] >> sh_a) : vsa[s][ja];
-            acc[e()][n()] = __builtin_amdgcn_mfma_scale_f32_16x16x128_f8f6f4(b8, a8, acc[e()][n()], 4, 4,
-                                                                             opb, (int)vsb[s][jb], opa, (int)sa);
-        }); }); });
-    };
-    const int k0 = kbeg + kgrp;
-    const int nk = loops > k0 ? (loops - k0 + KS - 1) / KS : 0;
-    static_for<D>([&](auto s) { issue(s, k0 + KS * s()); __builtin_amdgcn_sched_barrier(0); });   // same order as the loop
-#pragma clang loop unroll(disable)
-    for (int i0 = 0; i0 < nk; i0 += D) {
-        static_for<D>([&](auto s) {
-            const int i = i0 + s();
-            compute(s);                          // i >= nk: all operands are 0 (zero-range loads), adds nothing
-            __builtin_amdgcn_sched_barrier(0);   // keep the ring order: stage s computes, then reloads
-            issue(s, k0 + KS * (i + D));
-            __builtin_amdgcn_sched_barrier(0);
-        });
-    }
-    if constexpr (KS > 1) {   // groups 1..KS-1 park their partials in LDS, group 0 adds them
-        constexpr int FR = EM * EN;
-        __shared__ f32x4 red[(KS - 1) * WN * FR * 64];
-        if (kgrp > 0)
-            static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-                red[(((kgrp - 1) * WN + wn) * FR + e() * EN + n()) * 64 + lane] = acc[e()][n()];
-            }); });
-        __syncthreads();
-        if (kgrp == 0)
-            static_for<KS - 1>([&](auto g) { static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-                acc[e()][n()] += red[((g() * WN + wn) * FR + e() * EN + n()) * 64 + lane];
-            }); }); });
-    }
-    const bool owner = (KS == 1) || (kgrp == 0);
-    if (S > 1 && !splitk_reduce<EM, EN, BM, BN>(acc, ka, owner, lane, row0, 0, ncol0, bz, sk, S)) return;
-    if (!owner) return;
-    store_c<EM, EN>(acc, ka, lane, row0, 0, ncol0, bz);
-}
-
 // One __shared__ object per ring stage: the compiler's waitcnt pass then knows an LDS-DMA into stage j cannot alias a
 // ds_read of stage i, instead of waiting for every in-flight copy before each read (one array = everything aliases).
 template<int I, int BYTES>
@@ -205,9 +106,9 @@ __device__ __forceinline__ char* lds_stage() {
 // 64 lanes x 16 B), block stride 1088 B, row r of a block at r*128 with its 16 B chunk c at slot c ^ ((r >> 1) & 3) (the 16
 // lanes of an A ds_read_b128 hit distinct bank groups); one __shared__ object per stage (lds_stage).  The ring schedule is
 // described at the K loop below.
-// KS > 1: the 4 waves split KS ways along K and 4/KS ways along N (as B_DIRECT).  One ring step then covers KS consecutive
+// KS > 1: the 4 waves split KS ways along K and 4/KS ways along N .  One ring step then covers KS consecutive
 // K tiles: the stage holds A of all KS tiles, wave group g computes tile step*KS + g; partials summed through LDS at the end.
-// BM == 16: one 16-row block, the A scale is half of a 32-row e8m0_shuffle block (byte shift, as B_DIRECT).
+// BM == 16: one 16-row block, the A scale is half of a 32-row e8m0_shuffle block (byte shift).
 template<int BM, int BN, int D, int KS = 1>
 __device__ __forceinline__ void body_alds(const kargs_t& ka) {
     static_assert(BM == 16 || BM == 32 || BM == 64 || BM == 128);
@@ -351,7 +252,6 @@ template<class Traits>
 __global__ __launch_bounds__(256, 1) void gemm_a4w4_mxfp4_nt_small_kernel(opus_gemm_mxfp4_small_kargs_gfx950 ka) {
 #if defined(__gfx950__) || !defined(__HIP_DEVICE_COMPILE__)
     using T = Traits;
-    if constexpr (T::BMODE == OPUS_MXFP4_SMALL_A_LDS) opus_mxfp4_small::body_alds<T::BM, T::BN, T::D, T::KS>(ka);
-    else                                              opus_mxfp4_small::body_direct<T::BM, T::BN, T::D, T::KS>(ka);
+    opus_mxfp4_small::body_alds<T::BM, T::BN, T::D, T::KS>(ka);
 #endif
 }

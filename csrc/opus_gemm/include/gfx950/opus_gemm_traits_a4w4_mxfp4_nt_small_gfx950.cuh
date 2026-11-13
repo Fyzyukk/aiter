@@ -25,15 +25,16 @@ struct opus_gemm_mxfp4_small_kargs_gfx950 {
 
 // B operand path of the small-tile pipeline.
 enum : int {
-    OPUS_MXFP4_SMALL_B_DIRECT = 0,   // A, B, scales stream from global straight into registers (no LDS, no barrier); KS = 1/2/4
+    OPUS_MXFP4_SMALL_B_DIRECT = 0,   // A, B, scales stream from global straight into registers (no LDS, no barrier); KS = 1/2/4;
+                                     //   row-major (noshuffle) pipeline only
     OPUS_MXFP4_SMALL_B_LDS    = 1,   // A and B go global -> LDS by LDS-DMA (D-deep ring, one barrier per K tile); scales direct;
                                      //   row-major (noshuffle) pipeline only
     OPUS_MXFP4_SMALL_A_LDS    = 2,   // A global -> LDS by LDS-DMA (D-deep ring, shared by the 4 waves), B + scales global -> registers
-                                     //   (D-deep register ring), one barrier per K tile (the asm 32x128 structure); 1x4 waves, shuffled
+                                     //   (D-deep register ring), one barrier per ring step (the asm 32x128 structure); shuffle pipeline
 };
 
-// BMODE == B_DIRECT: tiles 16/32/64/128 x 32/64/128/256 (4 waves split KS ways along K and 4/KS ways along N).
-// BMODE == A_LDS   : tiles 16/32/64 x 32/64/128/256; KS = 1: 1x4 waves along N; KS = 2 / 4: waves split K (as B_DIRECT);
+// Shuffle small-tile pipeline = A_LDS only (BMODE must be OPUS_MXFP4_SMALL_A_LDS).
+// Tiles 16/32/64 x 32/64/128/256; KS = 1: 1x4 waves along N; KS = 2 / 4: the waves split KS ways along K, 4/KS along N;
 //                    ring depth limited by (D - 1) * (VMEM per wave per ring step) <= 63.
 template<int BM_, int BN_, int D_, int KS_, int BMODE_>
 struct opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950 {
@@ -41,6 +42,6 @@ struct opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950 {
     static constexpr int BLOCK_SIZE = 256;
     static constexpr int B_K = 256;                      // fp4 elements per K tile (128 bytes per row)
     static_assert(D >= 2);
-    static_assert(BMODE == OPUS_MXFP4_SMALL_B_DIRECT || BMODE == OPUS_MXFP4_SMALL_A_LDS, "shuffle: B_DIRECT / A_LDS");
+    static_assert(BMODE == OPUS_MXFP4_SMALL_A_LDS, "shuffle small-tile pipeline: A_LDS only");
     static_assert(KS == 1 || KS == 2 || KS == 4);
 };

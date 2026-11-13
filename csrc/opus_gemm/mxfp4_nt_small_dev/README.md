@@ -17,8 +17,8 @@ Non-persistent: grid = (⌈N/BN⌉, ⌈M/BM⌉, batch × split).
 
 | B path (`-a`) | tiles (`-t`) | other knobs | meant for |
 |---|---|---|---|
-| 2 `A_LDS` (shuffle only): A global → LDS-DMA D-deep ring, B + scales → registers, asm-style (A read one tile ahead, copies interleaved with MFMAs) | 32×64, 32×128, 64×128, 32×256 | `-d` 3–10 ((D−1)·G ≤ 63) | M ≈ 128 – 512 (beat the former shuffle B_LDS by 12–30%) |
-| 0 `B_DIRECT`: A, B, scales global → registers, D-deep register ring, no LDS / barrier in the K loop | 16×32, 16×64, 32×32, 32×64 | `-s` KS 2/4 (waves split K, summed via LDS once), `-d` 2–4 | M ≤ 64 (128 when K is not small) |
+| 2 `A_LDS` (shuffle only; the only shuffle path): A global → LDS-DMA D-deep ring, B + scales → registers, asm-style (A read one tile ahead, copies interleaved with MFMAs) | 16×32, 16×64, 16×128, 32×32, 32×64, 32×128, 64×128, 32×256 | `-s` KS 1/2/4 (waves split K, summed via LDS once), `-d` 3–10 ((D−1)·G ≤ 63) | M ≤ 64 (16×32 KS2/KS4, 16×64), M ≈ 128 – 512 (beat the former shuffle B_LDS by 12–30%, B_DIRECT by up to 18% at M ≤ 32, see prof/alds_vs_direct_smi3) |
+| 0 `B_DIRECT` (row-major only; the shuffle variant was removed): A, B, scales global → registers, D-deep register ring, no LDS / barrier in the K loop | 16×32, 16×64, 32×32, 32×64 | `-s` KS 2/4 (waves split K, summed via LDS once), `-d` 2–4 | M ≤ 64 (128 when K is not small) |
 | 1 `B_LDS` (row-major only; the shuffle variant was removed): A and B global → LDS by LDS-DMA, D-deep LDS ring (one `__shared__` object per stage), one barrier per K tile; scales → registers | 32×128, 64×128 (1×4 waves), 128×128 (2×2 waves), 32×256 (D ≤ 3), 64×256 (D 2) | `-d` 2–4 | M ≈ 128 – 1024 |
 | both | | `-p S` cross-block split-K (last-arriving block reduces, ≤ 8) | few tiles |
 
@@ -27,7 +27,7 @@ make                                    # -> /tmp/opus_mxfp4_small/small.exe   (
 E=/tmp/opus_mxfp4_small/small.exe
 $E -a 2 -t 32x128 -d 4 -m 256 -n 4096 -k 4096 -v 1          # correctness (exact GPU reference)
 $E -a 2 -t 32x128 -d 4 -m 256 -n 4096 -k 4096 -v 0 -i 100   # timing: hipGraph of 100 launches, median of 5
-prof/check.sh $E <HIP gpu> 0:16x32:4:3 2:32x128:1:4 1:16x64:1:4:1 ...      # full correctness matrix per MODE:TILE:KS:D
+prof/check.sh $E <HIP gpu> 2:16x32:2:4 2:32x128:1:4 1:16x64:1:4:1 ...      # full correctness matrix per MODE:TILE:KS:D
 ```
 
 Performance sweep (one command, portable; see `prof/perf_all.py` header):
@@ -45,8 +45,8 @@ and aiter asm (CUDA graph), and writes `results.csv`, `table.txt` and `select.cs
 **Template**: shuffle `gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE>>`;
 row-major `gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>>`.
 `__launch_bounds__(256, 1)`, block = 256, standard hipcc (no pin, no opus → plain aiter JIT, no `.co`).
-- `BMODE`: `OPUS_MXFP4_SMALL_B_DIRECT` (0), `OPUS_MXFP4_SMALL_B_LDS` (1, row-major only), `OPUS_MXFP4_SMALL_A_LDS` (2, shuffle only).
-  `KS` only for B_DIRECT (2/4), 1 otherwise.  `D` = ring depth.
+- `BMODE`: `OPUS_MXFP4_SMALL_B_DIRECT` (0, row-major only), `OPUS_MXFP4_SMALL_B_LDS` (1, row-major only),
+  `OPUS_MXFP4_SMALL_A_LDS` (2, shuffle only).  `KS` for B_DIRECT and A_LDS (1/2/4), 1 for B_LDS.  `D` = ring depth.
 - Shuffle file: gemm_a4w4(bpreshuffle=True) inputs (B shuffle_weight(16,16), scales e8m0_shuffle).  Noshuffle file: Triton
   gemm_afp4wfp4 inputs (B [N, K/2], scales [rows, K/32], no padding).  The harness `-l 0/1` picks the file.
 - Constraints: K % 256 == 0; N % 16 (shuffled) / N % 8 (row-major); any M; batch ≥ 1.  Row-major B_LDS: BM ∈ {16, 32, 64, 128},

@@ -24,9 +24,8 @@ import os
 _T = ("256x256", "256x128", "128x256", "128x128", "192x256", "256x192")
 KIDS = {**{30000 + i: t for i, t in enumerate(_T)}, **{30010 + i: t + " np" for i, t in enumerate(_T)}, 30030: "256x256 nob"}
 SK_KIDS = {30020 + i: t + " sk" for i, t in enumerate(_T) if i}
-SMALL_KIDS = {30400 + i: t for i, t in enumerate(("dir 16x32 KS4 D3", "dir 16x32 KS4 D4", "dir 32x32 KS4 D2", "dir 32x64 KS4 D2",
-                                                 "dir 32x64 KS2 D3", "dir 16x64 KS4 D3"))}
-SMALL_KIDS.update({30410 + i: t for i, t in enumerate(("alds 32x64 D6", "alds 32x128 D3", "alds 32x128 D4", "alds 64x128 D4"))})
+SMALL_KIDS = {30410 + i: t for i, t in enumerate(("alds 32x64 D6", "alds 32x128 D3", "alds 32x128 D4", "alds 64x128 D4",
+                                                 "alds 16x32 KS2 D4", "alds 16x32 KS4 D4", "alds 16x64 D4"))}
 _RM = ("lds 16x64 D3", "lds 16x64 D4", "lds 32x64 D4", "lds 64x64 D3", "lds 64x128 D3", "lds 64x128 D4", "dir 16x32 KS4 D2")
 NS_SMALL_KIDS = {30500 + 3 * i + j: f"{t} S{s}" for i, t in enumerate(_RM) for j, s in enumerate((1, 2, 4))}
 NS_KIDS = {**{30100 + i: t + " ns" for i, t in enumerate(_T)}, **{30110 + i: t + " ns np" for i, t in enumerate(_T)}, 30130: "256x256 ns nob"}

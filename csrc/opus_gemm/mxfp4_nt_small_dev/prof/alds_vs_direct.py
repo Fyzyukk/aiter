@@ -4,6 +4,7 @@
 # perf_all.py (hipGraph of 100 launches, median of 5); every shape guarded by an idle check, each config timed twice in
 # alternating order (min kept).
 #   python3 alds_vs_direct.py --small-exe /tmp/alds_ks/small.exe --gpu 0 --smi 3 [--out DIR]
+# The B_DIRECT shuffle configs need a harness built from 1777ae898 (shuffle B_DIRECT was removed after this experiment).
 import argparse, csv, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

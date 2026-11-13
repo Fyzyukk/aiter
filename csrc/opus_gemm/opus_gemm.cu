@@ -131,11 +131,14 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
   int best = -1;
   double best_cost = 1e300;
   // M <= 64: small-tile pipeline; B_M need not cover M (more M blocks beat a taller tile). Best measured (HIP 6 / smi 3):
-  //   shuffled M <= 16: 16x32 KS4 D3 (30400); M <= 64: 32x32 KS4 D2 (30402)
+  //   shuffled (A_LDS), t = 16x32 tiles: K <= 1024 or t > CUs: 16x64 KS1 D4 (30416); K >= 6144: 16x32 KS4 D4 (30415);
+  //     else 16x32 KS2 D4 (30414)  (best of the three on all 24 measured M 1-32 x N,K shapes, smi 3)
   //   row-major M <= 8: direct 16x32 KS4 D2 (30518); M <= 64: B_LDS 16x64 D4 (30503)
   // Falls back to the first S = 1 small kid of this layout if the preferred one is not built.
   if (M <= 64) {
-    const int want = noshuffle ? (M <= 8 ? 30518 : 30503) : (M <= 16 ? 30400 : 30402);
+    const long t32 = static_cast<long>((M + 15) / 16) * ((N + 31) / 32) * batch;
+    const int want = noshuffle ? (M <= 8 ? 30518 : 30503)
+                               : (K <= 1024 || t32 > cus) ? 30416 : (K >= 6144 ? 30415 : 30414);
     for (int i = 0; i < n; ++i) {
       const auto& e = t[i];
       if (e.mode != 3 || e.noshuffle != noshuffle) continue;
