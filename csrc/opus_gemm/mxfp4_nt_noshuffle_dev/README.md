@@ -17,9 +17,9 @@ kargs：`stride_a = stride_b = K/2`，`stride_sfa = stride_sfb = K/32`（行距�
 | shape | 任意 M ≥ 1；N 为 8 的倍数（C 按 16 B 列块写）；K 为 256 的倍数 |
 | split-K | 暂不支持（等 shuffle 版的实现稳定后移植） |
 
-pipeline 由 `gen_noshuffle_pipeline.py` 从 shuffle 版 pipeline 生成（`python3 gen_noshuffle_pipeline.py <shuffle .cuh> <noshuffle .cuh>`）：
-换回 m8 的 B 布局（行主序 + 16 B XOR swizzle，与 A 对称）和 scale 路径（每 lane 读一行 16 B → 4×4 字节转置 → LDS），
-其余（参数化、边界、persistent / 非 persistent、ZC_PEEL、C 写回）与 shuffle 版相同。shuffle 版改动后重新生成即可。
+pipeline 最初由脚本从 shuffle 版生成，现在是独立维护的文件（生成脚本已删除）：相对 shuffle 版换成 m8 的 B 布局
+（行主序 + 16 B XOR swizzle，与 A 对称）和 scale 路径（每 lane 读一行 16 B → 4×4 字节转置 → LDS），其余（参数化、
+边界、persistent / 非 persistent、首轮 C = 0、C 写回）与 shuffle 版相同。shuffle 版的改动需要手动同步过来。
 
 ## 构建与运行
 ```bash

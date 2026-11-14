@@ -1066,43 +1066,43 @@ A4W4_MXFP4_TAGS = ("a4w4_mxfp4_nt", "a4w4_mxfp4_nt_noshuffle", "a4w4_mxfp4_nt_sm
 
 # a4w4_mxfp4_nt_small (gfx950): small-tile pipelines, standard hipcc, built by the aiter JIT (no .co); LAYOUT 0 kids use
 # include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh, LAYOUT 1 kids ..._nt_small_noshuffle_gfx950.cuh.
-# Config = (BM, BN, D, KS, BMODE (row-major: 0 B_DIRECT, 1 B_LDS; shuffle: None), LAYOUT (0 shuffle, 1 row-major), S).
+# Both layouts: the same 1x4-wave pipeline structure (LDS-DMA ring for A -- shuffle: B + scales in a register ring; row-major:
+# B and the scales in the LDS ring too --, KS > 1: the waves split KS ways along K).  Config = (BM, BN, D, KS, None (former row-major BMODE slot), LAYOUT (0 shuffle, 1 row-major), S).
 #   shuffle (gemm_a4w4 bpreshuffle=True inputs): 1x4 waves (KS > 1: the waves split KS ways along K), kids 30410 + i,
 #     S = 1 (30410-30413 M ~ 128-512, 30414-30416 M <= 64); name_tag "a4w4_mxfp4_nt_d<D>ks<KS>" (the tile is in the name).
 #   (30400-30405 former shuffle B_DIRECT, 30406-30408 former shuffle B_LDS: retired, ids not reused)
-#   row-major (gemm_a4w4_opus_noshuffle inputs): kids 30500 + 3 * i + {0, 1, 2} for S = 1 / 2 / 4 (split-K over blocks)
+#   row-major (gemm_a4w4_opus_noshuffle inputs): kids 30500 + i, S = 1 (30500 M <= 16, 30501 M ~ 64, 30502-30504 M ~ 128-512);
+#     name_tag "a4w4_mxfp4_nt_rm_d<D>ks<KS>".  Configs chosen by a sweep of 44 (BM, BN, KS, D) x S 1/2/4 on M 1-1024 x 4 (N, K)
+#     (mxfp4_nt_small_dev/prof/sweep_rowmajor_HIP6.csv, EXPERIMENTS.md); S = 2 / 4 never won, split-K support kept
+#     (_a4w4_mxfp4_nt_small(..., s) with s > 1 -> tag suffix "_sk<S>").  (Former row-major B_DIRECT / B_LDS kids
+#     30500-30520 with S 1/2/4 were replaced; ids 30505-30520 are free.)
 A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS = [   # (BM, BN, D, KS)
     (32, 64, 6, 1), (32, 128, 3, 1), (32, 128, 4, 1), (64, 128, 4, 1),   # 30410-30413
     (16, 32, 4, 2), (16, 32, 4, 4), (16, 64, 4, 1),                      # 30414-30416
 ]
-A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS = [
-    (16, 64, 3, 1, 1), (16, 64, 4, 1, 1), (32, 64, 4, 1, 1), (64, 64, 3, 1, 1), (64, 128, 3, 1, 1), (64, 128, 4, 1, 1),
-    (16, 32, 2, 4, 0),
+A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS = [   # (BM, BN, D, KS)
+    (16, 32, 4, 2), (32, 32, 4, 2),                       # 30500-30501
+    (32, 64, 4, 1), (64, 64, 4, 1), (64, 128, 4, 1),      # 30502-30504
 ]
-A4W4_MXFP4_NT_SMALL_SPLITS = (1, 2, 4)
 A4W4_MXFP4_NT_SMALL_CFG = {}   # kernel name -> (BM, BN, D, KS, BMODE, LAYOUT, S)
 
 
-def _a4w4_mxfp4_nt_small(bm, bn, d, ks, bmode, layout, s):
-    if layout == 0:
-        assert bmode is None, "shuffle small-tile: one operand path"
-        # S > 1: split-K variant (fp32 workspace + splitk_reduce_kernel), variant word in the tag as the 2x2 "_sk" kids
-        tag = f"a4w4_mxfp4_nt_d{d}ks{ks}" + (f"_sk{s}" if s > 1 else "")
-    else:
-        tag = f"a4w4_mxfp4_nt_small_rm_{('dir', 'lds')[bmode]}_{bm}x{bn}_d{d}ks{ks}_s{s}"
+def _a4w4_mxfp4_nt_small(bm, bn, d, ks, layout, s):
+    # Both layouts: the same 1x4-wave pipeline structure, config (BM, BN, D, KS); S > 1 = split-K variant (fp32 workspace +
+    # splitk_reduce_kernel), variant word in the tag as the 2x2 "_sk" kids; row-major tags carry "_rm" (no name collision).
+    tag = f"a4w4_mxfp4_nt{'_rm' if layout else ''}_d{d}ks{ks}" + (f"_sk{s}" if s > 1 else "")
     inst = OpusGemmInstance(
         256, bm, bn, 256, 1, 4, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt_small", ["bf16_t"],
         arch_prefix="gfx950", name_tag=tag,
     )
     assert inst.name not in A4W4_MXFP4_NT_SMALL_CFG, inst.name
-    A4W4_MXFP4_NT_SMALL_CFG[inst.name] = (bm, bn, d, ks, bmode, layout, s)
+    A4W4_MXFP4_NT_SMALL_CFG[inst.name] = (bm, bn, d, ks, None, layout, s)
     return inst
 
 
 a4w4_mxfp4_nt_small_kernels_list = {
-    **{30410 + i: _a4w4_mxfp4_nt_small(*c, None, 0, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS)},
-    **{30500 + 3 * i + j: _a4w4_mxfp4_nt_small(*c, 1, s)
-       for i, c in enumerate(A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS) for j, s in enumerate(A4W4_MXFP4_NT_SMALL_SPLITS)},
+    **{30410 + i: _a4w4_mxfp4_nt_small(*c, 0, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS)},
+    **{30500 + i: _a4w4_mxfp4_nt_small(*c, 1, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS)},
 }
 
 # combined list (used by production gen_instances / dispatch)

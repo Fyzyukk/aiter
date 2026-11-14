@@ -36,8 +36,9 @@ A4W4_MXFP4_NT_KIDS = (
 # dispatch uses them for M <= 64).  30400..30408 (former B_DIRECT / B_LDS) are retired.
 A4W4_MXFP4_NT_SMALL_KIDS = tuple(30410 + i for i in range(7))
 # Row-major kids: 30100 + i persistent, 30110 + i one tile per block, 30130 = 256x256 without boundary; small-tile
-# 30500 + 3 * i + {0, 1, 2} = split 1 / 2 / 4 of (B_LDS 16x64 D3/D4, 32x64 D4, 64x64 D3, 64x128 D3/D4; B_DIRECT 16x32 KS4 D2).
-A4W4_MXFP4_NT_SMALL_ROWMAJOR_KIDS = tuple(30500 + i for i in range(21))
+# 30500 + i = (same 1x4-wave pipeline structure as the shuffle small kids, B / scales through LDS) 16x32 KS2 D4 (M <= 16),
+# 32x32 KS2 D4 (M ~ 64), 32x64 D4, 64x64 D4, 64x128 D4 (M ~ 128-512).
+A4W4_MXFP4_NT_SMALL_ROWMAJOR_KIDS = tuple(30500 + i for i in range(5))
 A4W4_MXFP4_NT_NOSHUFFLE_KIDS = (
     tuple(30100 + i for i in range(6)) + tuple(30110 + i for i in range(6)) + (30130,) + A4W4_MXFP4_NT_SMALL_ROWMAJOR_KIDS
 )

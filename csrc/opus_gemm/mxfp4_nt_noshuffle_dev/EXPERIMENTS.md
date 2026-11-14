@@ -73,7 +73,7 @@ persistent / 非 persistent、ZC_PEEL、C 写回指令序列。split-K 暂不支
 - `opus_gemm.cu` / pybind / `opus_gemm.h`：fp4x2 分支按 bpreshuffle（或 scale 布局）选 shuffle / noshuffle 的分发；输入检查分两套。
 - `aiter/ops/opus/gemm_op_a4w4.py`：`bpreshuffle` 参数（与 aiter `gemm_a4w4` 一致），不 shuffle 时检查 scale 为 `[M, K/32]` / `[N, K/32]`。
 - `op_tests/test_opus_a4w4_gemm.py`：不 shuffle 的用例（输入直接用 quant 输出，不做 shuffle）。
-- 若 shuffle 版 pipeline 后续改动（例如加 split-K），重新运行 `gen_noshuffle_pipeline.py`；替换点失配时脚本会断言报错。
+- （2026-11-14）生成脚本 `gen_noshuffle_pipeline.py` 已删除：两个 pipeline 按 opus 风格各自整理后，文本替换对不上了，之后不 shuffle 版独立维护。
 
 ## 接入结果（2026-11-13）
 - rebase 到 dfcc999 后用新的 shuffle pipeline 重新生成，非 split-K 实例的设备代码与之前逐字节相同（split-K 改动不影响 MODE 0/1）。

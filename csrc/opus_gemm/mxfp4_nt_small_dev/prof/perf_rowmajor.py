@@ -8,17 +8,8 @@ import argparse, csv, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from perf_all import sh, smi_index, busy, wait_idle   # noqa: E402
 
-CFG = [("direct 16x32 ks4 d2", "-a 0 -t 16x32 -s 4 -d 2"), ("direct 16x32 ks4 d4", "-a 0 -t 16x32 -s 4 -d 4"),
-       ("direct 16x64 ks4 d2", "-a 0 -t 16x64 -s 4 -d 2"), ("direct 16x64 ks4 d4", "-a 0 -t 16x64 -s 4 -d 4"),
-       ("direct 32x32 ks4 d2", "-a 0 -t 32x32 -s 4 -d 2"), ("direct 32x32 ks4 d4", "-a 0 -t 32x32 -s 4 -d 4"),
-       ("direct 32x64 ks4 d2", "-a 0 -t 32x64 -s 4 -d 2"), ("direct 32x64 ks2 d2", "-a 0 -t 32x64 -s 2 -d 2"),
-       ("lds 16x64 d3", "-a 1 -t 16x64 -d 3"), ("lds 16x64 d4", "-a 1 -t 16x64 -d 4"),
-       ("lds 32x64 d3", "-a 1 -t 32x64 -d 3"), ("lds 32x64 d4", "-a 1 -t 32x64 -d 4"),
-       ("lds 64x64 d3", "-a 1 -t 64x64 -d 3"), ("lds 16x128 d4", "-a 1 -t 16x128 -d 4"),
-       ("lds 32x128 d3", "-a 1 -t 32x128 -d 3"), ("lds 32x128 d4", "-a 1 -t 32x128 -d 4"),
-       ("lds 64x128 d3", "-a 1 -t 64x128 -d 3"), ("lds 64x128 d4", "-a 1 -t 64x128 -d 4"),
-       ("lds 32x256 d3", "-a 1 -t 32x256 -d 3"), ("lds 64x256 d2", "-a 1 -t 64x256 -d 2"),
-       ("lds 128x128 d2", "-a 1 -t 128x128 -d 2"), ("lds 128x128 d3", "-a 1 -t 128x128 -d 3")]
+CFG = [("rm 16x32 ks2 d4", "-t 16x32 -s 2 -d 4"), ("rm 32x32 ks2 d4", "-t 32x32 -s 2 -d 4"),   # the 5 kid configs (30500-30504)
+       ("rm 32x64 d4", "-t 32x64 -s 1 -d 4"), ("rm 64x64 d4", "-t 64x64 -s 1 -d 4"), ("rm 64x128 d4", "-t 64x128 -s 1 -d 4")]
 NK = [(4096, 4096), (2048, 7168), (3072, 6144), (4096, 8192)]
 MS = [1, 16, 64, 128, 256, 512]
 

@@ -26,8 +26,7 @@ KIDS = {**{30000 + i: t for i, t in enumerate(_T)}, **{30010 + i: t + " np" for 
 SK_KIDS = {30020 + i: t + " sk" for i, t in enumerate(_T) if i}
 SMALL_KIDS = {30410 + i: t for i, t in enumerate(("alds 32x64 D6", "alds 32x128 D3", "alds 32x128 D4", "alds 64x128 D4",
                                                  "alds 16x32 KS2 D4", "alds 16x32 KS4 D4", "alds 16x64 D4"))}
-_RM = ("lds 16x64 D3", "lds 16x64 D4", "lds 32x64 D4", "lds 64x64 D3", "lds 64x128 D3", "lds 64x128 D4", "dir 16x32 KS4 D2")
-NS_SMALL_KIDS = {30500 + 3 * i + j: f"{t} S{s}" for i, t in enumerate(_RM) for j, s in enumerate((1, 2, 4))}
+NS_SMALL_KIDS = {30500 + i: t for i, t in enumerate(("rm 16x32 KS2 D4", "rm 32x32 KS2 D4", "rm 32x64 D4", "rm 64x64 D4", "rm 64x128 D4"))}
 NS_KIDS = {**{30100 + i: t + " ns" for i, t in enumerate(_T)}, **{30110 + i: t + " ns np" for i, t in enumerate(_T)}, 30130: "256x256 ns nob"}
 _LUT = None
 
@@ -148,7 +147,7 @@ def main():
         if M <= 64:   # dispatch must route M <= 64 to an S = 1 small-tile kid of the right layout
             sk = opus_gemm_a4w4_select_kid(M, N, K, b, not shuffled)
             want = NS_SMALL_KIDS if not shuffled else SMALL_KIDS
-            good = sk in want and (shuffled or want[sk].endswith("S1"))
+            good = sk in want
             print(f"  {'select_kid':28s} {sk} {'OK' if good else 'FAIL'}")
             ok &= good
         if shuffled:
@@ -245,8 +244,6 @@ def main():
                 print(f"  triton gemm_afp4wfp4 unavailable: {type(e).__name__}: {str(e)[:120]}")
         for kid, t in {**NS_KIDS, **NS_SMALL_KIDS}.items():
             if kid == 30130 and (M % 256 or N % 256):
-                continue
-            if kid in NS_SMALL_KIDS and K // 256 < int(t.split("S")[-1]):
                 continue
             o = gemm_a4w4_opus_noshuffle(xq, wq, xsr, wsr, kernelId=kid)
             if r is not None:

@@ -1,5 +1,5 @@
-# Dev / test build of the small-tile MXFP4 NT pipelines.  Standard ROCm toolchain (no pin attributes); the shuffle pipeline
-# and splitk_reduce_gfx950.cuh use opus (../../include).
+# Dev / test build of the small-tile MXFP4 NT pipelines.  Standard ROCm toolchain (no pin attributes); both pipelines and
+# splitk_reduce_gfx950.cuh use opus (../../include).
 HERE      := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 GFX950_INCLUDE ?= $(HERE)../include/gfx950
 OPUS_INCLUDE ?= $(HERE)../../include
