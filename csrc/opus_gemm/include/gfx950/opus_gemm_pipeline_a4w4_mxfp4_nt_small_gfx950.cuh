@@ -28,99 +28,111 @@ using i32x8_t = opus::vector_t<opus::i32_t, 8>;
 // ===========================================================================
 // A: global -> LDS (LDS-DMA) -> VGPR
 // ===========================================================================
-// One LDS-DMA issue copies an 8-row x 128 B chunk; lane = 8 * row + slot and the DMA writes lane l at l * 16 B, so slot s
-// of row r fetches the 16 B piece s ^ ((r >> 1) & 3) (the swizzle that makes the ds_read_b128 below conflict free).
+// Create layout for loading A matrix from global memory: one LDS-DMA issue copies an 8-row x 128 B chunk (lane l lands
+// at l * 16 B), so slot s of row r fetches the 16 B piece s ^ ((r >> 1) & 3) (conflict-free ds_read_b128 below).
 template<class T>
 __device__ inline auto make_layout_ga(int lane_id, int stride_a) {
-    constexpr int threads_k = T::B_K_BYTES / T::VEC_A;                 // 8
-    constexpr auto shape = opus::make_tuple(
-        opus::number<T::smem_sub_a>{},                                 // p row of the chunk
-        opus::number<threads_k>{},                                     // p 16 B piece (swizzled)
-        opus::number<T::VEC_A>{});                                     // y bytes
-    constexpr auto dim = opus::make_tuple(
+    constexpr int threads_k = T::B_K_BYTES / T::VEC_A;
+
+    constexpr auto ga_block_shape = opus::make_tuple(
+        opus::number<T::smem_sub_a>{},
+        opus::number<threads_k>{},
+        opus::number<T::VEC_A>{});
+
+    constexpr auto ga_block_dim = opus::make_tuple(
         opus::make_tuple(opus::p_dim{}),
         opus::make_tuple(opus::p_dim{}, opus::y_dim{}));
-    const int r = lane_id / threads_k;
+
+    const int lane_id_m = lane_id / threads_k;
+
     return opus::make_layout<T::VEC_A>(
-        shape,
-        opus::unfold_x_stride(dim, shape, opus::tuple{stride_a, 1_I}),
-        opus::unfold_p_coord(dim, opus::tuple{r, (lane_id % threads_k) ^ ((r >> 1) & 3)}));
+        ga_block_shape,
+        opus::unfold_x_stride(ga_block_dim, ga_block_shape, opus::tuple{stride_a, 1_I}),
+        opus::unfold_p_coord(ga_block_dim, opus::tuple{lane_id_m, (lane_id % threads_k) ^ ((lane_id_m >> 1) & 3)}));
 }
 
-// Chunk (t, r) of a ring step = K tile t (KS > 1) and rows [8 r, 8 r + 8): LDS byte offset in the stage (sa) and the
-// wave-uniform global offset (gas, passed as the buffer soffset: row stride and K tile).
+// Create layout for storing A matrix to shared memory: chunk (t, r) of a ring step = K tile t (KS > 1), rows [8 r, 8 r + 8).
 template<class T>
 __device__ inline constexpr auto make_layout_sa() {
     return opus::make_layout<-1>(opus::make_tuple(opus::number<T::KS>{}, opus::number<T::A_CHUNKS>{}),
                                  opus::make_tuple(opus::number<T::A_TILE_BYTES>{}, opus::number<T::A_CHUNK_BYTES>{}));
 }
+// Create layout for the wave-uniform global offset of chunk (t, r) (passed as the buffer soffset).
 template<class T>
 __device__ inline auto make_layout_gas(int stride_a) {
     return opus::make_layout<-1>(opus::make_tuple(opus::number<T::KS>{}, opus::number<T::A_CHUNKS>{}),
                                  opus::make_tuple(opus::number<T::B_K_BYTES>{}, T::smem_sub_a * stride_a));
 }
 
-// MFMA operand reads: lane holds row 16 e + lane % 16, K bytes [64 kk + 16 (lane / 16), +16) of the K tile of its wave
-// group (wave_id_k); offsets[e * E_K + kk].
+// Create layout for reading A matrix from shared memory to registers: lane holds row 16 e + lane % 16, K bytes
+// [64 kk + 16 (lane / 16), +16) of the K tile of its wave group (wave_id_k); offsets[e * E_K + kk].
 template<class T>
 __device__ inline auto make_layout_ra(int lane_id, int wave_id_k) {
-    const int lane_m = lane_id % T::W_M;
     constexpr auto ra_block_shape = opus::make_tuple(
-        opus::number<T::T_K>{},                                        // p wave_k: K tile of the ring step
-        opus::number<T::E_M>{},                                        // y M repeat (16 rows = 2 chunks)
-        opus::number<T::W_M / T::smem_sub_a>{},                        // p chunk within the 16 rows
-        opus::number<T::smem_sub_a>{},                                 // p row within the chunk
-        opus::number<T::E_K>{},                                        // y kk
-        opus::number<T::WARP_SIZE / T::W_M>{},                         // p 16 B piece g = lane / 16 (swizzled)
-        opus::number<T::VEC_A>{});                                     // y bytes
+        opus::number<T::T_K>{},
+        opus::number<T::E_M>{},
+        opus::number<T::W_M / T::smem_sub_a>{},
+        opus::number<T::smem_sub_a>{},
+        opus::number<T::E_K>{},
+        opus::number<T::WARP_SIZE / T::W_M>{},
+        opus::number<T::VEC_A>{});
+
     constexpr auto ra_block_dim = opus::make_tuple(
         opus::make_tuple(opus::p_dim{}, opus::y_dim{}, opus::p_dim{}),
         opus::make_tuple(opus::p_dim{}, opus::y_dim{}, opus::p_dim{}, opus::y_dim{}));
-    const int r = lane_m % T::smem_sub_a;
+
+    const int lane_id_m = lane_id % T::W_M;
+    const int r = lane_id_m % T::smem_sub_a;
+
     return opus::make_layout<T::VEC_A>(
         ra_block_shape,
         opus::unfold_x_stride(ra_block_dim, ra_block_shape, opus::tuple{opus::number<T::A_CHUNK_BYTES>{}, 1_I}),
-        opus::unfold_p_coord(ra_block_dim, opus::tuple{wave_id_k, lane_m / T::smem_sub_a, r, (lane_id / T::W_M) ^ ((r >> 1) & 3)}));
+        opus::unfold_p_coord(ra_block_dim, opus::tuple{wave_id_k, lane_id_m / T::smem_sub_a, r, (lane_id / T::W_M) ^ ((r >> 1) & 3)}));
 }
 
 // ===========================================================================
 // B: global -> VGPR (shuffle_weight(16, 16): 1 KB = 16 columns x 128 K per 64 lanes x 16 B)
 // ===========================================================================
-// offsets[e * E_K + kk] = the wave's 16-column block e, K half kk (the K tile goes into the buffer soffset).
+// Create layout for loading B matrix from global memory to registers: offsets[e * E_K + kk] = the wave's 16-column
+// block e, K half kk (the K tile goes into the buffer soffset).
 template<class T>
 __device__ inline auto make_layout_gb(int lane_id, int stride_b) {
-    constexpr auto shape = opus::make_tuple(
-        opus::number<T::E_N>{},                                        // y N repeat (16-column block)
-        opus::number<T::E_K>{},                                        // y kk (1 KB)
-        opus::number<T::WARP_SIZE>{},                                  // p lane
-        opus::number<T::VEC_B>{});                                     // y bytes
-    constexpr auto dim = opus::make_tuple(
+    constexpr auto gb_block_shape = opus::make_tuple(
+        opus::number<T::E_N>{},
+        opus::number<T::E_K>{},
+        opus::number<T::WARP_SIZE>{},
+        opus::number<T::VEC_B>{});
+
+    constexpr auto gb_block_dim = opus::make_tuple(
         opus::make_tuple(opus::y_dim{}),
         opus::make_tuple(opus::y_dim{}, opus::p_dim{}, opus::y_dim{}));
+
     return opus::make_layout<T::VEC_B>(
-        shape,
-        opus::unfold_x_stride(dim, shape, opus::tuple{T::W_N * stride_b, 1_I}),
-        opus::unfold_p_coord(dim, opus::tuple{lane_id}));
+        gb_block_shape,
+        opus::unfold_x_stride(gb_block_dim, gb_block_shape, opus::tuple{T::W_N * stride_b, 1_I}),
+        opus::unfold_p_coord(gb_block_dim, opus::tuple{lane_id}));
 }
 
 // ===========================================================================
 // Scales: raw e8m0_shuffle dwords, global -> VGPR
 // ===========================================================================
-// Per K tile each 32-row block holds 256 B; lane l reads dword l = [kk0 r, kk0 r+16, kk1 r, kk1 r+16], r = l % 16.
-// offsets[j] = 32-row block j (the K tile goes into the buffer soffset).
+// Create layout for loading scale factors from global memory: per K tile each 32-row block holds 256 B, lane l reads
+// dword l = [kk0 r, kk0 r+16, kk1 r, kk1 r+16], r = l % 16; offsets[j] = 32-row block j (K tile in the soffset).
 template<class T, int LOADS>
 __device__ inline auto make_layout_gsf(int lane_id, int stride_sf) {
-    constexpr auto shape = opus::make_tuple(
-        opus::number<LOADS>{},                                         // y 32-row block
-        opus::number<T::WARP_SIZE>{},                                  // p lane
-        opus::number<T::VEC_SF>{});                                    // y bytes
-    constexpr auto dim = opus::make_tuple(
+    constexpr auto gsf_block_shape = opus::make_tuple(
+        opus::number<LOADS>{},
+        opus::number<T::WARP_SIZE>{},
+        opus::number<T::VEC_SF>{});
+
+    constexpr auto gsf_block_dim = opus::make_tuple(
         opus::make_tuple(opus::y_dim{}),
         opus::make_tuple(opus::p_dim{}, opus::y_dim{}));
+
     return opus::make_layout<T::VEC_SF>(
-        shape,
-        opus::unfold_x_stride(dim, shape, opus::tuple{stride_sf, 1_I}),
-        opus::unfold_p_coord(dim, opus::tuple{lane_id}));
+        gsf_block_shape,
+        opus::unfold_x_stride(gsf_block_dim, gsf_block_shape, opus::tuple{stride_sf, 1_I}),
+        opus::unfold_p_coord(gsf_block_dim, opus::tuple{lane_id}));
 }
 template<class T> __device__ inline auto make_layout_gsfa(int lane_id, int stride_sfa) { return make_layout_gsf<T, T::SFA_LOADS>(lane_id, stride_sfa); }
 template<class T> __device__ inline auto make_layout_gsfb(int lane_id, int stride_sfb) { return make_layout_gsf<T, T::SFB_LOADS>(lane_id, stride_sfb); }
@@ -133,24 +145,27 @@ template<class T> __device__ inline constexpr int rsfb_dword(int n) { return n /
 template<class T> __device__ inline constexpr int rsfb_opsel(int n, int kk) { return 2 * kk + (T::SFB_HALF ? 0 : n % 2); }
 
 // ===========================================================================
-// C: lane holds row 16 e + lane % 16, columns 16 n + 4 (lane / 16) .. +3 of its wave's columns; offsets[e * E_N + n]
-// (elements).  Also the layout of the fp32 split-K partial tile (stride = padded N).
+// C
 // ===========================================================================
+// Create layout for storing C to global memory: lane holds row 16 e + lane % 16, columns 16 n + 4 (lane / 16) .. +3 of
+// its wave's columns; offsets[e * E_N + n] (elements).  Also the layout of the fp32 split-K partial tile.
 template<class T>
 __device__ inline auto make_layout_gc(int lane_id, int stride_c) {
-    constexpr auto shape = opus::make_tuple(
-        opus::number<T::E_M>{},                                        // y M repeat
-        opus::number<T::W_M>{},                                        // p row = lane % 16
-        opus::number<T::E_N>{},                                        // y N repeat
-        opus::number<T::WARP_SIZE / T::W_M>{},                         // p 4-column group = lane / 16
-        opus::number<T::VEC_C>{});                                     // y columns
-    constexpr auto dim = opus::make_tuple(
+    constexpr auto gc_block_shape = opus::make_tuple(
+        opus::number<T::E_M>{},
+        opus::number<T::W_M>{},
+        opus::number<T::E_N>{},
+        opus::number<T::WARP_SIZE / T::W_M>{},
+        opus::number<T::VEC_C>{});
+
+    constexpr auto gc_block_dim = opus::make_tuple(
         opus::make_tuple(opus::y_dim{}, opus::p_dim{}),
         opus::make_tuple(opus::y_dim{}, opus::p_dim{}, opus::y_dim{}));
+
     return opus::make_layout<T::VEC_C>(
-        shape,
-        opus::unfold_x_stride(dim, shape, opus::tuple{stride_c, 1_I}),
-        opus::unfold_p_coord(dim, opus::tuple{lane_id % T::W_M, lane_id / T::W_M}));
+        gc_block_shape,
+        opus::unfold_x_stride(gc_block_dim, gc_block_shape, opus::tuple{stride_c, 1_I}),
+        opus::unfold_p_coord(gc_block_dim, opus::tuple{lane_id % T::W_M, lane_id / T::W_M}));
 }
 
 // One __shared__ object per ring stage (kept explicit instead of one opus smem arena): the compiler's waitcnt pass then
@@ -168,6 +183,11 @@ __device__ __forceinline__ OPUS_LDS_ADDR char* lds_ptr(char* p) { return (OPUS_L
 constexpr int SCHED_MFMA = 0x008;
 constexpr int SCHED_VMEM_READ = 0x820;   // 0x020 VMEM read | 0x800 LDS DMA (newer LLVM classifies buffer_load ... lds as LDS DMA)
 constexpr int SCHED_DS_READ = 0x100;
+
+template<int MASK, int CNT = 1>
+__device__ inline void sched_group() {
+    if constexpr (CNT > 0) __builtin_amdgcn_sched_group_barrier(MASK, CNT, 0);
+}
 
 // One scaled fp4 MFMA with B as srcA: C fragment row = lane % 16, columns 4 (lane / 16) .. +3.
 template<int OPSEL_B, int OPSEL_A, class CF>
@@ -281,7 +301,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_small_body(const opus_gemm_mx
     // with an SMEM load outstanding, would turn its ds_read waits into lgkmcnt(0).  Drained here (builtin: visible to it).
     s_waitcnt_lgkmcnt(0_I);
     asm volatile("s_waitcnt vmcnt(%0)" :: "n"((D - 1) * G) : "memory");
-    __builtin_amdgcn_s_barrier();
+    sync_threads();
     read_a(v_a, 0_I);
     __builtin_amdgcn_sched_barrier(0);
 #pragma clang loop unroll(disable)
@@ -292,7 +312,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_small_body(const opus_gemm_mx
             // Step t+1 landed (D-2 younger steps in flight) and this wave's A(t) reads are done; the barrier makes A(t+1)
             // visible and frees A(t)'s stage (every wave has read it) for the copies of step t+D.
             asm volatile("s_waitcnt vmcnt(%0) lgkmcnt(0)" :: "n"((D - 2) * G) : "memory");
-            __builtin_amdgcn_s_barrier();
+            sync_threads();
             __builtin_amdgcn_sched_barrier(0);
             fp4x32_t v_an[T::E_K][T::E_M];
             read_a(v_an, number<sn>{});
@@ -304,13 +324,13 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_small_body(const opus_gemm_mx
             }); }); });
             issue(number<s>{}, kt + T::KS * D);
             // Schedule (kept explicit): the next step's ds_reads first, then MFMA / VMEM alternating.
-            __builtin_amdgcn_sched_group_barrier(SCHED_DS_READ, T::E_K * T::E_M, 0);
-            static_for<T::E_K * T::E_M * T::E_N>([&](auto m) {
-                __builtin_amdgcn_sched_group_barrier(SCHED_MFMA, 1, 0);
-                if constexpr (decltype(m)::value < G) __builtin_amdgcn_sched_group_barrier(SCHED_VMEM_READ, 1, 0);
+            constexpr int MFMAS = T::E_K * T::E_M * T::E_N;
+            sched_group<SCHED_DS_READ, T::E_K * T::E_M>();
+            static_for<MFMAS>([&](auto m) {
+                sched_group<SCHED_MFMA>();
+                sched_group<SCHED_VMEM_READ, (decltype(m)::value < G)>();
             });
-            if constexpr (T::E_K * T::E_M * T::E_N < G)
-                __builtin_amdgcn_sched_group_barrier(SCHED_VMEM_READ, G - T::E_K * T::E_M * T::E_N, 0);
+            sched_group<SCHED_VMEM_READ, G - MFMAS>();
             __builtin_amdgcn_sched_barrier(0);
             static_for<T::E_K>([&](auto kk) { static_for<T::E_M>([&](auto e) { v_a[kk.value][e.value] = v_an[kk.value][e.value]; }); });
         });
@@ -325,7 +345,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_small_body(const opus_gemm_mx
         if (wave_id_k > 0)
             static_for<FRAGS>([&](auto f) { store<T::VEC_C>(s_red, v_c[f.value / T::E_N][f.value % T::E_N], red_off(wave_id_k - 1, f.value)); });
         __builtin_amdgcn_fence(__ATOMIC_RELEASE, "workgroup");
-        __builtin_amdgcn_s_barrier();
+        sync_threads();
         __builtin_amdgcn_fence(__ATOMIC_ACQUIRE, "workgroup");
         if (wave_id_k > 0) return;
         static_for<T::KS - 1>([&](auto g) { static_for<FRAGS>([&](auto f) {
@@ -354,7 +374,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_small_body(const opus_gemm_mx
 
 // grid = ((N + B_N - 1) / B_N, (M + B_M - 1) / B_M, batch * split_k), block = 256.
 template<class Traits>
-__global__ __launch_bounds__(256, 1) void gemm_a4w4_mxfp4_nt_small_kernel(opus_gemm_mxfp4_small_kargs_gfx950 kargs) {
+__global__ __launch_bounds__(Traits::BLOCK_SIZE, 1) void gemm_a4w4_mxfp4_nt_small_kernel(opus_gemm_mxfp4_small_kargs_gfx950 kargs) {
 #if defined(__gfx950__)
     opus_mxfp4_small::gemm_a4w4_mxfp4_nt_small_body<Traits>(kargs);
 #endif   // __gfx950__

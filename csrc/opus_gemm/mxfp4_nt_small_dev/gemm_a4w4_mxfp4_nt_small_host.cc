@@ -108,11 +108,15 @@ void gemm_ref_cpu(const uint8_t* a, const uint8_t* b, const e8m0_t* sfa, const e
 
 struct cmp_stats { long errors; double max_diff; double max_ratio; double calc_diff; };
 
+// Inf / NaN by the bit pattern: the harness builds with -ffast-math, which folds isnan() and NaN comparisons away (a NaN
+// result -- e.g. 0xFF poison never overwritten -- would otherwise pass as "d <= tol").
+static inline bool nonfinite(float f) { uint32_t u; std::memcpy(&u, &f, 4); return (u & 0x7f800000u) == 0x7f800000u; }
 cmp_stats compare(const float* ref, const float* got, const float* mag, size_t cnt,
                   float rel_mag = 5e-5f, float abs_floor = 1e-4f, bool print = true, double out_rel = 0.0) {
     long errors = 0; double max_diff = 0, max_ratio = 0, xy = 0, xx_yy = 0;
     #pragma omp parallel for reduction(+:errors,xy,xx_yy) reduction(max:max_diff,max_ratio)
     for (size_t i = 0; i < cnt; ++i) {
+        if (nonfinite(ref[i]) || nonfinite(got[i])) { ++errors; continue; }
         const double r = ref[i], g = got[i];
         const double d = std::fabs(r - g);
         const double tol = abs_floor + rel_mag * (mag ? mag[i] : std::fabs(r)) + out_rel * std::fabs(r);
@@ -126,7 +130,7 @@ cmp_stats compare(const float* ref, const float* got, const float* mag, size_t c
         int shown = 0;
         for (size_t i = 0; i < cnt && shown < 8; ++i) {
             const double tol = abs_floor + rel_mag * (mag ? mag[i] : std::fabs(ref[i])) + out_rel * std::fabs(ref[i]);
-            if (!(std::fabs(ref[i] - got[i]) <= tol)) {
+            if (nonfinite(ref[i]) || nonfinite(got[i]) || !(std::fabs(ref[i] - got[i]) <= tol)) {
                 std::printf("  mismatch at %zu: ref=%.6f got=%.6f tol=%.6f\n", i, ref[i], got[i], tol);
                 ++shown;
             }
