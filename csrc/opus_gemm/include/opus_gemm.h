@@ -28,19 +28,10 @@ void opus_gemm_a16w16_tune(aiter_tensor_t& XQ,
                            int kernelId,
                            int splitK);
 
-// a4w4_mxfp4_nt (gfx950): dispatch by layout, as aiter gemm_a4w4(bpreshuffle): true -> shuffle_weight B + e8m0_shuffle
-// scales, false -> row-major B / scales.
-void opus_gemm_a4w4(aiter_tensor_t& XQ,
-                    aiter_tensor_t& WQ,
-                    aiter_tensor_t& Y,
-                    std::optional<aiter_tensor_t> x_scale,
-                    std::optional<aiter_tensor_t> w_scale,
-                    bool bpreshuffle);
-
 // a4w4_mxfp4_nt (gfx950): kid the dispatch would pick for this shape (tuned table, else heuristic); read-only.
-int opus_gemm_a4w4_select_kid(int M, int N, int K, int batch, bool noshuffle);
+int opus_gemm_a4w4_select_kid(int M, int N, int K, int batch);
 
-// a4w4_mxfp4_nt (gfx950): run kid kernelId (300xx: bpreshuffle layout, 301xx: row-major layout).
+// a4w4_mxfp4_nt (gfx950): run kid kernelId (shuffle_weight B + e8m0_shuffle scales, as aiter gemm_a4w4(bpreshuffle=True)).
 void opus_gemm_a4w4_tune(aiter_tensor_t& XQ,
                          aiter_tensor_t& WQ,
                          aiter_tensor_t& Y,

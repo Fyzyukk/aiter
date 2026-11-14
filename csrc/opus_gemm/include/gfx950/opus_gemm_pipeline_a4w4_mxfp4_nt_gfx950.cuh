@@ -579,8 +579,7 @@ __device__ __forceinline__ void gemm_a4w4_mxfp4_nt_body(opus_gemm_mxfp4_scale_ka
     };
 
     // Quadrant (hm, hn) of C: E_M x E_N fragments x 2 MFMAs (kk = 0, 1) of A half hm and B half hn; zc: the kk = 0 MFMA
-    // starts from C = 0.  A lambda here (the no-shuffle pipeline needs a function instead): either form changes the
-    // generated code of the other pipeline, so each keeps the one that reproduces its .co.
+    // starts from C = 0.  Kept a lambda: a free function template changes the generated code.
     constexpr int frags = T::E_M * T::E_N;
     auto mma_quadrant = [&](auto hm_, auto hn_, auto zc_) __attribute__((always_inline)) {
         constexpr int hm = decltype(hm_)::value, hn = decltype(hn_)::value;
