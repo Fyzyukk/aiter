@@ -1655,9 +1655,13 @@ void
 
 def gen_a4w4_mxfp4_nt_small_instance(cg, k, instance_impl_preamble, A8W8_SCALE_HOST_EXTRA, **_unused):
     """gfx950 small-tile a4w4 launcher + device code (standard hipcc, JIT; no .co); config from
-    opus_gemm_common.A4W4_MXFP4_NT_SMALL_CFG.  The pipeline header needs the full HIP runtime, so the device TU's __HIPCC_RTC__
-    is undefined around it (OPUS_SMALL_DEVICE_TU keeps the launcher out of that TU).  One device instantiation per traits
-    (the S = 1 kid); S > 1 kids launch the same kernel.  Inputs are checked by opus_gemm.cu before the launcher."""
+    opus_gemm_common.A4W4_MXFP4_NT_SMALL_CFG.  One device instantiation per traits (the S = 1 kid); S > 1 kids launch the
+    same kernel.  Inputs are checked by opus_gemm.cu before the launcher.
+    layout 0 (shuffle, opus pipeline): split-K S > 1 = fp32 partials in the per-stream opus_splitk_ws_handle workspace
+      ([S][batch][padded_M][padded_N]) + splitk_reduce_kernel (splitk_reduce_gfx950.cuh), as the a16w16 flatmm splitk launcher.
+    layout 1 (row-major): the pipeline header needs the full HIP runtime, so the device TU's __HIPCC_RTC__ is undefined
+      around it (OPUS_SMALL_DEVICE_TU keeps the launcher out of that TU); in-kernel split-K (last-arriving block reduces)
+      with the opus_small_launch_mxfp4_gfx950.cuh workspace."""
     from opus_gemm_common import A4W4_MXFP4_NT_SMALL_CFG
 
     bm, bn, d, ks, bmode, layout, S = A4W4_MXFP4_NT_SMALL_CFG[k.name]
@@ -1670,8 +1674,49 @@ def gen_a4w4_mxfp4_nt_small_instance(cg, k, instance_impl_preamble, A8W8_SCALE_H
     traits = f"opus_gemm_a4w4_mxfp4_nt_small{sfx}_traits_gfx950<{targs}>"
     # shuffle: bytes per 32-row block (32 x round_up(K/32, 8) columns); row-major: bytes per row (K/32)
     sf_mul = 32 if layout == 0 else 1
-    INSTANCE_IMPL = f"""{instance_impl_preamble()}
-#ifdef OPUS_FUSED_HOST_TU
+    if layout == 0:
+        includes = f"""#ifdef OPUS_FUSED_HOST_TU
+#include "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh"
+template<class Traits>
+__global__ __launch_bounds__(256, 1) void {kernel}({kargs_t} ka);
+#else
+#include "gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh"
+#endif
+#if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
+"""
+        split_fields = "kargs.split_k = S;"
+        launch = f"""const int tm = (M + {bm} - 1) / {bm}, tn = (N + {bn} - 1) / {bn};
+    auto stream = aiter::getCurrentHIPStream();
+    if constexpr (S == 1) {{
+        {kernel}<{traits}><<<dim3(tn, tm, batch), dim3(256), 0, stream>>>(kargs);
+    }} else {{
+        // Per-stream workspace slot (opus_gemm.cu registry), as the a16w16 flatmm splitk launcher: the kernels read
+        // ws_handle->ptr, so a captured graph survives a later grow; growing inside a capture is not allowed.
+        extern opus_splitk_ws_handle* opus_splitk_ws_get(hipStream_t, bool);
+        hipStreamCaptureStatus capture_status = hipStreamCaptureStatusNone;
+        HIP_CALL(hipStreamIsCapturing(stream, &capture_status));
+        const bool capturing = (capture_status != hipStreamCaptureStatusNone);
+        auto* ws_handle = opus_splitk_ws_get(stream, /*allow_create=*/!capturing);
+        const int padded_m = tm * {bm}, padded_n = tn * {bn};
+        const size_t ws_bytes = (size_t)S * batch * padded_m * padded_n * sizeof(float);
+        if (ws_handle->ptr == nullptr || ws_bytes > ws_handle->bytes) {{
+            AITER_CHECK(!capturing, "a4w4_mxfp4_nt split-K workspace grow inside HIP graph capture is not supported; "
+                        "call aiter.opus_gemm_workspace_init() and warm with the largest gemm on the capture stream first");
+            const size_t align = (size_t)4 * 1024 * 1024;
+            const size_t grow_bytes = (ws_bytes + align - 1) / align * align;
+            void* p = nullptr;
+            HIP_CALL(hipMalloc(&p, grow_bytes));
+            if (ws_handle->ptr != nullptr) {{ HIP_CALL(hipDeviceSynchronize()); HIP_CALL(hipFree(ws_handle->ptr)); }}
+            ws_handle->ptr = p;
+            ws_handle->bytes = grow_bytes;
+        }}
+        kargs.ws_handle = ws_handle;
+        {kernel}<{traits}><<<dim3(tn, tm, batch * S), dim3(256), 0, stream>>>(kargs);
+        splitk_reduce_kernel<16, 64, __bf16, false, __bf16, false><<<dim3((N + 1023) / 1024, batch * M), dim3(64), 0, stream>>>(
+            ws_handle, reinterpret_cast<__bf16*>(Y.data_ptr()), S, M, N, batch, padded_m, padded_n, nullptr, 0);
+    }}"""
+    else:
+        includes = f"""#ifdef OPUS_FUSED_HOST_TU
 #include "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_small{sfx}_gfx950.cuh"
 template<class Traits>
 __global__ __launch_bounds__(256, 1) void {kernel}({kargs_t} ka);
@@ -1684,7 +1729,14 @@ __global__ __launch_bounds__(256, 1) void {kernel}({kargs_t} ka);
 #endif
 #if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__) && !defined(OPUS_SMALL_DEVICE_TU)
 #include "gfx950/opus_small_launch_mxfp4_gfx950.cuh"
-template <typename D_C>
+"""
+        split_fields = "kargs.splitk = S;"
+        launch = f"""const int tm = (M + {bm} - 1) / {bm}, tn = (N + {bn} - 1) / {bn};
+    auto stream = aiter::getCurrentHIPStream();
+    if (S > 1) opus_gfx950_small::workspace(stream, (long)batch * tm * tn, (long)batch * S * tm * {bm} * tn * {bn}, kargs.cnt, kargs.ws);
+    {kernel}<{traits}><<<dim3(tn, tm, batch * S), dim3(256), 0, stream>>>(kargs);"""
+    INSTANCE_IMPL = f"""{instance_impl_preamble()}
+{includes}template <typename D_C>
 void
 {k.name}(
     aiter_tensor_t &XQ,
@@ -1710,11 +1762,8 @@ void
     kargs.stride_a_batch = (long long)M * (K / 2); kargs.stride_b_batch = (long long)N * (K / 2);
     kargs.stride_c_batch = (long long)M * N;
     kargs.stride_sfa_batch = rows_a * cols_a; kargs.stride_sfb_batch = rows_b * cols_b;
-    kargs.splitk = S;
-    const int tm = (M + {bm} - 1) / {bm}, tn = (N + {bn} - 1) / {bn};
-    auto stream = aiter::getCurrentHIPStream();
-    if (S > 1) opus_gfx950_small::workspace(stream, (long)batch * tm * tn, (long)batch * S * tm * {bm} * tn * {bn}, kargs.cnt, kargs.ws);
-    {kernel}<{traits}><<<dim3(tn, tm, batch * S), dim3(256), 0, stream>>>(kargs);
+    {split_fields}
+    {launch}
 }}}}
 #endif // launcher only on regular host pass
 """

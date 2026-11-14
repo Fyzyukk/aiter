@@ -1,18 +1,20 @@
 # MXFP4 × MXFP4 NT small-tile pipelines (gfx950) — dev / test directory
 
 Small-M (M ≤ ~64) and medium-M (M ≈ 128 – 1024) tiles; the 2×2 big-tile pipeline (`../mxfp4_nt_dev`) covers M ≳ 1024.
-Two pipelines, one per input layout; **standard ROCm toolchain** (`/opt/rocm/llvm/bin/clang++`): no pin attributes,
-no opus → built by the aiter JIT, no `.co`.
+Two pipelines, one per input layout; **standard ROCm toolchain** (`/opt/rocm/llvm/bin/clang++`): no pin attributes →
+built by the aiter JIT, no `.co`.  The shuffle pipeline is written with opus (`../../include/opus`), the row-major one with
+plain HIP builtins.
 
 Files (`../include/gfx950/`):
 
 | file | contents |
 |---|---|
-| `opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh` | shuffle kargs `opus_gemm_mxfp4_small_kargs_gfx950`, traits `opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS>` (1×4 waves) |
+| `opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh` | shuffle kargs `opus_gemm_mxfp4_small_kargs_gfx950`, traits `opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS>` (1×4 waves; T_M/T_N/T_K, E_M/E_N/E_K, LDS / VMEM-per-step sizes) |
 | `opus_gemm_traits_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh` | row-major kargs `opus_gemm_mxfp4_small_noshuffle_kargs_gfx950`, BMODE ids, traits `opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>` (B_DIRECT / B_LDS) |
-| `opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh` | shuffle pipeline `body_1x4`, kernel `gemm_a4w4_mxfp4_nt_small_kernel<Traits>` |
+| `opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh` | shuffle pipeline (opus: `make_layout_ga/sa/ra`, `gb`, `gsfa/gsfb`, `gc`), body `gemm_a4w4_mxfp4_nt_small_body`, kernel `gemm_a4w4_mxfp4_nt_small_kernel<Traits>` |
 | `opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh` | row-major pipeline `body_direct_rm` / `body_lds_rm`, kernel `gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<Traits>` |
-| `opus_small_launch_mxfp4_gfx950.cuh` | host-only: per-stream split-K workspace for the JIT launchers |
+| `opus_small_launch_mxfp4_gfx950.cuh` | host-only: per-stream split-K workspace for the row-major JIT launchers |
+| `splitk_reduce_gfx950.cuh` (shared) | `splitk_reduce_kernel`: the shuffle pipeline's split-K reduce (as a16w16 flatmm splitk) |
 
 Inputs:
 - shuffle (`-l 0`): as aiter `gemm_a4w4(bpreshuffle=True)`: A `[M, K/2]` row-major fp4x2, B `shuffle_weight(16,16)`,
@@ -29,7 +31,8 @@ All tiles use a K tile (BK) of 256.  `-d` D = ring depth (prefetch); `-s` KS = i
 | shuffle (`-l 0`), 1×4 waves: the 4 waves split BN and share A; A global → LDS-DMA D-deep ring, each wave's B + scales → a D-deep register ring, asm-style (A read one step ahead, copies interleaved with MFMAs) | 16×32, 16×64, 16×128, 32×32, 32×64, 32×128, 64×128, 32×256 | `-s` KS 1/2/4 (waves split K, summed via LDS once), `-d` 3–10 ((D−1)·G ≤ 63) | M ≤ 64 (16×32 KS2/KS4, 16×64), M ≈ 128 – 512 (beat the former shuffle B_LDS by 12–30% and B_DIRECT by up to 18% at M ≤ 32, see prof/alds_vs_direct_smi3) |
 | row-major (`-l 1`) `-a 0` `B_DIRECT`: A, B, scales global → registers, D-deep register ring, no LDS / barrier in the K loop | 16×32, 16×64, 32×32, 32×64 | `-s` KS 2/4 (waves split K, summed via LDS once), `-d` 2–4 | M ≤ 64 (128 when K is not small) |
 | row-major (`-l 1`) `-a 1` `B_LDS`: A and B global → LDS by LDS-DMA, D-deep LDS ring (one `__shared__` object per stage), one barrier per K tile; scales → LDS by a block-wide 4-byte LDS-DMA | 16×64, 32×64, 16×128, 32×128, 64×128, 64×64 (D ≤ 3) (1×4 waves), 128×128 (2×2 waves), 32×256 (D ≤ 3), 64×256 (D 2) | `-d` 2–4 | M ≈ 128 – 1024 |
-| both | | `-p S` cross-block split-K (last-arriving block reduces, ≤ 8) | few tiles |
+| shuffle | | `-p S` cross-block split-K (≤ 8): fp32 partials → workspace, then `splitk_reduce_kernel` (as the aiter launcher) | few tiles |
+| row-major | | `-p S` cross-block split-K (≤ 8, last-arriving block reduces) | few tiles |
 
 ```bash
 make                                    # -> /tmp/opus_mxfp4_small/small.exe   (OUT=..., CLANG=...)
@@ -53,7 +56,7 @@ and aiter asm (CUDA graph), and writes `results.csv`, `table.txt` and `select.cs
 
 **Template**: shuffle `gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS>>`;
 row-major `gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>>`.
-`__launch_bounds__(256, 1)`, block = 256, standard hipcc (no pin, no opus → plain aiter JIT, no `.co`).
+`__launch_bounds__(256, 1)`, block = 256, standard hipcc (no pin → plain aiter JIT, no `.co`).
 - `BMODE` (row-major only): `OPUS_MXFP4_SMALL_B_DIRECT` (0), `OPUS_MXFP4_SMALL_B_LDS` (1).  `KS` 1/2/4 for shuffle and
   B_DIRECT, 1 for B_LDS.  `D` = ring depth.
 - Kid names (opus_gemm_common.py): shuffle `opus_gemm_gfx950_a4w4_mxfp4_nt_d<D>ks<KS>_256x<BM>x<BN>x256_1x4_16x16x128_1x1x32`
@@ -63,13 +66,23 @@ row-major `gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_sma
 - Constraints: K % 256 == 0; N % 16 (shuffled) / N % 8 (row-major); any M; batch ≥ 1.  Row-major B_LDS: BM ∈ {16, 32, 64, 128},
   BN ∈ {64, 128, 256} (BM 128 only with BN 128).
 
-**kargs** (shuffle `opus_gemm_mxfp4_small_kargs_gfx950` / row-major `opus_gemm_mxfp4_small_noshuffle_kargs_gfx950`, same fields, see the traits headers): byte strides for A (`stride_a` = K/2), elements for C (`stride_c` = N);
+**kargs** (shuffle `opus_gemm_mxfp4_small_kargs_gfx950` / row-major `opus_gemm_mxfp4_small_noshuffle_kargs_gfx950`, see the traits headers; they differ only in the split-K fields): byte strides for A (`stride_a` = K/2), elements for C (`stride_c` = N);
 `stride_sfa / stride_sfb` = bytes per 32-row block (shuffled: 32 × round_up(K/32, 8)) or bytes per row (row-major: K/32);
 batch strides in bytes (C in elements).  Shuffled scale batch stride = padded rows × round_up(K/32, 8) (aiter pads rows to 256).
 
-**grid** = (⌈N/BN⌉, ⌈M/BM⌉, batch × S), S = `splitk` (1–8, K/256 ≥ S); non-persistent.
+**grid** = (⌈N/BN⌉, ⌈M/BM⌉, batch × S), S = `split_k` (shuffle) / `splitk` (row-major) (1–8, K/256 ≥ S); non-persistent.
 
-**split-K (S > 1)** needs
+**shuffle split-K (S > 1)**: `ws_handle` → `opus_splitk_ws_handle` whose `ptr` is an fp32 workspace [S][batch][Mp][Np]
+(Mp, Np = M, N rounded up to BM, BN; read by the kernel at entry, so captured graphs survive a workspace grow); every block
+writes its partial tile, then `splitk_reduce_kernel<16, 64, __bf16, false, __bf16, false>` with grid (⌈N/1024⌉, batch × M),
+64 threads, sums the S partials into C.  The aiter launcher takes the slot from `opus_splitk_ws_get` (per stream, as the
+a16w16 flatmm splitk launcher).  With S = 1 `ws_handle` is not read.  No shuffle split-K kids are built: on the M ≤ 64
+kid configs (16×32 KS2/KS4, 16×64; M 1–64, (N, K) ∈ {(8192, 1024) … (4096, 8192)}, HIP 6) S = 2 / 4 was 1.3–4× slower than
+S = 1 (second kernel + workspace round trip + two reads of the host-coherent slot, ≈ 2 µs of it), and on 32×128 / 64×128 at
+M 64–256 at most 5% faster in two shapes; the support stays (opus_gemm_common.py: `_a4w4_mxfp4_nt_small(..., s)` with s > 1
+→ tag `a4w4_mxfp4_nt_d<D>ks<KS>_sk<S>`).
+
+**row-major split-K (S > 1)** needs
 - `ws`: fp32 workspace of batch × S × Mp × Np floats (Mp, Np = M, N rounded up to BM, BN);
 - `cnt`: int counters, batch × ⌈M/BM⌉ × ⌈N/BN⌉, **zeroed once at allocation**; the reducing (last-arriving) block resets its counter to 0,
   so the buffer is reusable across launches on the same stream without re-zeroing (not safe for concurrent launches sharing it).

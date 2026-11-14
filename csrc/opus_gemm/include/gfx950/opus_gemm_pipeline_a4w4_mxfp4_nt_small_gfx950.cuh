@@ -2,242 +2,360 @@
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
 // Small-tile MXFP4 x MXFP4 NT GEMM (gfx950), shuffle layout (aiter gemm_a4w4(bpreshuffle=True)): A [M, K/2] fp4x2
-// row-major, B shuffle_weight(16, 16), scales e8m0_shuffle (1x32 UE8M0), C [M, N] bf16.  M <= ~512.  Standard ROCm
-// toolchain (no pin attributes, no opus).  Row-major inputs: opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh.
+// row-major, B shuffle_weight(16, 16), scales e8m0_shuffle (1x32 UE8M0), C [M, N] bf16.  M <= ~512.  opus, standard
+// ROCm toolchain (no pin attributes).  Traits / kargs: opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh.
 //
-// 1x4 waves (body_1x4): the 4 waves split the tile along N and share A: A global -> LDS by LDS-DMA (D-deep ring), each
-//   wave's B + scales global -> a D-deep register ring (asm 32x128 style); KS = 2 / 4 splits the 4 waves along K instead
-//   (partials summed through LDS at the end).
-// MFMA v_mfma_scale_f32_16x16x128_f8f6f4 with B as srcA (each lane holds 4 consecutive columns of one C row);
-//   scales read as raw e8m0_shuffle dwords ([kk0 half0, kk0 half1, kk1 half0, kk1 half1] of a 32-row block) with a
-//   compile-time opsel; split-K over blocks (last-arriving block reduces); M / N tails by buffer ranges + 16-column C mask.
+// 1x4 waves (T_M = 1, T_N = 4): the 4 waves split the tile along N and share A.
+//   A: global -> LDS by LDS-DMA into a STAGES-deep ring (one __shared__ object per stage), ds_read one step ahead;
+//   B (each wave's E_N 16-column blocks) and the raw e8m0_shuffle scale dwords: global -> a STAGES-deep register ring.
+//   KS = 2 / 4 splits the 4 waves KS ways along K instead (T_N = 4 / KS); the partial tiles are summed through LDS once.
+// MFMA v_mfma_scale_f32_16x16x128_f8f6f4 with B as srcA (each lane holds 4 consecutive columns of one C row); the scale
+//   byte is picked by a compile-time opsel from the raw dword ([kk0 r, kk0 r+16, kk1 r, kk1 r+16] of a 32-row block).
+// Main loop (asm style): step t waits until step t+1 landed (counted vmcnt), barrier, ds_reads A(t+1), and runs the MFMAs
+//   of t interleaved with the copies of step t+STAGES into t's slot (sched_group_barrier).  K tiles past the end load
+//   through zero-range buffers (no branch in the loop).
+// Tails: M / N by buffer ranges (A rows, B columns, scales) + a 16-column C mask; no host padding.
+// Split-K (split_k = S > 1): each block writes its fp32 partial tile to the workspace, splitk_reduce_kernel
+//   (splitk_reduce_gfx950.cuh) sums the S partials into C.
 #pragma once
 #include "opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh"
 
-#ifndef OPUS_MXFP4_SMALL_WAUX   // cache policy of the split-K partial-sum stores / loads (sc1)
-#define OPUS_MXFP4_SMALL_WAUX 0x10
-#endif
-
 namespace opus_mxfp4_small {
-using kargs_t = opus_gemm_mxfp4_small_kargs_gfx950;
-typedef int   i32x4 __attribute__((ext_vector_type(4)));
-typedef int   i32x8 __attribute__((ext_vector_type(8)));
-typedef float f32x4 __attribute__((ext_vector_type(4)));
-typedef unsigned u32x2 __attribute__((ext_vector_type(2)));
-typedef unsigned u32x4 __attribute__((ext_vector_type(4)));
-template<int I> using ic = std::integral_constant<int, I>;
-template<int N, class F, int I = 0> __device__ __forceinline__ void static_for(F&& f) {
-    if constexpr (I < N) { f(ic<I>{}); static_for<N, F, I + 1>(static_cast<F&&>(f)); }
-}
-__device__ __forceinline__ __amdgpu_buffer_rsrc_t rsrc(const void* base, unsigned bytes) {
-    return __builtin_amdgcn_make_buffer_rsrc(const_cast<void*>(base), (short)0, (int)bytes, 0x00020000);
-}
-__device__ __forceinline__ unsigned clampb(long long v) { return v <= 0 ? 0u : (v > 0x7fffffffLL ? 0x7fffffffu : (unsigned)v); }
-__device__ __forceinline__ unsigned bf16_rne(float f) {
-    const unsigned u = __builtin_bit_cast(unsigned, f);
-    return (u + 0x7fffu + ((u >> 16) & 1u)) >> 16;
+using opus::operator""_I;
+using fp4x32_t = opus::vector_t<opus::i32_t, 4>;   // one fp4 MFMA operand: 32 fp4 = 16 bytes per lane
+using i32x8_t = opus::vector_t<opus::i32_t, 8>;
+
+// ===========================================================================
+// A: global -> LDS (LDS-DMA) -> VGPR
+// ===========================================================================
+// One LDS-DMA issue copies an 8-row x 128 B chunk; lane = 8 * row + slot and the DMA writes lane l at l * 16 B, so slot s
+// of row r fetches the 16 B piece s ^ ((r >> 1) & 3) (the swizzle that makes the ds_read_b128 below conflict free).
+template<class T>
+__device__ inline auto make_layout_ga(int lane_id, int stride_a) {
+    constexpr int threads_k = T::B_K_BYTES / T::VEC_A;                 // 8
+    constexpr auto shape = opus::make_tuple(
+        opus::number<T::smem_sub_a>{},                                 // p row of the chunk
+        opus::number<threads_k>{},                                     // p 16 B piece (swizzled)
+        opus::number<T::VEC_A>{});                                     // y bytes
+    constexpr auto dim = opus::make_tuple(
+        opus::make_tuple(opus::p_dim{}),
+        opus::make_tuple(opus::p_dim{}, opus::y_dim{}));
+    const int r = lane_id / threads_k;
+    return opus::make_layout<T::VEC_A>(
+        shape,
+        opus::unfold_x_stride(dim, shape, opus::tuple{stride_a, 1_I}),
+        opus::unfold_p_coord(dim, opus::tuple{r, (lane_id % threads_k) ^ ((r >> 1) & 3)}));
 }
 
-// Split-K (S > 1): park the partial tile, the last of the S blocks to arrive adds the other S-1 partials.  Partials go
-// through sc1 (write through to memory, read past the caches), so only "stores acknowledged before the counter atomic"
-// is needed -- no L2 flush.  Returns false for the blocks that must not write C.
-template<int EM, int EN, int BM, int BN>
-__device__ __forceinline__ bool splitk_reduce(f32x4 (&acc)[EM][EN], const kargs_t& ka, bool owner, int lane,
-                                              int row0, int wrow, int ncol0, int bz, int sk, int S) {
-    const int Mp = (ka.m + BM - 1) / BM * BM, Np = (ka.n + BN - 1) / BN * BN;
-    float* wsb = ka.ws + (long long)bz * S * Mp * Np;
-    const auto rw = rsrc(wsb, clampb((long long)S * Mp * Np * 4)), r0w = rsrc(wsb, 0u);
-    if (owner)
-        static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-            const int o = ((sk * Mp + row0 + wrow + 16 * e() + lane % 16) * Np + ncol0 + 16 * n() + 4 * (lane / 16)) * 4;
-            __builtin_amdgcn_raw_buffer_store_b128(__builtin_bit_cast(u32x4, acc[e()][n()]), rw, o, 0, OPUS_MXFP4_SMALL_WAUX);
-        }); });
-    asm volatile("s_waitcnt vmcnt(0)" ::: "memory");
-    __syncthreads();
-    __shared__ int s_last;
-    int* ctr = ka.cnt + ((long long)bz * gridDim.y + blockIdx.y) * gridDim.x + blockIdx.x;
-    if (threadIdx.x == 0) s_last = (__hip_atomic_fetch_add(ctr, 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT) == S - 1);
-    __syncthreads();
-    if (!s_last) return false;
-    if (owner)
-        static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-            const int o0 = ((row0 + wrow + 16 * e() + lane % 16) * Np + ncol0 + 16 * n() + 4 * (lane / 16)) * 4;
-            f32x4 part[7];
-            static_for<7>([&](auto t) {          // up to 8 splits; splits >= S read 0 through a zero-range descriptor
-                const int j = t() < sk ? t() : t() + 1;
-                part[t()] = __builtin_bit_cast(f32x4, __builtin_amdgcn_raw_buffer_load_b128(t() < S - 1 ? rw : r0w,
-                                               o0 + j * Mp * Np * 4, 0, OPUS_MXFP4_SMALL_WAUX));
-            });
-            static_for<7>([&](auto t) { acc[e()][n()] += part[t()]; });
-        }); });
-    if (threadIdx.x == 0) __hip_atomic_store(ctr, 0, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);   // ready for the next launch
-    return true;
+// Chunk (t, r) of a ring step = K tile t (KS > 1) and rows [8 r, 8 r + 8): LDS byte offset in the stage (sa) and the
+// wave-uniform global offset (gas, passed as the buffer soffset: row stride and K tile).
+template<class T>
+__device__ inline constexpr auto make_layout_sa() {
+    return opus::make_layout<-1>(opus::make_tuple(opus::number<T::KS>{}, opus::number<T::A_CHUNKS>{}),
+                                 opus::make_tuple(opus::number<T::A_TILE_BYTES>{}, opus::number<T::A_CHUNK_BYTES>{}));
+}
+template<class T>
+__device__ inline auto make_layout_gas(int stride_a) {
+    return opus::make_layout<-1>(opus::make_tuple(opus::number<T::KS>{}, opus::number<T::A_CHUNKS>{}),
+                                 opus::make_tuple(opus::number<T::B_K_BYTES>{}, T::smem_sub_a * stride_a));
 }
 
-// C: lane holds row wrow + 16e + lane%16 (relative to row0), columns ncol0 + 16n + 4*(lane/16) .. +3.
-template<int EM, int EN>
-__device__ __forceinline__ void store_c(const f32x4 (&acc)[EM][EN], const kargs_t& ka, int lane, int row0, int wrow, int ncol0, int bz) {
-    uint16_t* pc = (uint16_t*)ka.ptr_c + bz * ka.stride_c_batch + (long long)row0 * ka.stride_c;
-    const auto rc = rsrc(pc, clampb((long long)(ka.m - row0) * ka.stride_c * 2));
-    static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-        const int col = ncol0 + 16 * n() + 4 * (lane / 16);
-        if (col < ka.n) {
-            const f32x4 v = acc[e()][n()];
-            const u32x2 w = u32x2{bf16_rne(v[0]) | (bf16_rne(v[1]) << 16), bf16_rne(v[2]) | (bf16_rne(v[3]) << 16)};
-            __builtin_amdgcn_raw_buffer_store_b64(__builtin_bit_cast(u32x2, w), rc,
-                                                  ((wrow + 16 * e() + lane % 16) * ka.stride_c + col) * 2, 0, 0);
-        }
-    }); });
+// MFMA operand reads: lane holds row 16 e + lane % 16, K bytes [64 kk + 16 (lane / 16), +16) of the K tile of its wave
+// group (wave_id_k); offsets[e * E_K + kk].
+template<class T>
+__device__ inline auto make_layout_ra(int lane_id, int wave_id_k) {
+    const int lane_m = lane_id % T::W_M;
+    constexpr auto ra_block_shape = opus::make_tuple(
+        opus::number<T::T_K>{},                                        // p wave_k: K tile of the ring step
+        opus::number<T::E_M>{},                                        // y M repeat (16 rows = 2 chunks)
+        opus::number<T::W_M / T::smem_sub_a>{},                        // p chunk within the 16 rows
+        opus::number<T::smem_sub_a>{},                                 // p row within the chunk
+        opus::number<T::E_K>{},                                        // y kk
+        opus::number<T::WARP_SIZE / T::W_M>{},                         // p 16 B piece g = lane / 16 (swizzled)
+        opus::number<T::VEC_A>{});                                     // y bytes
+    constexpr auto ra_block_dim = opus::make_tuple(
+        opus::make_tuple(opus::p_dim{}, opus::y_dim{}, opus::p_dim{}),
+        opus::make_tuple(opus::p_dim{}, opus::y_dim{}, opus::p_dim{}, opus::y_dim{}));
+    const int r = lane_m % T::smem_sub_a;
+    return opus::make_layout<T::VEC_A>(
+        ra_block_shape,
+        opus::unfold_x_stride(ra_block_dim, ra_block_shape, opus::tuple{opus::number<T::A_CHUNK_BYTES>{}, 1_I}),
+        opus::unfold_p_coord(ra_block_dim, opus::tuple{wave_id_k, lane_m / T::smem_sub_a, r, (lane_id / T::W_M) ^ ((r >> 1) & 3)}));
 }
 
-// One __shared__ object per ring stage: the compiler's waitcnt pass then knows an LDS-DMA into stage j cannot alias a
-// ds_read of stage i, instead of waiting for every in-flight copy before each read (one array = everything aliases).
+// ===========================================================================
+// B: global -> VGPR (shuffle_weight(16, 16): 1 KB = 16 columns x 128 K per 64 lanes x 16 B)
+// ===========================================================================
+// offsets[e * E_K + kk] = the wave's 16-column block e, K half kk (the K tile goes into the buffer soffset).
+template<class T>
+__device__ inline auto make_layout_gb(int lane_id, int stride_b) {
+    constexpr auto shape = opus::make_tuple(
+        opus::number<T::E_N>{},                                        // y N repeat (16-column block)
+        opus::number<T::E_K>{},                                        // y kk (1 KB)
+        opus::number<T::WARP_SIZE>{},                                  // p lane
+        opus::number<T::VEC_B>{});                                     // y bytes
+    constexpr auto dim = opus::make_tuple(
+        opus::make_tuple(opus::y_dim{}),
+        opus::make_tuple(opus::y_dim{}, opus::p_dim{}, opus::y_dim{}));
+    return opus::make_layout<T::VEC_B>(
+        shape,
+        opus::unfold_x_stride(dim, shape, opus::tuple{T::W_N * stride_b, 1_I}),
+        opus::unfold_p_coord(dim, opus::tuple{lane_id}));
+}
+
+// ===========================================================================
+// Scales: raw e8m0_shuffle dwords, global -> VGPR
+// ===========================================================================
+// Per K tile each 32-row block holds 256 B; lane l reads dword l = [kk0 r, kk0 r+16, kk1 r, kk1 r+16], r = l % 16.
+// offsets[j] = 32-row block j (the K tile goes into the buffer soffset).
+template<class T, int LOADS>
+__device__ inline auto make_layout_gsf(int lane_id, int stride_sf) {
+    constexpr auto shape = opus::make_tuple(
+        opus::number<LOADS>{},                                         // y 32-row block
+        opus::number<T::WARP_SIZE>{},                                  // p lane
+        opus::number<T::VEC_SF>{});                                    // y bytes
+    constexpr auto dim = opus::make_tuple(
+        opus::make_tuple(opus::y_dim{}),
+        opus::make_tuple(opus::p_dim{}, opus::y_dim{}));
+    return opus::make_layout<T::VEC_SF>(
+        shape,
+        opus::unfold_x_stride(dim, shape, opus::tuple{stride_sf, 1_I}),
+        opus::unfold_p_coord(dim, opus::tuple{lane_id}));
+}
+template<class T> __device__ inline auto make_layout_gsfa(int lane_id, int stride_sfa) { return make_layout_gsf<T, T::SFA_LOADS>(lane_id, stride_sfa); }
+template<class T> __device__ inline auto make_layout_gsfb(int lane_id, int stride_sfb) { return make_layout_gsf<T, T::SFB_LOADS>(lane_id, stride_sfb); }
+
+// Register side: the 16-row block e (16-column block n) of K half kk is dword e / 2 (n / 2), byte opsel 2 kk + e % 2
+// (n % 2).  A wave with a single 16-row (16-column) block uses the half of its 32-row block chosen by a runtime shift.
+template<class T> __device__ inline constexpr int rsfa_dword(int e) { return e / 2; }
+template<class T> __device__ inline constexpr int rsfa_opsel(int e, int kk) { return 2 * kk + (T::SFA_HALF ? 0 : e % 2); }
+template<class T> __device__ inline constexpr int rsfb_dword(int n) { return n / 2; }
+template<class T> __device__ inline constexpr int rsfb_opsel(int n, int kk) { return 2 * kk + (T::SFB_HALF ? 0 : n % 2); }
+
+// ===========================================================================
+// C: lane holds row 16 e + lane % 16, columns 16 n + 4 (lane / 16) .. +3 of its wave's columns; offsets[e * E_N + n]
+// (elements).  Also the layout of the fp32 split-K partial tile (stride = padded N).
+// ===========================================================================
+template<class T>
+__device__ inline auto make_layout_gc(int lane_id, int stride_c) {
+    constexpr auto shape = opus::make_tuple(
+        opus::number<T::E_M>{},                                        // y M repeat
+        opus::number<T::W_M>{},                                        // p row = lane % 16
+        opus::number<T::E_N>{},                                        // y N repeat
+        opus::number<T::WARP_SIZE / T::W_M>{},                         // p 4-column group = lane / 16
+        opus::number<T::VEC_C>{});                                     // y columns
+    constexpr auto dim = opus::make_tuple(
+        opus::make_tuple(opus::y_dim{}, opus::p_dim{}),
+        opus::make_tuple(opus::y_dim{}, opus::p_dim{}, opus::y_dim{}));
+    return opus::make_layout<T::VEC_C>(
+        shape,
+        opus::unfold_x_stride(dim, shape, opus::tuple{stride_c, 1_I}),
+        opus::unfold_p_coord(dim, opus::tuple{lane_id % T::W_M, lane_id / T::W_M}));
+}
+
+// One __shared__ object per ring stage (kept explicit instead of one opus smem arena): the compiler's waitcnt pass then
+// knows an LDS-DMA into stage j cannot alias a ds_read of stage i, instead of waiting for every in-flight copy before
+// each read (one array = everything aliases).  LDS accesses below use address_space(3) pointers derived from these
+// objects (not opus::smem, whose integer round trip loses the object), for the same reason.
 template<int I, int BYTES>
 __device__ __forceinline__ char* lds_stage() {
     __shared__ __attribute__((aligned(16))) char buf[BYTES];
     return buf;
 }
+__device__ __forceinline__ OPUS_LDS_ADDR char* lds_ptr(char* p) { return (OPUS_LDS_ADDR char*)p; }
 
-template<int BM, int BN, int D, int KS>
-__device__ __forceinline__ void body_1x4(const kargs_t& ka) {
-    static_assert(BM == 16 || BM == 32 || BM == 64 || BM == 128);
-    static_assert(KS == 1 || KS == 2 || KS == 4);
-    constexpr int WN = 4 / KS;
-    static_assert(BN == 32 || BN == 64 || BN == 128 || BN == 256);
-    constexpr int WCOLS = BN / WN, EM = BM / 16, EN = WCOLS / 16;
-    static_assert(EN % 2 == 0 || EN == 1, "a wave covers one 16-column block or whole 32-row scale blocks");
-    constexpr int SA = (BM + 31) / 32, SB = (EN + 1) / 2;
-    constexpr int BLK = 1088, A_BYTES = BM / 8 * BLK, STAGE = KS * A_BYTES;
-    static_assert(D * STAGE <= 160 * 1024, "LDS ring too deep for this tile");
-    constexpr int A_BLK = KS * BM / 8, A_DMA = (A_BLK + 3) / 4;
-    constexpr int G = A_DMA + SA + 2 * EN + SB;                       // VMEM instructions per wave per ring step
-    static_assert((D - 1) * G <= 63, "vmcnt range: ring too deep for this tile");
+// sched_group_barrier masks (LLVM AMDGPU)
+constexpr int SCHED_MFMA = 0x008;
+constexpr int SCHED_VMEM_READ = 0x820;   // 0x020 VMEM read | 0x800 LDS DMA (newer LLVM classifies buffer_load ... lds as LDS DMA)
+constexpr int SCHED_DS_READ = 0x100;
 
-    const int lane = __lane_id();
-    const int wave = __builtin_amdgcn_readfirstlane(threadIdx.x / 64);
-    const int S = ka.splitk;
-    const int col0 = blockIdx.x * BN, row0 = blockIdx.y * BM, bz = blockIdx.z / S, sk = blockIdx.z % S;
-    const int ktot = ka.k / 256, kper = (ktot + S - 1) / S, kbeg = sk * kper;
-    const int kend = (ktot < kbeg + kper ? ktot : kbeg + kper);
-    const int Kb = ka.k / 2;
-    const int wn = KS == 1 ? wave : wave % WN, kgrp = KS == 1 ? 0 : wave / WN;
-    const int ncol0 = col0 + wn * WCOLS;
+// One scaled fp4 MFMA with B as srcA: C fragment row = lane % 16, columns 4 (lane / 16) .. +3.
+template<int OPSEL_B, int OPSEL_A, class CF>
+__device__ __forceinline__ void mma_scale_one(CF& c, const fp4x32_t& b, const fp4x32_t& a, unsigned v_sfb, unsigned v_sfa) {
+    using mma = opus::mfma_f32_16x16x128_fp4_fp4;   // fp4 x fp4 -> fp32, 16x16x128 (only the low 4 dwords of srcA/B are read)
+    const i32x8_t b8 = __builtin_shufflevector(b, b, 0, 1, 2, 3, -1, -1, -1, -1);
+    const i32x8_t a8 = __builtin_shufflevector(a, a, 0, 1, 2, 3, -1, -1, -1, -1);
+    c = mma{}(b8, a8, c, static_cast<int>(v_sfb), static_cast<int>(v_sfa), opus::number<OPSEL_B>{}, opus::number<OPSEL_A>{});
+}
 
-    const uint8_t* pa  = (const uint8_t*)ka.ptr_a   + bz * ka.stride_a_batch   + (long long)row0 * ka.stride_a;
-    const uint8_t* pb  = (const uint8_t*)ka.ptr_b   + bz * ka.stride_b_batch   + (long long)ncol0 * Kb;
-    const uint8_t* psa = (const uint8_t*)ka.ptr_sfa + bz * ka.stride_sfa_batch + (long long)(row0 / 32) * ka.stride_sfa;
-    const uint8_t* psb = (const uint8_t*)ka.ptr_sfb + bz * ka.stride_sfb_batch + (long long)(ncol0 / 32) * ka.stride_sfb;
-    const auto ra_  = rsrc(pa,  clampb((long long)(ka.m - row0) * ka.stride_a));
-    const auto rb_  = rsrc(pb,  clampb((long long)(ka.n - ncol0) * Kb));
-    const auto rsa_ = rsrc(psa, clampb((long long)((ka.m + 31) / 32 - row0 / 32) * ka.stride_sfa));
-    const auto rsb_ = rsrc(psb, clampb((long long)((ka.n + 31) / 32 - ncol0 / 32) * ka.stride_sfb));
-    const auto r0 = rsrc(pa, 0u);
-    const unsigned sh_b = (EN == 1) ? 8u * ((ncol0 / 16) & 1) : 0u;   // one 16-col block: half of the 32-row scale block
-    const unsigned sh_a = (BM == 16) ? 8u * ((row0 / 16) & 1) : 0u;    // BM == 16: half of the 32-row scale block
-    const int dma_r = lane / 8, dma_c = (lane % 8) ^ ((dma_r >> 1) & 3);
-    const int dma_goff = dma_r * ka.stride_a + dma_c * 16;
-    auto rd_a = [&](int e, int kk) {
-        const int R = 16 * e + lane % 16, C = 4 * kk + lane / 16;
-        return (KS == 1 ? 0 : kgrp * A_BYTES) + (R / 8) * BLK + (R % 8) * 128 + ((C ^ (((R % 8) >> 1) & 3)) * 16);
-    };
+// ===========================================================================
+// Kernel body
+// ===========================================================================
+template<class Traits>
+__device__ __forceinline__ void gemm_a4w4_mxfp4_nt_small_body(const opus_gemm_mxfp4_small_kargs_gfx950& kargs) {
+    using namespace opus;
+    using T = opus::remove_cvref_t<Traits>;
+    using D_AB = opus::u8_t;     // fp4x2 bytes
+    using D_SF = opus::u8_t;     // e8m0 bytes, read as raw dwords
+    using D_ACC = opus::fp32_t;
+    using D_C = opus::bf16_t;
+    using CFrag = opus::vector_t<D_ACC, T::VEC_C>;
+    constexpr int D = T::STAGES, G = T::VMEM_PER_STEP;
 
-    i32x4 vb[D][EN][2];
-    unsigned vsa[D][SA], vsb[D][SB];
-    auto issue = [&](auto st_, int kt) {   // KS > 1: A of tiles kt .. kt+KS-1, B / scales of tile kt + kgrp
-        constexpr int st = decltype(st_)::value;
-        const int kw = kt + kgrp;
-        const bool in = kw < kend;
-        const auto ra = in ? ra_ : r0;  const auto rb = in ? rb_ : r0;
-        const auto rsa = in ? rsa_ : r0; const auto rsb = in ? rsb_ : r0;
-        char* base = lds_stage<st, STAGE>();
-        static_for<A_DMA>([&](auto i) {
-            const int b0 = wave * A_DMA + i();
-            const int b = (A_BLK % 4 == 0) ? b0 : __builtin_amdgcn_readfirstlane(b0 < A_BLK ? b0 : A_BLK - 1);
-            const int t = KS == 1 ? 0 : b / (BM / 8), r = KS == 1 ? b : b % (BM / 8);   // K tile kt+t, 8-row block r
-            const auto rat = KS == 1 ? ra : (kt + t < kend ? ra_ : r0);
-#if defined(__HIP_DEVICE_COMPILE__)   // host pass: the LDS-DMA builtin is device-only
-            __builtin_amdgcn_raw_ptr_buffer_load_lds(rat, (__attribute__((address_space(3))) void*)(base + b * BLK),
-                                                     16, dma_goff, r * 8 * ka.stride_a + (kt + t) * 128, 0, 0);
-#endif
+    const int lane_id = static_cast<int>(opus::lane_id());
+    const int wave_id = __builtin_amdgcn_readfirstlane(thread_id_x() / T::WARP_SIZE);
+    const int wave_id_n = wave_id % T::T_N, wave_id_k = wave_id / T::T_N;
+    const int split_k = kargs.split_k;
+    const int row0 = block_id_y() * T::B_M;
+    const int col0 = block_id_x() * T::B_N + wave_id_n * T::WAVE_N;   // this wave's first column
+    const int batch_id = block_id_z() / split_k, k_split = block_id_z() % split_k;
+    // S > 1: read the workspace slot now, so the (host-coherent) load is long done when the partial tile is written.
+    float* ws = nullptr;
+    if (split_k > 1) ws = static_cast<float*>(kargs.ws_handle->ptr);
+    const int k_tiles = kargs.k / T::B_K, k_per = (k_tiles + split_k - 1) / split_k;
+    const int k_begin = k_split * k_per;
+    const int k_end = k_tiles < k_begin + k_per ? k_tiles : k_begin + k_per;
+    const int stride_b = kargs.k / 2;   // bytes per B row (shuffle_weight keeps the row-major row stride)
+
+    // M / N tails: rows / columns past the matrix lie outside the buffer ranges (loads return 0).
+    auto clampb = [](long long v) { return v <= 0 ? 0u : (v > 0x7fffffffLL ? 0x7fffffffu : static_cast<unsigned>(v)); };
+    const D_AB* pa = reinterpret_cast<const D_AB*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + static_cast<long long>(row0) * kargs.stride_a;
+    const D_AB* pb = reinterpret_cast<const D_AB*>(kargs.ptr_b) + batch_id * kargs.stride_b_batch + static_cast<long long>(col0) * stride_b;
+    const D_SF* psfa = reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + batch_id * kargs.stride_sfa_batch + static_cast<long long>(row0 / 32) * kargs.stride_sfa;
+    const D_SF* psfb = reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + batch_id * kargs.stride_sfb_batch + static_cast<long long>(col0 / 32) * kargs.stride_sfb;
+    const unsigned a_bytes = clampb(static_cast<long long>(kargs.m - row0) * kargs.stride_a);
+    const unsigned b_bytes = clampb(static_cast<long long>(kargs.n - col0) * stride_b);
+    const unsigned sfa_bytes = clampb(static_cast<long long>((kargs.m + 31) / 32 - row0 / 32) * kargs.stride_sfa);
+    const unsigned sfb_bytes = clampb(static_cast<long long>((kargs.n + 31) / 32 - col0 / 32) * kargs.stride_sfb);
+    // One 16-row (16-column) block: its half of the 32-row scale block.
+    const unsigned sh_a = T::SFA_HALF ? 8u * ((row0 / 16) & 1) : 0u;
+    const unsigned sh_b = T::SFB_HALF ? 8u * ((col0 / 16) & 1) : 0u;
+
+    const auto u_ga = make_layout_ga<T>(lane_id, kargs.stride_a);
+    constexpr auto u_sa = make_layout_sa<T>();
+    const auto u_gas = make_layout_gas<T>(kargs.stride_a);
+    const auto u_ra = make_layout_ra<T>(lane_id, wave_id_k);
+    const auto u_gb = make_layout_gb<T>(lane_id, stride_b);
+    const auto u_gsfa = make_layout_gsfa<T>(lane_id, kargs.stride_sfa);
+    const auto u_gsfb = make_layout_gsfb<T>(lane_id, kargs.stride_sfb);
+
+    // Register ring: slot s holds the B operands and scale dwords of ring step s (mod STAGES).
+    fp4x32_t v_b[D][T::E_N][T::E_K];
+    unsigned v_sfa[D][T::SFA_LOADS], v_sfb[D][T::SFB_LOADS];
+
+    // Copies of ring step `slot` (K tiles kt .. kt + KS - 1; this wave's B / scales: K tile kt + wave_id_k).  K tiles past
+    // k_end read through zero-range buffers, so the copy count per step is fixed (counted vmcnt) and the loop has no branch.
+    auto issue = [&](auto slot_i, int kt) {
+        constexpr int slot = decltype(slot_i)::value;
+        const int kw = kt + wave_id_k;
+        const bool in = kw < k_end;
+        char* const stage = lds_stage<slot, T::STAGE_BYTES>();
+        static_for<T::a_buffer_load_insts>([&](auto i) {
+            const int b0 = wave_id * T::a_buffer_load_insts + decltype(i)::value;
+            const int b = T::A_DMA_EXACT ? b0 : __builtin_amdgcn_readfirstlane(b0 < T::A_DMA_CHUNKS ? b0 : T::A_DMA_CHUNKS - 1);
+            const int t = b / T::A_CHUNKS, r = b % T::A_CHUNKS;   // K tile kt + t, rows [8 r, 8 r + 8)
+            auto g_a = make_gmem(pa, kt + t < k_end ? a_bytes : 0u);
+            g_a.template _async_load<T::VEC_A>(lds_ptr(stage + u_sa(t, r)), u_ga.offsets[0], u_gas(t, r) + kt * T::B_K_BYTES);
         });
-        static_for<SA>([&](auto j) { vsa[st][j()] = __builtin_amdgcn_raw_buffer_load_b32(rsa, lane * 4, j() * ka.stride_sfa + kw * 256, 0); });
-        static_for<EN>([&](auto e) { static_for<2>([&](auto kk) {
-            vb[st][e()][kk()] = __builtin_bit_cast(i32x4, __builtin_amdgcn_raw_buffer_load_b128(rb, lane * 16, e() * 16 * Kb + kw * 2048 + kk() * 1024, 0));
+        auto g_sfa = make_gmem(psfa, in ? sfa_bytes : 0u);
+        static_for<T::SFA_LOADS>([&](auto j) {
+            v_sfa[slot][j.value] = __builtin_bit_cast(unsigned, load<T::VEC_SF>(g_sfa, u_gsfa.offsets[j.value], kw * T::SF_K_TILE_BYTES));
+        });
+        auto g_b = make_gmem(pb, in ? b_bytes : 0u);
+        static_for<T::E_N>([&](auto n) { static_for<T::E_K>([&](auto kk) {
+            v_b[slot][n.value][kk.value] = __builtin_bit_cast(fp4x32_t,
+                load<T::VEC_B>(g_b, u_gb.offsets[n.value * T::E_K + kk.value], kw * T::B_K_BYTES * T::W_N));
         }); });
-        static_for<SB>([&](auto j) { vsb[st][j()] = __builtin_amdgcn_raw_buffer_load_b32(rsb, lane * 4, j() * ka.stride_sfb + kw * 256, 0); });
+        auto g_sfb = make_gmem(psfb, in ? sfb_bytes : 0u);
+        static_for<T::SFB_LOADS>([&](auto j) {
+            v_sfb[slot][j.value] = __builtin_bit_cast(unsigned, load<T::VEC_SF>(g_sfb, u_gsfb.offsets[j.value], kw * T::SF_K_TILE_BYTES));
+        });
+    };
+    auto read_a = [&](fp4x32_t (&v)[T::E_K][T::E_M], auto slot_i) {
+        OPUS_LDS_ADDR char* const stage = lds_ptr(lds_stage<decltype(slot_i)::value, T::STAGE_BYTES>());
+        static_for<T::E_K>([&](auto kk) { static_for<T::E_M>([&](auto e) {
+            v[kk.value][e.value] = *reinterpret_cast<OPUS_LDS_ADDR const fp4x32_t*>(stage + u_ra.offsets[e.value * T::E_K + kk.value]);
+        }); });
     };
 
-    f32x4 acc[EM][EN];
-    static_for<EM>([&](auto e) { static_for<EN>([&](auto n) { acc[e()][n()] = f32x4{0.f, 0.f, 0.f, 0.f}; }); });
-    const int nk = kend > kbeg ? (kend - kbeg + KS - 1) / KS : 0;   // ring steps (KS K tiles each)
-    // asm-style pipeline: ring step t lives in slot t % D (LDS stage for A, registers for B / scales).  A operands are read
-    // from LDS one step ahead: step t waits until group t+1 landed (D-2 younger groups in flight), barrier (A(t+1)
-    // visible; every wave finished reading A(t), so its stage is free), ds_reads A(t+1), and runs the MFMAs of t
-    // interleaved with the copies of step t+D into t's slot (one VMEM per MFMA).
-    static_for<D>([&](auto t) { issue(t, kbeg + KS * t()); __builtin_amdgcn_sched_barrier(0); });
-    i32x4 va[2][EM];   // A operands of the current step
+    CFrag v_c[T::E_M][T::E_N];
+    static_for<T::E_M>([&](auto e) { static_for<T::E_N>([&](auto n) { clear(v_c[e.value][n.value]); }); });
+    const int steps = k_end > k_begin ? (k_end - k_begin + T::KS - 1) / T::KS : 0;   // ring steps (KS K tiles each)
+
+    // Ring step t lives in slot t % STAGES.  Prologue: issue steps 0 .. STAGES-1, wait for step 0, read A(0).
+    // The waits are asm with a "memory" clobber (vmcnt and lgkmcnt in one instruction, and a compiler barrier for the
+    // LDS reads that follow), counted in VMEM_PER_STEP units: opus::s_waitcnt_vmcnt is not a compiler memory barrier.
+    static_for<D>([&](auto t) { issue(t, k_begin + T::KS * decltype(t)::value); __builtin_amdgcn_sched_barrier(0); });
+    fp4x32_t v_a[T::E_K][T::E_M];   // A operands of the current step
+    // The workspace-slot s_load (S > 1) must not be pending in the loop: the waitcnt pass cannot see the asm waits and,
+    // with an SMEM load outstanding, would turn its ds_read waits into lgkmcnt(0).  Drained here (builtin: visible to it).
+    s_waitcnt_lgkmcnt(0_I);
     asm volatile("s_waitcnt vmcnt(%0)" :: "n"((D - 1) * G) : "memory");
     __builtin_amdgcn_s_barrier();
-    static_for<2>([&](auto kk) { static_for<EM>([&](auto e) { va[kk()][e()] = *(const i32x4*)(lds_stage<0, STAGE>() + rd_a(e(), kk())); }); });
+    read_a(v_a, 0_I);
     __builtin_amdgcn_sched_barrier(0);
 #pragma clang loop unroll(disable)
-    for (int i0 = 0; i0 < nk; i0 += D) {
+    for (int i0 = 0; i0 < steps; i0 += D) {
         static_for<D>([&](auto u) {
-            constexpr int s = u(), sn = (s + 1) % D;
-            const int kt = kbeg + KS * (i0 + u());
-            asm volatile("s_waitcnt vmcnt(%0) lgkmcnt(0)" :: "n"((D - 2) * G) : "memory");   // group t+1 landed; A(t) reads done
+            constexpr int s = decltype(u)::value, sn = (s + 1) % D;
+            const int kt = k_begin + T::KS * (i0 + s);
+            // Step t+1 landed (D-2 younger steps in flight) and this wave's A(t) reads are done; the barrier makes A(t+1)
+            // visible and frees A(t)'s stage (every wave has read it) for the copies of step t+D.
+            asm volatile("s_waitcnt vmcnt(%0) lgkmcnt(0)" :: "n"((D - 2) * G) : "memory");
             __builtin_amdgcn_s_barrier();
             __builtin_amdgcn_sched_barrier(0);
-            i32x4 vn[2][EM];
-            static_for<2>([&](auto kk) { static_for<EM>([&](auto e) { vn[kk()][e()] = *(const i32x4*)(lds_stage<sn, STAGE>() + rd_a(e(), kk())); }); });
-            static_for<2>([&](auto kk) { static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-                const i32x8 a8 = __builtin_shufflevector(va[kk()][e()], va[kk()][e()], 0, 1, 2, 3, -1, -1, -1, -1);
-                const i32x8 b8 = __builtin_shufflevector(vb[s][n()][kk()], vb[s][n()][kk()], 0, 1, 2, 3, -1, -1, -1, -1);
-                constexpr int ja = e() / 2, opa = 2 * kk() + ((BM == 16) ? 0 : e() % 2), jb = n() / 2, opb = 2 * kk() + ((EN == 1) ? 0 : n() % 2);
-                const unsigned sb = (EN == 1) ? (vsb[s][jb] >> sh_b) : vsb[s][jb];
-                const unsigned sa = (BM == 16) ? (vsa[s][ja] >> sh_a) : vsa[s][ja];
-                acc[e()][n()] = __builtin_amdgcn_mfma_scale_f32_16x16x128_f8f6f4(b8, a8, acc[e()][n()], 4, 4,
-                                                                                 opb, (int)sb, opa, (int)sa);
+            fp4x32_t v_an[T::E_K][T::E_M];
+            read_a(v_an, number<sn>{});
+            static_for<T::E_K>([&](auto kk) { static_for<T::E_M>([&](auto e) { static_for<T::E_N>([&](auto n) {
+                constexpr int K = decltype(kk)::value, E = decltype(e)::value, N = decltype(n)::value;
+                const unsigned sfa = T::SFA_HALF ? (v_sfa[s][rsfa_dword<T>(E)] >> sh_a) : v_sfa[s][rsfa_dword<T>(E)];
+                const unsigned sfb = T::SFB_HALF ? (v_sfb[s][rsfb_dword<T>(N)] >> sh_b) : v_sfb[s][rsfb_dword<T>(N)];
+                mma_scale_one<rsfb_opsel<T>(N, K), rsfa_opsel<T>(E, K)>(v_c[E][N], v_b[s][N][K], v_a[K][E], sfb, sfa);
             }); }); });
-            issue(ic<s>{}, kt + KS * D);
-            // schedule: the next step's ds_reads first, then MFMA / VMEM alternating
-            __builtin_amdgcn_sched_group_barrier(0x100, 2 * EM, 0);
-            static_for<2 * EM * EN>([&](auto m) {
-                __builtin_amdgcn_sched_group_barrier(0x008, 1, 0);
-                if constexpr (m() < G) __builtin_amdgcn_sched_group_barrier(0x020 | 0x800, 1, 0);
+            issue(number<s>{}, kt + T::KS * D);
+            // Schedule (kept explicit): the next step's ds_reads first, then MFMA / VMEM alternating.
+            __builtin_amdgcn_sched_group_barrier(SCHED_DS_READ, T::E_K * T::E_M, 0);
+            static_for<T::E_K * T::E_M * T::E_N>([&](auto m) {
+                __builtin_amdgcn_sched_group_barrier(SCHED_MFMA, 1, 0);
+                if constexpr (decltype(m)::value < G) __builtin_amdgcn_sched_group_barrier(SCHED_VMEM_READ, 1, 0);
             });
-            if constexpr (2 * EM * EN < G) __builtin_amdgcn_sched_group_barrier(0x020 | 0x800, G - 2 * EM * EN, 0);
+            if constexpr (T::E_K * T::E_M * T::E_N < G)
+                __builtin_amdgcn_sched_group_barrier(SCHED_VMEM_READ, G - T::E_K * T::E_M * T::E_N, 0);
             __builtin_amdgcn_sched_barrier(0);
-            static_for<2>([&](auto kk) { static_for<EM>([&](auto e) { va[kk()][e()] = vn[kk()][e()]; }); });
+            static_for<T::E_K>([&](auto kk) { static_for<T::E_M>([&](auto e) { v_a[kk.value][e.value] = v_an[kk.value][e.value]; }); });
         });
     }
-    asm volatile("s_waitcnt vmcnt(0)" ::: "memory");
-    if constexpr (KS > 1) {   // groups 1..KS-1 park their partials in LDS, group 0 adds them
-        constexpr int FR = EM * EN;
-        __shared__ f32x4 red[(KS - 1) * WN * FR * 64];
-        if (kgrp > 0)
-            static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-                red[(((kgrp - 1) * WN + wn) * FR + e() * EN + n()) * 64 + lane] = acc[e()][n()];
-            }); });
-        __syncthreads();
-        if (kgrp == 0)
-            static_for<KS - 1>([&](auto g) { static_for<EM>([&](auto e) { static_for<EN>([&](auto n) {
-                acc[e()][n()] += red[((g() * WN + wn) * FR + e() * EN + n()) * 64 + lane];
-            }); }); });
+    s_waitcnt_vmcnt(0_I);
+
+    if constexpr (T::KS > 1) {   // wave groups 1..KS-1 park their partial tiles in LDS, group 0 adds them
+        constexpr int FRAGS = T::E_M * T::E_N;
+        __shared__ __attribute__((aligned(16))) char red[T::RED_BYTES];
+        auto s_red = make_smem(reinterpret_cast<D_ACC*>(red));
+        auto red_off = [&](int g, int f) { return (((g * T::T_N + wave_id_n) * FRAGS + f) * T::WARP_SIZE + lane_id) * T::VEC_C; };
+        if (wave_id_k > 0)
+            static_for<FRAGS>([&](auto f) { store<T::VEC_C>(s_red, v_c[f.value / T::E_N][f.value % T::E_N], red_off(wave_id_k - 1, f.value)); });
+        __builtin_amdgcn_fence(__ATOMIC_RELEASE, "workgroup");
+        __builtin_amdgcn_s_barrier();
+        __builtin_amdgcn_fence(__ATOMIC_ACQUIRE, "workgroup");
+        if (wave_id_k > 0) return;
+        static_for<T::KS - 1>([&](auto g) { static_for<FRAGS>([&](auto f) {
+            v_c[f.value / T::E_N][f.value % T::E_N] += load<T::VEC_C>(s_red, red_off(g.value, f.value));
+        }); });
     }
-    const bool owner = (KS == 1) || (kgrp == 0);
-    if (S > 1 && !splitk_reduce<EM, EN, BM, BN>(acc, ka, owner, lane, row0, 0, ncol0, bz, sk, S)) return;
-    if (!owner) return;
-    store_c<EM, EN>(acc, ka, lane, row0, 0, ncol0, bz);
+
+    if (split_k > 1) {   // fp32 partial tile -> workspace [S][batch][padded_M][padded_N]; splitk_reduce_kernel writes C
+        const int padded_m = (kargs.m + T::B_M - 1) / T::B_M * T::B_M, padded_n = (kargs.n + T::B_N - 1) / T::B_N * T::B_N;
+        auto g_w = make_gmem(ws + (static_cast<long long>(k_split * kargs.batch + batch_id) * padded_m + row0) * padded_n + col0,
+                             static_cast<unsigned>((T::B_M * padded_n) * sizeof(float)));
+        const auto u_gw = make_layout_gc<T>(lane_id, padded_n);
+        static_for<T::E_M * T::E_N>([&](auto f) { store<T::VEC_C>(g_w, v_c[f.value / T::E_N][f.value % T::E_N], u_gw.offsets[f.value]); });
+        return;
+    }
+    auto g_c = make_gmem(reinterpret_cast<D_C*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + static_cast<long long>(row0) * kargs.stride_c + col0,
+                         clampb(static_cast<long long>(kargs.m - row0) * kargs.stride_c * 2));
+    const auto u_gc = make_layout_gc<T>(lane_id, kargs.stride_c);
+    static_for<T::E_M>([&](auto e) { static_for<T::E_N>([&](auto n) {
+        if (col0 + 16 * n.value + 4 * (lane_id / 16) < kargs.n)   // N tail: whole 16-column blocks (N % 16 == 0)
+            store<T::VEC_C>(g_c, opus::cast<D_C>(v_c[e.value][n.value]), u_gc.offsets[e.value * T::E_N + n.value]);
+    }); });
 }
 
 }   // namespace opus_mxfp4_small
 
-// grid = ((N + BN - 1) / BN, (M + BM - 1) / BM, batch * splitk), block = 256.
+// grid = ((N + B_N - 1) / B_N, (M + B_M - 1) / B_M, batch * split_k), block = 256.
 template<class Traits>
-__global__ __launch_bounds__(256, 1) void gemm_a4w4_mxfp4_nt_small_kernel(opus_gemm_mxfp4_small_kargs_gfx950 ka) {
+__global__ __launch_bounds__(256, 1) void gemm_a4w4_mxfp4_nt_small_kernel(opus_gemm_mxfp4_small_kargs_gfx950 kargs) {
 #if defined(__gfx950__)
-    using T = Traits;
-    opus_mxfp4_small::body_1x4<T::BM, T::BN, T::D, T::KS>(ka);
+    opus_mxfp4_small::gemm_a4w4_mxfp4_nt_small_body<Traits>(kargs);
 #endif   // __gfx950__
 }

@@ -1085,8 +1085,9 @@ A4W4_MXFP4_NT_SMALL_CFG = {}   # kernel name -> (BM, BN, D, KS, BMODE, LAYOUT, S
 
 def _a4w4_mxfp4_nt_small(bm, bn, d, ks, bmode, layout, s):
     if layout == 0:
-        assert bmode is None and s == 1, "shuffle small-tile: one operand path, S = 1"
-        tag = f"a4w4_mxfp4_nt_d{d}ks{ks}"
+        assert bmode is None, "shuffle small-tile: one operand path"
+        # S > 1: split-K variant (fp32 workspace + splitk_reduce_kernel), variant word in the tag as the 2x2 "_sk" kids
+        tag = f"a4w4_mxfp4_nt_d{d}ks{ks}" + (f"_sk{s}" if s > 1 else "")
     else:
         tag = f"a4w4_mxfp4_nt_small_rm_{('dir', 'lds')[bmode]}_{bm}x{bn}_d{d}ks{ks}_s{s}"
     inst = OpusGemmInstance(

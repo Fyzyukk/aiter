@@ -5,7 +5,8 @@
 //   -l 0 (shuffle, 1x4 waves): -t 16x32 / 16x64 / 16x128 / 32x32 / 32x64 / 32x128 / 64x128 / 32x256, -s KS 1/2/4 (default 1)
 //   -l 1 (row-major): -a 0 B_DIRECT (-t 16x32 / 16x64 / 32x32 / 32x64, -s KS 2/4)   -a 1 B_LDS (-t 32x128 / ...)
 //   -l 0: shuffled inputs (gemm_a4w4 bpreshuffle)   -l 1: row-major inputs (Triton gemm_afp4wfp4: B, scales row-major)
-//   -D dir: dump raw inputs + C   -d prefetch depth (ring)  -p split-K over blocks
+//   -D dir: dump raw inputs + C   -d prefetch depth (ring)
+//   -p S split-K over blocks: shuffle -> fp32 workspace + splitk_reduce_kernel (as the aiter launcher), row-major -> in-kernel
 //   -m -n -k -b   -v verify   -i graph iterations (0 = no timing).
 #include <hip/hip_runtime.h>
 #include <algorithm>
@@ -19,9 +20,11 @@
 #include <vector>
 #include <omp.h>
 #include "opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh"
+#include "splitk_reduce_gfx950.cuh"
 #include "opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh"
 enum : int { OPUS_MXFP4_SMALL_SHUFFLED = 0, OPUS_MXFP4_SMALL_ROWMAJOR = 1 };   // -l: input layout
 using smallm_kargs = opus_gemm_mxfp4_small_kargs_gfx950;
+#undef CHECK_HIP   // also defined (same meaning) by opus_gemm_utils.cuh
 #define CHECK_HIP(call) do { hipError_t s_ = call; if (s_ != hipSuccess) { fprintf(stderr, "HIP error (%s:%d): %s\n", __FILE__, __LINE__, hipGetErrorString(s_)); exit(1); } } while (0)
 using e8m0_t = uint8_t;
 __host__ __device__ inline float e2m1_to_f32(unsigned code) {
@@ -132,12 +135,15 @@ cmp_stats compare(const float* ref, const float* got, const float* mag, size_t c
     return {errors, max_diff, max_ratio, cd};
 }
 
-// The two pipelines have their own kargs structs with the same fields; the harness fills the shuffle one.
-static_assert(sizeof(opus_gemm_mxfp4_small_noshuffle_kargs_gfx950) == sizeof(smallm_kargs), "same kargs fields");
+// The harness fills the shuffle kargs; the row-major pipeline keeps its own kargs with an in-kernel split-K
+// (last-arriving block reduces): its workspace / counters are g_ws / g_rm_cnt.
+static float* g_ws = nullptr;
+static int* g_rm_cnt = nullptr;
 template<int BM, int BN, int D, int KS, int BMODE> void launch_k(const smallm_kargs& ka, hipStream_t st) {   // row-major
-    dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.splitk);
-    opus_gemm_mxfp4_small_noshuffle_kargs_gfx950 kr;
-    std::memcpy(&kr, &ka, sizeof(kr));
+    dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.split_k);
+    const opus_gemm_mxfp4_small_noshuffle_kargs_gfx950 kr{ka.ptr_a, ka.ptr_b, ka.ptr_c, ka.ptr_sfa, ka.ptr_sfb, ka.m, ka.n, ka.k, ka.batch,
+        ka.stride_a, ka.stride_c, ka.stride_sfa, ka.stride_sfb, ka.stride_a_batch, ka.stride_b_batch, ka.stride_c_batch,
+        ka.stride_sfa_batch, ka.stride_sfb_batch, ka.split_k, g_ws, g_rm_cnt};
     gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(kr);
 }
 static int g_layout = OPUS_MXFP4_SMALL_SHUFFLED;
@@ -163,8 +169,12 @@ launch_fn pick_lds(int bm, int bn, int d) {   // -a 1 (row-major only)
     return nullptr;
 }
 template<int BM, int BN, int D, int KS> void launch_a(const smallm_kargs& ka, hipStream_t st) {   // shuffle, 1x4 waves
-    dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.splitk);
+    dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.split_k);
     gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS>><<<grid, 256, 0, st>>>(ka);
+    if (ka.split_k > 1)   // as the aiter launcher: <VEC 16, 64 threads>, grid (ceil(N / 1024), batch * M)
+        splitk_reduce_kernel<16, 64, __bf16, false, __bf16, false><<<dim3((ka.n + 1023) / 1024, ka.batch * ka.m), 64, 0, st>>>(
+            ka.ws_handle, reinterpret_cast<__bf16*>(ka.ptr_c), ka.split_k, ka.m, ka.n, ka.batch,
+            (ka.m + BM - 1) / BM * BM, (ka.n + BN - 1) / BN * BN, nullptr, 0);
 }
 launch_fn pick_1x4(int bm, int bn, int d, int ks) {   // -l 0 (shuffle); depth limited by (D-1) * G <= 63; -s KS (default 1)
 #define SA(BM, BN, DD) if (bm == BM && bn == BN && d == DD && ks == 1) return launch_a<BM, BN, DD, 1>;
@@ -273,12 +283,18 @@ int main(int argc, char** argv) {
         ka.ptr_b = d_b; ka.ptr_sfa = d_sfa_r; ka.ptr_sfb = d_sfb_r;
         ka.stride_sfa = kg; ka.stride_sfb = kg; ka.stride_sfa_batch = (long long)M * kg; ka.stride_sfb_batch = (long long)N * kg;
     }
-    ka.splitk = std::max(1, std::min(std::min(splitk, 8), K / 256));
+    ka.split_k = std::max(1, std::min(std::min(splitk, 8), K / 256));
     { const size_t tm = (M + bm - 1) / bm, tn = (N + bn - 1) / bn;
-      CHECK_HIP(hipMalloc(&ka.cnt, batch * tm * tn * sizeof(int))); CHECK_HIP(hipMemset(ka.cnt, 0, batch * tm * tn * sizeof(int)));
-      CHECK_HIP(hipMalloc(&ka.ws, ka.splitk > 1 ? (size_t)batch * ka.splitk * tm * bm * tn * bn * sizeof(float) : 4)); }
+      const size_t ws_bytes = ka.split_k > 1 ? (size_t)batch * ka.split_k * tm * bm * tn * bn * sizeof(float) : 4;
+      CHECK_HIP(hipMalloc(&g_rm_cnt, batch * tm * tn * sizeof(int))); CHECK_HIP(hipMemset(g_rm_cnt, 0, batch * tm * tn * sizeof(int)));
+      CHECK_HIP(hipMalloc(&g_ws, ws_bytes));
+      // shuffle split-K: workspace slot in host-coherent memory, as opus_splitk_ws_get (opus_gemm.cu)
+      opus_splitk_ws_handle* h = nullptr;
+      CHECK_HIP(hipHostMalloc(reinterpret_cast<void**>(&h), sizeof(opus_splitk_ws_handle), hipHostMallocCoherent));
+      h->ptr = g_ws; h->bytes = ws_bytes;
+      ka.ws_handle = h; }
     std::printf("%s ", RM ? "rowmajor" : "shuffled");
-    std::printf("smallm split%d ks%d tile %dx%d d%d M=%d N=%d K=%d batch=%d grid=(%d,%d,%d)\n", ka.splitk, ks, bm, bn, depth, M, N, K, batch,
+    std::printf("smallm split%d ks%d tile %dx%d d%d M=%d N=%d K=%d batch=%d grid=(%d,%d,%d)\n", ka.split_k, ks, bm, bn, depth, M, N, K, batch,
                 (N + bn - 1) / bn, (M + bm - 1) / bm, batch);
     launch(ka, 0); CHECK_HIP(hipGetLastError()); CHECK_HIP(hipDeviceSynchronize());
 
