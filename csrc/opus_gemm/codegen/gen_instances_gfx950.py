@@ -1666,6 +1666,7 @@ def gen_a4w4_mxfp4_nt_small_instance(cg, k, instance_impl_preamble, A8W8_SCALE_H
     sfx = "_noshuffle" if layout else ""
     kernel = f"gemm_a4w4_mxfp4_nt_small{sfx}_kernel"
     targs = f"{bm}, {bn}, {d}, {ks}" + (f", {bmode}" if layout else "")
+    kargs_t = f"opus_gemm_mxfp4_small{sfx}_kargs_gfx950"
     traits = f"opus_gemm_a4w4_mxfp4_nt_small{sfx}_traits_gfx950<{targs}>"
     # shuffle: bytes per 32-row block (32 x round_up(K/32, 8) columns); row-major: bytes per row (K/32)
     sf_mul = 32 if layout == 0 else 1
@@ -1673,7 +1674,7 @@ def gen_a4w4_mxfp4_nt_small_instance(cg, k, instance_impl_preamble, A8W8_SCALE_H
 #ifdef OPUS_FUSED_HOST_TU
 #include "gfx950/opus_gemm_traits_a4w4_mxfp4_nt_small{sfx}_gfx950.cuh"
 template<class Traits>
-__global__ __launch_bounds__(256, 1) void {kernel}(opus_gemm_mxfp4_small_kargs_gfx950 ka);
+__global__ __launch_bounds__(256, 1) void {kernel}({kargs_t} ka);
 #else
 #ifdef __HIPCC_RTC__
 #define OPUS_SMALL_DEVICE_TU 1
@@ -1700,7 +1701,7 @@ void
     const long cols_a = sa.size(-1), cols_b = sb.size(-1);
     const long rows_a = sa.dim() == 3 ? sa.size(1) : sa.size(0) / batch;
     const long rows_b = sb.dim() == 3 ? sb.size(1) : sb.size(0) / batch;
-    opus_gemm_mxfp4_small_kargs_gfx950 kargs{{}};
+    {kargs_t} kargs{{}};
     kargs.ptr_a = XQ.data_ptr(); kargs.ptr_b = WQ.data_ptr(); kargs.ptr_c = Y.data_ptr();
     kargs.ptr_sfa = sa.data_ptr(); kargs.ptr_sfb = sb.data_ptr();
     kargs.m = M; kargs.n = N; kargs.k = K; kargs.batch = batch;
@@ -1727,7 +1728,7 @@ void
         if S == 1:
             cg._device_instantiations.append({
                 "kid_name": k.name, "dtype": CDtype,
-                "device_decl": f"template __global__ void {kernel}<{traits}>(opus_gemm_mxfp4_small_kargs_gfx950);\n",
+                "device_decl": f"template __global__ void {kernel}<{traits}>({kargs_t});\n",
             })
 
 

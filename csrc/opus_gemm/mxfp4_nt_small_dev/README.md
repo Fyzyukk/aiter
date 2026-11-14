@@ -8,10 +8,8 @@ Files (`../include/gfx950/`):
 
 | file | contents |
 |---|---|
-| `opus_gemm_traits_a4w4_mxfp4_nt_small_common_gfx950.cuh` | kargs `opus_gemm_mxfp4_small_kargs_gfx950`, row-major BMODE ids (`OPUS_MXFP4_SMALL_B_DIRECT / B_LDS`) |
-| `opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh` | shuffle traits `opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS>` (1×4 waves) |
-| `opus_gemm_traits_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh` | row-major traits `opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>` (B_DIRECT / B_LDS) |
-| `opus_gemm_pipeline_a4w4_mxfp4_nt_small_common_gfx950.cuh` | device helpers of both pipelines: vector types, `static_for`, buffer descriptors, split-K reduce, C store, LDS stages |
+| `opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh` | shuffle kargs `opus_gemm_mxfp4_small_kargs_gfx950`, traits `opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS>` (1×4 waves) |
+| `opus_gemm_traits_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh` | row-major kargs `opus_gemm_mxfp4_small_noshuffle_kargs_gfx950`, BMODE ids, traits `opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>` (B_DIRECT / B_LDS) |
 | `opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh` | shuffle pipeline `body_1x4`, kernel `gemm_a4w4_mxfp4_nt_small_kernel<Traits>` |
 | `opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh` | row-major pipeline `body_direct_rm` / `body_lds_rm`, kernel `gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<Traits>` |
 | `opus_small_launch_mxfp4_gfx950.cuh` | host-only: per-stream split-K workspace for the JIT launchers |
@@ -65,7 +63,7 @@ row-major `gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_sma
 - Constraints: K % 256 == 0; N % 16 (shuffled) / N % 8 (row-major); any M; batch ≥ 1.  Row-major B_LDS: BM ∈ {16, 32, 64, 128},
   BN ∈ {64, 128, 256} (BM 128 only with BN 128).
 
-**kargs** (`opus_gemm_mxfp4_small_kargs_gfx950`, see `opus_gemm_traits_a4w4_mxfp4_nt_small_common_gfx950.cuh`): byte strides for A (`stride_a` = K/2), elements for C (`stride_c` = N);
+**kargs** (shuffle `opus_gemm_mxfp4_small_kargs_gfx950` / row-major `opus_gemm_mxfp4_small_noshuffle_kargs_gfx950`, same fields, see the traits headers): byte strides for A (`stride_a` = K/2), elements for C (`stride_c` = N);
 `stride_sfa / stride_sfb` = bytes per 32-row block (shuffled: 32 × round_up(K/32, 8)) or bytes per row (row-major: K/32);
 batch strides in bytes (C in elements).  Shuffled scale batch stride = padded rows × round_up(K/32, 8) (aiter pads rows to 256).
 

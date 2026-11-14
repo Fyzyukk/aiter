@@ -132,9 +132,13 @@ cmp_stats compare(const float* ref, const float* got, const float* mag, size_t c
     return {errors, max_diff, max_ratio, cd};
 }
 
+// The two pipelines have their own kargs structs with the same fields; the harness fills the shuffle one.
+static_assert(sizeof(opus_gemm_mxfp4_small_noshuffle_kargs_gfx950) == sizeof(smallm_kargs), "same kargs fields");
 template<int BM, int BN, int D, int KS, int BMODE> void launch_k(const smallm_kargs& ka, hipStream_t st) {   // row-major
     dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.splitk);
-    gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(ka);
+    opus_gemm_mxfp4_small_noshuffle_kargs_gfx950 kr;
+    std::memcpy(&kr, &ka, sizeof(kr));
+    gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(kr);
 }
 static int g_layout = OPUS_MXFP4_SMALL_SHUFFLED;
 template<int BM, int BN, int D, int KS> void launch_t(const smallm_kargs& ka, hipStream_t st) {   // B_DIRECT is row-major only
