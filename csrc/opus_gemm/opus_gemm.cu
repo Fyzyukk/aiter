@@ -23,8 +23,7 @@
 #include "gfx942/opus_gemm_heuristic_dispatch_gfx942.cuh"
 #endif
 #include "opus_gemm_manifest.h"                    // a8w8 launcher symbols
-#include "opus_gemm_a4w4_mxfp4_lookup.h"           // a4w4_mxfp4_nt kid table + tuned (M,N,K) -> kid
-#include "gfx950/opus_co_launch_mxfp4_gfx950.cuh"  // opus_mxfp4_pick_split (host-only helpers)
+#include "opus_gemm_a4w4_mxfp4_lookup.h"           // a4w4_mxfp4_nt_noshuffle kid table + tuned (M,N,K) -> kid
 #include "opus_gemm_utils.cuh"                     // bf16_t / fp32_t
 #include "aiter_stream.h"                          // aiter::getCurrentHIPStream
 
@@ -69,15 +68,14 @@ OpusNoscaleKernel opus_dispatch_a8w8(int M, int N, int K)
 #endif
 }
 
-// ── a4w4_mxfp4_nt (gfx950, pre-compiled .co) ─────────────────────────────────
+// ── a4w4_mxfp4_nt_noshuffle (gfx950, row-major inputs) ─────────────────────
 // Kid table (kid, launcher, B_M, B_N) and the tuned (M, N, K) -> kid table come from gen_instances.py.
 struct OpusA4w4Mxfp4Kid {
   int kid;
   OpusScaleKernel fn;
   int b_m, b_n;
-  int mode;       // 0 persistent, 1 one tile per block, 2 split-K, 3 small-tile (S = 1), 4 small-tile split-K (by kid only)
+  int mode;       // 0 persistent (.co), 1 one tile per block (.co), 3 small-tile (JIT, S = 1), 4 small-tile split-K (by kid only)
   int boundary;   // 0: needs M % B_M == 0 && N % B_N == 0
-  int noshuffle;  // 1: a4w4_mxfp4_nt_noshuffle (row-major B / scales), 0: shuffle_weight B + e8m0_shuffle scales
 };
 struct OpusA4w4Mxfp4Tuned {
   int mnk[3];
@@ -107,22 +105,10 @@ static OpusScaleKernel opus_a4w4_mxfp4_by_kid(int kid)
 }
 
 // Heuristic: estimated time per (tile, variant), calibrated on clean HIP 6 measurements (gfx950, CUDA graph, 2026-11-13):
-//   t = 3.2 us + rounds * B_M * B_N * K_seg * R(tile) * (1 + 0.5 * util)        util = busy blocks / CUs (power cap)
+//   t = 3.2 us + rounds * B_M * B_N * K * R(tile) * (1 + 0.5 * util)        util = busy blocks / CUs (power cap)
 //   R: 256x256 6.7e-8, 192x256 / 256x192 7.35e-8, 256x128 / 128x256 7.5e-8, 128x128 8.3e-8 us per MAC-element
 //   (fits 128x4096xK one-round np runs, 1024x4096x4096 full-util np and 8192^3 persistent within ~10%).
-// Split-K (in-kernel last-block reduce): + 3.2 us + (S - 1) * 2.4 us * area / 16384 (the last block reads the other
-// S - 1 fp32 partial tiles from one CU, ~25 GB/s); measured 128x128 128x4096x4096 S = 2 / 4 / 8: 12.3 / 15.5 / 24.7 us.
-static int opus_a4w4_mxfp4_kid_noshuffle(int kid)
-{
-  int n = 0;
-  const auto* t = opus_a4w4_mxfp4_kids(n);
-  for (int i = 0; i < n; ++i)
-    if (t[i].kid == kid) return t[i].noshuffle;
-  AITER_CHECK(false, "opus a4w4_mxfp4: kid ", kid, " is not built");
-  return 0;
-}
-
-static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int noshuffle)
+static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch)
 {
   int n = 0;
   const auto* t = opus_a4w4_mxfp4_kids(n);
@@ -130,19 +116,15 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
   const int cus = static_cast<int>(get_num_cu_func());
   int best = -1;
   double best_cost = 1e300;
-  // M <= 64: small-tile pipeline; B_M need not cover M (more M blocks beat a taller tile). Best measured (HIP 6 / smi 3):
-  //   shuffled (1x4 waves), t = 16x32 tiles: K <= 1024 or t > CUs: 16x64 KS1 D4 (30416); K >= 6144: 16x32 KS4 D4 (30415);
-  //     else 16x32 KS2 D4 (30414)  (best of the three on all 24 measured M 1-32 x N,K shapes, smi 3)
-  //   row-major M <= 16: 16x32 KS2 D4 (30500); M <= 64: 32x32 KS2 D4 (30501)
+  // M <= 64: small-tile pipeline; B_M need not cover M (more M blocks beat a taller tile). Best measured (HIP 6):
+  //   M <= 16: 16x32 KS2 D4 (30500); M <= 64: 32x32 KS2 D4 (30501)
   //     (best on M 1-64 x (N, K) in {4096x4096, 2048x7168, 3072x6144, 4096x8192} but 64x2048x7168 (+10%), HIP 6)
-  // Falls back to the first S = 1 small kid of this layout if the preferred one is not built.
+  // Falls back to the first S = 1 small kid if the preferred one is not built.
   if (M <= 64) {
-    const long t32 = static_cast<long>((M + 15) / 16) * ((N + 31) / 32) * batch;
-    const int want = noshuffle ? (M <= 16 ? 30500 : 30501)
-                               : (K <= 1024 || t32 > cus) ? 30416 : (K >= 6144 ? 30415 : 30414);
+    const int want = M <= 16 ? 30500 : 30501;
     for (int i = 0; i < n; ++i) {
       const auto& e = t[i];
-      if (e.mode != 3 || e.noshuffle != noshuffle) continue;
+      if (e.mode != 3) continue;
       if (e.kid == want) return want;
       if (best < 0) best = e.kid;
     }
@@ -150,7 +132,7 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
   }
   for (int i = 0; i < n; ++i) {
     const auto& e = t[i];
-    if (e.noshuffle != noshuffle || e.mode >= 3) continue;
+    if (e.mode >= 3) continue;
     if (!e.boundary && (M % e.b_m || N % e.b_n)) continue;
     const long tiles = static_cast<long>((M + e.b_m - 1) / e.b_m) * ((N + e.b_n - 1) / e.b_n) * batch;
     const double area = static_cast<double>(e.b_m) * e.b_n;
@@ -161,14 +143,9 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
       const long rounds = (tiles + cus - 1) / cus;
       cost = 3.2 + rounds * area * K * R * 1.5;
       if (e.boundary) cost *= 1.003;   // prefer the no-boundary variant when it applies
-    } else if (e.mode == 1) {
+    } else {
       if (tiles > cus) continue;
       cost = 3.2 + area * K * R * (1.0 + 0.5 * static_cast<double>(tiles) / cus);
-    } else {
-      const int S = opus_mxfp4_pick_split(static_cast<int>(tiles), K, cus);
-      if (S <= 1) continue;
-      cost = 3.2 + area * (K / S) * R * (1.0 + 0.5 * static_cast<double>(tiles * S) / cus)
-           + 3.2 + (S - 1) * 2.4 * area / 16384.0;
     }
     if (cost < best_cost) { best_cost = cost; best = e.kid; }
   }
@@ -176,74 +153,51 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
   return best;
 }
 
-static int opus_select_a4w4_mxfp4_kid(int M, int N, int K, int batch, int noshuffle)
+static int opus_select_a4w4_mxfp4_kid(int M, int N, int K, int batch)
 {
   static const OpusA4w4Mxfp4Tuned tuned[] = {GENERATE_A4W4_MXFP4_TUNED {{0, 0, 0}, -1}};
   for (const auto& e : tuned)
-    if (e.kid >= 0 && e.mnk[0] == M && e.mnk[1] == N && e.mnk[2] == K && opus_a4w4_mxfp4_kid_noshuffle(e.kid) == noshuffle)
+    if (e.kid >= 0 && e.mnk[0] == M && e.mnk[1] == N && e.mnk[2] == K)
       return e.kid;
-  return opus_a4w4_mxfp4_heuristic_kid(M, N, K, batch, noshuffle);
-}
-
-static OpusScaleKernel opus_dispatch_a4w4_mxfp4_gfx950(int M, int N, int K, int batch, int noshuffle)
-{
-  return opus_a4w4_mxfp4_by_kid(opus_select_a4w4_mxfp4_kid(M, N, K, batch, noshuffle));
+  return opus_a4w4_mxfp4_heuristic_kid(M, N, K, batch);
 }
 
 // K is the logical (unpacked) K.
-int opus_gemm_a4w4_select_kid(int M, int N, int K, int batch, bool noshuffle)
+int opus_gemm_a4w4_select_kid(int M, int N, int K, int batch)
 {
-  return opus_select_a4w4_mxfp4_kid(M, N, K, batch, noshuffle ? 1 : 0);
+  return opus_select_a4w4_mxfp4_kid(M, N, K, batch);
 }
 
+// Row-major inputs (Triton gemm_afp4wfp4 layout): XQ [batch, M, K/2], WQ [batch, N, K/2] fp4x2, Y [batch, M, N] bf16,
+// scales [rows, K/32] e8m0 per batch (2D [batch * rows, K/32] or 3D).  N % 8 (16 B C stores), K % 256 (K tile).
 static void opus_a4w4_mxfp4_check(const aiter_tensor_t& XQ, const aiter_tensor_t& WQ, const aiter_tensor_t& Y,
                                   const std::optional<aiter_tensor_t>& x_scale,
-                                  const std::optional<aiter_tensor_t>& w_scale,
-                                  int noshuffle = 0)
+                                  const std::optional<aiter_tensor_t>& w_scale)
 {
   const auto& arch_info = opus_get_arch_info();
   AITER_CHECK(arch_info.arch == OpusGfxArch::Gfx950, "opus a4w4_mxfp4 is gfx950-only; device ", arch_info.name);
   AITER_CHECK(WQ.dtype() == AITER_DTYPE_fp4x2, "opus a4w4_mxfp4: WQ must be fp4x2");
   AITER_CHECK(Y.dtype() == AITER_DTYPE_bf16, "opus a4w4_mxfp4: Y must be bf16");
-  AITER_CHECK(x_scale.has_value() && w_scale.has_value(), "opus a4w4_mxfp4 needs x_scale and w_scale (e8m0_shuffle)");
+  AITER_CHECK(x_scale.has_value() && w_scale.has_value(), "opus a4w4_mxfp4 needs x_scale and w_scale");
   AITER_CHECK(XQ.is_contiguous() && WQ.is_contiguous() && Y.is_contiguous() &&
               x_scale.value().is_contiguous() && w_scale.value().is_contiguous(),
               "opus a4w4_mxfp4: tensors must be contiguous");
-  // Shapes: XQ [batch, M, K/2], WQ [batch, N, K/2] (fp4x2), Y [batch, M, N]; N % 16 (shuffle_weight), K % 256 (K tile).
   const int64_t batch = XQ.size(0), M = XQ.size(1), K = XQ.size(2) * 2, N = WQ.size(1);
   AITER_CHECK(WQ.size(0) == batch && WQ.size(2) * 2 == K, "opus a4w4_mxfp4: WQ must be [batch, N, K/2] matching XQ");
   AITER_CHECK(Y.size(0) == batch && Y.size(1) == M && Y.size(2) == N, "opus a4w4_mxfp4: Y must be [batch, M, N]");
   AITER_CHECK(K % 256 == 0 && K > 0, "opus a4w4_mxfp4: K must be a multiple of 256 (got K=", K, ")");
-  if (noshuffle) {
-    // Row-major B: N % 8 (16 B C stores); row-major scales [rows, K/32] per batch, 2D [batch * rows, K/32] or 3D.
-    AITER_CHECK(N % 8 == 0, "opus a4w4_mxfp4 (bpreshuffle=False): N must be a multiple of 8 (got N=", N, ")");
-    auto check_rm = [&](const aiter_tensor_t& s, int64_t rows, const char* nm) {
-      AITER_CHECK(s.element_size() == 1, "opus a4w4_mxfp4: ", nm, " must be e8m0 (1 byte)");
-      AITER_CHECK(s.dim() == 2 || (s.dim() == 3 && s.size(0) == batch), "opus a4w4_mxfp4: ", nm, " must be 2D or [batch, rows, K/32]");
-      AITER_CHECK(s.dim() == 3 || s.size(0) % batch == 0, "opus a4w4_mxfp4: ", nm, " rows not divisible by batch");
-      const int64_t r = s.dim() == 3 ? s.size(1) : s.size(0) / batch;
-      AITER_CHECK(s.size(-1) == K / 32, "opus a4w4_mxfp4 (bpreshuffle=False): ", nm, " must be row-major with K/32 = ", K / 32,
-                  " columns (got ", s.size(-1), ")");
-      AITER_CHECK(r >= rows, "opus a4w4_mxfp4 (bpreshuffle=False): ", nm, " needs >= ", rows, " rows per batch (got ", r, ")");
-    };
-    check_rm(x_scale.value(), M, "x_scale");
-    check_rm(w_scale.value(), N, "w_scale");
-    return;
-  }
-  AITER_CHECK(N % 16 == 0, "opus a4w4_mxfp4: N must be a multiple of 16 (got N=", N, ")");
-  // Scales: e8m0_shuffle layout, per batch [rows padded to >= 32, K/32 padded to 8]; 2D [batch * rows, cols] or 3D.
-  const int64_t cols = (K / 32 + 7) / 8 * 8;
-  auto check_sf = [&](const aiter_tensor_t& s, int64_t rows, const char* nm) {
+  AITER_CHECK(N % 8 == 0, "opus a4w4_mxfp4: N must be a multiple of 8 (got N=", N, ")");
+  auto check_rm = [&](const aiter_tensor_t& s, int64_t rows, const char* nm) {
     AITER_CHECK(s.element_size() == 1, "opus a4w4_mxfp4: ", nm, " must be e8m0 (1 byte)");
-    AITER_CHECK(s.dim() == 2 || (s.dim() == 3 && s.size(0) == batch), "opus a4w4_mxfp4: ", nm, " must be 2D or [batch, rows, cols]");
+    AITER_CHECK(s.dim() == 2 || (s.dim() == 3 && s.size(0) == batch), "opus a4w4_mxfp4: ", nm, " must be 2D or [batch, rows, K/32]");
     AITER_CHECK(s.dim() == 3 || s.size(0) % batch == 0, "opus a4w4_mxfp4: ", nm, " rows not divisible by batch");
     const int64_t r = s.dim() == 3 ? s.size(1) : s.size(0) / batch;
-    AITER_CHECK(s.size(-1) == cols, "opus a4w4_mxfp4: ", nm, " must have K/32 padded to 8 = ", cols, " columns (got ", s.size(-1), ")");
-    AITER_CHECK(r >= (rows + 31) / 32 * 32 && r % 32 == 0, "opus a4w4_mxfp4: ", nm, " needs >= ", (rows + 31) / 32 * 32,
-                " rows (multiple of 32, e8m0_shuffle) per batch (got ", r, ")");
+    AITER_CHECK(s.size(-1) == K / 32, "opus a4w4_mxfp4: ", nm, " must be row-major with K/32 = ", K / 32,
+                " columns (got ", s.size(-1), ")");
+    AITER_CHECK(r >= rows, "opus a4w4_mxfp4: ", nm, " needs >= ", rows, " rows per batch (got ", r, ")");
   };
-  check_sf(x_scale.value(), M, "x_scale");
-  check_sf(w_scale.value(), N, "w_scale");
+  check_rm(x_scale.value(), M, "x_scale");
+  check_rm(w_scale.value(), N, "w_scale");
 }
 
 // a16w16 arch routers: switch on opus_get_gfx_arch() to per-arch dispatch.
@@ -381,47 +335,33 @@ void opus_gemm(
       AITER_CHECK(false, "opus_gemm a16w16: unsupported output dtype, expected bf16 or fp32");
     }
   }
-  else if (XQ.dtype() == AITER_DTYPE_fp4x2)
-  {
-#ifdef OPUS_BUILD_HAS_GFX950
-    AITER_CHECK(!bias.has_value(), "opus_gemm a4w4_mxfp4: bias is not supported");
-    opus_a4w4_mxfp4_check(XQ, WQ, Y, x_scale, w_scale);   // opus_gemm(): bpreshuffle layout (see opus_gemm_a4w4)
-    opus_dispatch_a4w4_mxfp4_gfx950(M, N, K * 2, XQ.size(0), 0)(XQ, WQ, Y, x_scale, w_scale);
-#else
-    AITER_CHECK(false, "opus_gemm a4w4_mxfp4 needs a gfx950 build of module_deepgemm_opus");
-#endif
-  }
   else
   {
-    AITER_CHECK(false, "opus_gemm: unsupported input dtype, expected fp8, bf16 or fp4x2");
+    AITER_CHECK(false, "opus_gemm: unsupported input dtype, expected fp8 or bf16");
   }
 }
 
-// opus_gemm_a4w4(): MXFP4 GEMM with an explicit input layout, as aiter gemm_a4w4: bpreshuffle = true -> B shuffle_weight(16,16)
-// + e8m0_shuffle scales (a4w4_mxfp4_nt), false -> plain row-major B and [rows, K/32] scales (a4w4_mxfp4_nt_noshuffle).
+// opus_gemm_a4w4(): MXFP4 GEMM with plain row-major inputs (Triton gemm_afp4wfp4 layout): B [N, K/2] and [rows, K/32]
+// scales (a4w4_mxfp4_nt_noshuffle); kid from the tuned table, else the heuristic.
 void opus_gemm_a4w4(
   aiter_tensor_t &XQ,
   aiter_tensor_t &WQ,
   aiter_tensor_t &Y,
   std::optional<aiter_tensor_t> x_scale,
-  std::optional<aiter_tensor_t> w_scale,
-  bool bpreshuffle)
+  std::optional<aiter_tensor_t> w_scale)
 {
   aiter_detail::g_aiter_can_throw = true;
   AITER_CHECK(XQ.dim() == 3 && WQ.dim() == 3 && Y.dim() == 3, "opus_gemm_a4w4: XQ / WQ / Y must be 3D");
   AITER_CHECK(XQ.dtype() == AITER_DTYPE_fp4x2, "opus_gemm_a4w4: XQ must be fp4x2");
 #ifdef OPUS_BUILD_HAS_GFX950
-  const int noshuffle = bpreshuffle ? 0 : 1;
-  opus_a4w4_mxfp4_check(XQ, WQ, Y, x_scale, w_scale, noshuffle);
-  opus_dispatch_a4w4_mxfp4_gfx950(XQ.size(1), WQ.size(1), XQ.size(2) * 2, XQ.size(0), noshuffle)(XQ, WQ, Y, x_scale, w_scale);
+  opus_a4w4_mxfp4_check(XQ, WQ, Y, x_scale, w_scale);
+  opus_a4w4_mxfp4_by_kid(opus_select_a4w4_mxfp4_kid(XQ.size(1), WQ.size(1), XQ.size(2) * 2, XQ.size(0)))(XQ, WQ, Y, x_scale, w_scale);
 #else
-  (void)bpreshuffle;
   AITER_CHECK(false, "opus_gemm_a4w4 needs a gfx950 build of module_deepgemm_opus");
 #endif
 }
 
-// opus_gemm_a4w4_tune(): run a specific a4w4_mxfp4_nt(_noshuffle) kid (kernelId = kid: 300xx shuffle, 301xx noshuffle);
-// the input layout follows the kid.
+// opus_gemm_a4w4_tune(): run a specific a4w4_mxfp4_nt_noshuffle kid (kernelId = kid: 301xx 2x2 .co, 305xx small-tile).
 void opus_gemm_a4w4_tune(
   aiter_tensor_t &XQ,
   aiter_tensor_t &WQ,
@@ -434,7 +374,7 @@ void opus_gemm_a4w4_tune(
   AITER_CHECK(XQ.dim() == 3 && WQ.dim() == 3 && Y.dim() == 3, "opus_gemm_a4w4_tune: XQ / WQ / Y must be 3D");
   AITER_CHECK(XQ.dtype() == AITER_DTYPE_fp4x2, "opus_gemm_a4w4_tune: XQ must be fp4x2");
 #ifdef OPUS_BUILD_HAS_GFX950
-  opus_a4w4_mxfp4_check(XQ, WQ, Y, x_scale, w_scale, opus_a4w4_mxfp4_kid_noshuffle(kernelId));
+  opus_a4w4_mxfp4_check(XQ, WQ, Y, x_scale, w_scale);
   opus_a4w4_mxfp4_by_kid(kernelId)(XQ, WQ, Y, x_scale, w_scale);
 #else
   AITER_CHECK(false, "opus_gemm_a4w4_tune needs a gfx950 build of module_deepgemm_opus");

@@ -1,6 +1,6 @@
 # gen_co —— gfx950 预编译 code object（.co）
 
-a4w4_mxfp4_nt（MXFP4 × MXFP4 NT，2×2 4-wave，persistent）用 `[[clang::amdgpu_pin_agpr/vgpr]]` 固定 A/B/C 片段，
+a4w4_mxfp4_nt_noshuffle（MXFP4 × MXFP4 NT，行主序输入，2×2 4-wave，persistent）用 `[[clang::amdgpu_pin_agpr/vgpr]]` 固定 A/B/C 片段，
 只有 pin 工具链（clang 24 + amdgpu pin 补丁，如 yuyzhang512/llvm-project amdgpu-pin-op-dst）能编；aiter JIT 的标准 hipcc 编不了。
 所以 device 代码在这里离线编成裸 ELF code object，运行时由 `include/gfx950/opus_co_launch_mxfp4_gfx950.cuh` 加载
 （目录取 `OPUS_GEN_CO_DIR`，编译期宏或环境变量）；host launcher / dispatch 走普通 JIT。

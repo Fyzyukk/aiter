@@ -8,11 +8,43 @@
 //   SFA [M, K/32] UE8M0, row-major (stride_sfa = K/32 bytes)
 //   SFB [N, K/32] UE8M0, row-major (stride_sfb = K/32 bytes)
 //   C   [M, N]    bf16
-// The kernel arguments are the shared opus_gemm_mxfp4_scale_kargs_gfx950 (from the shuffle traits header); only the
-// meaning of stride_sfa / stride_sfb differs (row stride of the row-major scales).
 #pragma once
 
-#include "opus_gemm_traits_a4w4_mxfp4_nt_gfx950.cuh"   // opus_gemm_mxfp4_scale_kargs_gfx950, opus_mxfp4_ceil_div
+// Only opus is needed (not opus_gemm_utils.cuh): the kernel is built offline with the pin toolchain into a .co, and
+// launchers only need the kargs struct; the full HIP runtime headers do not build with that toolchain on the host side.
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__HIPCC_RTC__)
+#include <opus/hip_minimal.hpp>
+#endif
+#include <opus/opus.hpp>
+
+// Kernel arguments.  Units: fp4 tensors in BYTES (fp4x2 per byte, even k in the low nibble), C in elements, scales
+// in bytes.  stride_sfa / stride_sfb: row stride of the row-major scales (K/32 bytes).
+struct opus_gemm_mxfp4_scale_kargs_gfx950 {
+    const void* __restrict__ ptr_a;
+    const void* __restrict__ ptr_b;
+    void* __restrict__ ptr_c;
+    int m;
+    int n;
+    int k;
+    int batch;
+    int stride_a;
+    int stride_b;
+    int stride_c;
+    int stride_a_batch;
+    int stride_b_batch;
+    int stride_c_batch;
+    const void* __restrict__ ptr_sfa;
+    const void* __restrict__ ptr_sfb;
+    int stride_sfa;
+    int stride_sfb;
+    int stride_sfa_batch;
+    int stride_sfb_batch;
+    int grid_blocks;          // persistent kernel: number of launched blocks (avoids reading the dispatch packet)
+    int split_k;              // reserved (no split-K variant): the launcher sets 1
+    void* __restrict__ ptr_ws;   // reserved (no split-K variant): the launcher sets nullptr
+};
+
+__host__ __device__ inline int opus_mxfp4_ceil_div(int a, int b) { return (a + b - 1) / b; }
 
 // aiter form: <BLOCK_SIZE, seq<B_M, B_N, B_K>, tuple<D_A, D_B, D_C, D_ACC, D_SF>, seq<VEC_A, VEC_B, VEC_C>, seq<GROUP_M, GROUP_N, GROUP_K>>.
 // Supported: BLOCK_SIZE 256, tiles 256x256 / 256x128 / 128x256 / 128x128 / 192x256 / 256x192, B_K 256, VEC <16, 16, 4>,
@@ -113,7 +145,7 @@ struct opus_gemm_a4w4_mxfp4_nt_noshuffle_traits_gfx950 {
     static_assert(LDS_BYTES <= 163840);
 };
 
-// Shorthand used by the dev harness: opus_mxfp4_nt_ns_traits<B_M, B_N, MODE, BOUNDARY>.
+// Shorthand used by gen_co/co_kernels_gfx950.json: opus_mxfp4_nt_ns_traits<B_M, B_N, MODE, BOUNDARY>.
 template<int BM, int BN, int MODE = 0, bool BOUNDARY = true>
 using opus_mxfp4_nt_ns_traits = opus_gemm_a4w4_mxfp4_nt_noshuffle_traits_gfx950<256, opus::seq<BM, BN, 256>,
     opus::tuple<opus::fp4_t, opus::fp4_t, opus::bf16_t, opus::fp32_t, opus::e8m0_t>, opus::seq<16, 16, 4>, opus::seq<1, 1, 32>, MODE, BOUNDARY>;

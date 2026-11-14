@@ -30,10 +30,9 @@ from opus_gemm_common import (
     OpusGemmInstance,
     a8w8_kernels_list,
     a8w8_scale_kernels_list,
-    a4w4_mxfp4_nt_kernels_list,
     a4w4_mxfp4_nt_noshuffle_kernels_list,
-    a4w4_mxfp4_nt_small_kernels_list,
-    A4W4_MXFP4_NT_SMALL_CFG,
+    a4w4_mxfp4_nt_small_noshuffle_kernels_list,
+    A4W4_MXFP4_NT_SMALL_NOSHUFFLE_CFG,
     a16w16_flatmm_kernels_list,
     a16w16_flatmm_splitk_kernels_list,
     a16w16_kernels_list,
@@ -143,9 +142,8 @@ def _kernel_func_for(k):
 INPUT_DTYPE_MAP = {
     "a8w8_scale": ("fp8_t", "fp8_t"),
     "a8w8": ("fp8_t", "fp8_t"),
-    "a4w4_mxfp4_nt": ("fp4_t", "fp4_t"),
     "a4w4_mxfp4_nt_noshuffle": ("fp4_t", "fp4_t"),
-    "a4w4_mxfp4_nt_small": ("fp4_t", "fp4_t"),
+    "a4w4_mxfp4_nt_small_noshuffle": ("fp4_t", "fp4_t"),
     "a8w8_blockscale_bpreshuffle_singlebuf": ("fp8_t", "fp8_t"),
     **{tag: ("bf16_t", "bf16_t") for tag in _A16W16_TAGS},
 }
@@ -912,23 +910,22 @@ void
         self.gen_a4w4_mxfp4_lookup(kernels_dict)
 
     def gen_a4w4_mxfp4_lookup(self, kernels_dict, tuned_rows=()):
-        """Emit opus_gemm_a4w4_mxfp4_lookup.h: the a4w4_mxfp4_nt(_noshuffle) kid table (kid, launcher, B_M, B_N, mode, boundary,
-        noshuffle) used by both the
-        tune entry (by kid) and the heuristic, plus the (M, N, K) -> kid table baked from the tuned CSV (may be empty)."""
-        rows = sorted((kid, k) for kid, k in kernels_dict.items() if isinstance(kid, int) and k.kernel_tag in ("a4w4_mxfp4_nt", "a4w4_mxfp4_nt_noshuffle", "a4w4_mxfp4_nt_small"))
+        """Emit opus_gemm_a4w4_mxfp4_lookup.h: the a4w4_mxfp4_nt_noshuffle kid table (kid, launcher, B_M, B_N, mode, boundary)
+        used by both the tune entry (by kid) and the heuristic, plus the (M, N, K) -> kid table baked from the tuned CSV
+        (may be empty)."""
+        rows = sorted((kid, k) for kid, k in kernels_dict.items() if isinstance(kid, int) and k.kernel_tag in ("a4w4_mxfp4_nt_noshuffle", "a4w4_mxfp4_nt_small_noshuffle"))
         lines = ["#pragma once", "// Auto-generated. See gen_instances.py:gen_a4w4_mxfp4_lookup.",
                  "#define OPUS_A4W4_MXFP4_HAS_KIDS %d" % (1 if rows else 0),
                  "#define GENERATE_A4W4_MXFP4_KIDS \\"]
         for i, (kid, k) in enumerate(rows):
             from codegen.gen_instances_gfx950 import a4w4_mxfp4_nt_mode, a4w4_mxfp4_nt_variant
-            if k.kernel_tag == "a4w4_mxfp4_nt_small":   # mode 3: small-tile pipeline (JIT), layout from its config
-                cfg = A4W4_MXFP4_NT_SMALL_CFG[k.name]
-                mode, boundary, noshuffle = (3 if cfg[6] == 1 else 4), 1, cfg[5]   # 4: split-K variant, tune / tuned table only
+            if k.kernel_tag == "a4w4_mxfp4_nt_small_noshuffle":   # mode 3: small-tile pipeline (JIT)
+                cfg = A4W4_MXFP4_NT_SMALL_NOSHUFFLE_CFG[k.name]
+                mode, boundary = (3 if cfg[4] == 1 else 4), 1   # 4: split-K variant, tune / tuned table only
             else:
                 mode = a4w4_mxfp4_nt_mode(k)
                 boundary = 0 if a4w4_mxfp4_nt_variant(k) == "nob" else 1
-                noshuffle = 1 if k.kernel_tag == "a4w4_mxfp4_nt_noshuffle" else 0
-            lines.append(f"    {{ {kid}, &{k.name}<bf16_t>, {k.B_M}, {k.B_N}, {mode}, {boundary}, {noshuffle} }}," + (" \\" if i + 1 < len(rows) else ""))
+            lines.append(f"    {{ {kid}, &{k.name}<bf16_t>, {k.B_M}, {k.B_N}, {mode}, {boundary} }}," + (" \\" if i + 1 < len(rows) else ""))
         if not rows:
             lines[-1] = "#define GENERATE_A4W4_MXFP4_KIDS"
         valid = {kid for kid, _ in rows}
@@ -1070,7 +1067,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--a4w4_mxfp4_tune_file",
         default=None,
-        help="CSV (M,N,K,kernelId,...) of tuned a4w4_mxfp4_nt kids baked into opus_gemm_a4w4_mxfp4_lookup.h",
+        help="CSV (M,N,K,kernelId,...) of tuned a4w4_mxfp4_nt_noshuffle kids baked into opus_gemm_a4w4_mxfp4_lookup.h",
     )
     args = parser.parse_args()
     if args.tune_files is None and args.tune_file is not None:
@@ -1195,9 +1192,8 @@ if __name__ == "__main__":
     if target_arches is None or "gfx950" in target_arches:
         S |= set(a8w8_scale_kernels_list.keys())
         S |= set(a8w8_kernels_list.keys())
-        S |= set(a4w4_mxfp4_nt_kernels_list.keys())   # host launchers only (pre-compiled .co)
-        S |= set(a4w4_mxfp4_nt_noshuffle_kernels_list.keys())
-        S |= set(a4w4_mxfp4_nt_small_kernels_list.keys())   # small-tile pipeline, JIT-built
+        S |= set(a4w4_mxfp4_nt_noshuffle_kernels_list.keys())   # host launchers only (pre-compiled .co)
+        S |= set(a4w4_mxfp4_nt_small_noshuffle_kernels_list.keys())   # small-tile pipeline, JIT-built
 
     # Honor --kernel_tag as a developer override that *further restricts* the set (within the a16w16
     # / a8w8 families).
@@ -1209,9 +1205,8 @@ if __name__ == "__main__":
             if target_arches is None or "gfx950" in target_arches:
                 S |= set(a8w8_scale_kernels_list.keys())
                 S |= set(a8w8_kernels_list.keys())
-                S |= set(a4w4_mxfp4_nt_kernels_list.keys())
                 S |= set(a4w4_mxfp4_nt_noshuffle_kernels_list.keys())
-                S |= set(a4w4_mxfp4_nt_small_kernels_list.keys())   # small-tile pipeline, JIT-built
+                S |= set(a4w4_mxfp4_nt_small_noshuffle_kernels_list.keys())   # small-tile pipeline, JIT-built
 
     # Heuristic-fallback invariant (single source of truth: opus_gemm_common.py).
     required_heuristic = set(heuristic_kids_for_arch(target_arches))
@@ -1309,7 +1304,7 @@ if __name__ == "__main__":
             f"existing files; using empty lookup"
         )
 
-    # a4w4_mxfp4_nt tuned (M, N, K) -> kid table.
+    # a4w4_mxfp4_nt_noshuffle tuned (M, N, K) -> kid table.
     mx_rows = []
     if args.a4w4_mxfp4_tune_file and os.path.exists(args.a4w4_mxfp4_tune_file):
         try:
@@ -1319,8 +1314,8 @@ if __name__ == "__main__":
         except (pd.errors.EmptyDataError, KeyError, ValueError):
             mx_rows = []
     codegen.gen_a4w4_mxfp4_lookup(kdict, mx_rows)
-    print(f"[opus gen_instances] a4w4_mxfp4_nt: {sum(1 for k in kdict.values() if k.kernel_tag == 'a4w4_mxfp4_nt')} kids, "
-          f"noshuffle {sum(1 for k in kdict.values() if k.kernel_tag == 'a4w4_mxfp4_nt_noshuffle')} kids, {len(mx_rows)} tuned rows")
+    print(f"[opus gen_instances] a4w4_mxfp4_nt_noshuffle: {sum(1 for k in kdict.values() if k.kernel_tag == 'a4w4_mxfp4_nt_noshuffle')} kids, "
+          f"small {sum(1 for k in kdict.values() if k.kernel_tag == 'a4w4_mxfp4_nt_small_noshuffle')} kids, {len(mx_rows)} tuned rows")
 
     # Persist the expanded compile set so subsequent rebuilds reuse it.
     try:

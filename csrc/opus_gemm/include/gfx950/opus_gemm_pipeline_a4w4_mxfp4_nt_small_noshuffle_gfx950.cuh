@@ -4,8 +4,8 @@
 // Small-tile MXFP4 x MXFP4 NT GEMM (gfx950), row-major layout (aiter Triton gemm_afp4wfp4): A [M, K/2], B [N, K/2]
 // fp4x2, scales [rows, K/32] UE8M0, all row-major, no padding; C [M, N] bf16.  N % 8 == 0, K % 256 == 0, any M.
 // opus, standard ROCm toolchain (no pin attributes).  Traits / kargs: opus_gemm_traits_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh.
-// Same pipeline structure as the shuffle small-tile file (opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh); independent
-// of it (own namespace, no shared headers, both can be included in one TU).
+// Own namespace (opus_mxfp4_small_noshuffle).
+//
 //
 // 1x4 waves (T_M = 1, T_N = 4): the 4 waves split the tile along N and share A.
 //   A, B and the scales: global -> LDS by LDS-DMA into a STAGES-deep ring (one __shared__ object per stage); A / B as

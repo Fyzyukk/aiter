@@ -1012,37 +1012,15 @@ for _bm, _bn, _bk, _wg in _GFX1250_CLUSTERLAUNCH_TILES:
 assert _cl_kid <= 21000, f"clusterlaunch gfx1250 kids overflow [20100,21000): {_cl_kid}"
 GFX1250_CLUSTERLAUNCH_KIDS = frozenset(gfx1250_clusterlaunch_kernels_list.keys())
 
-# a4w4_mxfp4_nt (gfx950): MXFP4 x MXFP4 NT, 1x32 e8m0 scales, 2x2 4-wave persistent pipeline. Device code is the
-# pre-compiled gen_co/gfx950/opus_gemm_gfx950_a4w4_mxfp4_nt_co_<B_M>x<B_N>x256.co (pin toolchain); only the host
-# launcher is JIT-built. Kids 30000..30030 (see variants below) (tile index order is also the heuristic's candidate order).
-A4W4_MXFP4_NT_KID_BASE = 30000
+# a4w4_mxfp4_nt_noshuffle (gfx950): MXFP4 x MXFP4 NT, 1x32 e8m0 scales, 2x2 4-wave pipeline with plain row-major inputs
+# (B not shuffle_weight'ed, scales [rows, K/32] not e8m0_shuffle'd; the layout of Triton gemm_afp4wfp4).  Device code is
+# the pre-compiled gen_co/gfx950/opus_gemm_gfx950_a4w4_mxfp4_nt_noshuffle_co_<B_M>x<B_N>x256[_np|_nob].co (pin toolchain);
+# only the host launcher is JIT-built.  Kids 30100 + variant offset + tile index (tile index order is also the
+# heuristic's candidate order).
 A4W4_MXFP4_NT_TILES = [(256, 256), (256, 128), (128, 256), (128, 128), (192, 256), (256, 192)]
-# Variants (name_tag): persistent "a4w4_mxfp4_nt_co" (kid 30000 + i), one tile per block "a4w4_mxfp4_nt_np_co" (30010 + i),
-# split-K "a4w4_mxfp4_nt_sk_co" (30020 + i, no 256x256), persistent without M/N boundary handling "a4w4_mxfp4_nt_nob_co"
-# (30030, 256x256 only).  i indexes A4W4_MXFP4_NT_TILES.
-A4W4_MXFP4_NT_VARIANTS = {"": 0, "np": 10, "sk": 20, "nob": 30}
-
-
-def _a4w4_mxfp4_nt(bm, bn, variant):
-    tag = "a4w4_mxfp4_nt" + (f"_{variant}" if variant else "") + "_co"
-    return OpusGemmInstance(
-        256, bm, bn, 256, 2, 2, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt", ["bf16_t"],
-        arch_prefix="gfx950", name_tag=tag,
-    )
-
-
-a4w4_mxfp4_nt_kernels_list = {
-    A4W4_MXFP4_NT_KID_BASE + off + i: _a4w4_mxfp4_nt(bm, bn, v)
-    for v, off in A4W4_MXFP4_NT_VARIANTS.items()
-    for i, (bm, bn) in enumerate(A4W4_MXFP4_NT_TILES)
-    if not (v == "sk" and (bm, bn) == (256, 256)) and not (v == "nob" and (bm, bn) != (256, 256))
-}
-A4W4_MXFP4_NT_KIDS = frozenset(a4w4_mxfp4_nt_kernels_list.keys())
-
-# a4w4_mxfp4_nt_noshuffle (gfx950): same 2x2 pipeline with plain row-major inputs (B not shuffle_weight'ed, scales
-# [rows, K/32] not e8m0_shuffle'd), as aiter gemm_a4w4(bpreshuffle=False).  Pre-compiled
-# gen_co/gfx950/opus_gemm_gfx950_a4w4_mxfp4_nt_noshuffle_co_<B_M>x<B_N>x256[_np|_nob].co.  Kids 30100 + variant offset + tile
-# index (same offsets / tile order as above); no split-K yet.
+# Variants (name_tag): persistent "a4w4_mxfp4_nt_noshuffle_co" (kid 30100 + i), one tile per block
+# "a4w4_mxfp4_nt_noshuffle_np_co" (30110 + i), persistent without M/N boundary handling "a4w4_mxfp4_nt_noshuffle_nob_co"
+# (30130, 256x256 only).  i indexes A4W4_MXFP4_NT_TILES.  No split-K variant.
 A4W4_MXFP4_NT_NOSHUFFLE_KID_BASE = 30100
 A4W4_MXFP4_NT_NOSHUFFLE_VARIANTS = {"": 0, "np": 10, "nob": 30}
 
@@ -1062,54 +1040,40 @@ a4w4_mxfp4_nt_noshuffle_kernels_list = {
     if not (v == "nob" and (bm, bn) != (256, 256))
 }
 A4W4_MXFP4_NT_NOSHUFFLE_KIDS = frozenset(a4w4_mxfp4_nt_noshuffle_kernels_list.keys())
-A4W4_MXFP4_TAGS = ("a4w4_mxfp4_nt", "a4w4_mxfp4_nt_noshuffle", "a4w4_mxfp4_nt_small")
 
-# a4w4_mxfp4_nt_small (gfx950): small-tile pipelines, standard hipcc, built by the aiter JIT (no .co); LAYOUT 0 kids use
-# include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh, LAYOUT 1 kids ..._nt_small_noshuffle_gfx950.cuh.
-# Both layouts: the same 1x4-wave pipeline structure (LDS-DMA ring for A -- shuffle: B + scales in a register ring; row-major:
-# B and the scales in the LDS ring too --, KS > 1: the waves split KS ways along K).  Config = (BM, BN, D, KS, None (former row-major BMODE slot), LAYOUT (0 shuffle, 1 row-major), S).
-#   shuffle (gemm_a4w4 bpreshuffle=True inputs): 1x4 waves (KS > 1: the waves split KS ways along K), kids 30410 + i,
-#     S = 1 (30410-30413 M ~ 128-512, 30414-30416 M <= 64); name_tag "a4w4_mxfp4_nt_d<D>ks<KS>" (the tile is in the name).
-#   (30400-30405 former shuffle B_DIRECT, 30406-30408 former shuffle B_LDS: retired, ids not reused)
-#   row-major (gemm_a4w4_opus_noshuffle inputs): kids 30500 + i, S = 1 (30500 M <= 16, 30501 M ~ 64, 30502-30504 M ~ 128-512);
-#     name_tag "a4w4_mxfp4_nt_rm_d<D>ks<KS>".  Configs chosen by a sweep of 44 (BM, BN, KS, D) x S 1/2/4 on M 1-1024 x 4 (N, K)
-#     (mxfp4_nt_small_dev/prof/sweep_rowmajor_HIP6.csv, EXPERIMENTS.md); S = 2 / 4 never won, split-K support kept
-#     (_a4w4_mxfp4_nt_small(..., s) with s > 1 -> tag suffix "_sk<S>").  (Former row-major B_DIRECT / B_LDS kids
-#     30500-30520 with S 1/2/4 were replaced; ids 30505-30520 are free.)
-A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS = [   # (BM, BN, D, KS)
-    (32, 64, 6, 1), (32, 128, 3, 1), (32, 128, 4, 1), (64, 128, 4, 1),   # 30410-30413
-    (16, 32, 4, 2), (16, 32, 4, 4), (16, 64, 4, 1),                      # 30414-30416
-]
-A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS = [   # (BM, BN, D, KS)
+# a4w4_mxfp4_nt_small_noshuffle (gfx950): small-tile pipeline for the same row-major inputs, standard hipcc, built by the
+# aiter JIT (no .co): include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh, 1x4 waves (A, B and the
+# scales through an LDS-DMA ring; KS > 1: the waves split KS ways along K).  Config = (BM, BN, D, KS, S).
+#   Kids 30500 + i, S = 1 (30500 M <= 16, 30501 M ~ 64, 30502-30504 M ~ 128-512); name_tag "a4w4_mxfp4_nt_rm_d<D>ks<KS>".
+#   Configs chosen by a sweep of 44 (BM, BN, KS, D) x S 1/2/4 on M 1-1024 x 4 (N, K); S = 2 / 4 never won, split-K
+#   support kept (_a4w4_mxfp4_nt_small_noshuffle(..., s) with s > 1 -> tag suffix "_sk<S>").
+A4W4_MXFP4_NT_SMALL_NOSHUFFLE_CFGS = [   # (BM, BN, D, KS)
     (16, 32, 4, 2), (32, 32, 4, 2),                       # 30500-30501
     (32, 64, 4, 1), (64, 64, 4, 1), (64, 128, 4, 1),      # 30502-30504
 ]
-A4W4_MXFP4_NT_SMALL_CFG = {}   # kernel name -> (BM, BN, D, KS, BMODE, LAYOUT, S)
+A4W4_MXFP4_NT_SMALL_NOSHUFFLE_CFG = {}   # kernel name -> (BM, BN, D, KS, S)
 
 
-def _a4w4_mxfp4_nt_small(bm, bn, d, ks, layout, s):
-    # Both layouts: the same 1x4-wave pipeline structure, config (BM, BN, D, KS); S > 1 = split-K variant (fp32 workspace +
-    # splitk_reduce_kernel), variant word in the tag as the 2x2 "_sk" kids; row-major tags carry "_rm" (no name collision).
-    tag = f"a4w4_mxfp4_nt{'_rm' if layout else ''}_d{d}ks{ks}" + (f"_sk{s}" if s > 1 else "")
+def _a4w4_mxfp4_nt_small_noshuffle(bm, bn, d, ks, s):
+    # S > 1 = split-K variant (fp32 workspace + splitk_reduce_kernel), variant word in the tag as "_sk<S>".
+    tag = f"a4w4_mxfp4_nt_rm_d{d}ks{ks}" + (f"_sk{s}" if s > 1 else "")
     inst = OpusGemmInstance(
-        256, bm, bn, 256, 1, 4, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt_small", ["bf16_t"],
+        256, bm, bn, 256, 1, 4, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt_small_noshuffle", ["bf16_t"],
         arch_prefix="gfx950", name_tag=tag,
     )
-    assert inst.name not in A4W4_MXFP4_NT_SMALL_CFG, inst.name
-    A4W4_MXFP4_NT_SMALL_CFG[inst.name] = (bm, bn, d, ks, None, layout, s)
+    assert inst.name not in A4W4_MXFP4_NT_SMALL_NOSHUFFLE_CFG, inst.name
+    A4W4_MXFP4_NT_SMALL_NOSHUFFLE_CFG[inst.name] = (bm, bn, d, ks, s)
     return inst
 
 
-a4w4_mxfp4_nt_small_kernels_list = {
-    **{30410 + i: _a4w4_mxfp4_nt_small(*c, 0, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS)},
-    **{30500 + i: _a4w4_mxfp4_nt_small(*c, 1, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS)},
+a4w4_mxfp4_nt_small_noshuffle_kernels_list = {
+    30500 + i: _a4w4_mxfp4_nt_small_noshuffle(*c, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_NOSHUFFLE_CFGS)
 }
 
 # combined list (used by production gen_instances / dispatch)
 kernels_list = {
-    **a4w4_mxfp4_nt_kernels_list,
     **a4w4_mxfp4_nt_noshuffle_kernels_list,
-    **a4w4_mxfp4_nt_small_kernels_list,
+    **a4w4_mxfp4_nt_small_noshuffle_kernels_list,
     **a8w8_scale_kernels_list,
     **a8w8_kernels_list,
     **a16w16_kernels_list,

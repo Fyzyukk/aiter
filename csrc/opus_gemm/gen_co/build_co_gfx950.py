@@ -3,7 +3,7 @@
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 """Offline builder for the gfx950 pre-compiled (.co) opus_gemm kernels.
 
-The a4w4_mxfp4_nt pipeline pins its A / B / C fragments with [[clang::amdgpu_pin_agpr/vgpr]]; only the pin
+The a4w4_mxfp4_nt_noshuffle pipeline pins its A / B / C fragments with [[clang::amdgpu_pin_agpr/vgpr]]; only the pin
 toolchain (clang 24 + amdgpu pin patches) compiles it, and stock ROCm hipcc used by the aiter JIT does not.
 So the device code is compiled ahead of time here (one bare ELF code object per kernel) and loaded at runtime by
 include/gfx950/opus_co_launch_mxfp4_gfx950.cuh; the host launchers / dispatch go through the ordinary JIT.
@@ -36,7 +36,7 @@ extern "C" __global__ __launch_bounds__({lb0}, {lb1}) void {name}({kargs} kargs)
 
 
 def kernel_name(e):
-    """variant: "" persistent, "np" one tile per block, "sk" split-K, "nob" persistent without M/N boundary handling."""
+    """variant: "" persistent, "np" one tile per block, "nob" persistent without M/N boundary handling."""
     m, n, k = e["tile"]
     v = e.get("variant", "")
     return f"opus_gemm_gfx950_{e['pipeline']}_co_{m}x{n}x{k}" + (f"_{v}" if v else "")

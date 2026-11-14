@@ -6,8 +6,8 @@
 // gemm_afp4wfp4, no padding:
 //   A [batch, M, K/2] fp4x2;  B [batch, N, K/2] fp4x2;  SFA [rows, K/32] / SFB [rows, K/32] UE8M0;  C [batch, M, N] bf16.
 //   Any M, N % 8 == 0, K % 256 == 0.  Non-persistent: grid = (N/B_N, M/B_M, batch * split_k).
-// Independent of the shuffle small-tile traits (opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh): both can be included in
-// one TU (opus_splitk_ws_handle is guarded by the same macro as in the a16w16 / shuffle traits).
+// opus_splitk_ws_handle is guarded by the same macro as in the a16w16 traits (both can be included in one TU).
+//
 #pragma once
 
 #if defined(__HIP_DEVICE_COMPILE__) || defined(__HIPCC_RTC__)
@@ -41,9 +41,8 @@ struct opus_gemm_mxfp4_small_noshuffle_kargs_gfx950 {
 
 // Tiles B_M 16/32/64 x B_N 16/32/64/128/256, K tile B_K = 256.  STAGES (D) = ring depth: ring step t (KS K tiles) lives in
 // LDS stage t % D.  KS = 1: the 4 waves split B_N (1x4); KS = 2 / 4: the waves split KS ways along K and 4/KS ways along N,
-// and their partial tiles are summed through LDS once at the end.  Same structure as the shuffle small traits, except that
-// B and the scales go through the LDS ring as well (row-major rows are not MFMA-operand shaped; LDS-DMA copies them
-// coalesced and the ds_reads re-shape them).
+// and their partial tiles are summed through LDS once at the end.  A, B and the scales all go through the
+// LDS ring (row-major rows are not MFMA-operand shaped; LDS-DMA copies them coalesced and the ds_reads re-shape them).
 template<int BM_, int BN_, int D_, int KS_>
 struct opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950 {
     static constexpr int WARP_SIZE = 64;

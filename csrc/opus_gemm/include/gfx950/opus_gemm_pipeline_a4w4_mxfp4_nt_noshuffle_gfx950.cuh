@@ -1,5 +1,5 @@
 #pragma once
-// MXFP4 x MXFP4 NT 2x2 4-wave pipeline, no-shuffle inputs (row-major A / B / scales); see mxfp4_nt_noshuffle_dev.
+// MXFP4 x MXFP4 NT 2x2 4-wave pipeline, no-shuffle inputs (row-major A / B / scales).
 
 #include <opus/hip_minimal.hpp>
 #include <opus/opus.hpp>
@@ -12,7 +12,7 @@
 
 using opus::operator""_I;
 
-// Everything below lives in its own namespace so this header and the shuffle pipeline header can share a TU.
+// Everything below lives in its own namespace (opus_mxfp4_ns).
 namespace opus_mxfp4_ns {
 
 // Create layout for loading A matrix from global memory (LDS-DMA, 16 B pieces XOR-swizzled per row pair).
@@ -298,9 +298,9 @@ constexpr int c_reg() {
 }
 
 // Quadrant (HM, HN) of C: E_M x E_N fragments x 2 MFMAs (kk = 0, 1) of A half HM and B half HN; ZC: the kk = 0 MFMA
-// starts from C = 0.  Scale dword kk of half h holds repeat e in byte e (opsel).  A function here (the shuffle pipeline
-// uses a lambda): either form changes the generated code of the other pipeline, so each keeps the one that reproduces
-// its .co.
+// starts from C = 0.  Scale dword kk of half h holds repeat e in byte e (opsel).  A function here, not a lambda:
+// the form changes the generated code, and this one reproduces the committed .co.
+//
 template<class T, int HM, int HN, bool ZC, class MMA, class CF>
 __device__ __forceinline__ void mma_quadrant(MMA& mma, const fp4x32_t (&v_a)[2][T::E_K][T::E_M], const fp4x32_t (&v_b)[2][T::E_K][T::E_N],
                                              CF (&v_c)[2][2][T::E_M * T::E_N], const opus::u32_t (&v_sfa)[2][T::E_K], const opus::u32_t (&v_sfb)[2][T::E_K]) {
