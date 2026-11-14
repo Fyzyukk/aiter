@@ -5,8 +5,9 @@
 // row-major, B shuffle_weight(16, 16), scales e8m0_shuffle (1x32 UE8M0), C [M, N] bf16.  M <= ~512.  Standard ROCm
 // toolchain (no pin attributes, no opus).  Row-major inputs: opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh.
 //
-// One pipeline, A_LDS: A global -> LDS by LDS-DMA (D-deep ring, shared by the 4 waves), B + scales global -> a D-deep
-//   register ring (asm 32x128 style); KS = 2 / 4 splits the 4 waves along K (partials summed through LDS at the end).
+// One operand path, A_LDS (body_alds): A global -> LDS by LDS-DMA (D-deep ring, shared by the 4 waves), B + scales
+//   global -> a D-deep register ring (asm 32x128 style); KS = 2 / 4 splits the 4 waves along K (partials summed through
+//   LDS at the end).
 // MFMA v_mfma_scale_f32_16x16x128_f8f6f4 with B as srcA (each lane holds 4 consecutive columns of one C row);
 //   scales read as raw e8m0_shuffle dwords ([kk0 half0, kk0 half1, kk1 half0, kk1 half1] of a 32-row block) with a
 //   compile-time opsel; split-K over blocks (last-arriving block reduces); M / N tails by buffer ranges + 16-column C mask.
@@ -18,14 +19,14 @@ namespace opus_mxfp4_small {
 
 // A_LDS: A global -> LDS by LDS-DMA through a D-deep ring of LDS stages (shared by the 4 waves, one barrier per ring
 // step); B (shuffle_weight, contiguous 1 KB per operand) and the scales go straight into a D-deep register ring.
-// KS = 1: 1x4 waves, wave w owns all BM rows and columns [col0 + w*BN/4, +BN/4).  A stage image: BM/8 blocks of 8 rows (one DMA =
-// 64 lanes x 16 B), block stride 1088 B, row r of a block at r*128 with its 16 B chunk c at slot c ^ ((r >> 1) & 3) (the 16
-// lanes of an A ds_read_b128 hit distinct bank groups); one __shared__ object per stage (lds_stage).  The ring schedule is
-// described at the K loop below.
-// KS > 1: the 4 waves split KS ways along K and 4/KS ways along N.  One ring step then covers KS consecutive
-// K tiles: the stage holds A of all KS tiles, wave group g computes tile step*KS + g; partials summed through LDS at the end.
+// KS = 1: 1x4 waves, wave w owns all BM rows and columns [col0 + w*BN/4, +BN/4).
+// KS > 1: the 4 waves split KS ways along K and 4/KS ways along N.  One ring step then covers KS consecutive K tiles:
+//   the stage holds A of all KS tiles, wave group g computes tile step*KS + g; partials summed through LDS at the end.
+// A stage image: BM/8 blocks of 8 rows (one DMA = 64 lanes x 16 B), block stride 1088 B, row r of a block at r*128 with
+//   its 16 B chunk c at slot c ^ ((r >> 1) & 3) (the 16 lanes of an A ds_read_b128 hit distinct bank groups); one
+//   __shared__ object per stage (lds_stage).  The ring schedule is described at the K loop below.
 // BM == 16: one 16-row block, the A scale is half of a 32-row e8m0_shuffle block (byte shift).
-template<int BM, int BN, int D, int KS = 1>
+template<int BM, int BN, int D, int KS>
 __device__ __forceinline__ void body_alds(const kargs_t& ka) {
     static_assert(BM == 16 || BM == 32 || BM == 64 || BM == 128);
     static_assert(KS == 1 || KS == 2 || KS == 4);

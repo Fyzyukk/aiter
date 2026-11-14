@@ -2,10 +2,10 @@
 // Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
 //
 // Device helpers shared by the small-tile MXFP4 x MXFP4 NT pipelines (gfx950), shuffle
-// (opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh) and row-major (..._nt_small_noshuffle_gfx950.cuh): buffer
-// descriptors, split-K reduction over blocks, bf16 C store, per-stage LDS objects.
+// (opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh) and row-major (..._nt_small_noshuffle_gfx950.cuh): vector types,
+// static_for, buffer descriptors, split-K reduction over blocks, bf16 C store, per-stage LDS objects.
 #pragma once
-#include "opus_gemm_traits_a4w4_mxfp4_nt_small_gfx950.cuh"
+#include "opus_gemm_traits_a4w4_mxfp4_nt_small_common_gfx950.cuh"
 
 #ifndef OPUS_MXFP4_SMALL_WAUX   // cache policy of the split-K partial-sum stores / loads (sc1)
 #define OPUS_MXFP4_SMALL_WAUX 0x10

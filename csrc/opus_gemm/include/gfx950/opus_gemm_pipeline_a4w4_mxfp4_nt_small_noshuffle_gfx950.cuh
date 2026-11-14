@@ -5,10 +5,11 @@
 // fp4x2, scales [rows, K/32] UE8M0, all row-major, no padding; C [M, N] bf16.  N % 8 == 0, K % 256 == 0, any M.
 // Standard ROCm toolchain (no pin attributes, no opus).  Shuffle inputs: opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh.
 //
-//   B_DIRECT (BMODE 0): A / B / scales global -> a D-deep register ring; KS splits the 4 waves along K, each wave group
-//     taking a contiguous K chunk (even D: one 16-byte scale load covers two K tiles).
-//   B_LDS    (BMODE 1): A and B global -> LDS by LDS-DMA (8-row-block, XOR-swizzled image), scales by a block-wide 4-byte
-//     LDS-DMA, one barrier per K tile.
+// Two operand paths (traits BMODE):
+//   B_DIRECT (body_direct_rm): A / B / scales global -> a D-deep register ring, no LDS in the K loop; KS splits the 4
+//     waves along K, each wave group taking a contiguous K chunk (even D: one 16-byte scale load covers two K tiles).
+//   B_LDS    (body_lds_rm): A and B global -> LDS by LDS-DMA (8-row-block, XOR-swizzled image), scales by a block-wide
+//     4-byte LDS-DMA, one barrier per K tile.
 // Scales: per 16-row block one 8-byte row load (or LDS read) + one v_perm, so the MFMA takes them with opsel = kk.
 #pragma once
 #include "opus_gemm_traits_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh"
@@ -39,7 +40,7 @@ __device__ __forceinline__ void body_direct_rm(const kargs_t& ka) {
     const int S = ka.splitk;
     const int col0 = blockIdx.x * BN, row0 = blockIdx.y * BM, bz = blockIdx.z / S, sk = blockIdx.z % S;
     const int ktot = ka.k / 256, kper = (ktot + S - 1) / S, kbeg = sk * kper;
-    const int loops = (ktot < kbeg + kper ? ktot : kbeg + kper);    // this block's K tiles: [kbeg, loops)
+    const int kend = (ktot < kbeg + kper ? ktot : kbeg + kper);     // this block's K tiles: [kbeg, kend)
     const int Kb = ka.k / 2;
     const int wn = wave % WN, kgrp = wave / WN;
     const int ncol0 = col0 + wn * (BN / WN);
@@ -62,9 +63,9 @@ __device__ __forceinline__ void body_direct_rm(const kargs_t& ka) {
     // (kt, kt+1) -- 16 contiguous bytes per row -- come in with one 16-byte load at the odd stage (half the scale
     // instructions, each touching 16 rows).
     constexpr bool PAIR = D % 2 == 0;
-    const int kchunk = ((loops - kbeg) + KS - 1) / KS;
+    const int kchunk = (kend - kbeg + KS - 1) / KS;
     const int k0 = kbeg + kgrp * kchunk;
-    const int kend_w = loops < k0 + kchunk ? loops : k0 + kchunk;
+    const int kend_w = kend < k0 + kchunk ? kend : k0 + kchunk;
     const int nk = kend_w > k0 ? kend_w - k0 : 0;
 
     i32x4 va[D][EM][2], vb[D][EN][2];
