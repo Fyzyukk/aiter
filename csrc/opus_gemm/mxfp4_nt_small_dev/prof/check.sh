@@ -1,6 +1,6 @@
 #!/bin/bash
 # check.sh EXE GPU cfg... : full correctness matrix of the small-tile pipeline.
-#   cfg = MODE:BMxBN:KS:D[:LAYOUT]   (MODE 0 = B_DIRECT, 1 = B_LDS (both row-major only), 2 = A_LDS (shuffle only); KS ignored for B_LDS; LAYOUT 0 shuffled (default), 1 row-major)
+#   cfg = MODE:BMxBN:KS:D[:LAYOUT]   (MODE, row-major only: 0 = B_DIRECT, 1 = B_LDS; ignored for shuffle (1x4 waves), e.g. 2; KS ignored for B_LDS; LAYOUT 0 shuffled (default), 1 row-major)
 #   GPU = HIP_VISIBLE_DEVICES index; runs are serialized with flock /tmp/gpu<GPU>.lock (correctness is unaffected by other users).
 # Matrix per cfg: (N,K) in {(4096,4096),(2048,7168),(3072,6144),(4096,8192),(4096,1024),(3072,1536)} x M {1,64,128,512} x split {1,2}
 #   + unaligned M {3,50,100,300} x N {128,400,1040} (row-major: {136,400,1032}) x K {256,768,2304} x split {1,3,8} x batch {1, 2 + MXFP4_SFA_K_PATTERN}.

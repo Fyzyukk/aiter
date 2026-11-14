@@ -1,12 +1,12 @@
 // Host driver / test harness for the small-tile MXFP4 GEMM pipelines (../include/gfx950/):
-//   shuffle   opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh           (-l 0, -a 2)
+//   shuffle   opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh           (-l 0, 1x4 waves)
 //   row-major opus_gemm_pipeline_a4w4_mxfp4_nt_small_noshuffle_gfx950.cuh (-l 1, -a 0 / -a 1)
 // Arbitrary M, K % 256 == 0, N % 16 == 0 (shuffle) / N % 8 == 0 (row-major).
-//   -a 0: B_DIRECT, row-major only (-t 16x32 / 16x64 / 32x32 / 32x64, -s KS 2/4)   -a 1: B_LDS, row-major only (-t 32x128 / ...)
-//   -a 2: A_LDS, shuffle only (-t 16x32 / 16x64 / 16x128 / 32x32 / 32x64 / 32x128 / 64x128 / 32x256, -s KS 1/2/4, default 1)
+//   -l 0 (shuffle, 1x4 waves): -t 16x32 / 16x64 / 16x128 / 32x32 / 32x64 / 32x128 / 64x128 / 32x256, -s KS 1/2/4 (default 1)
+//   -l 1 (row-major): -a 0 B_DIRECT (-t 16x32 / 16x64 / 32x32 / 32x64, -s KS 2/4)   -a 1 B_LDS (-t 32x128 / ...)
 //   -l 0: shuffled inputs (gemm_a4w4 bpreshuffle)   -l 1: row-major inputs (Triton gemm_afp4wfp4: B, scales row-major)
 //   -D dir: dump raw inputs + C   -d prefetch depth (ring)  -p split-K over blocks
-//   -m -n -k -b   -v verify   -i graph iterations (0 = no timing).  Defaults -t 16x32 -a 0 -l 0: shuffled inputs need -a 2.
+//   -m -n -k -b   -v verify   -i graph iterations (0 = no timing).
 #include <hip/hip_runtime.h>
 #include <algorithm>
 #include <cmath>
@@ -132,24 +132,21 @@ cmp_stats compare(const float* ref, const float* got, const float* mag, size_t c
     return {errors, max_diff, max_ratio, cd};
 }
 
-template<int BM, int BN, int D, int KS, int BMODE, int L> void launch_k(const smallm_kargs& ka, hipStream_t st) {
+template<int BM, int BN, int D, int KS, int BMODE> void launch_k(const smallm_kargs& ka, hipStream_t st) {   // row-major
     dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.splitk);
-    if constexpr (L == OPUS_MXFP4_SMALL_ROWMAJOR)
-        gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(ka);
-    else
-        gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(ka);
+    gemm_a4w4_mxfp4_nt_small_noshuffle_kernel<opus_gemm_a4w4_mxfp4_nt_small_noshuffle_traits_gfx950<BM, BN, D, KS, BMODE>><<<grid, 256, 0, st>>>(ka);
 }
 static int g_layout = OPUS_MXFP4_SMALL_SHUFFLED;
 template<int BM, int BN, int D, int KS> void launch_t(const smallm_kargs& ka, hipStream_t st) {   // B_DIRECT is row-major only
-    launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_B_DIRECT, OPUS_MXFP4_SMALL_ROWMAJOR>(ka, st);
+    launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_B_DIRECT>(ka, st);
 }
 template<int BM, int BN, int D> void launch_l(const smallm_kargs& ka, hipStream_t st) {   // B_LDS is row-major only
-    launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS, OPUS_MXFP4_SMALL_ROWMAJOR>(ka, st);
+    launch_k<BM, BN, D, 1, OPUS_MXFP4_SMALL_B_LDS>(ka, st);
 }
 using launch_fn = void (*)(const smallm_kargs&, hipStream_t);
 // Instantiated configurations (the small-tile pipelines' tile set):
 //   B_DIRECT (row-major only): 16x32 KS4, 16x64 KS2/KS4, 32x32 KS4, 32x64 KS2/KS4, D 2-4    B_LDS (row-major only): 32x128 / 64x128 / 128x128
-//   D 2-4, 32x256 D 2-3, 64x256 D 2, 16x64 / 32x64 / 16x128 D 2-4, 64x64 D 2-3    A_LDS (shuffle only): see pick_alds
+//   D 2-4, 32x256 D 2-3, 64x256 D 2, 16x64 / 32x64 / 16x128 D 2-4, 64x64 D 2-3    shuffle (1x4 waves): see pick_1x4
 launch_fn pick_lds(int bm, int bn, int d) {   // -a 1 (row-major only)
     if (g_layout != OPUS_MXFP4_SMALL_ROWMAJOR) return nullptr;
 #define SL3(BM, BN) if (bm == BM && bn == BN) { if (d == 2) return launch_l<BM, BN, 2>; if (d == 3) return launch_l<BM, BN, 3>; }
@@ -161,10 +158,11 @@ launch_fn pick_lds(int bm, int bn, int d) {   // -a 1 (row-major only)
 #undef SL4
     return nullptr;
 }
-template<int BM, int BN, int D, int KS> void launch_a(const smallm_kargs& ka, hipStream_t st) {
-    launch_k<BM, BN, D, KS, OPUS_MXFP4_SMALL_A_LDS, OPUS_MXFP4_SMALL_SHUFFLED>(ka, st);
+template<int BM, int BN, int D, int KS> void launch_a(const smallm_kargs& ka, hipStream_t st) {   // shuffle, 1x4 waves
+    dim3 grid((ka.n + BN - 1) / BN, (ka.m + BM - 1) / BM, ka.batch * ka.splitk);
+    gemm_a4w4_mxfp4_nt_small_kernel<opus_gemm_a4w4_mxfp4_nt_small_traits_gfx950<BM, BN, D, KS>><<<grid, 256, 0, st>>>(ka);
 }
-launch_fn pick_alds(int bm, int bn, int d, int ks) {   // -a 2 (shuffled only); depth limited by (D-1) * G <= 63; -s KS (default 1)
+launch_fn pick_1x4(int bm, int bn, int d, int ks) {   // -l 0 (shuffle); depth limited by (D-1) * G <= 63; -s KS (default 1)
 #define SA(BM, BN, DD) if (bm == BM && bn == BN && d == DD && ks == 1) return launch_a<BM, BN, DD, 1>;
 #define SK(BM, BN, KS, DD) if (bm == BM && bn == BN && d == DD && ks == KS) return launch_a<BM, BN, DD, KS>;
     // small M: BM 16 and in-block K split
@@ -188,7 +186,7 @@ launch_fn pick(int bm, int bn, int d, int ks) {   // -a 0 (row-major only)
 }
 
 int main(int argc, char** argv) {
-    int M = 16, N = 1024, K = 4096, batch = 1, verify = 1, iters = 0, depth = 0, bm = 16, bn = 32, ks = -1, splitk = 1, alds = 0;
+    int M = 16, N = 1024, K = 4096, batch = 1, verify = 1, iters = 0, depth = 0, bm = 16, bn = 32, ks = -1, splitk = 1, bpath = 0;
     const char* dump_dir = nullptr;
     for (int i = 1; i + 1 < argc; i += 2) {
         const char* f = argv[i];
@@ -200,15 +198,15 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(f, "-d")) depth = v;
         else if (!std::strcmp(f, "-s")) ks = v;
         else if (!std::strcmp(f, "-p")) splitk = v;
-        else if (!std::strcmp(f, "-a")) alds = v;
+        else if (!std::strcmp(f, "-a")) bpath = v;
         else if (!std::strcmp(f, "-l")) g_layout = v;
         else { std::fprintf(stderr, "unknown flag %s\n", f); return 1; }
     }
     if (depth == 0) depth = (bm * bn >= 64 * 256) ? 2 : 3;
-    if (ks < 0) ks = alds == 2 ? 1 : 4;
-    launch_fn launch = alds == 2 ? pick_alds(bm, bn, depth, ks) : alds ? pick_lds(bm, bn, depth) : pick(bm, bn, depth, ks);
-    if (!launch) { std::fprintf(stderr, "unsupported tile %dx%d depth %d ks %d\n", bm, bn, depth, ks); return 1; }
     const bool RM = g_layout == OPUS_MXFP4_SMALL_ROWMAJOR;
+    if (ks < 0) ks = RM ? 4 : 1;
+    launch_fn launch = !RM ? pick_1x4(bm, bn, depth, ks) : bpath ? pick_lds(bm, bn, depth) : pick(bm, bn, depth, ks);
+    if (!launch) { std::fprintf(stderr, "unsupported tile %dx%d depth %d ks %d\n", bm, bn, depth, ks); return 1; }
     if (N % (RM ? 8 : 16) || K % 256 || M < 1) { std::fprintf(stderr, "need N %% %d == 0, K %% 256 == 0\n", RM ? 8 : 16); return 1; }
 
     const size_t a_bytes = (size_t)batch * M * K / 2, b_bytes = (size_t)batch * N * K / 2, c_cnt = (size_t)batch * M * N;

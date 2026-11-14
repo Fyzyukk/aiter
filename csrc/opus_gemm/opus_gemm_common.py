@@ -1064,36 +1064,42 @@ a4w4_mxfp4_nt_noshuffle_kernels_list = {
 A4W4_MXFP4_NT_NOSHUFFLE_KIDS = frozenset(a4w4_mxfp4_nt_noshuffle_kernels_list.keys())
 A4W4_MXFP4_TAGS = ("a4w4_mxfp4_nt", "a4w4_mxfp4_nt_noshuffle", "a4w4_mxfp4_nt_small")
 
-# a4w4_mxfp4_nt_small (gfx950): small-tile pipeline, standard hipcc, built by the aiter JIT (no .co); LAYOUT 0 kids use
+# a4w4_mxfp4_nt_small (gfx950): small-tile pipelines, standard hipcc, built by the aiter JIT (no .co); LAYOUT 0 kids use
 # include/gfx950/opus_gemm_pipeline_a4w4_mxfp4_nt_small_gfx950.cuh, LAYOUT 1 kids ..._nt_small_noshuffle_gfx950.cuh.
-# Config = (BM, BN, D, KS, BMODE (0 B_DIRECT, 1 B_LDS (row-major only), 2 A_LDS (shuffle only)), LAYOUT (0 shuffle, 1 row-major), S).
-#   shuffle (gemm_a4w4 bpreshuffle=True inputs): A_LDS only, kids 30410 + i, S = 1 (30410-30413 M ~ 128-512, 30414-30416 M <= 64)
+# Config = (BM, BN, D, KS, BMODE (row-major: 0 B_DIRECT, 1 B_LDS; shuffle: None), LAYOUT (0 shuffle, 1 row-major), S).
+#   shuffle (gemm_a4w4 bpreshuffle=True inputs): 1x4 waves (KS > 1: the waves split KS ways along K), kids 30410 + i,
+#     S = 1 (30410-30413 M ~ 128-512, 30414-30416 M <= 64); name_tag "a4w4_mxfp4_nt_d<D>ks<KS>" (the tile is in the name).
 #   (30400-30405 former shuffle B_DIRECT, 30406-30408 former shuffle B_LDS: retired, ids not reused)
 #   row-major (gemm_a4w4_opus_noshuffle inputs): kids 30500 + 3 * i + {0, 1, 2} for S = 1 / 2 / 4 (split-K over blocks)
-A4W4_MXFP4_NT_SMALL_SHUFFLE_ALDS_CFGS = [
-    (32, 64, 6, 1, 2), (32, 128, 3, 1, 2), (32, 128, 4, 1, 2), (64, 128, 4, 1, 2),   # 30410-30413
-    (16, 32, 4, 2, 2), (16, 32, 4, 4, 2), (16, 64, 4, 1, 2),                         # 30414-30416
+A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS = [   # (BM, BN, D, KS)
+    (32, 64, 6, 1), (32, 128, 3, 1), (32, 128, 4, 1), (64, 128, 4, 1),   # 30410-30413
+    (16, 32, 4, 2), (16, 32, 4, 4), (16, 64, 4, 1),                      # 30414-30416
 ]
 A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS = [
     (16, 64, 3, 1, 1), (16, 64, 4, 1, 1), (32, 64, 4, 1, 1), (64, 64, 3, 1, 1), (64, 128, 3, 1, 1), (64, 128, 4, 1, 1),
     (16, 32, 2, 4, 0),
 ]
 A4W4_MXFP4_NT_SMALL_SPLITS = (1, 2, 4)
-A4W4_MXFP4_NT_SMALL_CFG = {}   # name_tag -> (BM, BN, D, KS, BMODE, LAYOUT, S)
+A4W4_MXFP4_NT_SMALL_CFG = {}   # kernel name -> (BM, BN, D, KS, BMODE, LAYOUT, S)
 
 
 def _a4w4_mxfp4_nt_small(bm, bn, d, ks, bmode, layout, s):
-    # the tag keys A4W4_MXFP4_NT_SMALL_CFG, so it must be unique per config (tile included)
-    tag = f"a4w4_mxfp4_nt_small_{'rm' if layout else 'sh'}_{('dir', 'lds', 'alds')[bmode]}_{bm}x{bn}_d{d}ks{ks}_s{s}"
-    A4W4_MXFP4_NT_SMALL_CFG[tag] = (bm, bn, d, ks, bmode, layout, s)
-    return OpusGemmInstance(
+    if layout == 0:
+        assert bmode is None and s == 1, "shuffle small-tile: one operand path, S = 1"
+        tag = f"a4w4_mxfp4_nt_d{d}ks{ks}"
+    else:
+        tag = f"a4w4_mxfp4_nt_small_rm_{('dir', 'lds')[bmode]}_{bm}x{bn}_d{d}ks{ks}_s{s}"
+    inst = OpusGemmInstance(
         256, bm, bn, 256, 1, 4, 16, 16, 128, 16, 16, 4, 1, 1, 32, "a4w4_mxfp4_nt_small", ["bf16_t"],
         arch_prefix="gfx950", name_tag=tag,
     )
+    assert inst.name not in A4W4_MXFP4_NT_SMALL_CFG, inst.name
+    A4W4_MXFP4_NT_SMALL_CFG[inst.name] = (bm, bn, d, ks, bmode, layout, s)
+    return inst
 
 
 a4w4_mxfp4_nt_small_kernels_list = {
-    **{30410 + i: _a4w4_mxfp4_nt_small(*c, 0, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_SHUFFLE_ALDS_CFGS)},
+    **{30410 + i: _a4w4_mxfp4_nt_small(*c, None, 0, 1) for i, c in enumerate(A4W4_MXFP4_NT_SMALL_SHUFFLE_CFGS)},
     **{30500 + 3 * i + j: _a4w4_mxfp4_nt_small(*c, 1, s)
        for i, c in enumerate(A4W4_MXFP4_NT_SMALL_ROWMAJOR_CFGS) for j, s in enumerate(A4W4_MXFP4_NT_SMALL_SPLITS)},
 }

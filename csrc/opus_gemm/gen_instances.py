@@ -922,7 +922,7 @@ void
         for i, (kid, k) in enumerate(rows):
             from codegen.gen_instances_gfx950 import a4w4_mxfp4_nt_mode, a4w4_mxfp4_nt_variant
             if k.kernel_tag == "a4w4_mxfp4_nt_small":   # mode 3: small-tile pipeline (JIT), layout from its config
-                cfg = A4W4_MXFP4_NT_SMALL_CFG[k.name_tag]
+                cfg = A4W4_MXFP4_NT_SMALL_CFG[k.name]
                 mode, boundary, noshuffle = (3 if cfg[6] == 1 else 4), 1, cfg[5]   # 4: split-K variant, tune / tuned table only
             else:
                 mode = a4w4_mxfp4_nt_mode(k)

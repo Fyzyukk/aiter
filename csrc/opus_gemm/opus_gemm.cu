@@ -131,7 +131,7 @@ static int opus_a4w4_mxfp4_heuristic_kid(int M, int N, int K, int batch, int nos
   int best = -1;
   double best_cost = 1e300;
   // M <= 64: small-tile pipeline; B_M need not cover M (more M blocks beat a taller tile). Best measured (HIP 6 / smi 3):
-  //   shuffled (A_LDS), t = 16x32 tiles: K <= 1024 or t > CUs: 16x64 KS1 D4 (30416); K >= 6144: 16x32 KS4 D4 (30415);
+  //   shuffled (1x4 waves), t = 16x32 tiles: K <= 1024 or t > CUs: 16x64 KS1 D4 (30416); K >= 6144: 16x32 KS4 D4 (30415);
   //     else 16x32 KS2 D4 (30414)  (best of the three on all 24 measured M 1-32 x N,K shapes, smi 3)
   //   row-major M <= 8: direct 16x32 KS4 D2 (30518); M <= 64: B_LDS 16x64 D4 (30503)
   // Falls back to the first S = 1 small kid of this layout if the preferred one is not built.

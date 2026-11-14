@@ -1660,11 +1660,13 @@ def gen_a4w4_mxfp4_nt_small_instance(cg, k, instance_impl_preamble, A8W8_SCALE_H
     (the S = 1 kid); S > 1 kids launch the same kernel.  Inputs are checked by opus_gemm.cu before the launcher."""
     from opus_gemm_common import A4W4_MXFP4_NT_SMALL_CFG
 
-    bm, bn, d, ks, bmode, layout, S = A4W4_MXFP4_NT_SMALL_CFG[k.name_tag]
-    # layout 0: shuffle pipeline file; layout 1: row-major (noshuffle) pipeline file, own traits / kernel
+    bm, bn, d, ks, bmode, layout, S = A4W4_MXFP4_NT_SMALL_CFG[k.name]
+    # layout 0: shuffle pipeline file (1x4 waves, traits <BM, BN, D, KS>); layout 1: row-major (noshuffle) pipeline file,
+    # own traits <BM, BN, D, KS, BMODE> / kernel
     sfx = "_noshuffle" if layout else ""
     kernel = f"gemm_a4w4_mxfp4_nt_small{sfx}_kernel"
-    traits = f"opus_gemm_a4w4_mxfp4_nt_small{sfx}_traits_gfx950<{bm}, {bn}, {d}, {ks}, {bmode}>"
+    targs = f"{bm}, {bn}, {d}, {ks}" + (f", {bmode}" if layout else "")
+    traits = f"opus_gemm_a4w4_mxfp4_nt_small{sfx}_traits_gfx950<{targs}>"
     # shuffle: bytes per 32-row block (32 x round_up(K/32, 8) columns); row-major: bytes per row (K/32)
     sf_mul = 32 if layout == 0 else 1
     INSTANCE_IMPL = f"""{instance_impl_preamble()}
