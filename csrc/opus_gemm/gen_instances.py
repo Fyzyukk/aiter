@@ -25,6 +25,7 @@ from codegen.common import (
     write_if_changed,
 )
 from opus_gemm_common import (
+    A8W8_MXFP8_TAGS,
     KERNEL_REGISTRY,
     KernelKey,
     OpusGemmInstance,
@@ -270,6 +271,7 @@ INPUT_DTYPE_MAP = {
     "a8w8_mxscale_bmm_wave4m2_selfload": ("fp8_t", "fp8_t"),
     "a8w8": ("fp8_t", "fp8_t"),
     "a8w8_blockscale_bpreshuffle_singlebuf": ("fp8_t", "fp8_t"),
+    **{tag: ("fp8_t", "fp8_t") for tag in A8W8_MXFP8_TAGS},
     **{tag: ("bf16_t", "bf16_t") for tag in _A16W16_TAGS},
 }
 
@@ -821,6 +823,12 @@ class opus_gemm_codegen:
                 _rows("gfx950", {"a8w8_scale"}, "fp32_t"),
                 "fp32_t",
             )
+            _emit_map(
+                f,
+                "GENERATE_A8W8_MXFP8_KID_DISPATCH_GFX950",
+                _rows("gfx950", A8W8_MXFP8_TAGS, "bf16_t"),
+                "bf16_t",
+            )
             for arch in SPLITK_REDUCE_ARCHES:
                 for ctype, dtype_suffix in (
                     ("bf16_t", "BF16"),
@@ -973,7 +981,11 @@ void
 """
         parts = [MANIFEST_HEAD]
         for k in kernels_dict.values():
-            if k.kernel_tag.startswith("a8w8_mxscale_bmm_"):
+            # A8W8 MXFP8 launchers take the same arguments as the MXFP8 BMM ones.
+            if (
+                k.kernel_tag.startswith("a8w8_mxscale_bmm_")
+                or k.kernel_tag in A8W8_MXFP8_TAGS
+            ):
                 parts.append(MANIFEST_BMM_MXSCALE.format(kernel_name=k.name))
             elif k.kernel_tag in SPLITK_TAGS:
                 parts.append(MANIFEST_A16W16_WORKSPACE.format(kernel_name=k.name))
@@ -1138,8 +1150,15 @@ void
         """
         # Bucket present archs from splitk kids.
         present_archs = set()
+        # Host-only launchers of pre-compiled kids may launch the reduce too.
+        for row in self._host_instantiations:
+            if row.get("uses_splitk_reduce", False):
+                present_archs.add(_kid_name_arch(row["kid_name"]))
         for row in self._device_instantiations:
             name = row["kid_name"]
+            if row.get("uses_splitk_reduce", False):
+                present_archs.add(_kid_name_arch(name))
+                continue
             for arch_prefix in SPLITK_REDUCE_ARCHES:
                 if f"opus_gemm_{arch_prefix}_splitk_" in name:
                     present_archs.add(arch_prefix)
@@ -1241,8 +1260,12 @@ void
         # Only emit the standalone reduce TU if the build actually has a splitk kid (otherwise the fused
         # host TU will never reference any...
         needs_reduce_tu = any(
-            ("flatmm_splitk" in row["kid_name"]) or ("_splitk_" in row["kid_name"])
+            ("flatmm_splitk" in row["kid_name"])
+            or ("_splitk_" in row["kid_name"])
+            or row.get("uses_splitk_reduce", False)
             for row in self._device_instantiations
+        ) or any(
+            row.get("uses_splitk_reduce", False) for row in self._host_instantiations
         )
         if needs_reduce_tu:
             self._emit_splitk_reduce_tu()

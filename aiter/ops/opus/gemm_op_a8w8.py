@@ -21,6 +21,7 @@ from .launch_plan import (
     _A8W8_BLOCKSCALE_FAMILY,
     _A8W8_BPRESHUFFLE_FAMILY,
     _A8W8_FAMILY,
+    _A8W8_MXFP8_FAMILY,
     _A8W8_MXSCALE_BMM_FAMILY,
     _FP8_DTYPES,
     _get_cached_a8w8_mxscale_bmm_plan,
@@ -114,6 +115,37 @@ def _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
     w_scale: Tensor,
     Y: Tensor,
     kid: int,
+) -> Tensor: ...
+
+
+def _gen_opus_gemm_a8w8_mxfp8_launch_fake_tensors(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    workspace: Tensor | None,
+    kid: int,
+    split_k: int,
+) -> Tensor:
+    return Y
+
+
+@compile_ops(
+    "module_deepgemm_opus",
+    fc_name="opus_gemm_a8w8_mxfp8_launch",
+    gen_fake=_gen_opus_gemm_a8w8_mxfp8_launch_fake_tensors,
+    develop=True,
+)
+def _opus_gemm_a8w8_mxfp8_launch_raw(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    workspace: Tensor | None,
+    kid: int,
+    split_k: int,
 ) -> Tensor: ...
 
 
@@ -370,6 +402,229 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
         0,
     )
     return Y
+
+
+# NT / NN / TT / TN: _launch_a8w8_mxfp8_gemm picks the layout from the operand
+# strides (logical XQ [M, K] / WQ [N, K] views of the stored operands) and runs
+# _execute_a8w8_mxfp8_<layout>; every a8w8_mxfp8 kid carries all four layouts
+# (one image each, chosen by its launcher from the same strides).  A stored
+# [K, M] needs M % 16 and B stored [K, N] N % 32.
+#   NT: XQ (K,1)  WQ (K,1)      NN: XQ (K,1)  WQ (1,N)
+#   TT: XQ (1,M)  WQ (K,1)      TN: XQ (1,M)  WQ (1,N)
+# WQ is the shuffle_weight(w, layout=(16, 16)) of its storage; x_scale [M, K/32]
+# and w_scale [N, K/32] are row-major e8m0 and Y [M, N] bf16 in every layout.
+def _a8w8_operand_transposed(tensor: Tensor) -> bool:
+    """True if the [rows, K] operand is stored [K, rows] (rows contiguous)."""
+    rows, K = tensor.shape[-2:]
+    stride_row, stride_k = tensor.stride()[-2:]
+    return rows > 1 and stride_row == 1 and not (stride_k == 1 and stride_row >= K)
+
+
+def _check_a8w8_mxfp8_dense(layout: str, XQ: Tensor, WQ: Tensor) -> None:
+    (m, k), n = XQ.shape, WQ.shape[0]
+    a = (1, m) if layout[0] == "T" else (k, 1)
+    b = (1, n) if layout[1] == "N" else (k, 1)
+    if tuple(XQ.stride()) != a or tuple(WQ.stride()) != b:
+        raise ValueError(
+            f"OPUS a8w8_mxfp8 {layout} expects dense XQ strides {a} and WQ strides "
+            f"{b}; got {tuple(XQ.stride())} and {tuple(WQ.stride())}"
+        )
+
+
+_MXFP8_K_ALIGN = 256  # two K tiles of 128
+
+
+def a8w8_mxfp8_pick_split(tiles: int, K: int, cu_num: int) -> int:
+    """Split-K factor of the ``sk`` kids: the largest S in {8, 4, 2} with
+    tiles * S <= CUs and K a multiple of S * 256 (whole K-tile pairs per segment)."""
+    for s in (8, 4, 2):
+        if tiles * s <= cu_num and K % (s * _MXFP8_K_ALIGN) == 0:
+            return s
+    return 1
+
+
+def a8w8_mxfp8_kid_runs(
+    instance, M: int, N: int, K: int, split_k: int = 0, layout: str = "NT"
+) -> bool:
+    """Whether a8w8_mxfp8 kid ``instance`` runs (M, N, K) in ``layout``
+    (NT / NN / TT / TN) with ``split_k``."""
+    layout = layout.upper()
+    # A stored [K, M] needs M % 16, B stored [K, N] N % 32.
+    if (layout[0] == "T" and M % 16) or (layout[1] == "N" and N % 32):
+        return False
+    if K <= 0 or K % _MXFP8_K_ALIGN:
+        return False
+    if instance.co_variant == "nob":
+        if M % instance.B_M or N % instance.B_N:
+            return False
+    elif N % 16:
+        return False
+    if instance.co_variant == "sk":
+        return split_k <= 1 or K % (split_k * _MXFP8_K_ALIGN) == 0
+    return split_k <= 1
+
+
+def _a8w8_mxfp8_plan(instance, M: int, N: int, K: int, split_k: int, cu_num: int):
+    """(ABI split_k, fp32 workspace elements; 0 = none) of one launch."""
+    if split_k < 0:
+        raise ValueError(f"OPUS a8w8_mxfp8 split_k must be >= 0, got {split_k}")
+    if instance.co_variant != "sk":
+        if split_k > 1:
+            raise ValueError(
+                f"OPUS a8w8_mxfp8 kid {instance.name} does not split K (split_k={split_k})"
+            )
+        return 1, 0
+    padded_m = -(-M // instance.B_M) * instance.B_M
+    padded_n = -(-N // instance.B_N) * instance.B_N
+    tiles = (padded_m // instance.B_M) * (padded_n // instance.B_N)
+    S = split_k if split_k > 0 else a8w8_mxfp8_pick_split(tiles, K, cu_num)
+    if K % (S * _MXFP8_K_ALIGN):
+        raise ValueError(
+            f"OPUS a8w8_mxfp8 {instance.name}: K={K} is not a multiple of split_k * 256 (split_k={S})"
+        )
+    if S == 1:
+        return 1, 0
+    # fp32 partials [S][padded_M][padded_N], summed into Y by splitk_reduce_kernel.
+    return S, S * padded_m * padded_n
+
+
+def _execute_a8w8_mxfp8(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    *,
+    kid: int,
+    split_k: int = 0,
+    workspace: Tensor | None = None,
+    route_arch: str | None = None,
+    instance: object | None = None,
+    layout: str = "NT",
+) -> Tensor:
+    """Resolve the kid, check its shape contract, plan split-K and launch one 2D GEMM."""
+    if x_scale.dtype not in _E8M0_DTYPES or w_scale.dtype not in _E8M0_DTYPES:
+        raise ValueError(
+            f"OPUS a8w8_mxfp8 requires e8m0 scales; got {x_scale.dtype}/{w_scale.dtype}"
+        )
+    resolved_kid = kid
+    device_arch, cu_num = _device_arch_and_cu(XQ.device)
+    if instance is None:
+        arch = route_arch or device_arch
+        resolved_kid = _require_registered_kid(
+            arch=arch,
+            family=_A8W8_MXFP8_FAMILY,
+            kid=kid,
+            output_dtype=Y.dtype,
+            cu_num=cu_num,
+        )
+        instance = get_registry(_A8W8_MXFP8_FAMILY, arch, cu_num)[resolved_kid]
+    m, k = XQ.shape
+    n = WQ.shape[0]
+    if not a8w8_mxfp8_kid_runs(instance, m, n, k, layout=layout):
+        need = (
+            f"M % {instance.B_M}, N % {instance.B_N}"
+            if instance.co_variant == "nob"
+            else "N % 16"
+        )
+        need += ", K % 256"
+        if layout[0] == "T":
+            need += ", M % 16 (A stored [K, M])"
+        if layout[1] == "N":
+            need += ", N % 32 (B stored [K, N])"
+        raise ValueError(
+            f"OPUS a8w8_mxfp8 kid {kid} ({instance.name}) needs {need}; "
+            f"got {layout} M={m} N={n} K={k}"
+        )
+    abi_split_k, ws_numel = _a8w8_mxfp8_plan(instance, m, n, k, int(split_k), cu_num)
+    if ws_numel == 0:
+        workspace = None
+    elif workspace is None:
+        workspace = torch.empty(ws_numel, dtype=torch.float32, device=XQ.device)
+    elif (
+        workspace.dtype != torch.float32
+        or not workspace.is_contiguous()
+        or workspace.numel() < ws_numel
+    ):
+        raise ValueError(
+            f"OPUS a8w8_mxfp8 kid {kid} needs a contiguous fp32 workspace of >= {ws_numel} "
+            f"elements, got {workspace.dtype} {tuple(workspace.shape)}"
+        )
+    with torch.cuda.device(XQ.device):
+        _opus_gemm_a8w8_mxfp8_launch_raw(
+            XQ.unsqueeze(0),
+            WQ.unsqueeze(0),
+            Y.unsqueeze(0),
+            x_scale,
+            w_scale,
+            workspace,
+            resolved_kid,
+            abi_split_k,
+        )
+    return Y
+
+
+def _execute_a8w8_mxfp8_nt(XQ, WQ, Y, x_scale, w_scale, **kwargs):
+    """NT: XQ stored [M,K], WQ stored [N,K] (gemm_a8w8_mxfp8_bpreshuffle's inputs)."""
+    _check_a8w8_mxfp8_dense("NT", XQ, WQ)
+    return _execute_a8w8_mxfp8(XQ, WQ, Y, x_scale, w_scale, layout="NT", **kwargs)
+
+
+def _execute_a8w8_mxfp8_nn(XQ, WQ, Y, x_scale, w_scale, **kwargs):
+    """NN: XQ stored [M,K], WQ the [N,K] view of a [K,N] weight."""
+    _check_a8w8_mxfp8_dense("NN", XQ, WQ)
+    return _execute_a8w8_mxfp8(XQ, WQ, Y, x_scale, w_scale, layout="NN", **kwargs)
+
+
+def _execute_a8w8_mxfp8_tt(XQ, WQ, Y, x_scale, w_scale, **kwargs):
+    """TT: XQ the [M,K] view of a [K,M] activation, WQ stored [N,K]."""
+    _check_a8w8_mxfp8_dense("TT", XQ, WQ)
+    return _execute_a8w8_mxfp8(XQ, WQ, Y, x_scale, w_scale, layout="TT", **kwargs)
+
+
+def _execute_a8w8_mxfp8_tn(XQ, WQ, Y, x_scale, w_scale, **kwargs):
+    """TN: XQ / WQ views of [K,M] / [K,N] storage."""
+    _check_a8w8_mxfp8_dense("TN", XQ, WQ)
+    return _execute_a8w8_mxfp8(XQ, WQ, Y, x_scale, w_scale, layout="TN", **kwargs)
+
+
+def _launch_a8w8_mxfp8_gemm(
+    XQ: Tensor,
+    WQ: Tensor,
+    Y: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    *,
+    kid: int,
+    split_k: int = 0,
+    workspace: Tensor | None = None,
+    route_arch: str | None = None,
+    instance: object | None = None,
+) -> Tensor:
+    """Launch logical 2D MXFP8 x MXFP8 GEMM (1x32 e8m0 scales, gfx950), the
+    layout (NT / NN / TT / TN) taken from the XQ / WQ strides. ``split_k``:
+    split-K kids only, 0 = auto (:func:`a8w8_mxfp8_pick_split`)."""
+    if any(tensor.dim() != 2 for tensor in (XQ, WQ, Y, x_scale, w_scale)):
+        raise ValueError(
+            "opus_gemm A8W8 MXFP8 expects logical 2D XQ/WQ/Y/x_scale/w_scale; "
+            "this family is GEMM-only"
+        )
+    execute = (
+        (_execute_a8w8_mxfp8_nt, _execute_a8w8_mxfp8_nn),
+        (_execute_a8w8_mxfp8_tt, _execute_a8w8_mxfp8_tn),
+    )[_a8w8_operand_transposed(XQ)][_a8w8_operand_transposed(WQ)]
+    return execute(
+        XQ,
+        WQ,
+        Y,
+        x_scale,
+        w_scale,
+        kid=kid,
+        split_k=split_k,
+        workspace=workspace,
+        route_arch=route_arch,
+        instance=instance,
+    )
 
 
 def _validate_a8w8_mxscale_bmm_tensors(
