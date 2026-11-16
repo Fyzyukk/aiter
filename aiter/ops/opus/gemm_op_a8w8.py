@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Private OPUS A8W8 exact-kid launch APIs."""
+"""OPUS A8W8 exact-kid launchers and direction-specific bpreshuffle APIs."""
 
 # Keep annotations eager in this binding module.  ``torch_compile_guard`` uses
 # the first parameter's concrete ``torch.Tensor`` identity to decide whether a
@@ -12,6 +12,9 @@ import torch
 from torch import Tensor
 
 from csrc.opus_gemm.opus_gemm_common import (
+    MXFP8_DIRECTION_PATTERN,
+    a8w8_mxscale_bpreshuffle_supports_shape,
+    bpreshuffle_workspace_bytes,
     get_registry,
 )
 
@@ -97,6 +100,7 @@ def _gen_opus_gemm_a8w8_blockscale_bpreshuffle_launch_fake_tensors(
     w_scale: Tensor,
     Y: Tensor,
     kid: int,
+    workspace: Tensor | None = None,
 ) -> Tensor:
     return Y
 
@@ -114,6 +118,7 @@ def _opus_gemm_a8w8_blockscale_bpreshuffle_launch_raw(
     w_scale: Tensor,
     Y: Tensor,
     kid: int,
+    workspace: Tensor | None = None,
 ) -> Tensor: ...
 
 
@@ -210,7 +215,7 @@ def _launch_a8w8_backend(
         return
 
     if family == _A8W8_BPRESHUFFLE_FAMILY:
-        if workspace is not None or split_k != 0:
+        if split_k != 0:
             raise RuntimeError(
                 "A8W8 blockscale-bpreshuffle backend received split-K state"
             )
@@ -221,6 +226,7 @@ def _launch_a8w8_backend(
             w_scale,
             Y,
             kid,
+            *((workspace,) if workspace is not None else ()),
         )
         return
 
@@ -334,6 +340,8 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
     kid: int,
     route_arch: str | None = None,
     instance: object | None = None,
+    workspace: Tensor | None = None,
+    _direction: str | None = None,
 ) -> Tensor:
     """Launch logical 2D bpreshuffled blockscale A8W8 GEMM.
 
@@ -358,18 +366,176 @@ def _launch_a8w8_blockscale_bpreshuffle_gemm(
             output_dtype=Y.dtype,
             cu_num=cu_num,
         )
+        instance = get_registry(_A8W8_BPRESHUFFLE_FAMILY, arch, cu_num)[resolved_kid]
+    launch_workspace = workspace
+    if instance.splitk_workspace_dtype is not None:
+        if launch_workspace is None:
+            M, K = map(int, XQ.shape)
+            N = int(WQ.shape[0])
+            if not a8w8_mxscale_bpreshuffle_supports_shape(instance, M, N, K):
+                raise ValueError(
+                    f"OPUS bpreshuffle kid {resolved_kid}: "
+                    "shape exceeds this pipeline configuration"
+                )
+            required_bytes = bpreshuffle_workspace_bytes(instance, M, N, K)
+            launch_workspace = torch.empty(
+                (required_bytes // 4,), dtype=torch.float32, device=XQ.device
+            )
+    elif launch_workspace is not None:
+        raise ValueError(f"OPUS bpreshuffle kid {resolved_kid} does not use workspace")
+    if _direction is not None:
+        match = MXFP8_DIRECTION_PATTERN.search(instance.name)
+        actual_direction = match[1].upper() if match else "NT"
+        if actual_direction != _direction:
+            raise ValueError(
+                f"{_direction} API requires a {_direction} kernel; "
+                f"kid {resolved_kid} belongs to {actual_direction}"
+            )
     _launch_a8w8_backend(
         XQ.unsqueeze(0),
         WQ.unsqueeze(0),
         Y.unsqueeze(0),
         x_scale,
         w_scale,
-        None,
+        launch_workspace,
         _A8W8_BPRESHUFFLE_FAMILY,
         resolved_kid,
         0,
     )
+    if workspace is not None:
+        workspace.record_stream(torch.cuda.current_stream(XQ.device))
     return Y
+
+
+def opus_gemm_a8w8_blockscale_bpreshuffle_nt(
+    XQ: Tensor,
+    WQ: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    Y: Tensor,
+    *,
+    kid: int,
+    route_arch: str | None = None,
+    instance: object | None = None,
+    workspace: Tensor | None = None,
+) -> Tensor:
+    """Launch NT through the existing bpreshuffle path."""
+    return _launch_a8w8_blockscale_bpreshuffle_gemm(
+        XQ,
+        WQ,
+        x_scale,
+        w_scale,
+        Y,
+        kid=kid,
+        route_arch=route_arch,
+        instance=instance,
+        workspace=workspace,
+        _direction="NT",
+    )
+
+
+def opus_gemm_a8w8_blockscale_bpreshuffle_nn(
+    XQ: Tensor,
+    WQ: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    Y: Tensor,
+    *,
+    kid: int,
+    route_arch: str | None = None,
+    instance: object | None = None,
+    workspace: Tensor | None = None,
+) -> Tensor:
+    """Launch NN MXFP8 with XQ strides (K,1) and WQ strides (1,N).
+
+    x_scale is E8M0 [M, K/128] with column-major bytes ([K/128][M]): the
+    contiguous tensor per_group_quant_hip(..., transpose_scale=True) emits, or
+    a strides (1, M) view. WQ is the logical [N, K] view of the (16, 16)
+    shuffle_weight of its row-major storage.
+    w_scale is E8M0 [N/128, K/128] with strides (1, N/128), i.e. the .T view
+    of the [K/128, N/128] row-major scale of the [K, N] weight.
+    """
+    return _launch_a8w8_blockscale_bpreshuffle_gemm(
+        XQ,
+        WQ,
+        x_scale,
+        w_scale,
+        Y,
+        kid=kid,
+        route_arch=route_arch,
+        instance=instance,
+        workspace=workspace,
+        _direction="NN",
+    )
+
+
+def opus_gemm_a8w8_blockscale_bpreshuffle_tt(
+    XQ: Tensor,
+    WQ: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    Y: Tensor,
+    *,
+    kid: int,
+    route_arch: str | None = None,
+    instance: object | None = None,
+    workspace: Tensor | None = None,
+) -> Tensor:
+    """Launch TT MXFP8 with XQ strides (1,M) and WQ strides (K,1).
+
+    x_scale is E8M0 [M, K/128] with column-major bytes ([K/128][M]): the
+    contiguous tensor per_group_quant_hip(..., transpose_scale=True) emits, or
+    a strides (1, M) view. WQ is the logical [N, K] view of the (16, 16)
+    shuffle_weight of its row-major storage.
+    w_scale is E8M0 [N/128, K/128] row-major (strides (K/128, 1)).
+    """
+    return _launch_a8w8_blockscale_bpreshuffle_gemm(
+        XQ,
+        WQ,
+        x_scale,
+        w_scale,
+        Y,
+        kid=kid,
+        route_arch=route_arch,
+        instance=instance,
+        workspace=workspace,
+        _direction="TT",
+    )
+
+
+def opus_gemm_a8w8_blockscale_bpreshuffle_tn(
+    XQ: Tensor,
+    WQ: Tensor,
+    x_scale: Tensor,
+    w_scale: Tensor,
+    Y: Tensor,
+    *,
+    kid: int,
+    route_arch: str | None = None,
+    instance: object | None = None,
+    workspace: Tensor | None = None,
+) -> Tensor:
+    """Launch TN MXFP8 with XQ strides (1,M) and WQ strides (1,N).
+
+    x_scale is E8M0 [M, K/128] with column-major bytes ([K/128][M]): the
+    contiguous tensor per_group_quant_hip(..., transpose_scale=True) emits, or
+    a strides (1, M) view. WQ is the logical [N, K] view of the (16, 16)
+    shuffle_weight of its row-major storage.
+    w_scale is E8M0 [N/128, K/128] with strides (1, N/128), i.e. the .T view
+    of the [K/128, N/128] row-major scale of the [K, N] weight.
+    """
+    return _launch_a8w8_blockscale_bpreshuffle_gemm(
+        XQ,
+        WQ,
+        x_scale,
+        w_scale,
+        Y,
+        kid=kid,
+        route_arch=route_arch,
+        instance=instance,
+        workspace=workspace,
+        _direction="TN",
+    )
 
 
 def _validate_a8w8_mxscale_bmm_tensors(
@@ -754,5 +920,9 @@ def _mxscale_bmm_workspace(
 __all__ = [
     "bmm_a8w8_mxscale_opus",
     "bmm_a8w8_mxscale_opus_bpreshuffle",
+    "opus_gemm_a8w8_blockscale_bpreshuffle_nn",
+    "opus_gemm_a8w8_blockscale_bpreshuffle_nt",
+    "opus_gemm_a8w8_blockscale_bpreshuffle_tn",
+    "opus_gemm_a8w8_blockscale_bpreshuffle_tt",
     "opus_gemm_a8w8_blockscale_bpreshuffle_tune",
 ]

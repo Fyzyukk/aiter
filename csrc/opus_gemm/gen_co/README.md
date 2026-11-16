@@ -98,8 +98,14 @@ is retained as historical context in [NAMED_REG_VALIDATION.md](NAMED_REG_VALIDAT
 
 ```
 gen_co/
-├── co_kernels.json        # THE source of truth (see below)
+├── co_kernels_gfx1250.json # gfx1250 source of truth (see below)
+├── co_kernels_gfx950_a8w8_blockscale_bpreshuffle.json
 ├── build_co.py            # the producer
+├── gfx950/
+│   └── a8w8_blockscale_bpreshuffle/
+│       ├── <launcher_name>.co
+│       ├── build_info.json
+│       └── asm/           # debug listings, .gitignored
 └── gfx1250/
     ├── <launcher_name>.co  # bare amdhsa ELF, one kernel each   (tracked)
     ├── build_info.json     # compiler + flags + per-kernel metrics (tracked)
@@ -108,6 +114,15 @@ gen_co/
         ├── <launcher_name>.s    # compiler -S output
         └── <launcher_name>.dis  # llvm-objdump of the .co itself
 ```
+
+The gfx950 blockscale MXFP8 bpreshuffle manifest is
+`gen_co/co_kernels_gfx950_a8w8_blockscale_bpreshuffle.json`. Its images and
+`build_info.json` use the `gfx950/a8w8_blockscale_bpreshuffle/` directory.
+The default output of `build_co.py --arch gfx950` uses this layout.
+`OPUS_GEN_CO_DIR` points to the `gen_co/` root; Python registration and the C++
+host launcher append
+`gfx950/a8w8_blockscale_bpreshuffle/<launcher_name>.co`.
+The small-shape `direct_b` and `staged_b` families are generated through the JIT.
 
 `<launcher_name>` is the same string three times over — the `.co` filename, the
 `extern "C"` kernel symbol inside it, and the host launcher symbol — because all
@@ -378,3 +393,49 @@ early by `kid_rejects_shape` — no buffer resource, every tail clamped by the D
 so no M/N/K alignment applies. Naming only one of them there once cost the `wl`
 family every shape whose `N` fell outside an unrelated gfx942 whitelist; see
 issue 4 in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+
+## gfx950 MXFP8 NN/TT/TN (kids 56-67)
+
+`co_kernels_gfx950.json` also registers MXFP8 1x128 blockscale kernels for the
+three non-NT directions (FP8 A / B, E8M0 scales 1x128 for A and 128x128 for B,
+BF16 C). They reuse the NT pin_agpr kargs and launcher family
+(`a8w8_blockscale_bpreshuffle`); the direction is read from the kernel name
+(`_mxfp8_(nn|tt|tn)_`) and checked against the tensor strides by the launcher.
+
+| kids | tile | PadM | M alignment |
+|--:|---|---|---|
+| 56 / 57 / 58 (NN / TT / TN) | 256x256x128 | no | 256 |
+| 59 / 60 / 61 | 256x256x128 | yes | 16 |
+| 62 / 63 / 64 | 256x128x128 | no | 256 |
+| 65 / 66 / 67 | 256x128x128 | yes | 16 |
+
+All twelve share `opus_gemm_pipeline_mxfp8_4wave_gfx950.cuh` /
+`opus_gemm_traits_mxfp8_4wave_gfx950.cuh`: each operand takes its LDS path by its own
+storage (`A_T`: A stored `[K, M]`, read with TR8; `B_T`: B stored `[K, N]`, read with
+TR8 from paired slots), NN = (0, 1), TT = (1, 0), TN = (1, 1).
+
+| direction | traits (`A_T`, `B_T`) | XQ view strides | WQ view strides | w_scale strides |
+|---|---|---|---|---|
+| NN | `opus_gemm_mxfp8_nn_4wave_tile_traits` (0, 1) | (K, 1) | (1, N) | (1, N/128) |
+| TT | `opus_gemm_mxfp8_tt_4wave_tile_traits` (1, 0) | (1, M) | (K, 1) | (K/128, 1) |
+| TN | `opus_gemm_mxfp8_tn_4wave_tile_traits` (1, 1) | (1, M) | (1, N) | (1, N/128) |
+
+- WQ is `shuffle_weight(w, layout=(16, 16))` of the row-major storage, passed
+  as its logical `[N, K]` view; x_scale is the contiguous `[M, K/128]` E8M0
+  tensor with column-major bytes (`per_group_quant_hip(transpose_scale=True)`),
+  or a strides `(1, M)` view of the same bytes.
+- Requirements: M a multiple of the kid's M alignment, `N % B_N == 0`,
+  `K % 128 == 0`, batch 1.
+- Build them with the pin toolchain like the NT kids:
+
+  ```bash
+  python3 csrc/opus_gemm/gen_co/build_co.py --arch gfx950 \
+      --llvm-bin <pin-llvm>/bin --kids 56,57,58,59,60,61,62,63,64,65,66,67 \
+      --out-dir csrc/opus_gemm/gen_co/gfx950
+  ```
+
+  Their `device_flags` intentionally omit NT's
+  `-amdgpu-early-inline-all=true -amdgpu-function-calls=false`; with those two
+  flags the three kernels run about 3x slower.
+- Python entry points: `opus_gemm_a8w8_blockscale_bpreshuffle_{nn,tt,tn}`
+  (`aiter/ops/opus/gemm_op_a8w8.py`); test: `op_tests/test_opus_mxfp8_directions.py`.
