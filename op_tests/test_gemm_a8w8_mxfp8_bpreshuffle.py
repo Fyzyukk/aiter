@@ -184,8 +184,8 @@ def test_opus(m, n, k, layout, kid, split_k):
 @benchmark()
 def test_opus_route(m, n, k, kid, split_k):
     """gemm_a8w8_mxfp8_bpreshuffle on an injected libtype "opus" row runs that kid."""
-    from aiter.ops import gemm_op_a8w8
     import aiter.ops.opus as opus_pkg
+    from aiter.ops import gemm_op_a8w8
 
     name = opus_registry()[kid].name
     xq, x_scale, wq, w_scale, _, b = opus_inputs(m, n, k, "NT")
