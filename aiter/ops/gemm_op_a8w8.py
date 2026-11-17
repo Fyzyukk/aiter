@@ -2594,33 +2594,19 @@ _BMM_MFMA_NAME_PREFIX = "flydsl_bmm_mxfp8_mfma"
 _MXFP8_TUNED_KEYS = ["gfx", "cu_num", "M", "N", "K", "w_scale_block"]
 
 
-@functools.cache
-def _opus_a8w8_mxfp8_kids(gfx: str, cu_num: int) -> dict:
-    """{OPUS instance name: (local kid, instance)} of the gfx950 a8w8_mxfp8 family
-    (its launchers run gemm_a8w8_mxfp8_bpreshuffle's NT inputs on the NT image)."""
+@functools.lru_cache(maxsize=1024)
+def _opus_mxfp8_kid(M: int, N: int, K: int, kernel_name: str, split_k: int = 0):
+    """Local kid of the OPUS a8w8_mxfp8 instance ``kernel_name`` (a libtype "opus"
+    row's kernelName), or None when it cannot run (M, N, K) with ``split_k`` --
+    a padded-M row can name a shape a "nob" kid cannot run."""
     from csrc.opus_gemm.opus_gemm_common import get_registry
 
-    return {
-        inst.name: (kid, inst)
-        for kid, inst in get_registry("a8w8_mxfp8", gfx, cu_num).items()
-    }
-
-
-def _opus_mxfp8_kid(
-    M: int, N: int, K: int, kernel_name: str, kernel_id=None, split_k: int = 0
-):
-    """Local kid of a libtype "opus" row (kernelName = OPUS instance name,
-    kernelId = its local kid), or None when the kid cannot run (M, N, K) with
-    ``split_k`` -- a padded-M row can name a shape a "nob" kid cannot run."""
     from .opus.gemm_op_a8w8 import a8w8_mxfp8_kid_runs
 
-    entry = _opus_a8w8_mxfp8_kids(get_gfx(), get_cu_num()).get(kernel_name)
-    if entry is None or (
-        kernel_id is not None and str(kernel_id) not in ("", "nan", str(entry[0]))
-    ):
-        raise ValueError(f"Invalid tuned OPUS kernel {kernel_id} {kernel_name}")
-    kid, inst = entry
-    return kid if a8w8_mxfp8_kid_runs(inst, M, N, K, split_k) else None
+    for kid, inst in get_registry("a8w8_mxfp8", get_gfx(), get_cu_num()).items():
+        if inst.name == kernel_name:
+            return kid if a8w8_mxfp8_kid_runs(inst, M, N, K, split_k) else None
+    raise ValueError(f"Invalid tuned OPUS kernel {kernel_name}")
 
 
 @functools.lru_cache(maxsize=1)
@@ -2674,12 +2660,7 @@ def _get_mxfp8_bpreshuffle_config(
             config is not None
             and config["libtype"] == "opus"
             and _opus_mxfp8_kid(
-                M,
-                N,
-                K,
-                str(config["kernelName"]),
-                config.get("kernelId"),
-                int(config["splitK"]),
+                M, N, K, str(config["kernelName"]), int(config["splitK"])
             )
             is not None
         ):

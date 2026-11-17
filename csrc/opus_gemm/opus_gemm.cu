@@ -504,20 +504,8 @@ void opus_gemm_a8w8_mxfp8_launch(
 {
   aiter_detail::g_aiter_can_throw = true;
   constexpr const char* entry = "opus_gemm_a8w8_mxfp8_launch";
-  AITER_CHECK(XQ.is_gpu() && WQ.is_gpu() && Y.is_gpu(),
-              entry, ": XQ, WQ, and Y must be GPU tensors");
-  AITER_CHECK(XQ.device_id == WQ.device_id && XQ.device_id == Y.device_id,
-              entry, ": XQ/WQ/Y device ids must match (got ",
-              XQ.device_id, "/", WQ.device_id, "/", Y.device_id, ")");
-  int current_device = -1;
-  HIP_CALL(hipGetDevice(&current_device));
-  AITER_CHECK(current_device == XQ.device_id,
-              entry, ": current HIP device ", current_device,
-              " does not match tensor device ", XQ.device_id);
+  opus_check_a8_family_tensors(entry, XQ, WQ, Y);
   opus_check_a8_scale_devices(entry, XQ, x_scale, w_scale);
-  AITER_CHECK(XQ.dtype() == AITER_DTYPE_fp8 && WQ.dtype() == AITER_DTYPE_fp8,
-              entry, ": expected fp8 XQ/WQ, got ",
-              AiterDtype_to_str(XQ.dtype()), "/", AiterDtype_to_str(WQ.dtype()));
   AITER_CHECK(Y.dtype() == AITER_DTYPE_bf16,
               entry, ": expected bf16 Y, got ", AiterDtype_to_str(Y.dtype()));
   AITER_CHECK(XQ.dim() == 3 && WQ.dim() == 3 && Y.dim() == 3,

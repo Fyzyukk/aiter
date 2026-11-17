@@ -9,10 +9,10 @@ and so is the batched GEMM at B = 1 (bmm, on the same scales). Its candidates
 are the tuned bmm kernels of the shape's N and K at M/2..2M in this table and
 in gemm_a8w8_blockscale_bpreshuffle's e8m0 table (any block), else that
 table's bmm kernels of any N and K at those M, plus the heuristic pick and
-their split-K neighbours, and every OPUS a8w8_mxfp8 kid whose tile divides
-the shape (libtype "opus", kernelId its local kid; NT inputs run its NT image). The fastest lands in the same
-table the gfx1250 rows live in, keyed by gfx and w_scale_block (1x32: a shape
-list without the column is one); a bmm row's kernelId is "bmm", which
+their split-K neighbours, and every OPUS a8w8_mxfp8 kid that runs the shape
+(split-K kids at S = 2 / 4 / 8; libtype "opus", kernelId its local kid). The
+fastest lands in the same table the gfx1250 rows live in, keyed by gfx and
+w_scale_block (1x32: a shape list without the column is one); a bmm row's kernelId is "bmm", which
 gemm_a8w8_mxfp8_bpreshuffle runs as the batched GEMM:
 
     python3 csrc/gemm_a8w8_mxfp8_bpreshuffle/gemm_a8w8_mxfp8_bpreshuffle_tune.py \\
@@ -110,8 +110,6 @@ def run_torch(x_deq, w_deq, dtype=dtypes.bf16):
 KERNEL_ID_BASE_BMM = 3_000_000
 MXSCALE_KERNEL_ID = "mxfp8"
 MXSCALE_BMM_KERNEL_ID = "bmm"
-# OPUS a8w8_mxfp8 kids (gfx950 1x32 table) while tuning; the row keeps the local kid.
-KERNEL_ID_BASE_OPUS = 9_000_000
 
 
 def _bmm_scale_args(w_scale_block):
@@ -168,37 +166,28 @@ def run_bmm_flydsl(x, weight_shuffle, x_scale, w_scale, out, kernel_name):
     return out
 
 
-def opus_candidates(m, n, k):
-    """(local kid, instance, split_k) of the OPUS a8w8_mxfp8 kids that run (m, n, k);
-    the split-K ("sk") kids once per feasible S in 2 / 4 / 8."""
-    from aiter.ops.opus._arch import _device_arch_and_cu
+def opus_candidates(m, n, k, gfx, cu_num):
+    """(local kid, instance name, split_k) of the OPUS a8w8_mxfp8 kids that run
+    (m, n, k); the split-K ("sk") kids once per feasible S in 2 / 4 / 8."""
     from aiter.ops.opus.gemm_op_a8w8 import a8w8_mxfp8_kid_runs
     from csrc.opus_gemm.opus_gemm_common import get_registry
 
-    gfx, cu_num = _device_arch_and_cu(torch.device("cuda"))
-    out = []
-    for kid, inst in get_registry("a8w8_mxfp8", gfx, cu_num).items():
-        if inst.co_variant != "sk":
-            if a8w8_mxfp8_kid_runs(inst, m, n, k):
-                out.append((kid, inst, 1))
-            continue
-        for split in (2, 4, 8):
-            if a8w8_mxfp8_kid_runs(inst, m, n, k, split):
-                out.append((kid, inst, split))
-    return out
+    return [
+        (kid, inst.name, split)
+        for kid, inst in get_registry("a8w8_mxfp8", gfx, cu_num).items()
+        for split in ((2, 4, 8) if inst.co_variant == "sk" else (1,))
+        if a8w8_mxfp8_kid_runs(inst, m, n, k, split)
+    ]
 
 
-def run_gemm_opus(x, weight_shuffle, x_scale, w_scale, out, kernel_name, split_k=1):
-    from aiter.ops.gemm_op_a8w8 import _opus_mxfp8_kid
+def run_gemm_opus(x, weight_shuffle, x_scale, w_scale, out, kid, split_k):
     from aiter.ops.opus import opus_gemm
 
-    m, k = x.shape
-    n = weight_shuffle.shape[0]
     return opus_gemm(
         x,
         weight_shuffle,
         out,
-        kid=_opus_mxfp8_kid(m, n, k, kernel_name, split_k=split_k),
+        kid=kid,
         family="a8w8_mxfp8",
         layout="bpreshuffle",
         x_scale=x_scale,
@@ -453,16 +442,10 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
                 for kernel_id, ki in cands
             ]
             if self._bmm_1x32:
-                # kernelId KERNEL_ID_BASE_OPUS + kid * 16 + split while tuning (local kid in the row).
+                # An OPUS run's kernelId is its local kid.
                 runs += [
-                    (
-                        KERNEL_ID_BASE_OPUS + kid * 16 + split,
-                        split,
-                        inst.name,
-                        run_gemm_opus,
-                        "opus",
-                    )
-                    for kid, inst, split in opus_candidates(M, N, K)
+                    (kid, split, name, run_gemm_opus, "opus")
+                    for kid, name, split in opus_candidates(M, N, K, gfx, cu_num)
                 ]
             near = None
             if self._mxscale_table and gfx == "gfx950":
@@ -500,7 +483,7 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
                         (M, N, K, seed, block),
                         run,
                         (
-                            (gemm_keys, name, split_k)
+                            (gemm_keys, kernel_id, split_k)
                             if libtype == "opus"
                             else (gemm_keys, name)
                         ),
@@ -541,10 +524,6 @@ class GemmA8W8MXFP8BpreshuffleTuner(GemmCommonTuner):
             keys, kernelId, splitK, kernelName, libtype = info
             if time in (self.INVALID_TIME, self.INF_TIME):
                 kernelName = "None"
-            elif libtype == "opus":
-                kernelId = (
-                    kernelId - KERNEL_ID_BASE_OPUS
-                ) // 16  # the kid local to a8w8_mxfp8
             elif keys[0] == "gfx950" and (
                 getattr(self, "_mxscale_table", False)
                 or getattr(self, "_bmm_1x32", False)

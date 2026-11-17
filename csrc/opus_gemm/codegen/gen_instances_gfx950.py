@@ -3203,15 +3203,11 @@ def gen_a8w8_mxfp8_co_instance(
         A8W8_MXFP8_CO_DIR,
         A8W8_MXFP8_CO_MODE,
         A8W8_MXFP8_LAYOUTS,
-        gfx950_co_images,
     )
 
     variant = k.co_variant
     mode = A8W8_MXFP8_CO_MODE[variant]
-    have = dict(gfx950_co_images(k))
-    images = ", ".join(
-        f'"{have[l]}"' if l in have else "nullptr" for l in A8W8_MXFP8_LAYOUTS
-    )
+    images = ", ".join(f'"{k.name}_{layout}"' for layout in A8W8_MXFP8_LAYOUTS)
     if variant == "nob":
         align_code = f"""AITER_CHECK(M % {k.B_M} == 0 && N % {k.B_N} == 0,
                 "{k.name} needs M % {k.B_M} == 0 and N % {k.B_N} == 0 (M=", M, " N=", N, ")");"""
@@ -3223,7 +3219,7 @@ def gen_a8w8_mxfp8_co_instance(
         mode_code = f"""const int S = splitK < 1 ? 1 : splitK;
     AITER_CHECK(K % (S * {2 * k.B_K}) == 0, "{k.name}: K=", K, " is not a multiple of splitK * {2 * k.B_K} (splitK=", S, ")");
     kargs.split_k = S;
-    grid_x = tiles * S;
+    const dim3 grid(tiles * S);
     const int padded_m = (M + {k.B_M} - 1) / {k.B_M} * {k.B_M}, padded_n = (N + {k.B_N} - 1) / {k.B_N} * {k.B_N};
     if (S > 1) {{
         AITER_CHECK(workspace.has_value(), "{k.name}: splitK > 1 requires a workspace");
@@ -3240,12 +3236,15 @@ def gen_a8w8_mxfp8_co_instance(
     else:
         reduce_code = ""
         mode_code = f"""AITER_CHECK(splitK <= 1, "{k.name} does not split K (splitK=", splitK, ")");"""
-        if mode == 0:  # persistent: at most one block per CU
+        # persistent: at most one block per CU, walking the batch-major tile list
+        if mode == 0:
             mode_code += """
-    grid_x = tiles < cus ? tiles : cus;
-    kargs.grid_blocks = grid_x;"""
-    # One tile per block: grid (tiles per batch, 1, batch); persistent / split-K: the batch-major tile list in x.
-    grid = "dim3(grid_x, 1, 1)" if mode in (0, 2) else "dim3(tiles / batch, 1, batch)"
+    const int cus = (int)get_num_cu_func();
+    kargs.grid_blocks = tiles < cus ? tiles : cus;
+    const dim3 grid(kargs.grid_blocks);"""
+        else:  # one tile per block: (tiles per batch, 1, batch)
+            mode_code += """
+    const dim3 grid(tiles / batch, 1, batch);"""
     INSTANCE_IMPL = f"""{instance_impl_preamble()}
 #include "{traits_header}"
 #if !defined(__HIP_DEVICE_COMPILE__) && !defined(__HIPCC_RTC__)
@@ -3282,10 +3281,9 @@ void
     }};
     const bool a_t = transposed(XQ, M, "XQ");
     const bool b_t = transposed(WQ, N, "WQ");
-    // Image <name>_<layout>; layout index = A_T * 2 + B_T (nullptr: the kid has no image of that layout).
+    // Image <name>_<layout>; layout index = A_T * 2 + B_T.
     static const char* const kImages[4] = {{{images}}};
     const int layout = (a_t ? 2 : 0) + (b_t ? 1 : 0);
-    AITER_CHECK(kImages[layout] != nullptr, "{k.name} has no image for A_T=", a_t, " B_T=", b_t);
     // A stored [K, M]: 16-byte rows of M; B stored [K, N]: shuffle_weight 16 x 32 blocks of [K, N].
     AITER_CHECK(!a_t || M % 16 == 0, "{k.name}: A stored [K, M] needs M % 16 == 0 (M=", M, ")");
     AITER_CHECK(!b_t || N % 32 == 0, "{k.name}: B stored [K, N] needs N % 32 == 0 (N=", N, ")");
@@ -3313,16 +3311,11 @@ void
     kargs.stride_sfa_batch = M * (K / 32);
     kargs.stride_sfb_batch = N * (K / 32);
     const int tiles = ((M + {k.B_M} - 1) / {k.B_M}) * ((N + {k.B_N} - 1) / {k.B_N}) * batch;
-    const int cus = (int)get_num_cu_func();
-    (void)cus;
-    int grid_x = tiles;
-    (void)grid_x;
     kargs.grid_blocks = tiles;
     kargs.split_k = 1;
-    kargs.ptr_ws = nullptr;
     auto stream = aiter::getCurrentHIPStream();
     {mode_code}
-    opus_co_launch_gfx950(*kKernels[layout], {grid}, dim3({k.BLOCK_SIZE}), kargs, stream);
+    opus_co_launch_gfx950(*kKernels[layout], grid, dim3({k.BLOCK_SIZE}), kargs, stream);
     {reduce_code}
 }}
 #endif // launcher only on regular host pass

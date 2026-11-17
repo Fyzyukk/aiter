@@ -59,9 +59,10 @@ entries and directory: a8w8_mxfp8 ``co_kernels_gfx950_a8w8_mxfp8_bpreshuffle.jso
 ``gen_co/gfx950/a8w8_mxfp8_bpreshuffle/`` (one image per layout, ``<name>_<nt|nn|tt|tn>.co``); each
 directory gets its own ``build_info.json``. Kids are local to a family: ``--kids`` takes ``<kid>`` or
 ``<family>:<kid>``. The stub calls the pipeline's ``__device__`` body and is
-compiled with that toolchain's ``clang++ --cuda-device-only`` (``-cuid`` pinned,
-so rebuilds are byte-reproducible); ``--opus-include`` selects the opus headers
-it builds against (default: this tree's ``csrc/include``)::
+compiled like the gfx1250 images, ``hipcc --genco`` with ``HIP_CLANG_PATH`` on
+the pin toolchain (``-cuid`` pinned, so rebuilds are byte-reproducible);
+``--opus-include`` selects the opus headers it builds against (default: this
+tree's ``csrc/include``)::
 
     python3 csrc/opus_gemm/gen_co/build_co.py --arch gfx950 \\
         --llvm-bin /path/to/pin-toolchain/bin --opus-include /path/to/csrc/include
@@ -669,7 +670,7 @@ def build_one_gfx950(k, args, llvm_bin, workdir):
 
 
 def _build_image_gfx950(k, layout, symbol, args, llvm_bin, workdir):
-    """Build one gfx950 image: device-only clang++ on the pin toolchain."""
+    """Build one gfx950 image: hipcc --genco on the pin toolchain."""
     from codegen import gen_instances_gfx950 as gfx950
 
     stub_path = os.path.join(workdir, f"{symbol}.cc")
@@ -692,12 +693,12 @@ def _build_image_gfx950(k, layout, symbol, args, llvm_bin, workdir):
     device_flags = list(k.co_device_flags) + list(args.device_flag)
     include = os.path.join(_OPUS_GEMM_DIR, "include")
     cmd = [
-        _tool(llvm_bin, "clang++"),
+        *args.hipcc.split(),
         "-x",
         "hip",
         stub_path,
         "--offload-arch=gfx950",
-        "--cuda-device-only",
+        "--genco",
         "-O3",
         "-std=c++17",
         "-D__HIPCC_RTC__",
@@ -710,11 +711,14 @@ def _build_image_gfx950(k, layout, symbol, args, llvm_bin, workdir):
         "-o",
         out_path,
     ]
+    env = dict(os.environ)
+    if llvm_bin:
+        env["HIP_CLANG_PATH"] = llvm_bin
     print(f"[build_co] compiling {symbol}")
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
     if proc.returncode != 0:
         sys.stderr.write(proc.stdout + proc.stderr)
-        raise SystemExit(f"build_co: clang++ failed for {symbol}")
+        raise SystemExit(f"build_co: hipcc failed for {symbol}")
     unbundled = _unbundle_if_needed(out_path, llvm_bin, "gfx950")
     readelf = _tool(llvm_bin, "llvm-readelf")
     md = _kernel_metadata(readelf, out_path, symbol)
@@ -823,8 +827,8 @@ def main():
         "--out-dir",
         default="",
         help="default: <this dir>/named_reg/<arch>; with gfx1250-strict: "
-        "<this dir>/<arch>-strict; gfx950: <this dir>/gfx950. Pass an explicit "
-        "output for production gfx1250 rebuilds",
+        "<this dir>/<arch>-strict; gfx950: <this dir> (each family in its own "
+        "subdirectory). Pass an explicit output for production gfx1250 rebuilds",
     )
     p.add_argument(
         "--no-asm",
@@ -885,24 +889,15 @@ def main():
         try:
             selected = {_parse_kid(token) for token in args.kids.split(",")}
         except ValueError:
-            p.error("--kids must be a comma-separated list of integer CO kids")
-
-        def _matches(key, sel):
-            # gfx950 keys are (family, local kid): a bare kid selects it in every family.
-            if isinstance(key, tuple) and not isinstance(sel, tuple):
-                return key[1] == sel
-            return key == sel
-
-        unknown = {
-            sel for sel in selected if not any(_matches(key, sel) for key in declared)
+            p.error("--kids must be a comma-separated list of <kid> / <family>:<kid>")
+        # gfx950 keys are (family, local kid): a bare kid selects it in every family.
+        aliases = {
+            key: {key, key[1]} if isinstance(key, tuple) else {key} for key in declared
         }
+        unknown = selected - set().union(*aliases.values())
         if unknown:
             p.error(f"unknown CO kids: {sorted(map(str, unknown))}")
-        instances = [
-            k
-            for key, k in declared.items()
-            if any(_matches(key, sel) for sel in selected)
-        ]
+        instances = [k for key, k in declared.items() if aliases[key] & selected]
     if not instances:
         raise SystemExit(
             "build_co: no pre-compiled entries -- check gen_co/co_kernels*.json"
@@ -965,10 +960,8 @@ def main():
         "kernels": built,
     }
     if args.arch == "gfx950":
-        # clang++ device-only, not hipcc (build_one_gfx950).
-        del info["hipcc"]
         info["common_flags"] = [
-            "--cuda-device-only",
+            "--genco",
             "-D__HIPCC_RTC__",
             "-O3",
             "-std=c++17",

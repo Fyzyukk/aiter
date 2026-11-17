@@ -29,13 +29,12 @@ _A16W16_CO_TAGS = frozenset(
 # supports as a separate image, <name>_<nt|nn|tt|tn>.co; its launcher picks one
 # from the tensor strides (image index = A_T * 2 + B_T: A stored [K, M] / B
 # stored [K, N]). Every kid has all four layouts.
-_A8W8_MXFP8_CO_TAGS = frozenset({"a8w8_mxfp8_co"})
-A8W8_MXFP8_TAGS = _A8W8_MXFP8_CO_TAGS
+A8W8_MXFP8_TAGS = frozenset({"a8w8_mxfp8_co"})
 A8W8_MXFP8_LAYOUTS = ("nt", "nn", "tt", "tn")
 # a8w8_mxfp8_co variant -> traits MODE (0 persistent, 1 one tile per block,
 # 2 split-K); "nob" is one tile per block without M/N boundary handling.
 A8W8_MXFP8_CO_MODE = {"": 0, "np": 1, "sk": 2, "nob": 1}
-_GFX950_CO_TAGS = _A8W8_MXFP8_CO_TAGS
+_GFX950_CO_TAGS = A8W8_MXFP8_TAGS
 
 # Legacy cache policy = traits default for split-barrier & persistent a16w16 (see
 # opus_gemm_traits_a16w16_gfx950.cuh).
@@ -2802,7 +2801,7 @@ def _gfx950_co_instance_from_json(arch, entry):
 
 
 # gfx950 CO tag -> directory (relative to gen_co/) of its images.
-_GFX950_CO_DIRS = {tag: A8W8_MXFP8_CO_DIR for tag in _A8W8_MXFP8_CO_TAGS}
+_GFX950_CO_DIRS = {tag: A8W8_MXFP8_CO_DIR for tag in A8W8_MXFP8_TAGS}
 
 
 def gfx950_co_dir(instance):
@@ -2812,14 +2811,9 @@ def gfx950_co_dir(instance):
 
 def gfx950_co_images(instance):
     """[(layout, symbol)] of the .co images of one gfx950 CO kid (layout "" = one image)."""
-    if instance.kernel_tag in _A8W8_MXFP8_CO_TAGS:
-        return [(layout, f"{instance.name}_{layout}") for layout in a8w8_mxfp8_layouts(instance)]
+    if instance.kernel_tag in A8W8_MXFP8_TAGS:
+        return [(layout, f"{instance.name}_{layout}") for layout in A8W8_MXFP8_LAYOUTS]
     return [("", instance.name)]
-
-
-def a8w8_mxfp8_layouts(instance):
-    """Layouts (images) of one a8w8_mxfp8 kid: all four."""
-    return A8W8_MXFP8_LAYOUTS
 
 
 def gfx950_co_traits_args(instance, layout=""):
@@ -2929,14 +2923,13 @@ gfx1250_4wave_co_kernels_declared = {
 #   7-11: persistent, 12-16: split-K ("sk", fp32 partials summed by splitk_reduce_kernel):
 #   256x128, 128x256, 128x128, 192x256, 256x192 (no persistent / split-K 256x256: register
 #   spills / out of registers) -- any M, N % 16; every kid has the nt / nn / tt / tn images.
-a8w8_mxfp8_co_kernels_list = _load_co_kernels(A8W8_MXFP8_CO_JSON, arch="gfx950")
-a8w8_mxfp8_co_kernels_declared = _load_co_kernels(
-    A8W8_MXFP8_CO_JSON, require_image=False, arch="gfx950"
-)
-a8w8_mxfp8_kernels_list = a8w8_mxfp8_co_kernels_list
+a8w8_mxfp8_kernels_list = _load_co_kernels(A8W8_MXFP8_CO_JSON, arch="gfx950")
 # Every pre-compiled gfx950 kid, keyed by (family, local kid), for build_co.py.
 gfx950_co_kernels_declared = {
-    **{("a8w8_mxfp8", kid): k for kid, k in a8w8_mxfp8_co_kernels_declared.items()},
+    ("a8w8_mxfp8", kid): k
+    for kid, k in _load_co_kernels(
+        A8W8_MXFP8_CO_JSON, require_image=False, arch="gfx950"
+    ).items()
 }
 
 GFX1250_SPLITK_FUSE_KID_BASE = max(
