@@ -611,8 +611,15 @@ __device__ __forceinline__ void gemm_a8w8_mxfp8_body(opus_gemm_mxfp8_kargs_gfx95
                          T::BOUNDARY ? (T::B_T ? static_cast<unsigned int>(kargs.k - kt0 * T::B_K) * static_cast<unsigned int>(kargs.stride_b) - col * 16
                                                : static_cast<unsigned int>(cols_in) * static_cast<unsigned int>(kargs.stride_b) - b_k0)
                                      : 0xffffffffu);
-    auto g_c = make_gmem(reinterpret_cast<D_C*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + row * kargs.stride_c + col,
-                         T::BOUNDARY ? static_cast<unsigned int>(rows_in) * static_cast<unsigned int>(kargs.stride_c) * 2u : 0xffffffffu);
+    // C: 64-bit tile base and a buffer range bounded to this output tile (as the blockscale 4wave_pin_agpr WIDE_OUTPUT), so
+    // the 32-bit range and offsets cover one tile whatever the size of C; the host keeps one tile under 2 GiB.  BOUNDARY:
+    // the range ends at the last valid element of the tile (rows past M start beyond it since stride_c >= cols_in).
+    D_C* const c_tile = reinterpret_cast<D_C*>(kargs.ptr_c) + static_cast<long>(batch_id) * kargs.stride_c_batch +
+                        static_cast<long>(row) * kargs.stride_c + col;
+    auto g_c = make_gmem(c_tile, T::BOUNDARY ? (static_cast<unsigned int>((rows_in < T::B_M ? rows_in : T::B_M) - 1) *
+                                                    static_cast<unsigned int>(kargs.stride_c) +
+                                                static_cast<unsigned int>(cols_in < T::B_N ? cols_in : T::B_N)) * 2u
+                                             : 0xffffffffu);
     auto g_sfa = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfa) + batch_id * kargs.stride_sfa_batch + row * kargs.stride_sfa + sf_k0,
                            static_cast<unsigned int>((kargs.m - row) * kargs.stride_sfa - sf_k0));
     auto g_sfb = make_gmem(reinterpret_cast<const D_SF*>(kargs.ptr_sfb) + batch_id * kargs.stride_sfb_batch + col * kargs.stride_sfb + sf_k0,
@@ -1566,7 +1573,7 @@ __device__ __forceinline__ void gemm_a8w8_mxfp8_body(opus_gemm_mxfp8_kargs_gfx95
     auto sc_offset = [&](int half_tile_m, int half_tile_n) { return half_tile_m * T::HALF_B_M * c_lds_stride + half_tile_n * T::HALF_B_N; };
     const int output_thread_id = static_cast<int>(thread_id_x());
     // bf16 C: LDS -> global, one quadrant.
-    // BOUNDARY: columns past N go to an element offset past any buffer range (byte offset 2^31).  When every copy of a
+    // BOUNDARY: columns past N go to an element offset past the tile's buffer range (byte offset 2^31).  When every copy of a
     // thread has the same column (BLOCK_SIZE * 8 a multiple of HALF_B_N) the offset is computed once per quadrant.
     constexpr int C_OOB = 0x40000000;
     constexpr bool C_COL_FIXED = (T::BLOCK_SIZE * VEC_OUT) % T::HALF_B_N == 0;

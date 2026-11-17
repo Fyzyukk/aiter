@@ -3223,6 +3223,9 @@ def gen_a8w8_mxfp8_co_instance(
     const int padded_m = (M + {k.B_M} - 1) / {k.B_M} * {k.B_M}, padded_n = (N + {k.B_N} - 1) / {k.B_N} * {k.B_N};
     if (S > 1) {{
         AITER_CHECK(workspace.has_value(), "{k.name}: splitK > 1 requires a workspace");
+        // splitk_reduce_kernel reads the partials through one 32-bit buffer range.
+        AITER_CHECK((size_t)S * batch * padded_m * padded_n * 4 <= UINT32_MAX,
+                    "{k.name}: split-K workspace of splitK=", S, " exceeds 4 GiB");
         kargs.ptr_ws = opus_validate_workspace(workspace.value(), XQ, AITER_DTYPE_fp32,
                                                (size_t)S * batch * padded_m * padded_n, 256, "{k.name}");
     }}"""
@@ -3268,6 +3271,11 @@ void
     const int N = WQ.size(1);
     AITER_CHECK(K % {2 * k.B_K} == 0, "{k.name} needs K % {2 * k.B_K} == 0 (K=", K, ")");
     {align_code}
+    // 32-bit buffer ranges: A / B and one C tile (the kernel bases C per tile in 64 bits) stay under 2 GiB.
+    AITER_CHECK((int64_t)M * K <= INT32_MAX && (int64_t)N * K <= INT32_MAX &&
+                    2 * (((int64_t)(M < {k.B_M} ? M : {k.B_M}) - 1) * N + {k.B_N}) <= INT32_MAX &&
+                    (batch == 1 || (int64_t)M * N <= INT32_MAX),
+                "{k.name}: M=", M, " N=", N, " K=", K, " batch=", batch, " exceeds the 32-bit buffer ranges");
     // Layout from strides: operand [rows, K] is dense K-contiguous (stored [rows, K]) or dense
     // rows-contiguous (stored [K, rows]); batch strides rows * K (checked only for batch > 1).
     auto transposed = [&](const aiter_tensor_t& t, int64_t rows, const char* what) {{

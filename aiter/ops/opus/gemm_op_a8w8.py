@@ -418,12 +418,19 @@ def a8w8_mxfp8_kid_runs(
     instance, M: int, N: int, K: int, split_k: int = 0, layout: str = "NT"
 ) -> bool:
     """Whether a8w8_mxfp8 kid ``instance`` runs (M, N, K) in ``layout``
-    (NT / NN / TT / TN) with ``split_k``."""
+    (NT / NN / TT / TN) with ``split_k``. The 32-bit buffer ranges bound A / B
+    to 2 GiB, one C tile to 2 GiB (C itself may exceed 4 GiB) and the split-K
+    workspace to 4 GiB."""
     layout = layout.upper()
     # A stored [K, M] needs M % 16, B stored [K, N] N % 32.
     if (layout[0] == "T" and M % 16) or (layout[1] == "N" and N % 32):
         return False
     if K <= 0 or K % _MXFP8_K_ALIGN:
+        return False
+    if (
+        max(M * K, N * K, 2 * ((min(M, instance.B_M) - 1) * N + instance.B_N))
+        > (1 << 31) - 1
+    ):
         return False
     if instance.co_variant == "nob":
         if M % instance.B_M or N % instance.B_N:
@@ -431,22 +438,40 @@ def a8w8_mxfp8_kid_runs(
     elif N % 16:
         return False
     if instance.co_variant == "sk":
-        return split_k <= 1 or K % (split_k * _MXFP8_K_ALIGN) == 0
+        return split_k <= 1 or (
+            K % (split_k * _MXFP8_K_ALIGN) == 0
+            and _a8w8_mxfp8_workspace_bytes(instance, M, N, split_k) <= (1 << 32) - 1
+        )
     return split_k <= 1
+
+
+def _a8w8_mxfp8_workspace_bytes(instance, M: int, N: int, split_k: int) -> int:
+    """fp32 partials [S][padded_M][padded_N] of a split-K launch, in bytes;
+    splitk_reduce_kernel addresses them through one 32-bit buffer range."""
+    padded_m = -(-M // instance.B_M) * instance.B_M
+    padded_n = -(-N // instance.B_N) * instance.B_N
+    return split_k * padded_m * padded_n * 4
 
 
 def _a8w8_mxfp8_plan(instance, M: int, N: int, K: int, split_k: int, cu_num: int):
     """(ABI split_k, fp32 workspace elements; 0 = none) of one launch. Split-K
-    kids with split_k = 0 take the largest S in {8, 4, 2} with tiles * S <= CUs
-    and K % (S * 256) == 0. S > 1 needs fp32 partials [S][padded_M][padded_N],
-    summed into Y by splitk_reduce_kernel; the launcher checks split_k / K."""
+    kids with split_k = 0 take the largest S in {8, 4, 2} with tiles * S <= CUs,
+    K % (S * 256) == 0 and a workspace under 4 GiB. S > 1 needs fp32 partials
+    [S][padded_M][padded_N], summed into Y by splitk_reduce_kernel; the launcher
+    checks split_k / K / the workspace size."""
     if instance.co_variant != "sk":
         return split_k, 0
     padded_m = -(-M // instance.B_M) * instance.B_M
     padded_n = -(-N // instance.B_N) * instance.B_N
     tiles = (padded_m // instance.B_M) * (padded_n // instance.B_N)
     S = split_k or next(
-        (s for s in (8, 4, 2) if tiles * s <= cu_num and K % (s * _MXFP8_K_ALIGN) == 0),
+        (
+            s
+            for s in (8, 4, 2)
+            if tiles * s <= cu_num
+            and K % (s * _MXFP8_K_ALIGN) == 0
+            and _a8w8_mxfp8_workspace_bytes(instance, M, N, s) <= (1 << 32) - 1
+        ),
         1,
     )
     return S, S * padded_m * padded_n if S > 1 else 0
