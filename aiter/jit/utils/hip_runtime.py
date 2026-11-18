@@ -46,11 +46,48 @@ def _torch_hip_version() -> str | None:
     return getattr(version, "hip", None)
 
 
+def _loaded_hip_runtime_paths() -> list[str]:
+    """Absolute paths of HIP runtimes mapped in this Linux process."""
+    if not sys.platform.startswith("linux"):
+        return []
+    paths = []
+    try:
+        with open("/proc/self/maps", errors="surrogateescape") as maps:
+            for line in maps:
+                fields = line.split(maxsplit=5)
+                if len(fields) < 6:
+                    continue
+                path = fields[5].strip().removesuffix(" (deleted)")
+                name = os.path.basename(path)
+                if (
+                    path.startswith("/")
+                    and (name == "libamdhip64.so" or name.startswith("libamdhip64.so."))
+                    and path not in paths
+                ):
+                    paths.append(path)
+    except OSError:
+        return []
+
+    torch_hip = _torch_hip_version()
+    if torch_hip:
+        soname = f"libamdhip64.so.{torch_hip.split('.')[0]}"
+        paths.sort(
+            key=lambda path: not (
+                os.path.basename(path) == soname
+                or os.path.basename(path).startswith(soname + ".")
+            )
+        )
+    return paths
+
+
 def _loaded_hip_runtime() -> ctypes.CDLL | None:
     """The HIP runtime already loaded into this process, e.g. torch's."""
     if sys.platform == "win32":
         return None
-    for name in _library_names():
+    # UCX's dlopen hook can rewrite even RTLD_NOLOAD soname probes to a devel
+    # copy on LD_LIBRARY_PATH. An absolute mapped path bypasses that rewrite
+    # and binds to the loaded file; NOLOAD also makes a stale maps entry safe.
+    for name in (*_loaded_hip_runtime_paths(), *_library_names()):
         try:
             return ctypes.CDLL(name, mode=os.RTLD_NOLOAD | os.RTLD_LAZY)
         except OSError:
