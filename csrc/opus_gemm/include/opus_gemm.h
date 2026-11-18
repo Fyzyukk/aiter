@@ -46,3 +46,15 @@ void opus_gemm_a8w8_mxfp8_launch(aiter_tensor_t& XQ,
                                  std::optional<aiter_tensor_t> workspace,
                                  int kid,
                                  int split_k);
+
+// MXFP8 A x MXFP4 B (gfx950, NT / NN / TT / TN from the strides): fp8 XQ [B, M, K], fp4x2 WQ = the
+// shuffle_weight of B stored [N, K/2] ([B, N, K/2]) or [K, N/2] (its [B, N/2, K] transposed view),
+// e8m0_shuffle scales, bf16 Y [B, M, N]; split-K kids take a caller workspace.
+void opus_gemm_a8w4_bpreshuffle_launch(aiter_tensor_t& XQ,
+                                       aiter_tensor_t& WQ,
+                                       aiter_tensor_t& Y,
+                                       aiter_tensor_t& x_scale,
+                                       aiter_tensor_t& w_scale,
+                                       std::optional<aiter_tensor_t> workspace,
+                                       int kid,
+                                       int split_k);

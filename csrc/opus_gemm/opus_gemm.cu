@@ -552,4 +552,88 @@ void opus_gemm_a8w8_mxfp8_launch(
               " with gcnArchName='", info.name, "'");
 }
 
+// MXFP8 A x MXFP4 B (gfx950), 1x32 e8m0_shuffle scales, NT / NN / TT / TN from the strides.
+// Shapes: XQ [batch, M, K] fp8 (logical view of the stored A); WQ fp4x2, the shuffle_weight(16, 16) of B
+// stored [N, K/2] as [batch, N, K/2], or of B stored [K, N/2] as its transposed [batch, N/2, K] view;
+// Y [batch, M, N] bf16; scales the e8m0_shuffle of [rows, K/32]: 2D [batch * rows_p, cols_p] or 3D
+// [batch, rows_p, cols_p], rows_p >= rows padded to 32 (a multiple of 32), cols_p = K/32 padded to 8.
+// The launchers check the strides of their direction and the tile alignment.
+void opus_gemm_a8w4_bpreshuffle_launch(
+    aiter_tensor_t &XQ,
+    aiter_tensor_t &WQ,
+    aiter_tensor_t &Y,
+    aiter_tensor_t &x_scale,
+    aiter_tensor_t &w_scale,
+    std::optional<aiter_tensor_t> workspace,
+    int kid,
+    int split_k)
+{
+  aiter_detail::g_aiter_can_throw = true;
+  constexpr const char* entry = "opus_gemm_a8w4_bpreshuffle_launch";
+  AITER_CHECK(XQ.is_gpu() && WQ.is_gpu() && Y.is_gpu(),
+              entry, ": XQ, WQ, and Y must be GPU tensors");
+  AITER_CHECK(XQ.device_id == WQ.device_id && XQ.device_id == Y.device_id,
+              entry, ": XQ/WQ/Y device ids must match (got ",
+              XQ.device_id, "/", WQ.device_id, "/", Y.device_id, ")");
+  int current_device = -1;
+  HIP_CALL(hipGetDevice(&current_device));
+  AITER_CHECK(current_device == XQ.device_id,
+              entry, ": current HIP device ", current_device,
+              " does not match tensor device ", XQ.device_id);
+  opus_check_a8_scale_devices(entry, XQ, x_scale, w_scale);
+  AITER_CHECK(XQ.dtype() == AITER_DTYPE_fp8 && WQ.dtype() == AITER_DTYPE_fp4x2,
+              entry, ": expected fp8 XQ and fp4x2 WQ, got ",
+              AiterDtype_to_str(XQ.dtype()), "/", AiterDtype_to_str(WQ.dtype()));
+  AITER_CHECK(Y.dtype() == AITER_DTYPE_bf16,
+              entry, ": expected bf16 Y, got ", AiterDtype_to_str(Y.dtype()));
+  AITER_CHECK(XQ.dim() == 3 && WQ.dim() == 3 && Y.dim() == 3,
+              entry, ": XQ/WQ/Y must be 3D [batch, M, K], [batch, N, K/2] or [batch, N/2, K], [batch, M, N]");
+  AITER_CHECK(Y.is_contiguous() && x_scale.is_contiguous() && w_scale.is_contiguous(),
+              entry, ": Y and the scales must be contiguous");
+  const int64_t batch = XQ.size(0), M = XQ.size(1), K = XQ.size(2);
+  // WQ [batch, N, K/2] (B stored [N, K/2]) or [batch, N/2, K] (B stored [K, N/2], transposed view).
+  AITER_CHECK(K % 32 == 0 && K > 0,
+              entry, ": K must be a positive multiple of 32 (got K=", K, ")");
+  AITER_CHECK(batch >= 1 && M >= 1 && WQ.size(0) == batch && (WQ.size(2) == K / 2 || WQ.size(2) == K),
+              entry, ": WQ must be [batch, N, K/2] or [batch, N/2, K] matching XQ");
+  const int64_t N = WQ.size(2) == K ? 2 * WQ.size(1) : WQ.size(1);
+  AITER_CHECK(Y.size(0) == batch && Y.size(1) == M && Y.size(2) == N,
+              entry, ": Y must be [batch, M, N]");
+  const int64_t cols = (K / 32 + 7) / 8 * 8;
+  auto check_scale = [&](const aiter_tensor_t& s, int64_t rows, const char* name) {
+    AITER_CHECK(s.element_size() == 1, entry, ": ", name, " must be e8m0 (1 byte)");
+    AITER_CHECK(s.dim() == 2 || (s.dim() == 3 && s.size(0) == batch),
+                entry, ": ", name, " must be 2D or [batch, rows, cols]");
+    AITER_CHECK(s.dim() == 3 || s.size(0) % batch == 0,
+                entry, ": ", name, " rows are not divisible by batch");
+    const int64_t r = s.dim() == 3 ? s.size(1) : s.size(0) / batch;
+    AITER_CHECK(s.size(-1) == cols, entry, ": ", name, " must have K/32 padded to 8 = ",
+                cols, " columns (got ", s.size(-1), ")");
+    AITER_CHECK(r >= (rows + 31) / 32 * 32 && r % 32 == 0, entry, ": ", name, " needs >= ",
+                (rows + 31) / 32 * 32, " rows per batch, a multiple of 32 (got ", r, ")");
+  };
+  check_scale(x_scale, M, "x_scale");
+  check_scale(w_scale, N, "w_scale");
+  if (workspace.has_value())
+  {
+    AITER_CHECK(workspace->is_gpu() && workspace->device_id == XQ.device_id,
+                entry, ": workspace device ", workspace->device_id,
+                " must match input device ", XQ.device_id);
+  }
+
+  const auto &info = opus_get_arch_info();
+  if (info.arch == OpusGfxArch::Gfx950)
+  {
+#ifdef OPUS_BUILD_HAS_GFX950
+    opus_a8w4_kid_dispatch_gfx950(kid)(XQ, WQ, Y, x_scale, w_scale, workspace, split_k);
+    return;
+#else
+    AITER_CHECK(false, entry, ": module was not built with gfx950 support for current device ",
+                info.dev);
+#endif
+  }
+  AITER_CHECK(false, "no registered kernel for OPUS a8w4 on device ", info.dev,
+              " with gcnArchName='", info.name, "'");
+}
+
 #endif // !__HIP_DEVICE_COMPILE__

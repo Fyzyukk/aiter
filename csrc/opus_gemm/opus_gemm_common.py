@@ -34,7 +34,12 @@ A8W8_MXFP8_LAYOUTS = ("nt", "nn", "tt", "tn")
 # a8w8_mxfp8_co variant -> traits MODE (0 persistent, 1 one tile per block,
 # 2 split-K); "nob" is one tile per block without M/N boundary handling.
 A8W8_MXFP8_CO_MODE = {"": 0, "np": 1, "sk": 2, "nob": 1}
-_GFX950_CO_TAGS = A8W8_MXFP8_TAGS
+# gfx950 MXFP8 A x MXFP4 B with 1x32 e8m0_shuffle scales (a8w4 family, layout
+# "bpreshuffle"): the a8w8_mxfp8 pipeline with an fp4 B, the same kid / variant /
+# four-layout image scheme, images in gen_co/gfx950/a8w4_bpreshuffle/.
+A8W4_TAGS = frozenset({"a8w4_mxfp_bpreshuffle_co"})
+A8W4_CO_MODE = A8W8_MXFP8_CO_MODE
+_GFX950_CO_TAGS = A8W8_MXFP8_TAGS | A8W4_TAGS
 
 # Legacy cache policy = traits default for split-barrier & persistent a16w16 (see
 # opus_gemm_traits_a16w16_gfx950.cuh).
@@ -2691,6 +2696,11 @@ A8W8_MXFP8_CO_JSON = os.path.join(
     os.path.dirname(__file__), "gen_co", "co_kernels_gfx950_a8w8_mxfp8_bpreshuffle.json"
 )
 A8W8_MXFP8_CO_DIR = "gfx950/a8w8_mxfp8_bpreshuffle"
+# gfx950 a8w4 bpreshuffle .co kernels: own JSON, images (+ build_info.json) in gen_co/<A8W4_CO_DIR>/.
+A8W4_CO_JSON = os.path.join(
+    os.path.dirname(__file__), "gen_co", "co_kernels_gfx950_a8w4_bpreshuffle.json"
+)
+A8W4_CO_DIR = "gfx950/a8w4_bpreshuffle"
 
 _CO_DTYPE_BYTES = {
     "bf16_t": 2,
@@ -2765,7 +2775,7 @@ def _validate_co_instance(kid, instance):
 
 
 def _gfx950_co_instance_from_json(arch, entry):
-    """Convert one gfx950 (a8w8_mxfp8) JSON record to its host-launcher instance."""
+    """Convert one gfx950 (a8w8_mxfp8 / a8w4) JSON record to its host-launcher instance."""
     bm, bn, bk = entry["tile"]
     t_m, t_n = entry["wave_layout"]
     lb_threads, lb_waves = entry["launch_bounds"]
@@ -2801,7 +2811,10 @@ def _gfx950_co_instance_from_json(arch, entry):
 
 
 # gfx950 CO tag -> directory (relative to gen_co/) of its images.
-_GFX950_CO_DIRS = {tag: A8W8_MXFP8_CO_DIR for tag in A8W8_MXFP8_TAGS}
+_GFX950_CO_DIRS = {
+    **{tag: A8W8_MXFP8_CO_DIR for tag in A8W8_MXFP8_TAGS},
+    **{tag: A8W4_CO_DIR for tag in A8W4_TAGS},
+}
 
 
 def gfx950_co_dir(instance):
@@ -2811,7 +2824,7 @@ def gfx950_co_dir(instance):
 
 def gfx950_co_images(instance):
     """[(layout, symbol)] of the .co images of one gfx950 CO kid (layout "" = one image)."""
-    if instance.kernel_tag in A8W8_MXFP8_TAGS:
+    if instance.kernel_tag in A8W8_MXFP8_TAGS | A8W4_TAGS:
         return [(layout, f"{instance.name}_{layout}") for layout in A8W8_MXFP8_LAYOUTS]
     return [("", instance.name)]
 
@@ -2822,7 +2835,7 @@ def gfx950_co_traits_args(instance, layout=""):
     a_t, b_t = str(layout[0] == "t").lower(), str(layout[1] == "n").lower()
     mode = A8W8_MXFP8_CO_MODE[instance.co_variant]
     boundary = "false" if instance.co_variant == "nob" else "true"
-    # opus_mxfp8_traits<B_M, B_N, A_T, B_T, MODE, BOUNDARY>
+    # opus_mxfp8_traits / opus_a8w4_traits <B_M, B_N, A_T, B_T, MODE, BOUNDARY>
     return f"{instance.B_M}, {instance.B_N}, {a_t}, {b_t}, {mode}, {boundary}"
 
 
@@ -2924,12 +2937,30 @@ gfx1250_4wave_co_kernels_declared = {
 #   256x128, 128x256, 128x128, 192x256, 256x192 (no persistent / split-K 256x256: register
 #   spills / out of registers) -- any M, N % 16; every kid has the nt / nn / tt / tn images.
 a8w8_mxfp8_kernels_list = _load_co_kernels(A8W8_MXFP8_CO_JSON, arch="gfx950")
+# -- gfx950 a8w4 (MXFP8 A x MXFP4 B, 1x32 e8m0 scales, layout "bpreshuffle") ---
+# x_scale [M, K/32] / w_scale [N, K/32] e8m0, both the aiter e8m0_shuffle (rows
+# padded to 256, K/32 to 8), and bf16 C in every layout; B (fp4x2) is the
+# shuffle_weight(w, layout=(16, 16)) of its storage.
+#   NT: A [M, K], B [N, K/2]; NN: B stored [K, N/2] (WQ = its [N/2, K] transposed
+#   view); TT: A [K, M]; TN: both.  K % 256; A [K, M] needs M % 16, B [K, N/2] N % 32.
+# Kids as a8w8_mxfp8 (gen_co/gfx950/a8w4_bpreshuffle,
+# co_kernels_gfx950_a8w4_bpreshuffle.json; B_K 128): 0 nob 256x256; 1-6 np;
+# 7-11 persistent; 12-16 split-K; every kid has the nt / nn / tt / tn images.
+a8w4_kernels_list = _load_co_kernels(A8W4_CO_JSON, arch="gfx950")
 # Every pre-compiled gfx950 kid, keyed by (family, local kid), for build_co.py.
 gfx950_co_kernels_declared = {
-    ("a8w8_mxfp8", kid): k
-    for kid, k in _load_co_kernels(
-        A8W8_MXFP8_CO_JSON, require_image=False, arch="gfx950"
-    ).items()
+    **{
+        ("a8w8_mxfp8", kid): k
+        for kid, k in _load_co_kernels(
+            A8W8_MXFP8_CO_JSON, require_image=False, arch="gfx950"
+        ).items()
+    },
+    **{
+        ("a8w4", kid): k
+        for kid, k in _load_co_kernels(
+            A8W4_CO_JSON, require_image=False, arch="gfx950"
+        ).items()
+    },
 }
 
 GFX1250_SPLITK_FUSE_KID_BASE = max(
@@ -3032,6 +3063,7 @@ KERNEL_REGISTRY = {
     "a8w8_mxscale_bmm": {"gfx950": {cu: dict(sorted(a8w8_mxscale_bmm_kernels_list.items())) for cu in (128, 256)}},
     "a8w8_blockscale_bpreshuffle": {"gfx942": {cu: dict(gfx942_a8w8_kernels_list) for cu in (80, 228, 304)}},
     "a8w8_mxfp8": {"gfx950": {cu: dict(sorted(a8w8_mxfp8_kernels_list.items())) for cu in (128, 256)}},
+    "a8w4": {"gfx950": {cu: dict(sorted(a8w4_kernels_list.items())) for cu in (128, 256)}},
 }
 
 # fmt: on
@@ -3047,6 +3079,7 @@ for _cat in (
     gfx942_kernels_list,
     gfx1250_a16w16_kernels_list,
     a8w8_mxfp8_kernels_list,
+    a8w4_kernels_list,
 ):
     for _kid, _inst in _cat.items():
         _sig = repr(asdict(_inst))
@@ -3345,6 +3378,7 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
         ),
         "a8w8_blockscale_bpreshuffle": frozenset(),
         "a8w8_mxfp8": A8W8_MXFP8_TAGS,
+        "a8w4": A8W4_TAGS,
     },
     "gfx942": {
         "a16w16": frozenset(
@@ -3369,6 +3403,7 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
             {"a8w8_blockscale_bpreshuffle_singlebuf"}
         ),
         "a8w8_mxfp8": frozenset(),
+        "a8w4": frozenset(),
     },
     "gfx1250": {
         "a16w16": frozenset(
@@ -3386,6 +3421,7 @@ OPUS_KERNEL_TAGS_BY_ARCH_FAMILY = {
         "a8w8_mxscale_bmm": frozenset(),
         "a8w8_blockscale_bpreshuffle": frozenset(),
         "a8w8_mxfp8": frozenset(),
+        "a8w4": frozenset(),
     },
 }
 

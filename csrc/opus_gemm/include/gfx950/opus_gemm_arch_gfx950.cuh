@@ -194,6 +194,18 @@ inline OpusA8W8Mxfp8Kernel opus_a8w8_mxfp8_kid_dispatch_gfx950(int id)
     return entry->func;
 }
 
+// a8w4 launchers have the a8w8_mxfp8 signature (XQ, WQ, Y, x_scale, w_scale, workspace, splitK).
+inline OpusA8W8Mxfp8Kernel opus_a8w4_kid_dispatch_gfx950(int id)
+{
+    using Entry = opus_gfx950_detail::OpusA8W8KidEntry<OpusA8W8Mxfp8Kernel>;
+    static constexpr std::array<Entry, GENERATE_A8W4_KID_DISPATCH_GFX950_SIZE>
+        kKids = {{GENERATE_A8W4_KID_DISPATCH_GFX950}};
+    AITER_CHECK(!kKids.empty(), "no registered kernel for OPUS a8w4 on gfx950");
+    const auto* entry = opus_gfx950_detail::find_kid(kKids, id);
+    AITER_CHECK(entry != nullptr, "unknown kid ", id, " for OPUS a8w4 on gfx950");
+    return entry->func;
+}
+
 // Workspace kids are absent from the direct-output table.
 template <typename CDataType>
 inline OpusA16W16Kernel opus_a16w16_kid_dispatch_gfx950(int kid);

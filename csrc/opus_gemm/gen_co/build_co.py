@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2025-2026, Advanced Micro Devices, Inc. All rights reserved.
-"""Offline builder for the pre-compiled kernels (gfx1250 a16w16_4wave*_co, gfx950 a8w8_mxfp8_co).
+"""Offline builder for the pre-compiled kernels (gfx1250 a16w16_4wave*_co, gfx950 a8w8_mxfp8_co / a8w4_mxfp_bpreshuffle_co).
 
 Why this exists
 ---------------
@@ -53,10 +53,11 @@ stay identical whichever toolchain is selected.
 
 gfx950 (``--arch gfx950``)
 --------------------------
-The a8w8_mxfp8 pipeline pins its A / B / C fragments with
-``[[clang::amdgpu_pin_agpr/vgpr]]``; only a pin toolchain compiles it. Each gfx950 family has its own
+The a8w8_mxfp8 / a8w4 pipelines pin their A / B / C fragments with
+``[[clang::amdgpu_pin_agpr/vgpr]]``; only a pin toolchain compiles them. Each gfx950 family has its own
 entries and directory: a8w8_mxfp8 ``co_kernels_gfx950_a8w8_mxfp8_bpreshuffle.json`` ->
-``gen_co/gfx950/a8w8_mxfp8_bpreshuffle/`` (one image per layout, ``<name>_<nt|nn|tt|tn>.co``); each
+``gen_co/gfx950/a8w8_mxfp8_bpreshuffle/``, a8w4 ``co_kernels_gfx950_a8w4_bpreshuffle.json`` ->
+``gen_co/gfx950/a8w4_bpreshuffle/`` (one image per layout, ``<name>_<nt|nn|tt|tn>.co``); each
 directory gets its own ``build_info.json``. Kids are local to a family: ``--kids`` takes ``<kid>`` or
 ``<family>:<kid>``. The stub calls the pipeline's ``__device__`` body and is
 compiled like the gfx1250 images, ``hipcc --genco`` with ``HIP_CLANG_PATH`` on
@@ -658,7 +659,7 @@ extern "C" __global__ __launch_bounds__({lb_threads}, {lb_waves}) void {symbol}(
 
 
 # Host-side kargs size of each gfx950 CO tag (the .co kernarg segment must match).
-_GFX950_KARGS_BYTES = {"a8w8_mxfp8_co": 112}
+_GFX950_KARGS_BYTES = {"a8w8_mxfp8_co": 112, "a8w4_mxfp_bpreshuffle_co": 136}
 
 
 def build_one_gfx950(k, args, llvm_bin, workdir):
