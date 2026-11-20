@@ -310,6 +310,9 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
     using D_ACC = typename T::D_ACC;
     using D_OUT = typename T::D_OUT;
 
+    // One workgroup: one B_M x B_N tile of C, 2 x 2 waves, quadrants C00 / C10 / C01 / C11.
+
+    // ---- 1. Tile and K range ----------------------------------------------------------------------------
     int wgid = block_id_x();
     int split_id = 0;
     if constexpr (T::SPLITK) {
@@ -330,6 +333,7 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
     const int loops = ks_base + (split_id < ks_rem ? 1 : 0);
     const int k_tile0 = split_id * ks_base + (split_id < ks_rem ? split_id : ks_rem);
 
+    // ---- 2. Buffer views of A / B / C -------------------------------------------------------------------
     const int a_k0 = T::A_T ? k_tile0 * T::B_K * kargs.stride_a : k_tile0 * T::B_K;
     const int b_k0 = T::B_T ? k_tile0 * T::B_K * kargs.stride_b : k_tile0 * T::B_K;
     auto g_a = make_gmem(reinterpret_cast<const D_A*>(kargs.ptr_a) + batch_id * kargs.stride_a_batch + row * (T::A_T ? 1 : kargs.stride_a) + a_k0,
@@ -344,6 +348,7 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
         : reinterpret_cast<D_OUT*>(kargs.ptr_c) + batch_id * kargs.stride_c_batch + row * stride_out + col;
     auto g_c = make_gmem(ptr_out, __builtin_amdgcn_readfirstlane(static_cast<unsigned int>(c_m_rem * stride_out * sizeof(D_OUT))));
 
+    // ---- 3. Layouts -------------------------------------------------------------------------------------
     const int wave_id_m = wave_id % T::T_M;
     const int wave_id_n = wave_id / T::T_M;
 
@@ -356,6 +361,7 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
     const auto u_rb0 = make_layout_rb<T>(lane_id, wave_id_m, wave_id_n, 0);
     const auto u_rb1 = make_layout_rb<T>(lane_id, wave_id_m, wave_id_n, 1);
 
+    // ---- 4. LDS, MFMA, registers ------------------------------------------------------------------------
     constexpr int smem_a_elem = T::smem_m_rep * (T::smem_linear_wave_a + T::smem_padding);
     constexpr int smem_b_elem = T::smem_n_rep * (T::smem_linear_wave_b + T::smem_padding);
     constexpr int smem_a_bytes = smem_a_elem * 4 * sizeof(D_A);
@@ -366,6 +372,10 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
     char* const smem_b = smem_ab + smem_a_bytes;
     auto s_a = make_smem(reinterpret_cast<D_A*>(smem_a));
     auto s_b = make_smem(reinterpret_cast<D_B*>(smem_b));
+    auto sa_offset = [&](int stage, int half_tile_m) { return (stage * 2 + half_tile_m) * smem_a_elem; };
+    auto sb_offset = [&](int stage, int half_tile_n) { return (stage * 2 + half_tile_n) * smem_b_elem; };
+    auto lds_a = [&](int stage) { return reinterpret_cast<OPUS_LDS_ADDR D_A*>(s_a.ptr) + sa_offset(stage, 0); };
+    auto lds_b = [&](int stage) { return reinterpret_cast<OPUS_LDS_ADDR D_B*>(s_b.ptr) + sb_offset(stage, 0); };
 
     auto mma = make_tiled_mma<D_A, D_B, D_ACC>(
         seq<T::E_M, T::E_N, 1>{},
@@ -384,6 +394,7 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
         clear(v_c[hm.value][hn.value][f.value]);
     }); }); });
 
+    // ---- 5. Copies --------------------------------------------------------------------------------------
     auto ga_offset = [&](int half_tile_m, int tile_k) {
         if constexpr (T::A_T) return tile_k * T::B_K * kargs.stride_a + half_tile_m * T::HALF_B_M;
         else return half_tile_m * T::HALF_B_M * kargs.stride_a + tile_k * T::B_K;
@@ -392,10 +403,6 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
         if constexpr (T::B_T) return tile_k * T::B_K * kargs.stride_b + half_tile_n * T::HALF_B_N;
         else return half_tile_n * T::HALF_B_N * kargs.stride_b + tile_k * T::B_K;
     };
-    auto sa_offset = [&](int stage, int half_tile_m) { return (stage * 2 + half_tile_m) * smem_a_elem; };
-    auto sb_offset = [&](int stage, int half_tile_n) { return (stage * 2 + half_tile_n) * smem_b_elem; };
-    auto lds_a = [&](int stage) { return reinterpret_cast<OPUS_LDS_ADDR D_A*>(s_a.ptr) + sa_offset(stage, 0); };
-    auto lds_b = [&](int stage) { return reinterpret_cast<OPUS_LDS_ADDR D_B*>(s_b.ptr) + sb_offset(stage, 0); };
 
     // Global -> LDS: half tile half_tile_m / half_tile_n of K tile tile_k into stage.
     auto prefetch_a = [&](int stage, int tile_k, int half_tile_m) {
@@ -409,12 +416,6 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
     // lane, pinned at a[agpr + 8 e + 4 kk]. half_ofs: the half tile in the stage.
     //   K-contiguous:   1 ds_read_b128 per operand, by the read layout of K step kk
     //   M/N-contiguous: 2 ds_read_b64_tr_b16 (4 bf16 each) per operand at the swizzled (e, h) bases + 32 kk k rows
-    using i32x2_t = opus::vector_t<opus::i32_t, 2>;
-    auto tr16 = [&](auto& sm_, int ofs) {
-        // pointer arithmetic on the view's (restrict) LDS pointer keeps the no-alias fact (no vmcnt(0) before it)
-        return __builtin_bit_cast(i32x2_t, __builtin_amdgcn_ds_read_tr16_b64_v4i16(
-            reinterpret_cast<OPUS_LDS_ADDR opus::vector_t<short, 4>*>(reinterpret_cast<OPUS_LDS_ADDR short*>(sm_.ptr) + ofs)));
-    };
     auto load_k = [&](auto& sm_, const auto& u_r0, const auto& u_r1, auto& v, int half_ofs, auto agpr_) {
         constexpr int E = sizeof(v[0]) / sizeof(v[0][0]);
         const auto x0 = load<T::VEC_A>(sm_, u_r0 + half_ofs);         // E operands of K step 0
@@ -439,6 +440,13 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
     };
     const auto ra_mn = [&] { if constexpr (T::A_T) return mn_bases(u_ra0, wave_id_m, number<T::E_M>{}, number<T::T_M>{}); else return 0; }();
     const auto rb_mn = [&] { if constexpr (T::B_T) return mn_bases(u_rb0, wave_id_n, number<T::E_N>{}, number<T::T_N>{}); else return 0; }();
+    // ds_read_b64_tr_b16, per 16 lanes: lane i reads 4 m (n) of k row i / 4, gets back 4 k of column i
+    using i32x2_t = opus::vector_t<opus::i32_t, 2>;
+    auto tr16 = [&](auto& sm_, int ofs) {
+        // pointer arithmetic on the view's (restrict) LDS pointer keeps the no-alias fact (no vmcnt(0) before it)
+        return __builtin_bit_cast(i32x2_t, __builtin_amdgcn_ds_read_tr16_b64_v4i16(
+            reinterpret_cast<OPUS_LDS_ADDR opus::vector_t<short, 4>*>(reinterpret_cast<OPUS_LDS_ADDR short*>(sm_.ptr) + ofs)));
+    };
     auto load_mn = [&](auto& sm_, const auto& b, auto& v, int half_ofs, auto row_, auto agpr_) {
         constexpr int E = sizeof(v[0]) / sizeof(v[0][0]);
         constexpr int row = decltype(row_)::value;                       // one k row of the half tile
@@ -469,6 +477,7 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
         body(rd_a, rd_b);
     };
 
+    // ---- 6. One K tile ----------------------------------------------------------------------------------
     // One quadrant (HM, HN): 2 MFMAs per fragment, accumulators pinned (c_reg).
     constexpr int frags = T::E_M * T::E_N;
     auto quadrant = [&](auto hm_, auto hn_) {
@@ -526,6 +535,7 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
         __builtin_amdgcn_sched_barrier(0);
     };
 
+    // ---- 7. Prologue, main loop, last two K tiles -------------------------------------------------------
     // Prologue: copy tiles 0 and 1, wait for tile 0, read it and compute C00(0)
     prefetch_a(0, 0, 0);
     prefetch_b(0, 0, 0);
@@ -594,7 +604,7 @@ __device__ __forceinline__ void gemm_a16w16_4wave_body(const opus_gemm_a16w16_4w
         last(number<1>{}, number<1>{});
     }
 
-    // Write back C through LDS
+    // ---- 8. Write back C through LDS --------------------------------------------------------------------
     // A wave owns only 16 columns of a row per fragment, so direct fragment stores would leave every
     // 128-byte line partially written. C is staged in the idle LDS, rows padded by 8 elements (the 16
     // rows of a fragment step across the banks): as one image of the tile when it fits (one region per
